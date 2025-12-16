@@ -73,7 +73,7 @@ export default function App() {
   return (
     <ViewModeProvider>
     <ClassroomShareProvider>
-    <Router>
+    <Router basename="/Vividbooks40">
       {/* Toast notifications */}
       <Toaster position="top-center" richColors />
       
