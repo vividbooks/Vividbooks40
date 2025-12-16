@@ -597,11 +597,11 @@ const QuizPreviewCard = React.forwardRef<HTMLDivElement, {
         {/* Menu button */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-            <button className="absolute top-1 right-1 p-1 rounded-md bg-white/90 shadow-sm opacity-0 group-hover:opacity-100 transition-opacity hover:bg-white border border-indigo-200">
-              <MoreVertical className="h-3.5 w-3.5 text-indigo-600" />
+            <button className="absolute bottom-2 right-2 z-30 p-1.5 rounded-md bg-white/90 shadow-sm opacity-0 group-hover:opacity-100 transition-opacity hover:bg-white border border-indigo-200">
+              <MoreVertical className="h-4 w-4 text-indigo-600" />
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
+          <DropdownMenuContent align="end" className="z-50">
             <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onMenuClick('edit'); }}>
               <Pencil className="h-4 w-4 mr-2" />
               Upravit
