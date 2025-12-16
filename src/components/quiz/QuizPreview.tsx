@@ -53,7 +53,7 @@ function ABCSlideView({
     <div className="flex flex-col h-full">
       {/* Question */}
       <div className="flex-1 flex items-center justify-center p-8">
-        <h1 className="text-4xl md:text-5xl font-bold text-[#1e3a5f] text-center leading-tight">
+        <h1 className="text-4xl md:text-5xl font-bold text-[#4E5871] text-center leading-tight">
           <MathText>{slide.question || 'Otázka...'}</MathText>
         </h1>
       </div>
@@ -97,7 +97,7 @@ function ABCSlideView({
               >
                 {option.label || option.id?.toUpperCase() || '?'}
               </span>
-              <span className="text-xl font-medium text-slate-700 flex-1">
+              <span className="text-xl font-medium text-[#4E5871] flex-1">
                 <MathText>{option.content || ''}</MathText>
               </span>
               
@@ -139,7 +139,7 @@ function OpenSlideView({
 }) {
   return (
     <div className="flex flex-col h-full items-center justify-center p-8">
-      <h1 className="text-4xl md:text-5xl font-bold text-[#1e3a5f] text-center leading-tight mb-8">
+      <h1 className="text-4xl md:text-5xl font-bold text-[#4E5871] text-center leading-tight mb-8">
         <MathText>{slide.question || 'Otevřená otázka...'}</MathText>
       </h1>
       <div className="w-full max-w-2xl">
@@ -200,13 +200,13 @@ function ExampleSlideView({ slide }: { slide: ExampleActivitySlide }) {
   
   return (
     <div className="flex flex-col h-full p-8">
-      <h1 className="text-3xl font-bold text-[#1e3a5f] mb-6">
+      <h1 className="text-3xl font-bold text-[#4E5871] mb-6">
         <MathText>{slide.title || 'Příklad'}</MathText>
       </h1>
       
       <div className="bg-white rounded-xl p-6 shadow-sm mb-6">
         <h2 className="text-lg font-medium text-slate-600 mb-2">Zadání</h2>
-        <p className="text-xl text-slate-800"><MathText>{slide.problem}</MathText></p>
+        <p className="text-xl text-[#4E5871]"><MathText>{slide.problem}</MathText></p>
       </div>
       
       {slide.steps.length > 0 && (
@@ -224,7 +224,7 @@ function ExampleSlideView({ slide }: { slide: ExampleActivitySlide }) {
           </div>
           
           <div className="bg-indigo-50 rounded-xl p-6 min-h-[200px]">
-            <p className="text-lg text-slate-800">
+            <p className="text-lg text-[#4E5871]">
               <MathText>{slide.steps[currentStep]?.content || ''}</MathText>
             </p>
             {slide.steps[currentStep]?.hint && (
@@ -265,7 +265,7 @@ function InfoSlideView({ slide }: { slide: InfoSlide }) {
   return (
     <div className="flex flex-col h-full p-8">
       {slide.title && (
-        <h1 className="text-3xl md:text-4xl font-bold text-[#1e3a5f] mb-6">
+        <h1 className="text-3xl md:text-4xl font-bold text-[#4E5871] mb-6">
           <MathText>{slide.title}</MathText>
         </h1>
       )}

@@ -883,7 +883,7 @@ export function QuizStudentView() {
             >
               {/* Question */}
               <div className="flex-1 flex items-center justify-center p-8">
-                <h1 className="text-4xl md:text-5xl font-bold text-[#1e3a5f] text-center leading-tight">
+                <h1 className="text-4xl md:text-5xl font-bold text-[#4E5871] text-center leading-tight">
                   <MathText>{(currentSlide as any).question || (currentSlide as any).title || 'Otázka'}</MathText>
                 </h1>
               </div>
@@ -927,7 +927,7 @@ export function QuizStudentView() {
                         >
                           {option.label || option.id?.toUpperCase() || '?'}
                         </span>
-                        <span className="text-lg lg:text-xl font-medium text-slate-700 flex-1">
+                        <span className="text-lg lg:text-xl font-medium text-[#4E5871] flex-1">
                           <MathText>{option.content || ''}</MathText>
                         </span>
                         
@@ -961,7 +961,7 @@ export function QuizStudentView() {
                   {textAnswer.includes('$') && !hasAnswered && (
                     <div className="mt-3 p-3 bg-slate-50 rounded-xl">
                       <span className="text-xs text-slate-400 block mb-1">Náhled:</span>
-                      <div className="text-lg text-slate-700">
+                      <div className="text-lg text-[#4E5871]">
                         {textAnswer.split(/(\$[^$]+\$)/g).map((part, i) => {
                           if (part.startsWith('$') && part.endsWith('$')) {
                             return <MathDisplay key={i} math={part.slice(1, -1)} />;

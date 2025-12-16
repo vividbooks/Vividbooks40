@@ -164,7 +164,7 @@ export function ExampleSlideEditor({ slide, onUpdate }: ExampleSlideEditorProps)
         {slide.problem.includes('$') && (
           <div className="mt-2 p-3 bg-slate-50 rounded-lg">
             <span className="text-xs text-slate-400 mb-1 block">Náhled:</span>
-            <div className="text-slate-700">
+            <div className="text-[#4E5871]">
               {slide.problem.split(/(\$[^$]+\$)/g).map((part, i) => {
                 if (part.startsWith('$') && part.endsWith('$')) {
                   return <MathDisplay key={i} math={part.slice(1, -1)} />;
@@ -277,7 +277,7 @@ export function ExampleSlideEditor({ slide, onUpdate }: ExampleSlideEditorProps)
                     {step.content.includes('$') && (
                       <div className="mt-2 p-2 bg-slate-50 rounded-lg">
                         <span className="text-xs text-slate-400 mb-1 block">Náhled:</span>
-                        <div className="text-slate-700 text-sm">
+                        <div className="text-[#4E5871] text-sm">
                           {step.content.split(/(\$[^$]+\$)/g).map((part, i) => {
                             if (part.startsWith('$') && part.endsWith('$')) {
                               return <MathDisplay key={i} math={part.slice(1, -1)} />;
@@ -344,7 +344,7 @@ export function ExampleSlideEditor({ slide, onUpdate }: ExampleSlideEditorProps)
         {slide.finalAnswer.includes('$') && (
           <div className="mt-2 p-3 bg-emerald-50 rounded-lg">
             <span className="text-xs text-emerald-600 mb-1 block">Náhled výsledku:</span>
-            <div className="text-slate-700 font-medium">
+            <div className="text-[#4E5871] font-medium">
               {slide.finalAnswer.split(/(\$[^$]+\$)/g).map((part, i) => {
                 if (part.startsWith('$') && part.endsWith('$')) {
                   return <MathDisplay key={i} math={part.slice(1, -1)} />;

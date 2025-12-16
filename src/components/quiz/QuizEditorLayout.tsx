@@ -106,8 +106,8 @@ function SidebarButton({
     labelColor = '#E8956D';
   } else if (variant === 'green') {
     bgColor = '#4eebc0';
-    iconColor = '#1e3a5f';
-    labelColor = '#1e3a5f';
+    iconColor = '#4E5871';
+    labelColor = '#4E5871';
   }
   
   return (
@@ -842,7 +842,7 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
           {activePanel === 'board' && (
             <div className="flex flex-col h-full">
               <div className="p-5 border-b border-slate-100">
-                <h2 className="text-xl font-bold text-[#1e3a5f]">Struktura</h2>
+                <h2 className="text-xl font-bold text-[#4E5871]">Struktura</h2>
                 <p className="text-sm text-slate-500 mt-1">Uspořádejte slidy vašeho boardu</p>
               </div>
               
@@ -947,7 +947,7 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
           {activePanel === 'content' && (
             <div className="flex flex-col h-full">
               <div className="p-5 border-b border-slate-100">
-                <h2 className="text-xl font-bold text-[#1e3a5f]">Přidat obsah</h2>
+                <h2 className="text-xl font-bold text-[#4E5871]">Přidat obsah</h2>
                 <p className="text-sm text-slate-500 mt-1">Vyberte typ slidu pro přidání</p>
               </div>
               
@@ -1016,7 +1016,7 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
           {activePanel === 'settings' && (
             <div className="flex flex-col h-full">
               <div className="p-5 border-b border-slate-100">
-                <h2 className="text-xl font-bold text-[#1e3a5f]">Nastavení</h2>
+                <h2 className="text-xl font-bold text-[#4E5871]">Nastavení</h2>
                 <p className="text-sm text-slate-500 mt-1">Upravte parametry boardu</p>
               </div>
               

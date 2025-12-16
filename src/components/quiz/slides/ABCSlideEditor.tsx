@@ -166,12 +166,12 @@ export function ABCSlideEditor({ slide, onUpdate }: ABCSlideEditorProps) {
                     onBlur={() => setEditingOption(null)}
                     autoFocus
                     placeholder={`Odpověď ${option.label}... (můžeš použít $\\frac{1}{2}$)`}
-                    className="w-full bg-transparent border-none outline-none text-slate-800 placeholder-slate-400"
+                    className="w-full bg-transparent border-none outline-none text-[#4E5871] placeholder-slate-400"
                   />
                 ) : (
                   <div
                     onClick={() => setEditingOption(option.id)}
-                    className="cursor-text min-h-[24px] text-slate-800"
+                    className="cursor-text min-h-[24px] text-[#4E5871]"
                   >
                     {option.content ? (
                       <MathText>{option.content}</MathText>

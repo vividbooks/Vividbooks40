@@ -81,7 +81,7 @@ function ABCSlideView({ slide, showHint, showSolution, selectedAnswer, onSelectA
     <div className="flex flex-col h-full">
       {/* Question */}
       <div className="flex-1 flex items-center justify-center p-8">
-        <h1 className="text-4xl md:text-5xl font-bold text-[#1e3a5f] text-center leading-tight">
+        <h1 className="text-4xl md:text-5xl font-bold text-[#4E5871] text-center leading-tight">
           <MathText>{slide.question || 'Otázka...'}</MathText>
         </h1>
       </div>
@@ -125,7 +125,7 @@ function ABCSlideView({ slide, showHint, showSolution, selectedAnswer, onSelectA
               >
                 {option.label || option.id?.toUpperCase() || '?'}
               </span>
-              <span className="text-xl font-medium text-slate-700 flex-1">
+              <span className="text-xl font-medium text-[#4E5871] flex-1">
                 <MathText>{option.content || ''}</MathText>
               </span>
               
@@ -144,7 +144,7 @@ function ABCSlideView({ slide, showHint, showSolution, selectedAnswer, onSelectA
 function OpenSlideView({ slide }: { slide: OpenActivitySlide }) {
   return (
     <div className="flex flex-col h-full items-center justify-center p-8">
-      <h1 className="text-4xl md:text-5xl font-bold text-[#1e3a5f] text-center leading-tight mb-8">
+      <h1 className="text-4xl md:text-5xl font-bold text-[#4E5871] text-center leading-tight mb-8">
         {slide.question || 'Otevřená otázka...'}
       </h1>
       <div className="w-full max-w-2xl">
@@ -162,13 +162,13 @@ function ExampleSlideView({ slide }: { slide: ExampleActivitySlide }) {
   
   return (
     <div className="flex flex-col h-full p-8">
-      <h1 className="text-3xl font-bold text-[#1e3a5f] mb-6">
+      <h1 className="text-3xl font-bold text-[#4E5871] mb-6">
         {slide.title || 'Příklad'}
       </h1>
       
       <div className="bg-white rounded-xl p-6 shadow-sm mb-6">
         <h2 className="text-lg font-medium text-slate-600 mb-2">Zadání</h2>
-        <p className="text-xl text-slate-800">{slide.problem}</p>
+        <p className="text-xl text-[#4E5871]">{slide.problem}</p>
       </div>
       
       {slide.steps.length > 0 && (
@@ -186,7 +186,7 @@ function ExampleSlideView({ slide }: { slide: ExampleActivitySlide }) {
           </div>
           
           <div className="bg-indigo-50 rounded-xl p-6 min-h-[200px]">
-            <p className="text-lg text-slate-800">
+            <p className="text-lg text-[#4E5871]">
               {slide.steps[currentStep]?.content || ''}
             </p>
           </div>
@@ -224,7 +224,7 @@ function InfoSlideView({ slide }: { slide: InfoSlide }) {
   return (
     <div className="flex flex-col h-full items-center justify-center p-8">
       {slide.title && (
-        <h1 className="text-4xl md:text-5xl font-bold text-[#1e3a5f] text-center leading-tight mb-6">
+        <h1 className="text-4xl md:text-5xl font-bold text-[#4E5871] text-center leading-tight mb-6">
           {slide.title}
         </h1>
       )}
@@ -901,12 +901,12 @@ export function QuizViewPage() {
                   <RefreshCw className="w-10 h-10 text-slate-800 animate-spin" />
                 ) : (
                   <svg viewBox="0 0 64 64" className="w-full h-full">
-                    <circle cx="32" cy="20" r="10" fill="#1e3a5f" opacity="0.3" />
-                    <circle cx="18" cy="38" r="8" fill="#1e3a5f" opacity="0.5" />
-                    <circle cx="46" cy="38" r="8" fill="#1e3a5f" opacity="0.5" />
-                    <circle cx="32" cy="48" r="8" fill="#1e3a5f" />
-                    <rect x="26" y="10" width="12" height="10" rx="2" fill="#1e3a5f" />
-                    <polygon points="32,6 38,12 26,12" fill="#1e3a5f" />
+                    <circle cx="32" cy="20" r="10" fill="#4E5871" opacity="0.3" />
+                    <circle cx="18" cy="38" r="8" fill="#4E5871" opacity="0.5" />
+                    <circle cx="46" cy="38" r="8" fill="#4E5871" opacity="0.5" />
+                    <circle cx="32" cy="48" r="8" fill="#4E5871" />
+                    <rect x="26" y="10" width="12" height="10" rx="2" fill="#4E5871" />
+                    <polygon points="32,6 38,12 26,12" fill="#4E5871" />
                   </svg>
                 )}
               </div>
@@ -962,7 +962,7 @@ export function QuizViewPage() {
           <button 
             onClick={() => setShowStudentOptions(true)}
             className="w-full flex items-center gap-4 px-5 py-4 rounded-xl font-semibold hover:opacity-90 transition-colors mb-3"
-            style={{ backgroundColor: '#4eebc0', color: '#1e3a5f' }}
+            style={{ backgroundColor: '#4eebc0', color: '#4E5871' }}
           >
             <div className="w-12 h-12 flex items-center justify-center">
               <svg viewBox="0 0 48 48" className="w-full h-full">
