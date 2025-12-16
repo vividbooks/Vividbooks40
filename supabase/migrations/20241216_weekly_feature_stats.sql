@@ -120,3 +120,4 @@ GROUP BY date_trunc('week', date), EXTRACT(WEEK FROM date)
 ORDER BY week_start ASC;
 
 
+

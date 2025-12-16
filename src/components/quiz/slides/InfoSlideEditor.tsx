@@ -106,3 +106,4 @@ export function InfoSlideEditor({ slide, onUpdate }: InfoSlideEditorProps) {
 
 export default InfoSlideEditor;
 
+

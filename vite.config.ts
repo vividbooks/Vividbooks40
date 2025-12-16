@@ -3,8 +3,8 @@
   import react from '@vitejs/plugin-react-swc';
   import path from 'path';
 
-  export default defineConfig({
-    base: '/Vividbooks40/',
+  export default defineConfig(({ command }) => ({
+    base: command === 'build' ? '/Vividbooks40/' : '/',
     plugins: [react()],
     resolve: {
       extensions: ['.js', '.jsx', '.ts', '.tsx', '.json'],
@@ -70,4 +70,4 @@
       port: 3000,
       open: true,
     },
-  });
+  }));

@@ -2574,6 +2574,43 @@ export function MyContentLayout({ theme, toggleTheme }: MyContentLayoutProps) {
                         />
                       ))}
 
+                      {/* Quizzes/Boards in this folder */}
+                      {sortContent(getQuizzesInFolder(openFolder.id), 'worksheet').map((quiz) => (
+                        <QuizPreviewCard
+                          key={quiz.id}
+                          ref={(el) => registerItemRef(`quiz:${quiz.id}`, el)}
+                          quiz={quiz}
+                          onClick={() => navigate(`/quiz/view/${quiz.id}`)}
+                          onMenuClick={(action) => {
+                            if (action === 'edit') navigate(`/quiz/edit/${quiz.id}`);
+                            if (action === 'duplicate') {
+                              const duplicated = duplicateQuizInStorage(quiz.id);
+                              if (duplicated) {
+                                setQuizzes(getQuizList());
+                                toast.success('Board byl duplikován');
+                              }
+                            }
+                            if (action === 'move') {
+                              setSelectedItems(new Set([`quiz:${quiz.id}`]));
+                              setMoveToFolderOpen(true);
+                            }
+                            if (action === 'delete') {
+                              deleteQuizFromStorage(quiz.id);
+                              setQuizzes(getQuizList());
+                              toast.success('Board byl smazán');
+                            }
+                          }}
+                          onDragStart={(e) => {
+                            e.dataTransfer.setData('documentId', quiz.id);
+                            e.dataTransfer.setData('itemType', 'quiz');
+                            e.dataTransfer.effectAllowed = 'move';
+                          }}
+                          isSelected={selectedItems.has(`quiz:${quiz.id}`)}
+                          onSelect={(e) => handleItemSelect(quiz.id, 'quiz', e)}
+                          showSelection={selectedItems.size > 0}
+                        />
+                      ))}
+
                       {/* Uploaded Files in this folder */}
                       {sortContent(getFilesInFolder(openFolder.id), 'file').map((file) => {
                         const FileIcon = getFileIcon(file.mimeType);
@@ -2909,6 +2946,51 @@ export function MyContentLayout({ theme, toggleTheme }: MyContentLayoutProps) {
                             <div className="w-28 text-right text-sm text-slate-400 hidden sm:block">Pracovní list</div>
                             <div className="w-28 text-right text-sm text-slate-400 hidden md:block">
                               {ws.createdAt ? new Date(ws.createdAt).toLocaleDateString('cs-CZ') : '-'}
+                            </div>
+                            <div className="w-6"></div>
+                          </div>
+                        );
+                      })}
+                      
+                      {/* Quizzes/Boards */}
+                      {sortContent(getQuizzesInFolder(openFolder.id), 'worksheet').map((quiz) => {
+                        const isSelected = selectedItems.has(`quiz:${quiz.id}`);
+                        return (
+                          <div 
+                            key={quiz.id}
+                            ref={(el) => registerItemRef(`quiz:${quiz.id}`, el)}
+                            data-selectable-item
+                            onClick={(e) => {
+                              if (e.ctrlKey || e.metaKey || e.shiftKey || selectedItems.size > 0) {
+                                handleItemSelect(quiz.id, 'quiz', e);
+                              } else {
+                                navigate(`/quiz/view/${quiz.id}`);
+                              }
+                            }}
+                            className={`flex items-center gap-4 px-4 py-3 rounded-xl cursor-pointer group transition-colors ${
+                              isSelected ? 'bg-blue-50' : 'hover:bg-slate-50'
+                            }`}
+                          >
+                            <button
+                              onClick={(e) => { e.stopPropagation(); handleItemSelect(quiz.id, 'quiz', e); }}
+                              className="w-10 h-10 flex items-center justify-center shrink-0"
+                            >
+                              {isSelected ? (
+                                <CheckSquare className="h-5 w-5 text-blue-500" />
+                              ) : (
+                                <div className="w-10 h-10 rounded-xl bg-indigo-100 flex items-center justify-center shadow-sm group-hover:hidden">
+                                  <Play className="h-5 w-5 text-indigo-600" />
+                                </div>
+                              )}
+                              {!isSelected && <Square className="h-5 w-5 text-slate-300 hidden group-hover:block" />}
+                            </button>
+                            <div className="flex-1 min-w-0">
+                              <p className="font-medium text-slate-700 truncate">{quiz.title || 'Board'}</p>
+                              <p className="text-xs text-slate-400 sm:hidden">Board</p>
+                            </div>
+                            <div className="w-28 text-right text-sm text-slate-400 hidden sm:block">Board</div>
+                            <div className="w-28 text-right text-sm text-slate-400 hidden md:block">
+                              {quiz.createdAt ? new Date(quiz.createdAt).toLocaleDateString('cs-CZ') : '-'}
                             </div>
                             <div className="w-6"></div>
                           </div>

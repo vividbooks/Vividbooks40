@@ -84,3 +84,4 @@ GRANT SELECT ON nps_weekly_trend TO anon, authenticated;
 COMMENT ON TABLE nps_responses IS 'Stores NPS survey responses from teachers';
 
 
+
