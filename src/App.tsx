@@ -73,7 +73,7 @@ export default function App() {
   return (
     <ViewModeProvider>
     <ClassroomShareProvider>
-    <Router basename={import.meta.env.PROD ? "/Vividbooks40/" : "/"}>
+    <Router basename={import.meta.env.PROD ? "/Vividbooks40" : ""}>
       {/* Toast notifications */}
       <Toaster position="top-center" richColors />
       
