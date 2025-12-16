@@ -475,7 +475,7 @@ const WorksheetPreviewCard = React.forwardRef<HTMLDivElement, {
 const QuizPreviewCard = React.forwardRef<HTMLDivElement, { 
   quiz: QuizListItem;
   onClick: () => void;
-  onMenuClick: (action: 'edit' | 'duplicate' | 'delete') => void;
+  onMenuClick: (action: 'edit' | 'duplicate' | 'delete' | 'move') => void;
   onDragStart?: (e: React.DragEvent) => void;
   isSelected?: boolean;
   onSelect?: (e: React.MouseEvent) => void;
@@ -609,6 +609,10 @@ const QuizPreviewCard = React.forwardRef<HTMLDivElement, {
             <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onMenuClick('duplicate'); }}>
               <Copy className="h-4 w-4 mr-2" />
               Duplikovat
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onMenuClick('move'); }}>
+              <FolderInput className="h-4 w-4 mr-2" />
+              Přesunout do složky
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem 
@@ -1574,6 +1578,8 @@ export function MyContentLayout({ theme, toggleTheme }: MyContentLayoutProps) {
         const [type, id] = item.split(':');
         if (type === 'worksheet') {
           moveWorksheetToFolder(id, folderId);
+        } else if (type === 'quiz') {
+          moveQuizToFolder(id, folderId);
         } else if (type === 'file') {
           moveFileToFolder(id, folderId);
         } else if (type === 'link') {
@@ -1590,12 +1596,17 @@ export function MyContentLayout({ theme, toggleTheme }: MyContentLayoutProps) {
         }
       });
       setWorksheets(getWorksheetList()); // Refresh list
+      setQuizzes(getQuizList()); // Refresh quizzes list
       clearSelection();
     } else {
       // Move single item
       if (itemType === 'worksheet') {
         moveWorksheetToFolder(itemId, folderId);
         setWorksheets(getWorksheetList()); // Refresh list
+      } else if (itemType === 'quiz') {
+        moveQuizToFolder(itemId, folderId);
+        setQuizzes(getQuizList()); // Refresh list
+        console.log('[handleMoveItemToFolder] Quiz moved to folder:', folderId);
       } else if (itemType === 'file') {
         moveFileToFolder(itemId, folderId);
       } else if (itemType === 'link') {
@@ -1897,6 +1908,9 @@ export function MyContentLayout({ theme, toggleTheme }: MyContentLayoutProps) {
         handleDeleteDocument(id);
       } else if (type === 'worksheet') {
         handleDeleteWorksheet(id);
+      } else if (type === 'quiz') {
+        deleteQuizFromStorage(id);
+        console.log('[handleBulkDelete] Quiz deleted:', id);
       } else if (type === 'file') {
         handleDeleteUploadedFile(id);
       } else if (type === 'link') {
@@ -1909,6 +1923,7 @@ export function MyContentLayout({ theme, toggleTheme }: MyContentLayoutProps) {
         });
       }
     });
+    setQuizzes(getQuizList()); // Refresh quizzes list
     clearSelection();
     toast.success('Položky smazány');
     console.log('[handleBulkDelete] DONE');
@@ -3918,6 +3933,11 @@ export function MyContentLayout({ theme, toggleTheme }: MyContentLayoutProps) {
                                   setQuizzes(getQuizList());
                                   toast.success('Board byl duplikován');
                                 }
+                              }
+                              if (action === 'move') {
+                                // Select this quiz and open move dialog
+                                setSelectedItems(new Set([`quiz:${quiz.id}`]));
+                                setMoveToFolderOpen(true);
                               }
                               if (action === 'delete') {
                                 deleteQuizFromStorage(quiz.id);
