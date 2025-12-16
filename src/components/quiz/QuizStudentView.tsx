@@ -1,0 +1,1081 @@
+/**
+ * Quiz Student View (Shared Quiz)
+ * 
+ * Asynchronous quiz mode - students can access anytime via link
+ * - Persistent student identity
+ * - Auto-reconnect on page reload
+ * - Progress saved to Firebase
+ * - Same design as live session
+ */
+
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useParams } from 'react-router-dom';
+import { ref, onValue, off, update, set, get } from 'firebase/database';
+import { database } from '../../utils/firebase-config';
+import {
+  CheckCircle,
+  HelpCircle,
+  ArrowRight,
+  ArrowLeft,
+  Send,
+  X,
+  XCircle,
+  RefreshCw,
+  WifiOff,
+  AlertCircle,
+  Users,
+  Play,
+  Calculator,
+} from 'lucide-react';
+import { MathInputModal, MathDisplay } from '../math/MathKeyboard';
+import { MathText } from '../math/MathText';
+import { 
+  Quiz, 
+  QuizSlide, 
+  ABCActivitySlide, 
+  OpenActivitySlide, 
+  SlideResponse 
+} from '../../types/quiz';
+
+// ============================================
+// CONSTANTS
+// ============================================
+
+const QUIZ_SHARES_PATH = 'quiz_shares';
+const STUDENT_SHARE_KEY = 'vivid-share-session';
+const STUDENT_IDENTITY_KEY = 'vivid-student-identity';
+
+// ============================================
+// TYPES
+// ============================================
+
+interface ShareData {
+  quizId: string;
+  quizData: Quiz;
+  sessionName: string;
+  shareCode: string;
+  settings: {
+    anonymousAccess: boolean;
+    showSolutionHints: boolean;
+    showActivityResults: boolean;
+    requireAnswerToProgress: boolean;
+    showNotes: boolean;
+  };
+  createdAt: string;
+  createdBy: string;
+}
+
+interface StudentShareData {
+  studentId: string;
+  studentName: string;
+  joinedAt: string;
+  lastActiveAt: string;
+  currentSlide: number;
+  isOnline: boolean;
+  completedAt?: string;
+  responses: Record<string, SlideResponse>;
+  deviceId: string;
+}
+
+interface SavedShareSession {
+  shareId: string;
+  studentId: string;
+  studentName: string;
+  joinedAt: string;
+}
+
+interface StudentIdentity {
+  id: string;
+  name: string;
+  createdAt: string;
+}
+
+// ============================================
+// HELPER FUNCTIONS
+// ============================================
+
+function getDeviceId(): string {
+  let deviceId = localStorage.getItem('vivid-device-id');
+  if (!deviceId) {
+    deviceId = `device_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    localStorage.setItem('vivid-device-id', deviceId);
+  }
+  return deviceId;
+}
+
+function getStudentIdentity(name?: string): StudentIdentity {
+  const saved = localStorage.getItem(STUDENT_IDENTITY_KEY);
+  if (saved) {
+    const identity = JSON.parse(saved) as StudentIdentity;
+    if (name && name !== identity.name) {
+      identity.name = name;
+      localStorage.setItem(STUDENT_IDENTITY_KEY, JSON.stringify(identity));
+    }
+    return identity;
+  }
+  
+  const newIdentity: StudentIdentity = {
+    id: `student_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+    name: name || '',
+    createdAt: new Date().toISOString(),
+  };
+  localStorage.setItem(STUDENT_IDENTITY_KEY, JSON.stringify(newIdentity));
+  return newIdentity;
+}
+
+function getSavedShareSession(shareId: string): SavedShareSession | null {
+  const saved = localStorage.getItem(`${STUDENT_SHARE_KEY}_${shareId}`);
+  return saved ? JSON.parse(saved) : null;
+}
+
+function saveShareSession(shareId: string, session: SavedShareSession): void {
+  localStorage.setItem(`${STUDENT_SHARE_KEY}_${shareId}`, JSON.stringify(session));
+}
+
+function clearShareSession(shareId: string): void {
+  localStorage.removeItem(`${STUDENT_SHARE_KEY}_${shareId}`);
+}
+
+async function retryOperation<T>(
+  operation: () => Promise<T>,
+  maxRetries: number = 3,
+  delayMs: number = 1000
+): Promise<T> {
+  let lastError: Error | null = null;
+  
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error as Error;
+      console.warn(`Operation failed (attempt ${attempt + 1}/${maxRetries}):`, error);
+      if (attempt < maxRetries - 1) {
+        await new Promise(resolve => setTimeout(resolve, delayMs * (attempt + 1)));
+      }
+    }
+  }
+  
+  throw lastError;
+}
+
+// ============================================
+// MAIN COMPONENT
+// ============================================
+
+export function QuizStudentView() {
+  const { shareId } = useParams<{ shareId: string }>();
+  
+  // Connection state
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
+  const [isReconnecting, setIsReconnecting] = useState(false);
+  
+  // Loading state
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  
+  // Session state
+  const [shareData, setShareData] = useState<ShareData | null>(null);
+  const [quiz, setQuiz] = useState<Quiz | null>(null);
+  const [studentId, setStudentId] = useState<string | null>(null);
+  const [studentName, setStudentName] = useState('');
+  const [hasStarted, setHasStarted] = useState(false);
+  const [isCompleted, setIsCompleted] = useState(false);
+  
+  // Quiz progress
+  const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
+  const [prevSlideIndex, setPrevSlideIndex] = useState(0);
+  const [isAnimating, setIsAnimating] = useState(false);
+  const [responses, setResponses] = useState<Record<string, SlideResponse>>({});
+  const [selectedOption, setSelectedOption] = useState<string | null>(null);
+  const [textAnswer, setTextAnswer] = useState('');
+  const [showMathKeyboard, setShowMathKeyboard] = useState(false);
+  
+  // Refs
+  const heartbeatInterval = useRef<NodeJS.Timeout | null>(null);
+
+  // ============================================
+  // NETWORK STATUS
+  // ============================================
+  
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOnline(true);
+      setConnectionError(null);
+    };
+    
+    const handleOffline = () => {
+      setIsOnline(false);
+      setConnectionError('Ztráta připojení k internetu');
+    };
+    
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  // ============================================
+  // LOAD SHARE DATA & AUTO-RECONNECT
+  // ============================================
+  
+  useEffect(() => {
+    if (!shareId) {
+      setLoading(false);
+      setError('Chybí ID sdílení');
+      return;
+    }
+    
+    // Check for saved session
+    const savedSession = getSavedShareSession(shareId);
+    const identity = getStudentIdentity();
+    
+    // Pre-fill name from identity
+    if (identity.name && !studentName) {
+      setStudentName(identity.name);
+    }
+    
+    // Load share data from Firebase
+    const loadShareData = async () => {
+      try {
+        const shareRef = ref(database, `${QUIZ_SHARES_PATH}/${shareId}`);
+        const snapshot = await get(shareRef);
+        
+        if (!snapshot.exists()) {
+          setError('Kvíz nenalezen nebo odkaz vypršel');
+          setLoading(false);
+          return;
+        }
+        
+        const data = snapshot.val() as ShareData;
+        setShareData(data);
+        setQuiz(data.quizData);
+        
+        // Try to reconnect if we have saved session
+        if (savedSession) {
+          console.log('Found saved share session, attempting reconnect:', savedSession);
+          await attemptReconnect(data, savedSession);
+        } else if (data.settings.anonymousAccess) {
+          // Auto-start for anonymous access
+          const newStudentId = identity.id;
+          setStudentId(newStudentId);
+          setStudentName('Anonymní');
+          setHasStarted(true);
+          
+          // Register anonymous student
+          await registerStudent(newStudentId, 'Anonymní');
+        }
+        
+        setLoading(false);
+      } catch (err) {
+        console.error('Failed to load share data:', err);
+        setError('Nepodařilo se načíst kvíz');
+        setLoading(false);
+      }
+    };
+    
+    loadShareData();
+    
+    // Listen for real-time updates
+    const shareRef = ref(database, `${QUIZ_SHARES_PATH}/${shareId}`);
+    const unsubscribe = onValue(shareRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        setShareData(data as ShareData);
+        if (data.quizData) {
+          setQuiz(data.quizData);
+        }
+      }
+    });
+    
+    return () => off(shareRef);
+  }, [shareId]);
+
+  // Attempt reconnect to saved session
+  const attemptReconnect = async (shareData: ShareData, savedSession: SavedShareSession) => {
+    setIsReconnecting(true);
+    
+    try {
+      const studentRef = ref(database, `${QUIZ_SHARES_PATH}/${shareId}/responses/${savedSession.studentId}`);
+      const snapshot = await get(studentRef);
+      
+      if (snapshot.exists()) {
+        const studentData = snapshot.val() as StudentShareData;
+        
+        // Restore state
+        setStudentId(savedSession.studentId);
+        setStudentName(savedSession.studentName);
+        setResponses(studentData.responses || {});
+        setCurrentSlideIndex(studentData.currentSlide || 0);
+        setHasStarted(true);
+        
+        // Check if already completed
+        if (studentData.completedAt) {
+          setIsCompleted(true);
+        }
+        
+        // Update online status
+        await update(studentRef, {
+          isOnline: true,
+          lastActiveAt: new Date().toISOString(),
+          deviceId: getDeviceId(),
+        });
+        
+        console.log('Successfully reconnected to share session');
+      } else {
+        // Student record doesn't exist, clear saved session
+        clearShareSession(shareId!);
+      }
+    } catch (error) {
+      console.error('Reconnect failed:', error);
+      clearShareSession(shareId!);
+    } finally {
+      setIsReconnecting(false);
+    }
+  };
+
+  // Register new student
+  const registerStudent = async (newStudentId: string, name: string) => {
+    if (!shareId) return;
+    
+    const studentData: StudentShareData = {
+      studentId: newStudentId,
+      studentName: name,
+      joinedAt: new Date().toISOString(),
+      lastActiveAt: new Date().toISOString(),
+      currentSlide: 0,
+      isOnline: true,
+      responses: {},
+      deviceId: getDeviceId(),
+    };
+    
+    try {
+      await retryOperation(() =>
+        set(ref(database, `${QUIZ_SHARES_PATH}/${shareId}/responses/${newStudentId}`), studentData)
+      );
+      
+      // Save to localStorage
+      saveShareSession(shareId, {
+        shareId,
+        studentId: newStudentId,
+        studentName: name,
+        joinedAt: studentData.joinedAt,
+      });
+    } catch (error) {
+      console.error('Failed to register student:', error);
+      setConnectionError('Nepodařilo se zaregistrovat');
+    }
+  };
+
+  // ============================================
+  // HEARTBEAT
+  // ============================================
+  
+  useEffect(() => {
+    if (!shareId || !studentId || !hasStarted) return;
+    
+    const updateHeartbeat = async () => {
+      try {
+        await update(ref(database, `${QUIZ_SHARES_PATH}/${shareId}/responses/${studentId}`), {
+          lastActiveAt: new Date().toISOString(),
+          isOnline: true,
+          currentSlide: currentSlideIndex,
+        });
+      } catch (error) {
+        console.warn('Heartbeat failed:', error);
+      }
+    };
+    
+    updateHeartbeat();
+    heartbeatInterval.current = setInterval(updateHeartbeat, 30000);
+    
+    return () => {
+      if (heartbeatInterval.current) {
+        clearInterval(heartbeatInterval.current);
+      }
+    };
+  }, [shareId, studentId, hasStarted, currentSlideIndex]);
+
+  // ============================================
+  // ONLINE STATUS
+  // ============================================
+  
+  useEffect(() => {
+    if (!shareId || !studentId) return;
+    
+    const handleBeforeUnload = () => {
+      update(ref(database, `${QUIZ_SHARES_PATH}/${shareId}/responses/${studentId}`), { 
+        isOnline: false 
+      });
+    };
+    
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      update(ref(database, `${QUIZ_SHARES_PATH}/${shareId}/responses/${studentId}`), { 
+        isOnline: false 
+      });
+    };
+  }, [shareId, studentId]);
+
+  // ============================================
+  // START SESSION
+  // ============================================
+  
+  const startSession = async () => {
+    if (!studentName.trim() || !shareId) return;
+    
+    const identity = getStudentIdentity(studentName);
+    
+    // Check if student with same name already exists
+    try {
+      const responsesRef = ref(database, `${QUIZ_SHARES_PATH}/${shareId}/responses`);
+      const snapshot = await get(responsesRef);
+      
+      let existingStudentId: string | null = null;
+      
+      if (snapshot.exists()) {
+        const responses = snapshot.val();
+        const existing = Object.entries(responses).find(
+          ([_, data]: [string, any]) => data.studentName?.toLowerCase() === studentName.toLowerCase()
+        );
+        if (existing) {
+          existingStudentId = existing[0];
+          console.log('Found existing student by name:', existingStudentId);
+        }
+      }
+      
+      const finalStudentId = existingStudentId || identity.id;
+      
+      if (existingStudentId) {
+        // Reconnect to existing record
+        const studentData = snapshot.val()[existingStudentId] as StudentShareData;
+        setStudentId(finalStudentId);
+        setResponses(studentData.responses || {});
+        setCurrentSlideIndex(studentData.currentSlide || 0);
+        
+        if (studentData.completedAt) {
+          setIsCompleted(true);
+        }
+        
+        await update(ref(database, `${QUIZ_SHARES_PATH}/${shareId}/responses/${finalStudentId}`), {
+          isOnline: true,
+          lastActiveAt: new Date().toISOString(),
+          deviceId: getDeviceId(),
+        });
+      } else {
+        // Create new record
+        setStudentId(finalStudentId);
+        await registerStudent(finalStudentId, studentName);
+      }
+      
+      // Save session
+      saveShareSession(shareId, {
+        shareId,
+        studentId: finalStudentId,
+        studentName,
+        joinedAt: new Date().toISOString(),
+      });
+      
+      setHasStarted(true);
+    } catch (error) {
+      console.error('Failed to start session:', error);
+      setConnectionError('Nepodařilo se připojit');
+    }
+  };
+
+  // ============================================
+  // ANSWER HANDLING
+  // ============================================
+  
+  const submitAnswer = useCallback(async () => {
+    if (!quiz || !shareId || !studentId) return;
+    
+    const currentSlide = quiz.slides[currentSlideIndex];
+    if (!currentSlide || currentSlide.type !== 'activity') return;
+    
+    // Check if already answered
+    if (responses[currentSlide.id]) return;
+    
+    let isCorrect = false;
+    let answer: string = '';
+    
+    if ((currentSlide as any).activityType === 'abc') {
+      const abcSlide = currentSlide as ABCActivitySlide;
+      const correctOption = abcSlide.options.find(o => o.isCorrect);
+      isCorrect = selectedOption === correctOption?.id;
+      answer = selectedOption || '';
+    } else if ((currentSlide as any).activityType === 'open') {
+      const openSlide = currentSlide as OpenActivitySlide;
+      const normalizedAnswer = openSlide.caseSensitive ? textAnswer : textAnswer.toLowerCase();
+      isCorrect = openSlide.correctAnswers.some(correct => 
+        (openSlide.caseSensitive ? correct : correct.toLowerCase()) === normalizedAnswer
+      );
+      answer = textAnswer;
+    }
+    
+    const response: SlideResponse = {
+      slideId: currentSlide.id,
+      activityType: (currentSlide as any).activityType,
+      answer,
+      isCorrect,
+      points: isCorrect ? ((currentSlide as any).points || 1) : 0,
+      answeredAt: new Date().toISOString(),
+      timeSpent: 0,
+    };
+    
+    const newResponses = { ...responses, [currentSlide.id]: response };
+    setResponses(newResponses);
+    
+    // Save to Firebase
+    try {
+      await retryOperation(() =>
+        update(ref(database, `${QUIZ_SHARES_PATH}/${shareId}/responses/${studentId}`), {
+          responses: newResponses,
+          currentSlide: currentSlideIndex,
+          lastActiveAt: new Date().toISOString(),
+        })
+      );
+    } catch (error) {
+      console.error('Failed to save answer:', error);
+      setConnectionError('Odpověď se možná neuložila');
+    }
+  }, [quiz, shareId, studentId, currentSlideIndex, responses, selectedOption, textAnswer]);
+
+  // ============================================
+  // NAVIGATION
+  // ============================================
+  
+  const goToPrevSlide = () => {
+    if (currentSlideIndex > 0 && !isAnimating) {
+      setIsAnimating(true);
+      setPrevSlideIndex(currentSlideIndex);
+      setCurrentSlideIndex(prev => prev - 1);
+      setSelectedOption(null);
+      setTextAnswer('');
+      setTimeout(() => setIsAnimating(false), 450);
+    }
+  };
+  
+  const goToNextSlide = async () => {
+    if (!quiz || !shareId || !studentId || isAnimating) return;
+    
+    const currentSlide = quiz.slides[currentSlideIndex];
+    
+    // Check if answer required
+    if (shareData?.settings.requireAnswerToProgress && currentSlide.type === 'activity') {
+      if (!responses[currentSlide.id]) {
+        return;
+      }
+    }
+    
+    if (currentSlideIndex < quiz.slides.length - 1) {
+      setIsAnimating(true);
+      setPrevSlideIndex(currentSlideIndex);
+      setCurrentSlideIndex(prev => prev + 1);
+      setSelectedOption(null);
+      setTextAnswer('');
+      setTimeout(() => setIsAnimating(false), 450);
+      
+      // Update progress
+      await update(ref(database, `${QUIZ_SHARES_PATH}/${shareId}/responses/${studentId}`), {
+        currentSlide: currentSlideIndex + 1,
+        lastActiveAt: new Date().toISOString(),
+      });
+    } else {
+      // Complete the quiz
+      await update(ref(database, `${QUIZ_SHARES_PATH}/${shareId}/responses/${studentId}`), {
+        completedAt: new Date().toISOString(),
+        isOnline: false,
+      });
+      setIsCompleted(true);
+    }
+  };
+
+  // ============================================
+  // COMPUTED VALUES
+  // ============================================
+  
+  const currentSlide = quiz?.slides[currentSlideIndex];
+  const currentResponse = currentSlide ? responses[currentSlide.id] : undefined;
+  const hasAnswered = !!currentResponse;
+  const correctCount = Object.values(responses).filter(r => r.isCorrect).length;
+  const wrongCount = Object.values(responses).filter(r => !r.isCorrect).length;
+  const totalQuestions = quiz?.slides.filter(s => s.type === 'activity').length || 0;
+  
+  const canProceed = () => {
+    if (!shareData?.settings.requireAnswerToProgress) return true;
+    if (!currentSlide || currentSlide.type !== 'activity') return true;
+    return !!responses[currentSlide.id];
+  };
+
+  // ============================================
+  // RENDER: CONNECTION BANNER
+  // ============================================
+  
+  const renderConnectionBanner = () => {
+    if (!connectionError && isOnline) return null;
+    
+    return (
+      <div className="fixed top-0 left-0 right-0 z-50 bg-amber-500 text-white px-4 py-2 flex items-center justify-center gap-2">
+        {!isOnline ? (
+          <>
+            <WifiOff className="w-4 h-4" />
+            <span className="text-sm font-medium">Offline - čekám na připojení...</span>
+          </>
+        ) : (
+          <>
+            <AlertCircle className="w-4 h-4" />
+            <span className="text-sm font-medium">{connectionError}</span>
+          </>
+        )}
+      </div>
+    );
+  };
+
+  // ============================================
+  // RENDER: PROGRESS BAR
+  // ============================================
+  
+  const renderProgressBar = () => {
+    if (!quiz) return null;
+    
+    return (
+      <>
+        {currentSlideIndex >= 0 && (
+          <div
+            className="rounded-full"
+            style={{ 
+              height: '8px',
+              backgroundColor: '#475569',
+              flex: currentSlideIndex + 1
+            }}
+          />
+        )}
+        {quiz.slides.slice(currentSlideIndex + 1).map((_, idx) => (
+          <div
+            key={idx}
+            className="flex-1 rounded-full"
+            style={{ 
+              height: '8px',
+              backgroundColor: '#CBD5E1'
+            }}
+          />
+        ))}
+      </>
+    );
+  };
+
+  // ============================================
+  // RENDER: LOADING
+  // ============================================
+  
+  if (loading || isReconnecting) {
+    return (
+      <div className="min-h-screen bg-slate-100 flex items-center justify-center">
+        <div className="text-center">
+          <RefreshCw className="w-12 h-12 animate-spin text-indigo-600 mx-auto mb-4" />
+          <p className="text-slate-600 font-medium">
+            {isReconnecting ? 'Obnovuji připojení...' : 'Načítám kvíz...'}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // ============================================
+  // RENDER: ERROR
+  // ============================================
+  
+  if (error || !quiz || !shareData) {
+    return (
+      <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4">
+        <div className="text-center">
+          <HelpCircle className="w-16 h-16 text-slate-300 mx-auto mb-4" />
+          <h1 className="text-xl font-bold text-slate-600 mb-2">Kvíz nenalezen</h1>
+          <p className="text-slate-500">{error || 'Tento odkaz je neplatný nebo vypršel.'}</p>
+        </div>
+      </div>
+    );
+  }
+
+  // ============================================
+  // RENDER: START SCREEN
+  // ============================================
+  
+  if (!hasStarted) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-500 flex items-center justify-center p-4">
+        {renderConnectionBanner()}
+        <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl">
+          <div className="text-center mb-8">
+            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center mx-auto mb-4">
+              <Users className="w-8 h-8 text-white" />
+            </div>
+            <h1 className="text-2xl font-bold text-slate-800">{quiz.title}</h1>
+            <p className="text-slate-500 mt-1">{shareData.sessionName}</p>
+          </div>
+          
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-2">
+                Tvé jméno
+              </label>
+              <input
+                type="text"
+                value={studentName}
+                onChange={(e) => setStudentName(e.target.value)}
+                placeholder="Jan Novák"
+                className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none text-lg"
+              />
+            </div>
+            
+            <button
+              onClick={startSession}
+              disabled={!studentName.trim() || !isOnline}
+              className="w-full py-4 rounded-2xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold text-lg transition-all flex items-center justify-center gap-2 shadow-lg shadow-indigo-500/25"
+            >
+              {!isOnline ? (
+                <>
+                  <WifiOff className="w-5 h-5" />
+                  Čekám na připojení
+                </>
+              ) : (
+                <>
+                  <Play className="w-5 h-5" />
+                  Začít kvíz
+                </>
+              )}
+            </button>
+            
+            <p className="text-center text-sm text-slate-400">
+              {quiz.slides.filter(s => s.type === 'activity').length} otázek
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ============================================
+  // RENDER: COMPLETED
+  // ============================================
+  
+  if (isCompleted) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center p-4">
+        <div className="bg-white rounded-3xl p-8 max-w-md w-full text-center shadow-2xl">
+          <div className="w-20 h-20 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-6">
+            <CheckCircle className="w-10 h-10 text-green-500" />
+          </div>
+          
+          <h2 className="text-2xl font-bold text-slate-800 mb-2">
+            Kvíz dokončen!
+          </h2>
+          
+          {shareData.settings.showActivityResults && totalQuestions > 0 && (
+            <div className="bg-slate-50 rounded-2xl p-6 my-6">
+              <div className="text-5xl font-bold text-green-600 mb-2">
+                {totalQuestions > 0 ? Math.round((correctCount / totalQuestions) * 100) : 0}%
+              </div>
+              <p className="text-slate-600">
+                {correctCount} z {totalQuestions} správně
+              </p>
+            </div>
+          )}
+          
+          <p className="text-slate-500">Děkujeme za účast, {studentName}!</p>
+        </div>
+      </div>
+    );
+  }
+
+  // ============================================
+  // RENDER: QUIZ VIEW
+  // ============================================
+  
+  if (!currentSlide) {
+    return (
+      <div className="min-h-screen bg-slate-100 flex items-center justify-center">
+        <p className="text-slate-500">Čekám na otázku...</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col h-screen" style={{ backgroundColor: '#F0F1F8' }}>
+      {renderConnectionBanner()}
+      
+      {/* Desktop: Top bar */}
+      <div className="hidden lg:flex items-center justify-between px-6 py-4" style={{ backgroundColor: '#F0F1F8' }}>
+        {/* Left spacer */}
+        <div className="w-24" />
+        
+        {/* Center: Progress bar */}
+        <div className="flex-1 max-w-xl flex items-center gap-1.5">
+          {renderProgressBar()}
+        </div>
+        
+        {/* Right: Stats */}
+        <div className="w-24 flex items-center justify-end gap-4">
+          <div className="flex items-center gap-1.5 text-emerald-600">
+            <CheckCircle className="w-5 h-5" />
+            <span className="font-bold">{correctCount}</span>
+          </div>
+          <div className="flex items-center gap-1.5 text-red-500">
+            <XCircle className="w-5 h-5" />
+            <span className="font-bold">{wrongCount}</span>
+          </div>
+        </div>
+      </div>
+      
+      {/* Mobile: Top navigation */}
+      <div className="flex lg:hidden items-center gap-3 px-4 py-4" style={{ backgroundColor: '#F0F1F8' }}>
+        <button
+          onClick={goToPrevSlide}
+          disabled={currentSlideIndex === 0}
+          className={`w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 ${currentSlideIndex === 0 ? 'opacity-30 cursor-not-allowed' : ''} bg-[#CBD5E1] text-slate-600`}
+        >
+          <ArrowLeft className="w-5 h-5" />
+        </button>
+        
+        <div className="flex-1 flex items-center gap-1.5">
+          {renderProgressBar()}
+        </div>
+        
+        <button
+          onClick={goToNextSlide}
+          disabled={!canProceed()}
+          className={`w-12 h-12 rounded-full flex items-center justify-center text-white flex-shrink-0 ${!canProceed() ? 'opacity-30 cursor-not-allowed' : ''}`}
+          style={{ backgroundColor: '#7C3AED' }}
+        >
+          <ArrowRight className="w-5 h-5" />
+        </button>
+      </div>
+      
+      {/* Main content */}
+      <div className="flex-1 flex flex-col pb-4 lg:pt-4 lg:pb-4" style={{ backgroundColor: '#F0F1F8' }}>
+        <div className="flex-1 flex items-stretch">
+          {/* Desktop: Left arrow */}
+          <div className="hidden lg:flex w-16 flex-shrink-0 items-center justify-center">
+            <button
+              onClick={goToPrevSlide}
+              disabled={currentSlideIndex === 0}
+              className={`w-12 h-12 rounded-full bg-[#CBD5E1] flex items-center justify-center text-slate-600 transition-all duration-300 ease-out ${currentSlideIndex === 0 ? 'opacity-30 cursor-not-allowed' : 'hover:h-24'}`}
+            >
+              <ArrowLeft className="w-5 h-5" />
+            </button>
+          </div>
+          
+          {/* Slide card */}
+          <div className="flex-1 flex items-stretch px-4">
+            <div 
+              className={`
+                w-full max-w-5xl mx-auto rounded-3xl shadow-2xl overflow-hidden flex flex-col bg-white
+                ${currentSlideIndex > prevSlideIndex && isAnimating ? 'animate-slide-in' : ''}
+                ${currentSlideIndex < prevSlideIndex && isAnimating ? 'animate-slide-in-left' : ''}
+              `}
+              key={currentSlideIndex}
+            >
+              {/* Question */}
+              <div className="flex-1 flex items-center justify-center p-8">
+                <h1 className="text-4xl md:text-5xl font-bold text-[#1e3a5f] text-center leading-tight">
+                  <MathText>{(currentSlide as any).question || (currentSlide as any).title || 'Otázka'}</MathText>
+                </h1>
+              </div>
+              
+              {/* ABC Options */}
+              {currentSlide.type === 'activity' && (currentSlide as any).activityType === 'abc' && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4 p-4 md:p-6 max-w-4xl mx-auto w-full">
+                  {(currentSlide as ABCActivitySlide).options.map((option) => {
+                    const isSelected = selectedOption === option.id;
+                    const showResult = hasAnswered && shareData.settings.showActivityResults;
+                    const isCorrect = showResult && option.isCorrect;
+                    const wasSelected = currentResponse?.answer === option.id;
+                    const isWrong = showResult && wasSelected && !option.isCorrect;
+                    
+                    return (
+                      <button
+                        key={option.id}
+                        onClick={() => !hasAnswered && setSelectedOption(option.id)}
+                        disabled={hasAnswered}
+                        className={`
+                          relative p-3 lg:p-4 rounded-2xl text-left transition-all border-2 flex items-center gap-3 lg:gap-4
+                          ${isCorrect ? 'bg-green-50 border-green-500' : ''}
+                          ${isWrong ? 'bg-red-50 border-red-500' : ''}
+                          ${!hasAnswered && isSelected ? 'border-indigo-500 bg-indigo-50' : ''}
+                          ${!hasAnswered && !isSelected ? 'bg-white border-slate-100 hover:border-indigo-200 hover:shadow-md' : ''}
+                          ${showResult && !isCorrect && !isWrong ? 'bg-white border-slate-100 opacity-50' : ''}
+                        `}
+                      >
+                        <span 
+                          className="w-10 h-10 lg:w-12 lg:h-12 rounded-xl flex items-center justify-center font-bold text-base lg:text-lg flex-shrink-0 transition-colors"
+                          style={{
+                            backgroundColor: isCorrect ? '#bbf7d0' 
+                              : isWrong ? '#fecaca'
+                              : !hasAnswered && isSelected ? '#c7d2fe' 
+                              : '#E2E8F0',
+                            color: isCorrect ? '#166534' 
+                              : isWrong ? '#991b1b'
+                              : !hasAnswered && isSelected ? '#3730a3' 
+                              : '#475569',
+                          }}
+                        >
+                          {option.label || option.id?.toUpperCase() || '?'}
+                        </span>
+                        <span className="text-lg lg:text-xl font-medium text-slate-700 flex-1">
+                          <MathText>{option.content || ''}</MathText>
+                        </span>
+                        
+                        {isCorrect && <CheckCircle className="w-6 h-6 text-green-600" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+              
+              {/* Open question */}
+              {currentSlide.type === 'activity' && (currentSlide as any).activityType === 'open' && (
+                <div className="w-full max-w-2xl mx-auto px-6">
+                  <textarea
+                    value={hasAnswered ? (currentResponse?.answer as string) : textAnswer}
+                    onChange={(e) => setTextAnswer(e.target.value)}
+                    disabled={hasAnswered}
+                    placeholder="Napište svou odpověď..."
+                    className={`
+                      w-full h-36 p-5 rounded-2xl border-2 text-lg resize-none shadow-sm
+                      ${hasAnswered && shareData.settings.showActivityResults
+                        ? currentResponse?.isCorrect 
+                          ? 'bg-green-50 border-green-500' 
+                          : 'bg-red-50 border-red-500'
+                        : 'border-slate-200 focus:border-indigo-400 focus:ring-0'
+                      }
+                    `}
+                  />
+                  
+                  {/* Math preview */}
+                  {textAnswer.includes('$') && !hasAnswered && (
+                    <div className="mt-3 p-3 bg-slate-50 rounded-xl">
+                      <span className="text-xs text-slate-400 block mb-1">Náhled:</span>
+                      <div className="text-lg text-slate-700">
+                        {textAnswer.split(/(\$[^$]+\$)/g).map((part, i) => {
+                          if (part.startsWith('$') && part.endsWith('$')) {
+                            return <MathDisplay key={i} math={part.slice(1, -1)} />;
+                          }
+                          return <span key={i}>{part}</span>;
+                        })}
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Math keyboard button */}
+                  {!hasAnswered && (
+                    <button
+                      onClick={() => setShowMathKeyboard(true)}
+                      className="mt-3 flex items-center gap-2 px-4 py-2 rounded-xl bg-violet-100 text-violet-700 hover:bg-violet-200 transition-colors text-sm font-medium mx-auto"
+                    >
+                      <Calculator className="w-4 h-4" />
+                      Vložit matematiku
+                    </button>
+                  )}
+                  
+                  {hasAnswered && shareData.settings.showActivityResults && (
+                    <div className="mt-4 flex items-center justify-center gap-2">
+                      {currentResponse?.isCorrect ? (
+                        <>
+                          <CheckCircle className="w-6 h-6 text-green-500" />
+                          <span className="text-green-600 font-medium">Správně!</span>
+                        </>
+                      ) : (
+                        <>
+                          <XCircle className="w-6 h-6 text-red-500" />
+                          <span className="text-red-600">
+                            Správně: {(currentSlide as OpenActivitySlide).correctAnswers?.[0] || ''}
+                          </span>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+              
+              {/* Info slide */}
+              {currentSlide.type === 'info' && (
+                <div className="flex-1 flex items-center justify-center p-8">
+                  {(currentSlide as any).content && (
+                    <div 
+                      className="prose prose-lg max-w-3xl text-center text-slate-600"
+                      dangerouslySetInnerHTML={{ __html: (currentSlide as any).content }}
+                    />
+                  )}
+                </div>
+              )}
+              
+              {/* Submit button */}
+              <div className="flex justify-center py-10">
+                {!hasAnswered && currentSlide.type === 'activity' ? (
+                  <button
+                    onClick={submitAnswer}
+                    disabled={
+                      ((currentSlide as any).activityType === 'abc' && !selectedOption) ||
+                      ((currentSlide as any).activityType === 'open' && !textAnswer.trim())
+                    }
+                    className="flex items-center gap-2 px-8 py-3 rounded-xl bg-indigo-600 text-white font-semibold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-indigo-700 transition-colors"
+                  >
+                    <Send className="w-5 h-5" />
+                    Odpovědět
+                  </button>
+                ) : currentSlideIndex < quiz.slides.length - 1 ? (
+                  <button
+                    onClick={goToNextSlide}
+                    className="flex items-center gap-2 px-8 py-3 rounded-xl bg-indigo-600 text-white font-semibold hover:bg-indigo-700 transition-colors"
+                  >
+                    Další otázka
+                    <ArrowRight className="w-5 h-5" />
+                  </button>
+                ) : (
+                  <button
+                    onClick={goToNextSlide}
+                    className="flex items-center gap-2 px-8 py-3 rounded-xl bg-green-600 text-white font-semibold hover:bg-green-700 transition-colors"
+                  >
+                    <CheckCircle className="w-5 h-5" />
+                    Dokončit kvíz
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+          
+          {/* Desktop: Right arrow */}
+          <div className="hidden lg:flex w-16 flex-shrink-0 items-center justify-center">
+            <button
+              onClick={goToNextSlide}
+              disabled={!canProceed()}
+              className={`w-12 h-12 rounded-full flex items-center justify-center text-white transition-all duration-300 ease-out ${!canProceed() ? 'opacity-30 cursor-not-allowed' : 'hover:h-24'}`}
+              style={{ backgroundColor: '#7C3AED' }}
+            >
+              <ArrowRight className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+      </div>
+      
+      {/* Math Input Modal */}
+      <MathInputModal
+        isOpen={showMathKeyboard}
+        onClose={() => setShowMathKeyboard(false)}
+        onSubmit={(latex) => {
+          setTextAnswer(prev => prev + `$${latex}$`);
+          setShowMathKeyboard(false);
+        }}
+        title="Vložit matematiku"
+      />
+    </div>
+  );
+}
+
+export default QuizStudentView;

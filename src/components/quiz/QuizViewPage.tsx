@@ -1,0 +1,1266 @@
+/**
+ * Quiz View Page
+ * 
+ * Display quiz/board with slide navigation and action panel
+ * Based on Vividboard design from screenshot
+ */
+
+import React, { useState, useEffect, useCallback } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import {
+  X,
+  Menu,
+  ChevronLeft,
+  ChevronRight,
+  Users,
+  Edit3,
+  BarChart2,
+  Printer,
+  Share2,
+  ExternalLink,
+  HelpCircle,
+  Lightbulb,
+  CheckCircle,
+  Play,
+  ArrowRight,
+  ArrowLeft,
+  SkipForward,
+  Upload,
+  Sparkles,
+  ChevronDown,
+  PanelLeft,
+  PanelLeftClose,
+  Copy,
+  QrCode,
+  StopCircle,
+  RefreshCw,
+  Lock,
+  Unlock,
+  AlertTriangle,
+} from 'lucide-react';
+import { Quiz, QuizSlide, ABCActivitySlide, OpenActivitySlide, ExampleActivitySlide, InfoSlide, LiveQuizSession, SlideResponse } from '../../types/quiz';
+import { getQuiz } from '../../utils/quiz-storage';
+import * as storage from '../../utils/profile-storage';
+import { database } from '../../utils/firebase-config';
+import { ref, set, onValue, off, update } from 'firebase/database';
+import { boardToWorksheet, getConversionSummary } from '../../utils/content-converter';
+import { saveWorksheet } from '../../utils/worksheet-storage';
+import { MathText } from '../math/MathText';
+
+// Firebase paths
+const QUIZ_SESSIONS_PATH = 'quiz_sessions';
+
+function getSessionPath(sessionId: string) {
+  return `${QUIZ_SESSIONS_PATH}/${sessionId}`;
+}
+
+function generateSessionCode(): string {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let code = '';
+  for (let i = 0; i < 6; i++) {
+    code += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return code;
+}
+
+// ============================================
+// SLIDE RENDERERS
+// ============================================
+
+interface SlideViewProps {
+  slide: QuizSlide;
+  showHint: boolean;
+  showSolution: boolean;
+  selectedAnswer?: string;
+  onSelectAnswer?: (answerId: string) => void;
+}
+
+function ABCSlideView({ slide, showHint, showSolution, selectedAnswer, onSelectAnswer }: SlideViewProps & { slide: ABCActivitySlide }) {
+  
+  return (
+    <div className="flex flex-col h-full">
+      {/* Question */}
+      <div className="flex-1 flex items-center justify-center p-8">
+        <h1 className="text-4xl md:text-5xl font-bold text-[#1e3a5f] text-center leading-tight">
+          <MathText>{slide.question || 'Otázka...'}</MathText>
+        </h1>
+      </div>
+      
+      {/* Options */}
+      <div className="grid grid-cols-2 gap-4 p-6 max-w-4xl mx-auto w-full">
+        {slide.options.map((option, index) => {
+          const isSelected = selectedAnswer === option.id;
+          const isCorrect = showSolution && option.isCorrect;
+          const isWrong = showSolution && isSelected && !option.isCorrect;
+          
+          return (
+            <button
+              key={option.id}
+              onClick={() => onSelectAnswer?.(option.id)}
+              disabled={showSolution}
+              className={`
+                relative p-4 rounded-2xl text-left transition-all border-2 flex items-center gap-4
+                ${isCorrect ? 'bg-green-50 border-green-500' : ''}
+                ${isWrong ? 'bg-red-50 border-red-500' : ''}
+                ${!showSolution && isSelected ? 'border-indigo-500 bg-indigo-50' : ''}
+                ${!showSolution && !isSelected ? 'bg-white border-slate-100 hover:border-indigo-200 hover:shadow-md' : ''}
+                ${!isCorrect && !isWrong && !isSelected && showSolution ? 'bg-white border-slate-100 opacity-50' : ''}
+              `}
+            >
+              <span 
+                style={{
+                  width: '48px',
+                  height: '48px',
+                  borderRadius: '12px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontWeight: 'bold',
+                  fontSize: '18px',
+                  flexShrink: 0,
+                  transition: 'all 0.2s',
+                  backgroundColor: isCorrect ? '#bbf7d0' : isWrong ? '#fecaca' : (!showSolution && isSelected) ? '#c7d2fe' : '#E2E8F0',
+                  color: isCorrect ? '#166534' : isWrong ? '#991b1b' : (!showSolution && isSelected) ? '#3730a3' : '#475569',
+                }}
+              >
+                {option.label || option.id?.toUpperCase() || '?'}
+              </span>
+              <span className="text-xl font-medium text-slate-700 flex-1">
+                <MathText>{option.content || ''}</MathText>
+              </span>
+              
+              {isCorrect && (
+                <CheckCircle className="w-6 h-6 text-green-600" />
+              )}
+            </button>
+          );
+        })}
+      </div>
+      
+    </div>
+  );
+}
+
+function OpenSlideView({ slide }: { slide: OpenActivitySlide }) {
+  return (
+    <div className="flex flex-col h-full items-center justify-center p-8">
+      <h1 className="text-4xl md:text-5xl font-bold text-[#1e3a5f] text-center leading-tight mb-8">
+        {slide.question || 'Otevřená otázka...'}
+      </h1>
+      <div className="w-full max-w-2xl">
+        <textarea 
+          className="w-full h-40 p-4 rounded-xl border-2 border-slate-200 focus:border-indigo-400 focus:ring-0 text-lg resize-none"
+          placeholder="Napište svou odpověď..."
+        />
+      </div>
+    </div>
+  );
+}
+
+function ExampleSlideView({ slide }: { slide: ExampleActivitySlide }) {
+  const [currentStep, setCurrentStep] = useState(0);
+  
+  return (
+    <div className="flex flex-col h-full p-8">
+      <h1 className="text-3xl font-bold text-[#1e3a5f] mb-6">
+        {slide.title || 'Příklad'}
+      </h1>
+      
+      <div className="bg-white rounded-xl p-6 shadow-sm mb-6">
+        <h2 className="text-lg font-medium text-slate-600 mb-2">Zadání</h2>
+        <p className="text-xl text-slate-800">{slide.problem}</p>
+      </div>
+      
+      {slide.steps.length > 0 && (
+        <div className="flex-1">
+          <div className="flex items-center gap-4 mb-4">
+            <span className="text-sm font-medium text-slate-500">
+              Krok {currentStep + 1} z {slide.steps.length}
+            </span>
+            <div className="flex-1 h-2 bg-slate-200 rounded-full overflow-hidden">
+              <div 
+                className="h-full bg-indigo-500 transition-all"
+                style={{ width: `${((currentStep + 1) / slide.steps.length) * 100}%` }}
+              />
+            </div>
+          </div>
+          
+          <div className="bg-indigo-50 rounded-xl p-6 min-h-[200px]">
+            <p className="text-lg text-slate-800">
+              {slide.steps[currentStep]?.content || ''}
+            </p>
+          </div>
+          
+          <div className="flex justify-between mt-4">
+            <button
+              onClick={() => setCurrentStep(Math.max(0, currentStep - 1))}
+              disabled={currentStep === 0}
+              className="px-4 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 disabled:opacity-50"
+            >
+              Předchozí krok
+            </button>
+            <button
+              onClick={() => setCurrentStep(Math.min(slide.steps.length - 1, currentStep + 1))}
+              disabled={currentStep === slide.steps.length - 1}
+              className="px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
+            >
+              Další krok
+            </button>
+          </div>
+        </div>
+      )}
+      
+      {slide.finalAnswer && (
+        <div className="bg-emerald-50 rounded-xl p-6 mt-4">
+          <h3 className="text-sm font-medium text-emerald-600 mb-2">Výsledek</h3>
+          <p className="text-xl font-bold text-emerald-800">{slide.finalAnswer}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function InfoSlideView({ slide }: { slide: InfoSlide }) {
+  return (
+    <div className="flex flex-col h-full items-center justify-center p-8">
+      {slide.title && (
+        <h1 className="text-4xl md:text-5xl font-bold text-[#1e3a5f] text-center leading-tight mb-6">
+          {slide.title}
+        </h1>
+      )}
+      {slide.content && (
+        <div 
+          className="prose prose-lg max-w-3xl text-center"
+          dangerouslySetInnerHTML={{ __html: slide.content }}
+        />
+      )}
+      {slide.media && (
+        <div className="mt-8">
+          {slide.media.type === 'image' && (
+            <img src={slide.media.url} alt={slide.media.caption || ''} className="max-h-96 rounded-xl" />
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================
+// MAIN COMPONENT
+// ============================================
+
+export function QuizViewPage() {
+  const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  
+  // State
+  const [quiz, setQuiz] = useState<Quiz | null>(null);
+  const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
+  const [prevSlideIndex, setPrevSlideIndex] = useState(0);
+  const [showMenu, setShowMenu] = useState(false);
+  const [showStudentOptions, setShowStudentOptions] = useState(false);
+  const [showShareSettings, setShowShareSettings] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [isAnimating, setIsAnimating] = useState(false);
+  const [showRightPanel, setShowRightPanel] = useState(true);
+  
+  // Live session state
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [sessionCode, setSessionCode] = useState<string | null>(null);
+  const [session, setSession] = useState<LiveQuizSession | null>(null);
+  const [isStartingSession, setIsStartingSession] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [showEndDialog, setShowEndDialog] = useState(false);
+  
+  // Share settings
+  const [sessionName, setSessionName] = useState('Nová relace');
+  const [anonymousAccess, setAnonymousAccess] = useState(true);
+  const [showSolutionHints, setShowSolutionHints] = useState(true);
+  const [showActivityResults, setShowActivityResults] = useState(true);
+  const [requireAnswerToProgress, setRequireAnswerToProgress] = useState(false);
+  const [showNotes, setShowNotes] = useState(false);
+  const [shareLink, setShareLink] = useState<string | null>(null);
+  
+  // Get current user
+  const profile = storage.getCurrentUserProfile();
+  
+  // Load quiz
+  useEffect(() => {
+    if (!id) {
+      setLoading(false);
+      return;
+    }
+    
+    const loadedQuiz = getQuiz(id);
+    if (loadedQuiz) {
+      setQuiz(loadedQuiz);
+    }
+    setLoading(false);
+  }, [id]);
+  
+  // Keyboard navigation
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+        goToPrevSlide();
+      } else if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === ' ') {
+        goToNextSlide();
+      } else if (e.key === 'Escape') {
+        if (showStudentOptions) {
+          setShowStudentOptions(false);
+        } else {
+          navigate(-1);
+        }
+      }
+    };
+    
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [currentSlideIndex, quiz, showStudentOptions]);
+  
+  const goToNextSlide = useCallback(() => {
+    if (quiz && currentSlideIndex < quiz.slides.length - 1 && !isAnimating) {
+      setIsAnimating(true);
+      setPrevSlideIndex(currentSlideIndex);
+      setCurrentSlideIndex(prev => prev + 1);
+      setTimeout(() => setIsAnimating(false), 500);
+    }
+  }, [quiz, currentSlideIndex, isAnimating]);
+  
+  const goToPrevSlide = useCallback(() => {
+    if (currentSlideIndex > 0 && !isAnimating) {
+      setIsAnimating(true);
+      setPrevSlideIndex(currentSlideIndex);
+      setCurrentSlideIndex(prev => prev - 1);
+      setTimeout(() => setIsAnimating(false), 500);
+    }
+  }, [currentSlideIndex, isAnimating]);
+  
+  // ============================================
+  // LIVE SESSION FUNCTIONS
+  // ============================================
+  
+  // Start live session
+  const startLiveSession = useCallback(async () => {
+    if (isStartingSession || !quiz) return;
+    setIsStartingSession(true);
+    
+    const code = generateSessionCode();
+    const newSessionId = `quiz_${code}_${Date.now()}`;
+    
+    const sessionData: LiveQuizSession = {
+      id: newSessionId,
+      quizId: quiz.id,
+      teacherId: profile?.userId || 'anonymous',
+      teacherName: profile?.firstName || 'Učitel',
+      isActive: true,
+      currentSlideIndex: currentSlideIndex,
+      isPaused: false,
+      showResults: false,
+      students: {},
+      createdAt: new Date().toISOString(),
+    };
+    
+    try {
+      await set(ref(database, getSessionPath(newSessionId)), sessionData);
+      await set(ref(database, `${QUIZ_SESSIONS_PATH}/${newSessionId}/quizData`), {
+        id: quiz.id,
+        title: quiz.title,
+        slides: quiz.slides,
+      });
+      
+      setSessionId(newSessionId);
+      setSessionCode(code);
+      setSession(sessionData);
+      setShowStudentOptions(false);
+    } catch (error) {
+      console.error('Failed to start session:', error);
+    } finally {
+      setIsStartingSession(false);
+    }
+  }, [quiz, profile, currentSlideIndex, isStartingSession]);
+  
+  // Listen to session updates
+  useEffect(() => {
+    if (!sessionId) return;
+    
+    const sessionRef = ref(database, getSessionPath(sessionId));
+    const unsubscribe = onValue(sessionRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        setSession(data as LiveQuizSession);
+      }
+    });
+    
+    return () => off(sessionRef);
+  }, [sessionId]);
+  
+  // Sync slide index to session
+  useEffect(() => {
+    if (sessionId && session?.isActive) {
+      update(ref(database, getSessionPath(sessionId)), { currentSlideIndex });
+    }
+  }, [sessionId, currentSlideIndex, session?.isActive]);
+  
+  // End session
+  const endLiveSession = async (viewResults: boolean = false) => {
+    if (sessionId) {
+      await update(ref(database, getSessionPath(sessionId)), { 
+        isActive: false, 
+        endedAt: new Date().toISOString() 
+      });
+      
+      if (viewResults) {
+        navigate(`/quiz/results/${sessionId}`);
+        return;
+      }
+    }
+    setSessionId(null);
+    setSessionCode(null);
+    setSession(null);
+    setShowEndDialog(false);
+  };
+  
+  // Copy session code
+  const copySessionCode = () => {
+    if (sessionCode) {
+      navigator.clipboard.writeText(sessionCode);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+  
+  // Update live session
+  const updateLiveSession = async (updates: Partial<LiveQuizSession>) => {
+    if (sessionId) {
+      await update(ref(database, getSessionPath(sessionId)), updates);
+    }
+  };
+  
+  // Get student stats
+  const students = session?.students ? Object.entries(session.students) : [];
+  const onlineStudents = students.filter(([_, s]) => s.isOnline);
+  
+  // Loading state
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-slate-100">
+        <div className="animate-spin rounded-full h-8 w-8 border-2 border-indigo-600 border-t-transparent" />
+      </div>
+    );
+  }
+  
+  // No quiz found
+  if (!quiz) {
+    return (
+      <div className="flex flex-col items-center justify-center h-screen bg-slate-100">
+        <HelpCircle className="w-16 h-16 text-slate-300 mb-4" />
+        <h1 className="text-xl font-bold text-slate-600 mb-2">Board nenalezen</h1>
+        <p className="text-slate-500 mb-6">Tento board neexistuje nebo byl smazán.</p>
+        <button
+          onClick={() => navigate('/library/my-content')}
+          className="px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700"
+        >
+          Zpět do knihovny
+        </button>
+      </div>
+    );
+  }
+  
+  const currentSlide = quiz.slides[currentSlideIndex];
+  const progress = quiz.slides.length > 0 ? ((currentSlideIndex + 1) / quiz.slides.length) * 100 : 0;
+  
+  const getSlideBackground = (slide: QuizSlide) => {
+    return slide?.backgroundColor || '#ffffff';
+  };
+  
+  // Convert to worksheet and open print
+  const handlePrint = () => {
+    const worksheet = boardToWorksheet(quiz);
+    saveWorksheet(worksheet);
+    // Navigate to worksheet editor with print mode
+    navigate(`/worksheet/edit/${worksheet.id}?print=true`);
+  };
+
+  // Generate share code (similar to session code)
+  const generateShareCode = (): string => {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    let code = '';
+    for (let i = 0; i < 6; i++) {
+      code += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return code;
+  };
+  
+  // Generate share link
+  const handleStartSharing = async () => {
+    const shareCode = generateShareCode();
+    const shareId = `share_${shareCode}_${Date.now()}`;
+    
+    // Store share settings in Firebase
+    const shareData = {
+      id: shareId,
+      quizId: quiz.id,
+      quizData: quiz,
+      sessionName,
+      shareCode,
+      settings: {
+        anonymousAccess,
+        showSolutionHints,
+        showActivityResults,
+        requireAnswerToProgress,
+        showNotes,
+      },
+      createdAt: new Date().toISOString(),
+      createdBy: profile?.userId || 'anonymous',
+      responses: {}, // Will store student responses
+    };
+    
+    try {
+      const shareRef = ref(database, `quiz_shares/${shareId}`);
+      await set(shareRef, shareData);
+      
+      const link = `${window.location.origin}/quiz/student/${shareId}`;
+      setShareLink(link);
+    } catch (error) {
+      console.error('Error creating share session:', error);
+    }
+  };
+  
+  // Toggle switch component
+  const ToggleSwitch = ({ enabled, onChange, label }: { enabled: boolean; onChange: (v: boolean) => void; label: string }) => (
+    <div className="flex items-center justify-between py-3">
+      <span className="text-white font-medium">{label}</span>
+      <button
+        onClick={() => onChange(!enabled)}
+        className={`w-14 h-8 rounded-full transition-colors ${enabled ? 'bg-emerald-500' : 'bg-slate-500'}`}
+      >
+        <div className={`w-6 h-6 rounded-full bg-white shadow-md transform transition-transform ${enabled ? 'translate-x-7' : 'translate-x-1'}`} />
+      </button>
+    </div>
+  );
+  
+  // Render the right panel content
+  const renderRightPanel = () => {
+    // Active live session panel
+    if (sessionId && sessionCode) {
+      return (
+        <div className="flex flex-col h-full text-white" style={{ backgroundColor: '#1e2533' }}>
+          {/* Session code */}
+          <div className="p-6" style={{ borderBottom: '1px solid #334155' }}>
+            <p className="text-sm mb-3" style={{ color: '#94a3b8' }}>Kód pro připojení</p>
+            
+            {/* Code display */}
+            <div 
+              className="text-center py-4 px-6 rounded-xl mb-3"
+              style={{ backgroundColor: '#334155' }}
+            >
+              <div 
+                className="text-4xl font-mono font-bold tracking-widest select-all"
+                style={{ color: '#ffffff', letterSpacing: '0.2em' }}
+              >
+                {sessionCode}
+              </div>
+            </div>
+            
+            {/* Action buttons */}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={copySessionCode}
+                className="flex-1 py-2 px-4 rounded-lg transition-colors flex items-center justify-center gap-2"
+                style={{ backgroundColor: '#334155', color: '#ffffff' }}
+              >
+                {copied ? (
+                  <>
+                    <CheckCircle className="w-4 h-4" style={{ color: '#4ade80' }} />
+                    <span className="text-sm">Zkopírováno!</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-4 h-4" style={{ color: '#94a3b8' }} />
+                    <span className="text-sm">Kopírovat</span>
+                  </>
+                )}
+              </button>
+              <button
+                className="p-2 rounded-lg transition-colors"
+                style={{ backgroundColor: '#334155' }}
+                title="QR kód"
+              >
+                <QrCode className="w-5 h-5" style={{ color: '#94a3b8' }} />
+              </button>
+            </div>
+            
+            <p className="text-xs mt-3 text-center" style={{ color: '#64748b' }}>
+              Studenti: <span style={{ color: '#94a3b8' }}>{window.location.origin}/quiz/join</span>
+            </p>
+          </div>
+          
+          {/* Lock mode toggle */}
+          <div className="px-4 py-3" style={{ borderBottom: '1px solid #334155' }}>
+            <button
+              onClick={() => updateLiveSession({ isLocked: !(session?.isLocked ?? true) })}
+              className="w-full flex items-center justify-between p-3 rounded-xl transition-colors"
+              style={{ backgroundColor: '#334155' }}
+            >
+              <div className="flex items-center gap-3">
+                {(session?.isLocked ?? true) ? (
+                  <Lock className="w-5 h-5" style={{ color: '#94a3b8' }} />
+                ) : (
+                  <Unlock className="w-5 h-5" style={{ color: '#4ade80' }} />
+                )}
+                <div className="text-left">
+                  <p className="text-sm font-medium" style={{ color: '#ffffff' }}>
+                    {(session?.isLocked ?? true) ? 'Zamčený mód' : 'Odemčený mód'}
+                  </p>
+                  <p className="text-xs" style={{ color: '#64748b' }}>
+                    {(session?.isLocked ?? true) ? 'Studenti sledují učitele' : 'Studenti se pohybují sami'}
+                  </p>
+                </div>
+              </div>
+              <div 
+                className="w-12 h-7 rounded-full flex items-center transition-colors"
+                style={{ 
+                  backgroundColor: (session?.isLocked ?? true) ? '#475569' : '#4ade80',
+                  padding: '2px'
+                }}
+              >
+                <div 
+                  className="w-6 h-6 rounded-full bg-white shadow transition-transform"
+                  style={{ 
+                    transform: (session?.isLocked ?? true) ? 'translateX(0)' : 'translateX(20px)'
+                  }}
+                />
+              </div>
+            </button>
+          </div>
+          
+          {/* Students list */}
+          <div className="flex-1 overflow-y-auto p-4">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2" style={{ color: '#94a3b8' }}>
+                <Users className="w-4 h-4" />
+                <span className="text-sm">Připojení studenti</span>
+              </div>
+              <span className="font-bold" style={{ color: '#ffffff' }}>{onlineStudents.length}</span>
+            </div>
+            
+            {students.length === 0 ? (
+              <div className="text-center py-8" style={{ color: '#64748b' }}>
+                <Users className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                <p className="text-sm">Čekám na studenty...</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {students.map(([id, student]) => {
+                  const totalSlides = quiz?.slides.length || 1;
+                  const studentSlide = student.currentSlide || 0;
+                  const progressPercent = ((studentSlide + 1) / totalSlides) * 100;
+                  const studentResponses = student.responses || [];
+                  const correctCount = studentResponses.filter(r => r.isCorrect).length;
+                  const wrongCount = studentResponses.filter(r => !r.isCorrect).length;
+                  const hasFinished = studentResponses.length >= (quiz?.slides.filter(s => s.type === 'activity').length || 0);
+                  const isDistracted = student.isOnline && student.isFocused === false;
+                  
+                  return (
+                    <div
+                      key={id}
+                      className="flex items-center gap-3 p-3 rounded-lg transition-colors"
+                      style={{ 
+                        backgroundColor: isDistracted ? 'rgba(251, 146, 60, 0.2)' : 'rgba(51, 65, 85, 0.5)',
+                        borderLeft: isDistracted ? '3px solid #fb923c' : '3px solid transparent'
+                      }}
+                    >
+                      {/* Online/Focus indicator */}
+                      {isDistracted ? (
+                        <AlertTriangle className="w-4 h-4 flex-shrink-0" style={{ color: '#fb923c' }} />
+                      ) : (
+                        <div 
+                          className="w-2 h-2 rounded-full flex-shrink-0"
+                          style={{ backgroundColor: student.isOnline ? '#4ade80' : '#64748b' }}
+                        />
+                      )}
+                      
+                      {/* Name */}
+                      <span 
+                        className="text-sm flex-1 truncate" 
+                        style={{ color: isDistracted ? '#fb923c' : '#ffffff' }}
+                      >
+                        {student.name}
+                      </span>
+                      
+                      {/* Progress bar or results - only show progress in unlocked mode */}
+                      {hasFinished ? (
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          <span className="text-xs font-medium" style={{ color: '#4ade80' }}>{correctCount}✓</span>
+                          <span className="text-xs font-medium" style={{ color: '#f87171' }}>{wrongCount}✗</span>
+                        </div>
+                      ) : (session?.isLocked === false) ? (
+                        <div 
+                          className="w-20 h-2 rounded-full overflow-hidden flex-shrink-0"
+                          style={{ backgroundColor: '#1e2533' }}
+                        >
+                          <div 
+                            className="h-full rounded-full transition-all duration-300"
+                            style={{ 
+                              width: `${progressPercent}%`,
+                              backgroundColor: isDistracted ? '#fb923c' : (studentSlide === currentSlideIndex ? '#7C3AED' : '#475569')
+                            }}
+                          />
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+          
+          {/* Controls */}
+          <div className="p-4 space-y-2" style={{ borderTop: '1px solid #334155' }}>
+            <button
+              className="w-full py-2 rounded-lg text-white text-sm flex items-center justify-center gap-2"
+              style={{ backgroundColor: '#334155' }}
+            >
+              <BarChart2 className="w-4 h-4" />
+              Zobrazit výsledky
+            </button>
+            <button
+              onClick={() => setShowEndDialog(true)}
+              className="w-full py-2 rounded-lg text-white text-sm flex items-center justify-center gap-2"
+              style={{ backgroundColor: '#dc2626' }}
+            >
+              <StopCircle className="w-4 h-4" />
+              Ukončit session
+            </button>
+          </div>
+          
+          {/* End session dialog */}
+          {showEndDialog && (
+            <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-50">
+              <div className="bg-white rounded-2xl p-6 max-w-sm w-full mx-4 shadow-2xl">
+                <h3 className="text-lg font-bold text-slate-800 mb-2">Ukončit session?</h3>
+                <p className="text-slate-500 text-sm mb-6">
+                  Session bude ukončena a studenti budou odpojeni.
+                </p>
+                <div className="space-y-2">
+                  <button
+                    onClick={() => endLiveSession(true)}
+                    className="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-medium flex items-center justify-center gap-2"
+                  >
+                    <BarChart2 className="w-4 h-4" />
+                    Ukončit a zobrazit výsledky
+                  </button>
+                  <button
+                    onClick={() => endLiveSession(false)}
+                    className="w-full py-3 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-700 font-medium"
+                  >
+                    Ukončit bez výsledků
+                  </button>
+                  <button
+                    onClick={() => setShowEndDialog(false)}
+                    className="w-full py-2 text-slate-500 hover:text-slate-700 text-sm"
+                  >
+                    Zrušit
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+    
+    // Share settings panel
+    if (showShareSettings) {
+      return (
+        <div className="flex flex-col h-full" style={{ backgroundColor: '#4a5568' }}>
+          {/* Header */}
+          <div className="p-4">
+            <button 
+              onClick={() => {
+                setShowShareSettings(false);
+                setShareLink(null);
+              }}
+              className="flex items-center gap-2 text-white/70 hover:text-white mb-4"
+            >
+              <ArrowLeft className="w-5 h-5" />
+            </button>
+            <h2 className="text-2xl font-bold text-white text-center mb-6">Nastavení</h2>
+          </div>
+          
+          {shareLink ? (
+            // Show generated link
+            <div className="flex-1 px-6 flex flex-col">
+              <div className="bg-white/10 rounded-xl p-4 mb-4">
+                <p className="text-sm text-slate-300 mb-2">Odkaz pro studenty:</p>
+                <p className="text-white font-mono text-sm break-all">{shareLink}</p>
+              </div>
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(shareLink);
+                }}
+                className="w-full py-4 rounded-xl bg-emerald-400 text-slate-900 font-bold text-lg hover:bg-emerald-300 transition-colors mb-4"
+              >
+                Kopírovat odkaz
+              </button>
+              <button
+                onClick={() => setShareLink(null)}
+                className="w-full py-3 rounded-xl bg-white/10 text-white font-medium hover:bg-white/20 transition-colors"
+              >
+                Upravit nastavení
+              </button>
+            </div>
+          ) : (
+            // Show settings form
+            <div className="flex-1 px-6 flex flex-col">
+              {/* Session name */}
+              <div className="mb-6">
+                <label className="text-white font-medium mb-2 block">Jméno relace</label>
+                <input
+                  type="text"
+                  value={sessionName}
+                  onChange={(e) => setSessionName(e.target.value)}
+                  className="w-full px-4 py-3 rounded-xl bg-white/10 border border-white/20 text-white placeholder-white/50 focus:outline-none focus:border-emerald-400"
+                  placeholder="Nová relace"
+                />
+              </div>
+              
+              {/* Toggle settings */}
+              <div className="space-y-1">
+                <ToggleSwitch
+                  enabled={anonymousAccess}
+                  onChange={setAnonymousAccess}
+                  label="Anonymní přístup"
+                />
+                <ToggleSwitch
+                  enabled={showSolutionHints}
+                  onChange={setShowSolutionHints}
+                  label="Ověřit řešení a zobrazit nápovědu"
+                />
+                <ToggleSwitch
+                  enabled={showActivityResults}
+                  onChange={setShowActivityResults}
+                  label="Zobrazovat vyhodnocení aktivit"
+                />
+                <ToggleSwitch
+                  enabled={requireAnswerToProgress}
+                  onChange={setRequireAnswerToProgress}
+                  label="Vyžadovat odpověď pro posunutí"
+                />
+                <ToggleSwitch
+                  enabled={showNotes}
+                  onChange={setShowNotes}
+                  label="Zobrazit poznámky"
+                />
+              </div>
+              
+              {/* Start sharing button */}
+              <div className="mt-auto pb-6">
+                <button
+                  onClick={handleStartSharing}
+                  className="w-full py-5 rounded-xl bg-emerald-400 text-slate-900 font-bold text-xl hover:bg-emerald-300 transition-colors"
+                >
+                  Zahájit sdílení
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+    
+    // Student connection options panel
+    if (showStudentOptions) {
+      return (
+        <div className="flex flex-col h-full text-white" style={{ backgroundColor: '#1e2533' }}>
+          {/* Back button and title */}
+          <div className="p-6">
+            <button 
+              onClick={() => setShowStudentOptions(false)}
+              className="flex items-center gap-2 text-white/70 hover:text-white mb-6"
+            >
+              <ArrowLeft className="w-5 h-5" />
+            </button>
+            <h2 className="text-2xl font-bold text-white text-center">
+              Vyberte, jakým způsobem<br />zapojit studenty:
+            </h2>
+          </div>
+          
+          {/* Options */}
+          <div className="flex-1 px-6 space-y-4">
+            {/* Live projection */}
+            <button 
+              onClick={startLiveSession}
+              disabled={isStartingSession}
+              className="w-full flex items-center gap-4 p-5 rounded-2xl transition-colors disabled:opacity-50"
+              style={{ backgroundColor: '#e8f84a' }}
+            >
+              <div className="w-14 h-14 flex items-center justify-center">
+                {isStartingSession ? (
+                  <RefreshCw className="w-10 h-10 text-slate-800 animate-spin" />
+                ) : (
+                  <svg viewBox="0 0 64 64" className="w-full h-full">
+                    <circle cx="32" cy="20" r="10" fill="#1e3a5f" opacity="0.3" />
+                    <circle cx="18" cy="38" r="8" fill="#1e3a5f" opacity="0.5" />
+                    <circle cx="46" cy="38" r="8" fill="#1e3a5f" opacity="0.5" />
+                    <circle cx="32" cy="48" r="8" fill="#1e3a5f" />
+                    <rect x="26" y="10" width="12" height="10" rx="2" fill="#1e3a5f" />
+                    <polygon points="32,6 38,12 26,12" fill="#1e3a5f" />
+                  </svg>
+                )}
+              </div>
+              <div className="text-left">
+                <span className="text-lg font-bold text-slate-800 block">
+                  {isStartingSession ? 'Spouštím...' : 'Živé promítání'}
+                </span>
+                <span className="text-sm text-slate-600">Studenti sledují společně</span>
+              </div>
+            </button>
+            
+            {/* Share / Assign task */}
+            <button 
+              onClick={() => setShowShareSettings(true)}
+              className="w-full flex items-center gap-4 p-5 rounded-2xl transition-colors"
+              style={{ backgroundColor: '#b5d4ff' }}
+            >
+              <div className="w-14 h-14 flex items-center justify-center">
+                <Share2 className="w-10 h-10 text-slate-800" />
+              </div>
+              <div className="text-left">
+                <span className="text-lg font-bold text-slate-800 block">Sdílet (Zadat úkol)</span>
+                <span className="text-sm text-slate-600">Studenti pracují samostatně</span>
+              </div>
+            </button>
+          </div>
+          
+          {/* Cancel button */}
+          <div className="p-6">
+            <button 
+              onClick={() => setShowStudentOptions(false)}
+              className="w-full py-4 rounded-xl text-white/70 font-medium hover:text-white hover:bg-white/10 transition-colors"
+            >
+              Zrušit
+            </button>
+          </div>
+        </div>
+      );
+    }
+    
+    // Default panel - main actions
+    return (
+      <div className="flex flex-col h-full text-white" style={{ backgroundColor: '#1e2533' }}>
+        {/* Header */}
+        <div className="p-6 text-center border-b border-white/10">
+          <span className="text-xs text-slate-400 uppercase tracking-wide">Procvičování</span>
+          <h2 className="text-xl font-bold mt-1 truncate text-white">{quiz.title || 'bez názvu'}</h2>
+        </div>
+        
+        {/* Main actions */}
+        <div className="flex-1 p-4 flex flex-col">
+          {/* Connect students - primary */}
+          <button 
+            onClick={() => setShowStudentOptions(true)}
+            className="w-full flex items-center gap-4 px-5 py-4 rounded-xl font-semibold hover:opacity-90 transition-colors mb-3"
+            style={{ backgroundColor: '#4eebc0', color: '#1e3a5f' }}
+          >
+            <div className="w-12 h-12 flex items-center justify-center">
+              <svg viewBox="0 0 48 48" className="w-full h-full">
+                <circle cx="24" cy="14" r="8" fill="currentColor" opacity="0.3" />
+                <circle cx="12" cy="26" r="6" fill="currentColor" opacity="0.5" />
+                <circle cx="36" cy="26" r="6" fill="currentColor" opacity="0.5" />
+                <circle cx="24" cy="34" r="6" fill="currentColor" />
+                <rect x="20" y="6" width="8" height="8" rx="2" fill="currentColor" />
+                <polygon points="24,4 28,8 20,8" fill="currentColor" />
+              </svg>
+            </div>
+            <span>Připojit studenty</span>
+          </button>
+          
+          {/* Edit */}
+          <button 
+            onClick={() => navigate(`/quiz/edit/${quiz.id}`)}
+            className="w-full flex items-center gap-4 px-5 py-4 rounded-xl text-white font-medium hover:bg-white/20 transition-colors mb-3"
+            style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}
+          >
+            <Edit3 className="w-6 h-6 text-slate-400" />
+            <span>Upravit</span>
+          </button>
+          
+          {/* Results */}
+          <button 
+            onClick={() => navigate(`/quiz/edit/${quiz.id}?tab=results`)}
+            className="w-full flex items-center gap-4 px-5 py-4 rounded-xl text-white font-medium hover:bg-white/20 transition-colors"
+            style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}
+          >
+            <BarChart2 className="w-6 h-6 text-slate-400" />
+            <span>Výsledky</span>
+          </button>
+          
+          {/* Spacer */}
+          <div className="flex-1" />
+          
+          {/* Secondary actions */}
+          <div className="grid grid-cols-2 gap-3 pt-4">
+            <button 
+              onClick={handlePrint}
+              className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-slate-300 font-medium hover:bg-slate-600/50 transition-colors"
+              style={{ backgroundColor: 'rgba(71,85,105,0.5)' }}
+            >
+              <Printer className="w-4 h-4" />
+              <span className="text-sm">Tisknout</span>
+            </button>
+            <button 
+              className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-slate-300 font-medium hover:bg-slate-600/50 transition-colors"
+              style={{ backgroundColor: 'rgba(71,85,105,0.5)' }}
+            >
+              <Share2 className="w-4 h-4" />
+              <span className="text-sm">Sdílet</span>
+            </button>
+          </div>
+          
+          {/* Share edit link */}
+          <button 
+            className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-slate-300 font-medium hover:bg-slate-600/50 transition-colors mt-3"
+            style={{ backgroundColor: 'rgba(71,85,105,0.5)' }}
+          >
+            <ExternalLink className="w-4 h-4" />
+            <span className="text-sm">Sdílet odkaz pro úpravu</span>
+          </button>
+        </div>
+      </div>
+    );
+  };
+  
+  // Render progress bar segments
+  const renderProgressBar = () => (
+    <>
+      {/* Completed slides - one merged segment */}
+      {currentSlideIndex >= 0 && (
+        <div
+          className="rounded-full cursor-pointer hover:opacity-80"
+          style={{ 
+            height: '8px',
+            backgroundColor: isDarkMode ? '#94a3b8' : '#475569',
+            flex: currentSlideIndex + 1
+          }}
+          onClick={() => {
+            if (!isAnimating && currentSlideIndex > 0) {
+              setIsAnimating(true);
+              setPrevSlideIndex(currentSlideIndex);
+              setCurrentSlideIndex(0);
+              setTimeout(() => setIsAnimating(false), 400);
+            }
+          }}
+        />
+      )}
+      {/* Remaining slides - individual segments */}
+      {quiz.slides.slice(currentSlideIndex + 1).map((_, idx) => {
+        const actualIndex = currentSlideIndex + 1 + idx;
+        return (
+          <div
+            key={actualIndex}
+            onClick={() => {
+              if (!isAnimating) {
+                setIsAnimating(true);
+                setPrevSlideIndex(currentSlideIndex);
+                setCurrentSlideIndex(actualIndex);
+                setTimeout(() => setIsAnimating(false), 400);
+              }
+            }}
+            className="flex-1 rounded-full cursor-pointer hover:opacity-80"
+            style={{ 
+              height: '8px',
+              backgroundColor: isDarkMode ? '#334155' : '#CBD5E1'
+            }}
+          />
+        );
+      })}
+    </>
+  );
+
+  // Background color based on session state
+  const bgColor = sessionId ? '#1e2533' : '#F0F1F8';
+  const isDarkMode = !!sessionId;
+  
+  return (
+    <div className="flex h-screen overflow-hidden" style={{ backgroundColor: bgColor }}>
+      {/* Main content area */}
+      <div className="flex-1 flex flex-col relative">
+        {/* Desktop: Top bar with X and panel toggle */}
+        <div className="hidden lg:flex absolute top-0 left-0 right-0 z-20 items-center justify-between px-4 py-3">
+          {/* Close button */}
+          <button
+            onClick={() => navigate(-1)}
+            className={`w-10 h-10 rounded-full backdrop-blur shadow-sm flex items-center justify-center transition-colors ${
+              isDarkMode 
+                ? 'bg-white/10 text-white/70 hover:bg-white/20 hover:text-white' 
+                : 'bg-white/80 text-slate-500 hover:bg-white hover:text-slate-700'
+            }`}
+          >
+            <X className="w-5 h-5" />
+          </button>
+          
+          {/* Toggle panel button */}
+          <button
+            onClick={() => setShowRightPanel(!showRightPanel)}
+            className={`w-10 h-10 rounded-full backdrop-blur shadow-sm flex items-center justify-center transition-colors ${
+              isDarkMode 
+                ? 'bg-white/10 text-white/70 hover:bg-white/20 hover:text-white' 
+                : 'bg-white/80 text-slate-500 hover:bg-white hover:text-slate-700'
+            }`}
+          >
+            {showRightPanel ? <PanelLeftClose className="w-5 h-5" /> : <PanelLeft className="w-5 h-5" />}
+          </button>
+        </div>
+        
+        {/* Mobile: Top navigation with arrows and progress bar */}
+        <div className="flex lg:hidden items-center gap-3 px-4 py-4" style={{ backgroundColor: bgColor }}>
+          {/* Left arrow */}
+          <button
+            onClick={goToPrevSlide}
+            disabled={currentSlideIndex === 0}
+            className={`
+              w-14 h-14 rounded-full flex items-center justify-center flex-shrink-0
+              ${currentSlideIndex === 0 ? 'opacity-30 cursor-not-allowed' : ''}
+              ${isDarkMode ? 'bg-white/10 text-white/70' : 'bg-[#CBD5E1] text-slate-600'}
+            `}
+          >
+            <ArrowLeft className="w-6 h-6" />
+          </button>
+          
+          {/* Progress bar */}
+          <div className="flex-1 flex items-center gap-1.5">
+            {renderProgressBar()}
+          </div>
+          
+          {/* Right arrow */}
+          <button
+            onClick={goToNextSlide}
+            disabled={currentSlideIndex === quiz.slides.length - 1}
+            className={`
+              w-14 h-14 rounded-full flex items-center justify-center text-white flex-shrink-0
+              ${currentSlideIndex === quiz.slides.length - 1 ? 'opacity-30 cursor-not-allowed' : ''}
+            `}
+            style={{ backgroundColor: '#7C3AED' }}
+          >
+            <ArrowRight className="w-6 h-6" />
+          </button>
+        </div>
+        
+        {/* Main content area with arrows */}
+        <div className="flex-1 flex flex-col pt-4 pb-4 lg:pt-16 lg:pb-4" style={{ backgroundColor: bgColor }}>
+          {/* Desktop: Segmented progress bar - above content */}
+          <div className="hidden lg:flex items-center justify-center pb-3">
+            <div className="w-1/2 max-w-xl flex items-center gap-1.5">
+              {renderProgressBar()}
+            </div>
+          </div>
+          
+          {/* Content with arrows */}
+          <div className="flex-1 flex items-stretch">
+          {/* Desktop: Left arrow */}
+          <div className="hidden lg:flex w-16 flex-shrink-0 items-center justify-center">
+            <button
+              onClick={goToPrevSlide}
+              disabled={currentSlideIndex === 0}
+              className={`
+                w-12 h-12 rounded-full flex items-center justify-center
+                transition-all duration-300 ease-out
+                ${currentSlideIndex === 0 ? 'opacity-30 cursor-not-allowed' : 'hover:h-28 hover:rounded-full'}
+                ${isDarkMode ? 'bg-white/10 text-white/70' : 'bg-[#CBD5E1] text-slate-600'}
+              `}
+              style={{ transitionProperty: 'height, background-color' }}
+            >
+              <ArrowLeft className="w-5 h-5" />
+            </button>
+          </div>
+          
+          {/* Slide content */}
+          <div className="flex-1 flex items-stretch px-4">
+            <div 
+              className={`
+                w-full max-w-5xl mx-auto rounded-3xl shadow-2xl overflow-hidden flex flex-col
+                ${currentSlideIndex > prevSlideIndex && isAnimating ? 'animate-slide-in' : ''}
+                ${currentSlideIndex < prevSlideIndex && isAnimating ? 'animate-slide-in-left' : ''}
+              `}
+              style={{ backgroundColor: getSlideBackground(currentSlide) }}
+              key={currentSlideIndex}
+            >
+              {currentSlide ? (
+                renderSlideView(currentSlide)
+              ) : (
+                <div className="flex items-center justify-center h-full text-white/70">
+                  <p className="text-xl">Žádné slidy</p>
+                </div>
+              )}
+            </div>
+          </div>
+          
+          {/* Desktop: Right arrow */}
+          <div className="hidden lg:flex w-16 flex-shrink-0 items-center justify-center">
+            <button
+              onClick={goToNextSlide}
+              disabled={currentSlideIndex === quiz.slides.length - 1}
+              className={`
+                w-12 h-12 rounded-full flex items-center justify-center text-white
+                transition-all duration-300 ease-out
+                ${currentSlideIndex === quiz.slides.length - 1 ? 'opacity-30 cursor-not-allowed' : 'hover:h-28'}
+              `}
+              style={{ 
+                backgroundColor: '#7C3AED',
+                transitionProperty: 'height, background-color, box-shadow' 
+              }}
+            >
+              <ArrowRight className="w-5 h-5" />
+            </button>
+          </div>
+          </div>
+        </div>
+      </div>
+      
+      {/* Right panel - dark background */}
+      <div 
+        className={`
+          hidden lg:flex text-white flex-col transition-all duration-300 ease-out
+          ${showRightPanel ? 'w-80' : 'w-0'}
+        `}
+        style={{ backgroundColor: '#1e2533' }}
+      >
+        {showRightPanel && renderRightPanel()}
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// RENDER HELPERS
+// ============================================
+
+function renderSlideView(slide: QuizSlide): React.ReactNode {
+  switch (slide.type) {
+    case 'info':
+      return <InfoSlideView slide={slide as InfoSlide} />;
+    case 'activity':
+      switch ((slide as any).activityType) {
+        case 'abc':
+          return (
+            <ABCSlideView 
+              slide={slide as ABCActivitySlide} 
+              showHint={false}
+              showSolution={false}
+            />
+          );
+        case 'open':
+          return <OpenSlideView slide={slide as OpenActivitySlide} />;
+        case 'example':
+          return <ExampleSlideView slide={slide as ExampleActivitySlide} />;
+        default:
+          return <div className="text-slate-500 text-center">Nepodporovaný typ aktivity</div>;
+      }
+    default:
+      return <div className="text-slate-500 text-center">Nepodporovaný typ slidu</div>;
+  }
+}
+
+export default QuizViewPage;
