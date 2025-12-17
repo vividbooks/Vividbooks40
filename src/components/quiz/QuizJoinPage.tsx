@@ -1065,7 +1065,7 @@ export function QuizJoinPage() {
       </div>
       
       {/* Mobile: Top navigation */}
-      <div className="flex lg:hidden items-center gap-3 px-4 py-4" style={{ backgroundColor: '#F0F1F8' }}>
+      <div className="flex lg:hidden relative items-center gap-3 px-4 py-4" style={{ backgroundColor: '#F0F1F8' }}>
         {canNavigate ? (
           <>
             <button
@@ -1088,10 +1088,10 @@ export function QuizJoinPage() {
           </>
         ) : (
           <>
-            <div className="flex-1 flex items-center gap-1.5">
+            <div className="flex-1 flex items-center gap-1.5 pr-20">
               {renderProgressBar()}
             </div>
-            <div className="flex items-center gap-3 flex-shrink-0">
+            <div className="absolute right-4 flex items-center gap-3">
               <div className="flex items-center gap-1 text-emerald-600">
                 <CheckCircle className="w-4 h-4" />
                 <span className="font-bold text-sm">{correctCount}</span>
