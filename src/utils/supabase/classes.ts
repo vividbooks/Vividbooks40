@@ -93,28 +93,63 @@ function generateStudentsForClass(classId: string, count: number): Student[] {
 }
 
 // Generate assignments for each class - with individual work randomly interspersed
+// These represent actual boards that were shared with the class
 function generateAssignmentsForClass(classId: string): Assignment[] {
-  // Use classId to seed pseudo-random individual work positions
-  const classNum = parseInt(classId) || 1;
+  // Only generate full data for class 1 (6.A), simpler for others
+  if (classId !== '1') {
+    return [
+      { id: `a_${classId}_1`, title: 'Úvodní test', type: 'test', class_id: classId, board_id: 'board_intro', due_date: '2024-09-15', created_at: '2024-09-01' },
+      { id: `a_${classId}_2`, title: 'Procvičování', type: 'practice', class_id: classId, board_id: 'board_practice1', due_date: '2024-10-01', created_at: '2024-09-20' },
+      { id: `a_${classId}_3`, title: 'Pololetní test', type: 'test', class_id: classId, board_id: 'board_mid', due_date: '2024-12-15', created_at: '2024-12-01' },
+    ];
+  }
   
+  // Full demo data for class 6.A
   const assignments: Assignment[] = [
-    { id: `a_${classId}_1`, title: 'Hmota a její vlastnosti', type: 'test', class_id: classId, due_date: '2024-09-08', created_at: '2024-09-01' },
-    { id: `i_${classId}_1`, title: 'Hmota', type: 'individual', class_id: classId, due_date: '2024-09-10', created_at: '2024-09-09' },
-    { id: `a_${classId}_2`, title: 'Síla a pohyb', type: 'practice', class_id: classId, due_date: '2024-09-21', created_at: '2024-09-15' },
-    { id: `i_${classId}_2`, title: 'Síla', type: 'individual', class_id: classId, due_date: '2024-09-23', created_at: '2024-09-22' },
-    { id: `i_${classId}_3`, title: 'Pohyb', type: 'individual', class_id: classId, due_date: '2024-09-25', created_at: '2024-09-24' },
-    { id: `a_${classId}_3`, title: 'Newtonovy zákony', type: 'test', class_id: classId, due_date: '2024-10-05', created_at: '2024-09-28' },
-    { id: `i_${classId}_4`, title: 'Newton', type: 'individual', class_id: classId, due_date: '2024-10-08', created_at: '2024-10-06' },
-    { id: `a_${classId}_4`, title: 'Práce a energie', type: 'test', class_id: classId, due_date: '2024-10-20', created_at: '2024-10-12' },
-    { id: `i_${classId}_5`, title: 'Práce', type: 'individual', class_id: classId, due_date: '2024-10-22', created_at: '2024-10-21' },
-    { id: `a_${classId}_5`, title: 'Procvičování - Energie', type: 'practice', class_id: classId, due_date: '2024-11-02', created_at: '2024-10-26' },
-    { id: `i_${classId}_6`, title: 'Energie', type: 'individual', class_id: classId, due_date: '2024-11-05', created_at: '2024-11-03' },
-    { id: `i_${classId}_7`, title: 'Opak.', type: 'individual', class_id: classId, due_date: '2024-11-08', created_at: '2024-11-06' },
-    { id: `a_${classId}_6`, title: 'Teplo a teplota', type: 'test', class_id: classId, due_date: '2024-11-18', created_at: '2024-11-10' },
-    { id: `i_${classId}_8`, title: 'Teplo', type: 'individual', class_id: classId, due_date: '2024-11-20', created_at: '2024-11-19' },
-    { id: `a_${classId}_7`, title: 'Procvič. - Teplo', type: 'practice', class_id: classId, due_date: '2024-11-28', created_at: '2024-11-22' },
-    { id: `i_${classId}_9`, title: 'Test', type: 'individual', class_id: classId, due_date: '2024-12-01', created_at: '2024-11-29' },
-    { id: `a_${classId}_8`, title: 'Závěrečný test', type: 'test', class_id: classId, due_date: '2024-12-10', created_at: '2024-12-02' },
+    // Board 1: Hmota - živá relace (test)
+    { id: `a_1_1`, title: 'Hmota a její vlastnosti', type: 'test', class_id: '1', board_id: 'board_hmota', due_date: '2024-09-08', created_at: '2024-09-01' },
+    // Individual work on Hmota board
+    { id: `i_1_1`, title: 'Hmota', type: 'individual', class_id: '1', board_id: 'board_hmota', due_date: '2024-09-10', created_at: '2024-09-09' },
+    { id: `i_1_2`, title: 'Hmota', type: 'individual', class_id: '1', board_id: 'board_hmota', due_date: '2024-09-12', created_at: '2024-09-11' },
+    
+    // Board 2: Síla a pohyb - procvičování
+    { id: `a_1_2`, title: 'Síla a pohyb', type: 'practice', class_id: '1', board_id: 'board_sila', due_date: '2024-09-21', created_at: '2024-09-15' },
+    // Individual work
+    { id: `i_1_3`, title: 'Síla', type: 'individual', class_id: '1', board_id: 'board_sila', due_date: '2024-09-23', created_at: '2024-09-22' },
+    { id: `i_1_4`, title: 'Pohyb', type: 'individual', class_id: '1', board_id: 'board_pohyb', due_date: '2024-09-25', created_at: '2024-09-24' },
+    { id: `i_1_5`, title: 'Síla', type: 'individual', class_id: '1', board_id: 'board_sila', due_date: '2024-09-27', created_at: '2024-09-26' },
+    
+    // Board 3: Newtonovy zákony - test
+    { id: `a_1_3`, title: 'Newtonovy zákony', type: 'test', class_id: '1', board_id: 'board_newton', due_date: '2024-10-05', created_at: '2024-09-28' },
+    // Individual work
+    { id: `i_1_6`, title: 'Newton', type: 'individual', class_id: '1', board_id: 'board_newton', due_date: '2024-10-08', created_at: '2024-10-06' },
+    { id: `i_1_7`, title: 'Newton', type: 'individual', class_id: '1', board_id: 'board_newton', due_date: '2024-10-10', created_at: '2024-10-09' },
+    
+    // Board 4: Práce a energie - test
+    { id: `a_1_4`, title: 'Práce a energie', type: 'test', class_id: '1', board_id: 'board_prace', due_date: '2024-10-20', created_at: '2024-10-12' },
+    // Individual work
+    { id: `i_1_8`, title: 'Práce', type: 'individual', class_id: '1', board_id: 'board_prace', due_date: '2024-10-22', created_at: '2024-10-21' },
+    
+    // Board 5: Energie - procvičování
+    { id: `a_1_5`, title: 'Procvičování Energie', type: 'practice', class_id: '1', board_id: 'board_energie', due_date: '2024-11-02', created_at: '2024-10-26' },
+    // Individual work
+    { id: `i_1_9`, title: 'Energie', type: 'individual', class_id: '1', board_id: 'board_energie', due_date: '2024-11-05', created_at: '2024-11-03' },
+    { id: `i_1_10`, title: 'Energie', type: 'individual', class_id: '1', board_id: 'board_energie', due_date: '2024-11-07', created_at: '2024-11-06' },
+    { id: `i_1_11`, title: 'Opak.', type: 'individual', class_id: '1', board_id: 'board_energie', due_date: '2024-11-09', created_at: '2024-11-08' },
+    
+    // Board 6: Teplo a teplota - test
+    { id: `a_1_6`, title: 'Teplo a teplota', type: 'test', class_id: '1', board_id: 'board_teplo', due_date: '2024-11-18', created_at: '2024-11-10' },
+    // Individual work
+    { id: `i_1_12`, title: 'Teplo', type: 'individual', class_id: '1', board_id: 'board_teplo', due_date: '2024-11-20', created_at: '2024-11-19' },
+    { id: `i_1_13`, title: 'Teplo', type: 'individual', class_id: '1', board_id: 'board_teplo', due_date: '2024-11-22', created_at: '2024-11-21' },
+    
+    // Board 7: Teplo - procvičování
+    { id: `a_1_7`, title: 'Procvič. Teplo', type: 'practice', class_id: '1', board_id: 'board_teplo2', due_date: '2024-11-28', created_at: '2024-11-22' },
+    // Individual work
+    { id: `i_1_14`, title: 'Test', type: 'individual', class_id: '1', board_id: 'board_teplo2', due_date: '2024-12-01', created_at: '2024-11-29' },
+    
+    // Board 8: Závěrečný test
+    { id: `a_1_8`, title: 'Závěrečný test', type: 'test', class_id: '1', board_id: 'board_final', due_date: '2024-12-10', created_at: '2024-12-02' },
   ];
   
   return assignments;

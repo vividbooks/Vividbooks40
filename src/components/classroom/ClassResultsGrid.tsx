@@ -6,6 +6,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   CheckCircle,
   XCircle,
@@ -34,6 +35,7 @@ interface ClassResultsGridProps {
 }
 
 export function ClassResultsGrid({ classId, className, onBack }: ClassResultsGridProps) {
+  const navigate = useNavigate();
   const [students, setStudents] = useState<Student[]>([]);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [results, setResults] = useState<{ [studentId: string]: { [assignmentId: string]: StudentResult } }>({});
@@ -254,10 +256,20 @@ export function ClassResultsGrid({ classId, className, onBack }: ClassResultsGri
                 </th>
                 {filteredAssignments.map((assignment) => {
                   const isIndividual = assignment.type === 'individual';
+                  
+                  // Handle click on column header - navigate to board
+                  const handleColumnClick = () => {
+                    if (!isIndividual && assignment.board_id) {
+                      // Navigate to board results or board detail
+                      // For demo, we'll navigate to quiz results with assignment id
+                      navigate(`/quiz/results/${assignment.id}?type=class&classId=${classId}`);
+                    }
+                  };
+                  
                   return (
                     <th 
                       key={`name-${assignment.id}`}
-                      className={`py-2 border-b border-slate-200 ${!isIndividual ? 'cursor-pointer' : ''} ${
+                      className={`py-2 border-b border-slate-200 ${!isIndividual ? 'cursor-pointer hover:bg-indigo-100' : ''} ${
                         hoveredColumn === assignment.id ? 'bg-indigo-50' : ''
                       }`}
                       style={{ 
@@ -266,6 +278,7 @@ export function ClassResultsGrid({ classId, className, onBack }: ClassResultsGri
                         maxWidth: isIndividual ? '15px' : '120px',
                         padding: '0',
                       }}
+                      onClick={handleColumnClick}
                       onMouseEnter={() => {
                         if (!isIndividual) {
                           setHoveredColumn(assignment.id);
@@ -279,8 +292,8 @@ export function ClassResultsGrid({ classId, className, onBack }: ClassResultsGri
                         // Narrow column for individual - empty header
                         <div style={{ width: '15px', height: '20px' }} title={assignment.title}></div>
                       ) : (
-                        // Wide column for tests/practice
-                        <div className="flex flex-col items-center gap-1">
+                        // Wide column for tests/practice - clickable
+                        <div className="flex flex-col items-center gap-1 py-1">
                           {getAssignmentIcon(assignment.type)}
                           <span className="text-xs text-slate-600 truncate" style={{ maxWidth: '110px' }} title={assignment.title}>
                             {assignment.title.length > 14 ? `${assignment.title.slice(0, 14)}...` : assignment.title}
