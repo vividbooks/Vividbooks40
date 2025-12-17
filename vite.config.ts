@@ -63,8 +63,10 @@
       },
     },
     build: {
-      target: 'esnext',
+      // Support older browsers: iOS 12+, Android 5+, Chrome 60+, Firefox 60+, Safari 11+
+      target: ['es2017', 'chrome60', 'firefox60', 'safari11', 'edge18'],
       outDir: 'build',
+      cssTarget: ['chrome60', 'firefox60', 'safari11'],
     },
     server: {
       port: 3000,
