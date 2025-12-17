@@ -437,23 +437,6 @@ export function QuizStudentView() {
   }, [shareId, studentId]);
 
   // ============================================
-  // WIGGLE ANIMATION ON MOBILE
-  // ============================================
-  
-  useEffect(() => {
-    // Only trigger on mobile when option is selected but not yet answered
-    if (selectedOption && !hasAnswered && window.innerWidth < 1024) {
-      // Scroll to the answer button
-      setTimeout(() => {
-        answerButtonRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        // Trigger wiggle animation
-        setShowWiggle(true);
-        setTimeout(() => setShowWiggle(false), 1000);
-      }, 100);
-    }
-  }, [selectedOption, hasAnswered]);
-
-  // ============================================
   // START SESSION
   // ============================================
   
@@ -654,6 +637,23 @@ export function QuizStudentView() {
     if (!currentSlide || currentSlide.type !== 'activity') return true;
     return !!responses[currentSlide.id]; // Must have submitted answer
   };
+
+  // ============================================
+  // WIGGLE ANIMATION ON MOBILE
+  // ============================================
+  
+  useEffect(() => {
+    // Only trigger on mobile when option is selected but not yet answered
+    if (selectedOption && !hasAnswered && window.innerWidth < 1024) {
+      // Scroll to the answer button
+      setTimeout(() => {
+        answerButtonRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        // Trigger wiggle animation
+        setShowWiggle(true);
+        setTimeout(() => setShowWiggle(false), 1000);
+      }, 100);
+    }
+  }, [selectedOption, hasAnswered]);
 
   // ============================================
   // RENDER: CONNECTION BANNER
