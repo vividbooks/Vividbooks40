@@ -393,11 +393,16 @@ export function QuizJoinPage() {
           setQuiz(data.quizData as Quiz);
         }
         
-        // Sync responses from server (in case of multi-device)
+        // Sync responses from server (in case of multi-device or teacher evaluation)
         if (studentId && data.students?.[studentId]) {
           const serverResponses = data.students[studentId].responses || [];
-          // Only update if server has more responses (avoid overwriting local state)
-          if (serverResponses.length > responses.length) {
+          // Update if server has more responses OR if any isCorrect value has changed (teacher evaluated)
+          const hasNewResponses = serverResponses.length > responses.length;
+          const hasEvaluationChanged = serverResponses.some((sr: any, idx: number) => {
+            const localResponse = responses[idx];
+            return localResponse && sr.isCorrect !== localResponse.isCorrect;
+          });
+          if (hasNewResponses || hasEvaluationChanged) {
             setResponses(serverResponses);
           }
         }
