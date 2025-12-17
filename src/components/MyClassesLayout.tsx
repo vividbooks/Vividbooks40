@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   X,
@@ -11,7 +11,10 @@ import {
   Trash2,
   Pencil,
   ClipboardList,
-  Share2
+  Share2,
+  Play,
+  FileText,
+  RefreshCw,
 } from 'lucide-react';
 import VividLogo from '../imports/Group70';
 import { ToolsDropdown } from './ToolsDropdown';
@@ -23,6 +26,11 @@ import {
   setDataSource,
   isUsingSupabase,
 } from '../utils/supabase/classes';
+import { 
+  subscribeToSessions, 
+  HistoricalSession, 
+  formatSessionDate 
+} from '../utils/session-history';
 
 interface MyClassesLayoutProps {
   theme: 'light' | 'dark';
@@ -77,7 +85,22 @@ export function MyClassesLayout({ theme, toggleTheme }: MyClassesLayoutProps) {
     { id: '3', name: '7.C', studentsCount: 12, createdAt: '2024-09-01' },
   ]);
   
-  // Mock data for results
+  // Historical sessions from Firebase
+  const [historicalSessions, setHistoricalSessions] = useState<HistoricalSession[]>([]);
+  const [loadingSessions, setLoadingSessions] = useState(true);
+  
+  // Load historical sessions
+  useEffect(() => {
+    setLoadingSessions(true);
+    const unsubscribe = subscribeToSessions((sessions) => {
+      setHistoricalSessions(sessions);
+      setLoadingSessions(false);
+    });
+    
+    return unsubscribe;
+  }, []);
+  
+  // Legacy mock data for results (fallback)
   const [results, setResults] = useState<TestResult[]>([
     { id: '1', testName: 'Hmota - test', className: '6.A', date: '2024-12-01', averageScore: 78, studentsCount: 24 },
     { id: '2', testName: 'Částice hmoty', className: '6.B', date: '2024-11-28', averageScore: 82, studentsCount: 22 },
@@ -270,30 +293,39 @@ export function MyClassesLayout({ theme, toggleTheme }: MyClassesLayoutProps) {
                   {/* Tab Content */}
                   <div className="px-4 pb-20">
                     {activeTab === 'results' && (
-                      // Results List
+                      // Results List - Historical Sessions
                       <div className="space-y-2">
                         <h3 className="text-xs font-bold text-white/60 uppercase tracking-wider mb-3 px-1">
-                          Poslední výsledky
+                          Poslední relace
                         </h3>
-                        {results.map(result => (
+                        {loadingSessions ? (
+                          <div className="flex justify-center py-4">
+                            <RefreshCw className="w-5 h-5 text-white/50 animate-spin" />
+                          </div>
+                        ) : historicalSessions.slice(0, 10).map(session => (
                           <button
-                            key={result.id}
+                            key={session.id}
+                            onClick={() => navigate(`/quiz/results/${session.id}?type=${session.type}`)}
                             className="w-full flex items-center gap-3 p-3 bg-white/10 hover:bg-white/20 rounded-xl transition-colors text-left group"
                           >
                             <div className="flex-1 min-w-0">
-                              <div className="font-medium text-white truncate">{result.testName}</div>
-                              <div className="text-sm text-white/70">{result.className} • {result.date}</div>
+                              <div className="font-medium text-white truncate">{session.quizTitle}</div>
+                              <div className="text-sm text-white/70 flex items-center gap-2">
+                                <span className={`w-2 h-2 rounded-full ${session.type === 'live' ? 'bg-indigo-400' : 'bg-emerald-400'}`}></span>
+                                {formatSessionDate(session.createdAt)}
+                                {session.isActive && <span className="text-green-400">• Aktivní</span>}
+                              </div>
                             </div>
                             <div className="text-right">
-                              <div className="font-bold text-white">{result.averageScore}%</div>
-                              <div className="text-xs text-white/60">{result.studentsCount} žáků</div>
+                              <div className="font-bold text-white">{session.averageScore > 0 ? `${session.averageScore}%` : '-'}</div>
+                              <div className="text-xs text-white/60">{session.studentsCount} žáků</div>
                             </div>
                             <ChevronRight className="h-4 w-4 text-white/40 group-hover:text-white/70" />
                           </button>
                         ))}
-                        {results.length === 0 && (
+                        {!loadingSessions && historicalSessions.length === 0 && (
                           <div className="text-center py-8 text-white/60">
-                            Zatím žádné výsledky
+                            Zatím žádné relace
                           </div>
                         )}
                       </div>
@@ -592,50 +624,84 @@ export function MyClassesLayout({ theme, toggleTheme }: MyClassesLayoutProps) {
                       </table>
                 </div>
               ) : activeTab === 'results' ? (
-                // Results Overview
+                // Results Overview - Historical Sessions
                 <div className="space-y-6">
-                  {results.length === 0 ? (
+                  {loadingSessions ? (
+                    <div className="flex items-center justify-center py-12">
+                      <RefreshCw className="w-8 h-8 text-indigo-500 animate-spin" />
+                    </div>
+                  ) : historicalSessions.length === 0 ? (
                     <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center">
                       <BarChart3 className="h-12 w-12 text-slate-300 mx-auto mb-4" />
-                      <h3 className="text-lg font-semibold text-slate-700 mb-2">Zatím žádné výsledky</h3>
-                      <p className="text-slate-500 mb-4">Výsledky se zde zobrazí po dokončení testů vašimi žáky</p>
+                      <h3 className="text-lg font-semibold text-slate-700 mb-2">Zatím žádné relace</h3>
+                      <p className="text-slate-500 mb-4">Zde se zobrazí všechny relace po jejich spuštění</p>
                     </div>
                   ) : (
                     <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
                       <table className="w-full">
                         <thead className="bg-slate-50 border-b border-slate-200">
                           <tr>
-                            <th className="text-left px-6 py-4 text-sm font-semibold text-slate-600">Test</th>
-                            <th className="text-left px-6 py-4 text-sm font-semibold text-slate-600">Třída</th>
+                            <th className="text-left px-6 py-4 text-sm font-semibold text-slate-600">Název</th>
+                            <th className="text-left px-6 py-4 text-sm font-semibold text-slate-600">Typ</th>
                             <th className="text-left px-6 py-4 text-sm font-semibold text-slate-600">Datum</th>
                             <th className="text-center px-6 py-4 text-sm font-semibold text-slate-600">Průměr</th>
                             <th className="text-center px-6 py-4 text-sm font-semibold text-slate-600">Žáků</th>
+                            <th className="text-center px-6 py-4 text-sm font-semibold text-slate-600">Stav</th>
                             <th className="px-6 py-4"></th>
                           </tr>
                         </thead>
                         <tbody>
-                          {results.map(result => (
+                          {historicalSessions.map(session => (
                             <tr 
-                              key={result.id} 
+                              key={session.id} 
                               className="border-b border-slate-100 hover:bg-slate-50 transition-colors cursor-pointer"
-                              onClick={() => {
-                                const cls = classes.find(c => c.name === result.className);
-                                if (cls) setSelectedClass(cls);
-                              }}
+                              onClick={() => navigate(`/quiz/results/${session.id}?type=${session.type}`)}
                             >
-                              <td className="px-6 py-4 font-medium text-slate-800">{result.testName}</td>
-                              <td className="px-6 py-4 text-slate-600">{result.className}</td>
-                              <td className="px-6 py-4 text-slate-600">{result.date}</td>
-                              <td className="px-6 py-4 text-center">
-                                <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-sm font-medium ${
-                                  result.averageScore >= 80 ? 'bg-green-100 text-green-700' :
-                                  result.averageScore >= 60 ? 'bg-yellow-100 text-yellow-700' :
-                                  'bg-red-100 text-red-700'
+                              <td className="px-6 py-4">
+                                <div className="font-medium text-slate-800">{session.quizTitle}</div>
+                                {session.sessionCode && (
+                                  <div className="text-xs text-slate-400 font-mono">{session.sessionCode}</div>
+                                )}
+                              </td>
+                              <td className="px-6 py-4">
+                                <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium ${
+                                  session.type === 'live' 
+                                    ? 'bg-indigo-100 text-indigo-700' 
+                                    : 'bg-emerald-100 text-emerald-700'
                                 }`}>
-                                  {result.averageScore}%
+                                  {session.type === 'live' ? (
+                                    <><Play className="w-3 h-3" /> Živě</>
+                                  ) : (
+                                    <><FileText className="w-3 h-3" /> Sdílení</>
+                                  )}
                                 </span>
                               </td>
-                              <td className="px-6 py-4 text-center text-slate-600">{result.studentsCount}</td>
+                              <td className="px-6 py-4 text-slate-600">
+                                {formatSessionDate(session.createdAt)}
+                              </td>
+                              <td className="px-6 py-4 text-center">
+                                <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-sm font-medium ${
+                                  session.averageScore >= 80 ? 'bg-green-100 text-green-700' :
+                                  session.averageScore >= 60 ? 'bg-yellow-100 text-yellow-700' :
+                                  session.averageScore > 0 ? 'bg-red-100 text-red-700' :
+                                  'bg-slate-100 text-slate-500'
+                                }`}>
+                                  {session.averageScore > 0 ? `${session.averageScore}%` : '-'}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4 text-center text-slate-600">{session.studentsCount}</td>
+                              <td className="px-6 py-4 text-center">
+                                {session.isActive ? (
+                                  <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">
+                                    <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></span>
+                                    Aktivní
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-500">
+                                    Ukončeno
+                                  </span>
+                                )}
+                              </td>
                               <td className="px-6 py-4">
                                 <button className="text-slate-400 hover:text-slate-600 transition-colors">
                                   <ChevronRight className="h-5 w-5" />
@@ -722,4 +788,5 @@ export function MyClassesLayout({ theme, toggleTheme }: MyClassesLayoutProps) {
     </div>
   );
 }
+
 
