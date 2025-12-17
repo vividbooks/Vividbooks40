@@ -14,8 +14,11 @@ import {
   Star,
   ToggleLeft,
   ToggleRight,
+  Calculator,
 } from 'lucide-react';
 import { OpenActivitySlide } from '../../../types/quiz';
+import { MathText } from '../../math/MathText';
+import { MathInputModal } from '../../math/MathKeyboard';
 
 interface OpenSlideEditorProps {
   slide: OpenActivitySlide;
@@ -27,6 +30,15 @@ export function OpenSlideEditor({ slide, onUpdate }: OpenSlideEditorProps) {
   const [newAnswer, setNewAnswer] = useState('');
   const [showImageInput, setShowImageInput] = useState(false);
   const [imageUrl, setImageUrl] = useState(slide.media?.url || '');
+  const [showMathKeyboard, setShowMathKeyboard] = useState(false);
+  const [editingQuestion, setEditingQuestion] = useState(false);
+  
+  // Handle inserting math expression
+  const handleMathInsert = (latex: string) => {
+    const mathExpression = `$${latex}$`;
+    onUpdate(slide.id, { question: (slide.question || '') + mathExpression });
+    setShowMathKeyboard(false);
+  };
   
   const addCorrectAnswer = () => {
     if (!newAnswer.trim()) return;
@@ -54,16 +66,41 @@ export function OpenSlideEditor({ slide, onUpdate }: OpenSlideEditorProps) {
       
       {/* Question input */}
       <div className="p-6 border-b border-slate-100">
-        <label className="block text-sm font-medium text-slate-700 mb-2">
-          Otázka *
-        </label>
-        <textarea
-          value={slide.question}
-          onChange={(e) => onUpdate(slide.id, { question: e.target.value })}
-          placeholder="Zadej otázku..."
-          className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 outline-none transition-all resize-none text-lg"
-          rows={3}
-        />
+        <div className="flex items-center justify-between mb-2">
+          <label className="block text-sm font-medium text-slate-700">
+            Otázka *
+          </label>
+          <button
+            onClick={() => setShowMathKeyboard(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm bg-indigo-100 text-indigo-700 hover:bg-indigo-200 transition-colors"
+            title="Vložit matematický zápis"
+          >
+            <Calculator className="w-4 h-4" />
+            Matematika
+          </button>
+        </div>
+        {editingQuestion ? (
+          <textarea
+            value={slide.question}
+            onChange={(e) => onUpdate(slide.id, { question: e.target.value })}
+            onBlur={() => setEditingQuestion(false)}
+            autoFocus
+            placeholder="Zadej otázku... (můžeš použít LaTeX: $\frac{1}{2}$)"
+            className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 outline-none transition-all resize-none text-lg"
+            rows={3}
+          />
+        ) : (
+          <div
+            onClick={() => setEditingQuestion(true)}
+            className="w-full px-4 py-3 rounded-xl border border-slate-200 hover:border-amber-300 cursor-text min-h-[80px] text-lg"
+          >
+            {slide.question ? (
+              <MathText>{slide.question}</MathText>
+            ) : (
+              <span className="text-slate-400">Zadej otázku... (klikni pro editaci)</span>
+            )}
+          </div>
+        )}
         
         {/* Image section */}
         {slide.media?.url ? (
@@ -253,6 +290,14 @@ export function OpenSlideEditor({ slide, onUpdate }: OpenSlideEditorProps) {
           </div>
         )}
       </div>
+      
+      {/* Math Keyboard Modal */}
+      <MathInputModal
+        isOpen={showMathKeyboard}
+        onClose={() => setShowMathKeyboard(false)}
+        onSubmit={handleMathInsert}
+        title="Vložit matematický výraz"
+      />
     </div>
   );
 }

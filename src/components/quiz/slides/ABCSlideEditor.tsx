@@ -14,9 +14,11 @@ import {
   Image as ImageIcon,
   Clock,
   Star,
+  Calculator,
 } from 'lucide-react';
 import { ABCActivitySlide, ABCOption, getOptionLabel } from '../../../types/quiz';
 import { MathText } from '../../math/MathText';
+import { MathInputModal } from '../../math/MathKeyboard';
 
 interface ABCSlideEditorProps {
   slide: ABCActivitySlide;
@@ -30,6 +32,32 @@ export function ABCSlideEditor({ slide, onUpdate }: ABCSlideEditorProps) {
   const [editingExplanation, setEditingExplanation] = useState(false);
   const [showImageInput, setShowImageInput] = useState(false);
   const [imageUrl, setImageUrl] = useState(slide.media?.url || '');
+  const [showMathKeyboard, setShowMathKeyboard] = useState(false);
+  const [mathTarget, setMathTarget] = useState<'question' | 'explanation' | string>('question'); // 'question', 'explanation', or option id
+  
+  // Handle inserting math expression
+  const handleMathInsert = (latex: string) => {
+    const mathExpression = `$${latex}$`;
+    
+    if (mathTarget === 'question') {
+      onUpdate(slide.id, { question: (slide.question || '') + mathExpression });
+    } else if (mathTarget === 'explanation') {
+      onUpdate(slide.id, { explanation: (slide.explanation || '') + mathExpression });
+    } else {
+      // It's an option id
+      const option = slide.options.find(o => o.id === mathTarget);
+      if (option) {
+        updateOption(mathTarget, { content: (option.content || '') + mathExpression });
+      }
+    }
+    setShowMathKeyboard(false);
+  };
+  
+  // Open math keyboard for a specific target
+  const openMathKeyboard = (target: 'question' | 'explanation' | string) => {
+    setMathTarget(target);
+    setShowMathKeyboard(true);
+  };
   
   const updateOption = (optionId: string, updates: Partial<ABCOption>) => {
     const newOptions = slide.options.map(opt =>
@@ -89,9 +117,19 @@ export function ABCSlideEditor({ slide, onUpdate }: ABCSlideEditorProps) {
       
       {/* Question input */}
       <div className="p-6 border-b border-slate-100">
-        <label className="block text-sm font-medium text-slate-700 mb-2">
-          Otázka *
-        </label>
+        <div className="flex items-center justify-between mb-2">
+          <label className="block text-sm font-medium text-slate-700">
+            Otázka *
+          </label>
+          <button
+            onClick={() => openMathKeyboard('question')}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm bg-indigo-100 text-indigo-700 hover:bg-indigo-200 transition-colors"
+            title="Vložit matematický zápis"
+          >
+            <Calculator className="w-4 h-4" />
+            Matematika
+          </button>
+        </div>
         {editingQuestion ? (
           <textarea
             value={slide.question}
@@ -235,6 +273,15 @@ export function ABCSlideEditor({ slide, onUpdate }: ABCSlideEditorProps) {
                 )}
               </div>
               
+              {/* Math button for option */}
+              <button
+                onClick={() => openMathKeyboard(option.id)}
+                className="p-2 rounded-lg text-indigo-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors opacity-0 group-hover:opacity-100"
+                title="Vložit matematiku"
+              >
+                <Calculator className="w-4 h-4" />
+              </button>
+              
               {/* Correct toggle */}
               <button
                 onClick={() => setCorrectOption(option.id)}
@@ -356,6 +403,14 @@ export function ABCSlideEditor({ slide, onUpdate }: ABCSlideEditorProps) {
           </div>
         )}
       </div>
+      
+      {/* Math Keyboard Modal */}
+      <MathInputModal
+        isOpen={showMathKeyboard}
+        onClose={() => setShowMathKeyboard(false)}
+        onSubmit={handleMathInsert}
+        title="Vložit matematický výraz"
+      />
     </div>
   );
 }
