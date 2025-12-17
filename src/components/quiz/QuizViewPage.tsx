@@ -274,7 +274,7 @@ export function QuizViewPage() {
   
   // Share settings
   const [sessionName, setSessionName] = useState('Nová relace');
-  const [anonymousAccess, setAnonymousAccess] = useState(true);
+  const [anonymousAccess, setAnonymousAccess] = useState(false);
   const [showSolutionHints, setShowSolutionHints] = useState(true);
   const [showActivityResults, setShowActivityResults] = useState(true);
   const [requireAnswerToProgress, setRequireAnswerToProgress] = useState(false);
@@ -833,7 +833,7 @@ export function QuizViewPage() {
                 <ToggleSwitch
                   enabled={anonymousAccess}
                   onChange={setAnonymousAccess}
-                  label="Anonymní přístup"
+                  label="Anonymní přístup (bez jména)"
                 />
                 <ToggleSwitch
                   enabled={showSolutionHints}
