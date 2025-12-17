@@ -69,7 +69,7 @@ export function ClassResultsGrid({ classId, className, onBack }: ClassResultsGri
   
   // Get score color based on value
   const getScoreColor = (score: number | null): string => {
-    if (score === null) return '#EBEBEB';
+    if (score === null) return '#FFFFFF'; // White for no data
     if (score === -1) return '#FEF3C7'; // Pending - yellow
     if (score >= 9) return '#6DE89B';
     if (score >= 8) return '#7ECD7E';
@@ -345,6 +345,7 @@ export function ClassResultsGrid({ classId, className, onBack }: ClassResultsGri
                                 backgroundColor: bgColor,
                                 borderRadius: '8px',
                                 margin: '0 auto',
+                                border: score === null ? '1px solid #E5E7EB' : 'none',
                               }}
                               title={score === null ? 'Nehotovo' : score === -1 ? 'Čeká' : `${score}/10`}
                             />
@@ -361,6 +362,7 @@ export function ClassResultsGrid({ classId, className, onBack }: ClassResultsGri
                                 backgroundColor: bgColor, 
                                 color: textColor,
                                 borderRadius: '8px',
+                                border: score === null ? '1px solid #E5E7EB' : 'none',
                               }}
                             >
                               {score === null ? '-' : score === -1 ? '?' : `${score} / ${result?.max_score || 10}`}
