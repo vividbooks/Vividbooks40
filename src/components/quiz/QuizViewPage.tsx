@@ -683,6 +683,22 @@ export function QuizViewPage() {
                   const hasFinished = studentResponses.length >= (quiz?.slides.filter(s => s.type === 'activity').length || 0);
                   const isDistracted = student.isOnline && student.isFocused === false;
                   
+                  // Get student's answer for current slide (in locked mode)
+                  const currentSlideData = quiz?.slides[currentSlideIndex];
+                  const currentSlideResponse = studentResponses.find(r => r.slideId === currentSlideData?.id);
+                  let answerLabel = '';
+                  if (currentSlideResponse && currentSlideData?.type === 'activity') {
+                    if ((currentSlideData as any).activityType === 'abc') {
+                      // Find the option label (A, B, C, D)
+                      const optionIndex = (currentSlideData as any).options?.findIndex((o: any) => o.id === currentSlideResponse.answer);
+                      if (optionIndex >= 0) {
+                        answerLabel = String.fromCharCode(65 + optionIndex); // A, B, C, D...
+                      }
+                    } else if ((currentSlideData as any).activityType === 'open') {
+                      answerLabel = String(currentSlideResponse.answer).substring(0, 10) + (String(currentSlideResponse.answer).length > 10 ? '...' : '');
+                    }
+                  }
+                  
                   return (
                     <div
                       key={id}
@@ -710,8 +726,24 @@ export function QuizViewPage() {
                         {student.name}
                       </span>
                       
-                      {/* Progress bar or results - only show progress in unlocked mode */}
-                      {hasFinished ? (
+                      {/* Show answer in locked mode, or progress in unlocked mode */}
+                      {(session?.isLocked ?? true) && currentSlideData?.type === 'activity' ? (
+                        // Show student's answer for current slide
+                        answerLabel ? (
+                          <div 
+                            className="px-2 py-1 rounded text-xs font-bold flex-shrink-0"
+                            style={{ 
+                              backgroundColor: currentSlideResponse?.isCorrect === true ? '#4ade80' : 
+                                             currentSlideResponse?.isCorrect === false ? '#f87171' : '#7C3AED',
+                              color: '#ffffff'
+                            }}
+                          >
+                            {answerLabel}
+                          </div>
+                        ) : (
+                          <span className="text-xs flex-shrink-0" style={{ color: '#64748b' }}>—</span>
+                        )
+                      ) : hasFinished ? (
                         <div className="flex items-center gap-2 flex-shrink-0">
                           <span className="text-xs font-medium" style={{ color: '#4ade80' }}>{correctCount}✓</span>
                           <span className="text-xs font-medium" style={{ color: '#f87171' }}>{wrongCount}✗</span>
@@ -739,6 +771,76 @@ export function QuizViewPage() {
           
           {/* Controls */}
           <div className="p-4 space-y-2" style={{ borderTop: '1px solid #334155' }}>
+            {/* Evaluate button - show in locked mode when students have answered */}
+            {(session?.isLocked ?? true) && quiz?.slides[currentSlideIndex]?.type === 'activity' && (() => {
+              const currentSlideData = quiz.slides[currentSlideIndex];
+              const studentsWithAnswer = students.filter(([_, student]) => {
+                const responses = student.responses || [];
+                return responses.some(r => r.slideId === currentSlideData.id);
+              });
+              const hasUnevaluatedAnswers = studentsWithAnswer.some(([_, student]) => {
+                const responses = student.responses || [];
+                const response = responses.find(r => r.slideId === currentSlideData.id);
+                return response && response.isCorrect === undefined;
+              });
+              
+              if (studentsWithAnswer.length > 0) {
+                return (
+                  <button
+                    onClick={async () => {
+                      // Evaluate all student answers for current slide
+                      if (!sessionId || !quiz) return;
+                      
+                      const slide = currentSlideData as any;
+                      const correctOptionId = slide.activityType === 'abc' 
+                        ? slide.options?.find((o: any) => o.isCorrect)?.id
+                        : null;
+                      const correctAnswers = slide.activityType === 'open'
+                        ? slide.correctAnswers || []
+                        : [];
+                      
+                      for (const [studentId, student] of students) {
+                        const responses = student.responses || [];
+                        const responseIndex = responses.findIndex(r => r.slideId === currentSlideData.id);
+                        
+                        if (responseIndex >= 0) {
+                          const response = responses[responseIndex];
+                          let isCorrect = false;
+                          
+                          if (slide.activityType === 'abc') {
+                            isCorrect = response.answer === correctOptionId;
+                          } else if (slide.activityType === 'open') {
+                            const studentAnswer = String(response.answer).trim().toLowerCase();
+                            isCorrect = correctAnswers.some((a: string) => 
+                              a.trim().toLowerCase() === studentAnswer
+                            );
+                          }
+                          
+                          // Update the response in Firebase
+                          const updatedResponses = [...responses];
+                          updatedResponses[responseIndex] = {
+                            ...response,
+                            isCorrect,
+                            points: isCorrect ? (slide.points || 1) : 0
+                          };
+                          
+                          await update(ref(database, `${getSessionPath(sessionId)}/students/${studentId}`), {
+                            responses: updatedResponses
+                          });
+                        }
+                      }
+                    }}
+                    className="w-full py-3 rounded-lg text-white text-sm font-bold flex items-center justify-center gap-2 transition-colors"
+                    style={{ backgroundColor: hasUnevaluatedAnswers ? '#7C3AED' : '#4ade80' }}
+                  >
+                    <CheckCircle className="w-4 h-4" />
+                    {hasUnevaluatedAnswers ? `Vyhodnotit (${studentsWithAnswer.length})` : `Vyhodnoceno ✓`}
+                  </button>
+                );
+              }
+              return null;
+            })()}
+            
             <button
               className="w-full py-2 rounded-lg text-white text-sm flex items-center justify-center gap-2"
               style={{ backgroundColor: '#334155' }}
