@@ -1,12 +1,15 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { 
   ArrowLeft, Trophy, TrendingUp, TrendingDown, Minus, Calendar,
-  CheckCircle, XCircle, Clock, BookOpen, User, Star, MessageSquare,
-  ChevronRight, Award, Target, Zap, FileText
+  CheckCircle, XCircle, Clock, BookOpen, User, MessageSquare,
+  ChevronRight, Target, Zap, FileText, X, PanelLeftClose, PanelLeft, Users
 } from 'lucide-react';
-import { format, parseISO, formatDistanceToNow } from 'date-fns';
+import { parseISO, formatDistanceToNow } from 'date-fns';
 import { cs } from 'date-fns/locale';
+import VividLogo from '../../imports/Group70';
+import { ToolsDropdown } from '../ToolsDropdown';
+import { ToolsMenu } from '../ToolsMenu';
 
 // Types
 interface StudentResult {
@@ -40,18 +43,33 @@ interface StudentProfile {
   results: StudentResult[];
 }
 
+interface ClassStudent {
+  id: string;
+  name: string;
+  initials: string;
+  color: string;
+  averageScore: number;
+}
+
+// Demo students for sidebar
+const DEMO_CLASS_STUDENTS: ClassStudent[] = [
+  { id: 's1', name: 'Jan Novák', initials: 'JN', color: '#6366F1', averageScore: 82 },
+  { id: 's2', name: 'Marie Svobodová', initials: 'MS', color: '#EC4899', averageScore: 91 },
+  { id: 's3', name: 'Petr Dvořák', initials: 'PD', color: '#10B981', averageScore: 75 },
+  { id: 's4', name: 'Anna Černá', initials: 'AC', color: '#F59E0B', averageScore: 88 },
+  { id: 's5', name: 'Tomáš Procházka', initials: 'TP', color: '#8B5CF6', averageScore: 67 },
+  { id: 's6', name: 'Lucie Veselá', initials: 'LV', color: '#EF4444', averageScore: 79 },
+  { id: 's7', name: 'Ondřej Němec', initials: 'ON', color: '#3B82F6', averageScore: 85 },
+  { id: 's8', name: 'Karolína Marková', initials: 'KM', color: '#14B8A6', averageScore: 72 },
+  { id: 's9', name: 'Filip Horák', initials: 'FH', color: '#F97316', averageScore: 64 },
+  { id: 's10', name: 'Adéla Králová', initials: 'AK', color: '#A855F7', averageScore: 93 },
+  { id: 's11', name: 'Jakub Kučera', initials: 'JK', color: '#22C55E', averageScore: 58 },
+  { id: 's12', name: 'Tereza Pospíšilová', initials: 'TP', color: '#06B6D4', averageScore: 86 },
+];
+
 // Demo data generator
 function generateDemoStudentProfile(studentId: string): StudentProfile {
-  const names = [
-    { name: 'Jan Novák', initials: 'JN', color: '#6366F1' },
-    { name: 'Marie Svobodová', initials: 'MS', color: '#EC4899' },
-    { name: 'Petr Dvořák', initials: 'PD', color: '#10B981' },
-    { name: 'Anna Černá', initials: 'AC', color: '#F59E0B' },
-    { name: 'Tomáš Procházka', initials: 'TP', color: '#8B5CF6' },
-  ];
-  
-  const studentIndex = parseInt(studentId.replace(/\D/g, '')) % names.length || 0;
-  const student = names[studentIndex];
+  const student = DEMO_CLASS_STUDENTS.find(s => s.id === studentId) || DEMO_CLASS_STUDENTS[0];
   
   const results: StudentResult[] = [
     { id: 'r1', assignmentId: 'a1', assignmentTitle: 'Závěrečný test - Teplo a teplota', assignmentType: 'test', score: 8, maxScore: 10, percentage: 80, correctCount: 8, totalQuestions: 10, completedAt: '2024-12-15T10:30:00Z', timeSpentMs: 1200000, teacherComment: 'Výborná práce!', boardId: 'board_teplo' },
@@ -67,15 +85,11 @@ function generateDemoStudentProfile(studentId: string): StudentProfile {
   const testResults = results.filter(r => r.assignmentType === 'test');
   const practiceResults = results.filter(r => r.assignmentType === 'practice');
   const individualResults = results.filter(r => r.assignmentType === 'individual');
-  
-  const allScores = results.map(r => r.percentage);
-  const averageScore = allScores.length > 0 ? Math.round(allScores.reduce((a, b) => a + b, 0) / allScores.length) : 0;
-  
   const sortedResults = [...results].sort((a, b) => parseISO(b.completedAt).getTime() - parseISO(a.completedAt).getTime());
   
   return {
     id: studentId, name: student.name, initials: student.initials, color: student.color,
-    classId: '1', className: '6.A', averageScore, totalTests: testResults.length,
+    classId: '1', className: '6.A', averageScore: student.averageScore, totalTests: testResults.length,
     totalPractice: practiceResults.length, totalIndividual: individualResults.length, trend: 'up', results: sortedResults,
   };
 }
@@ -176,8 +190,20 @@ export function StudentProfilePage() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'test' | 'practice' | 'individual'>('all');
   
+  // Sidebar states
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarVisible, setSidebarVisible] = useState(true);
+  const [toolsOpen, setToolsOpen] = useState(false);
+  const [logoHovered, setLogoHovered] = useState(false);
+  
+  // Class students for sidebar
+  const classStudents = DEMO_CLASS_STUDENTS;
+  
   useEffect(() => {
-    if (studentId) { setProfile(generateDemoStudentProfile(studentId)); setLoading(false); }
+    if (studentId) { 
+      setProfile(generateDemoStudentProfile(studentId)); 
+      setLoading(false); 
+    }
   }, [studentId]);
   
   const filteredResults = useMemo(() => {
@@ -186,54 +212,241 @@ export function StudentProfilePage() {
     return profile.results.filter(r => r.assignmentType === filter);
   }, [profile, filter]);
   
-  const handleViewDetail = (result: StudentResult) => { console.log('View detail for:', result.assignmentTitle); };
+  const handleViewDetail = (result: StudentResult) => { 
+    console.log('View detail for:', result.assignmentTitle); 
+  };
   
-  if (loading) return <div className="min-h-screen bg-slate-100 flex items-center justify-center"><div className="animate-spin w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full"></div></div>;
-  if (!profile) return <div className="min-h-screen bg-slate-100 flex items-center justify-center"><p className="text-slate-600">Student nenalezen</p></div>;
+  if (loading) return (
+    <div className="min-h-screen bg-slate-100 flex items-center justify-center">
+      <div className="animate-spin w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full"></div>
+    </div>
+  );
+  
+  if (!profile) return (
+    <div className="min-h-screen bg-slate-100 flex items-center justify-center">
+      <p className="text-slate-600">Student nenalezen</p>
+    </div>
+  );
   
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-100 to-slate-200">
-      <div className="bg-white border-b border-slate-200 sticky top-0 z-10">
-        <div className="max-w-3xl mx-auto px-4 py-4">
-          <button onClick={() => navigate(-1)} className="flex items-center gap-2 text-slate-600 hover:text-slate-800 mb-4"><ArrowLeft className="w-5 h-5" /><span>Zpět</span></button>
-        </div>
-      </div>
-      <div className="max-w-3xl mx-auto px-4 py-6">
-        <div className="bg-white rounded-3xl shadow-lg overflow-hidden mb-6">
-          <div className="h-24" style={{ background: 'linear-gradient(135deg, ' + profile.color + ' 0%, ' + profile.color + '99 100%)' }} />
-          <div className="px-6 pb-6 -mt-12">
-            <div className="flex items-end gap-4 mb-4">
-              <div className="w-24 h-24 rounded-2xl flex items-center justify-center text-white text-3xl font-bold shadow-lg border-4 border-white" style={{ backgroundColor: profile.color }}>{profile.initials}</div>
-              <div className="pb-2"><h1 className="text-2xl font-bold text-slate-800">{profile.name}</h1><p className="text-slate-500 flex items-center gap-2"><BookOpen className="w-4 h-4" />Třída {profile.className}</p></div>
+    <div className="min-h-screen bg-slate-50">
+      <div className="flex">
+        {/* Left Sidebar - Green with student list */}
+        <aside 
+          className={`
+            top-0 h-screen shrink-0 flex flex-col 
+            transition-all duration-300 ease-in-out
+            fixed left-0 z-30 w-[294px]
+            ${sidebarOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full'}
+            lg:sticky lg:translate-x-0 lg:shadow-none
+            ${!sidebarVisible ? 'lg:w-0 lg:overflow-hidden lg:border-r-0' : 'lg:w-[312px]'}
+          `}
+          style={{ backgroundColor: '#084939' }}
+        >
+          <div 
+            className="w-[294px] lg:w-[312px] h-full flex flex-col min-w-[294px] lg:min-w-[312px]"
+            style={{ backgroundColor: '#084939' }}
+          >
+            {/* Header */}
+            <div className="p-4" style={{ backgroundColor: toolsOpen ? '#4E5871' : undefined }}>
+              {toolsOpen ? (
+                <div className="flex items-center justify-between min-h-[40px] animate-in fade-in duration-200">
+                  <span className="text-white/90 font-bold text-[12px] uppercase tracking-wider pl-1">Naše produkty</span>
+                  <button onClick={() => setToolsOpen(false)} className="p-1.5 rounded-md hover:bg-white/10 transition-colors text-white/90">
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1">
+                    <div className="flex items-center justify-center min-h-[40px] w-20">
+                      <Link to="/docs/knihovna-vividbooks/introduction" className="flex items-center">
+                        <div className="w-20 h-10 text-white"><VividLogo /></div>
+                      </Link>
+                    </div>
+                    <ToolsDropdown isOpen={toolsOpen} onToggle={() => setToolsOpen(!toolsOpen)} label="Moje třídy" variant="green" />
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <button onClick={() => setSidebarOpen(false)} className="lg:hidden p-1.5 rounded-md transition-colors text-white/70 hover:text-white hover:bg-white/10">
+                      <X className="h-5 w-5" />
+                    </button>
+                    <button onClick={() => setSidebarVisible(false)} className="hidden lg:block p-1.5 rounded-md transition-colors text-white/70 hover:text-white hover:bg-white/10" title="Skrýt menu">
+                      <PanelLeftClose className="h-[23px] w-[23px]" />
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
-            <div className="grid grid-cols-4 gap-3 mt-6">
-              <div className="bg-gradient-to-br from-indigo-50 to-purple-50 rounded-2xl p-4 text-center">
-                <div className="flex items-center justify-center gap-1 mb-1"><span className="text-3xl font-bold text-indigo-600">{profile.averageScore}%</span>{profile.trend === 'up' && <TrendingUp className="w-5 h-5 text-emerald-500" />}{profile.trend === 'down' && <TrendingDown className="w-5 h-5 text-red-500" />}{profile.trend === 'stable' && <Minus className="w-5 h-5 text-slate-400" />}</div>
-                <p className="text-xs text-slate-500">Průměr</p>
-              </div>
-              <div className="bg-slate-50 rounded-2xl p-4 text-center"><div className="text-2xl font-bold text-slate-800">{profile.totalTests}</div><p className="text-xs text-slate-500">Testů</p></div>
-              <div className="bg-slate-50 rounded-2xl p-4 text-center"><div className="text-2xl font-bold text-slate-800">{profile.totalPractice}</div><p className="text-xs text-slate-500">Procvič.</p></div>
-              <div className="bg-slate-50 rounded-2xl p-4 text-center"><div className="text-2xl font-bold text-slate-800">{profile.totalIndividual}</div><p className="text-xs text-slate-500">Samost.</p></div>
-            </div>
-            <div className="mt-6 p-4 rounded-2xl bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-100">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-xl bg-emerald-500 flex items-center justify-center"><Trophy className="w-6 h-6 text-white" /></div>
-                <div><h3 className="font-semibold text-emerald-800">{profile.averageScore >= 80 ? 'Výborný výkon!' : profile.averageScore >= 60 ? 'Dobrá práce!' : 'Pokračuj v učení!'}</h3><p className="text-sm text-emerald-700">{profile.trend === 'up' ? 'Tvé výsledky se zlepšují 📈' : profile.trend === 'down' ? 'Zkus se více soustředit' : 'Udržuješ stabilní výkon'}</p></div>
-              </div>
+
+            {/* Navigation Content */}
+            <div className="flex-1 overflow-hidden text-white flex flex-col">
+              {toolsOpen ? (
+                <div className="h-full" style={{ backgroundColor: '#4E5871' }}>
+                  <ToolsMenu activeItem="my-classes" onItemClick={() => { setToolsOpen(false); setSidebarOpen(false); }} />
+                </div>
+              ) : (
+                <div className="flex-1 overflow-y-auto">
+                  {/* Back to class button */}
+                  <div className="px-4 pb-3">
+                    <button
+                      onClick={() => navigate('/library/my-classes')}
+                      className="flex items-center gap-2 text-white/70 hover:text-white text-sm py-2"
+                    >
+                      <ArrowLeft className="w-4 h-4" />
+                      Zpět na třídy
+                    </button>
+                  </div>
+                  
+                  {/* Class name header */}
+                  <div className="px-4 pb-3">
+                    <div className="flex items-center gap-2 text-white">
+                      <Users className="w-5 h-5" />
+                      <span className="font-semibold">Třída {profile.className}</span>
+                      <span className="text-white/60 text-sm">({classStudents.length} žáků)</span>
+                    </div>
+                  </div>
+                  
+                  {/* Student list */}
+                  <div className="px-3 pb-20">
+                    <div className="space-y-1">
+                      {classStudents.map((student) => {
+                        const isActive = student.id === studentId;
+                        return (
+                          <button
+                            key={student.id}
+                            onClick={() => navigate(`/library/student/${student.id}`)}
+                            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all ${
+                              isActive 
+                                ? 'bg-white/20 text-white' 
+                                : 'text-white/80 hover:bg-white/10 hover:text-white'
+                            }`}
+                          >
+                            <div 
+                              className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0"
+                              style={{ backgroundColor: student.color }}
+                            >
+                              {student.initials}
+                            </div>
+                            <span className="text-sm font-medium truncate flex-1 text-left">{student.name}</span>
+                            <span className={`text-xs font-bold px-2 py-1 rounded-full ${
+                              student.averageScore >= 80 ? 'bg-emerald-500/20 text-emerald-300' :
+                              student.averageScore >= 60 ? 'bg-amber-500/20 text-amber-300' :
+                              'bg-red-500/20 text-red-300'
+                            }`}>
+                              {student.averageScore}%
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
-        </div>
-        <div className="bg-white rounded-2xl shadow-sm p-2 mb-6 flex gap-1">
-          {[{ key: 'all', label: 'Vše', count: profile.results.length }, { key: 'test', label: 'Testy', count: profile.totalTests }, { key: 'practice', label: 'Procvičování', count: profile.totalPractice }, { key: 'individual', label: 'Samostatné', count: profile.totalIndividual }].map(tab => (
-            <button key={tab.key} onClick={() => setFilter(tab.key as any)} className={'flex-1 py-2.5 px-3 rounded-xl text-sm font-medium transition-all flex items-center justify-center gap-2 ' + (filter === tab.key ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100')}>
-              {tab.label}<span className={'text-xs px-1.5 py-0.5 rounded-full ' + (filter === tab.key ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-600')}>{tab.count}</span>
+        </aside>
+        
+        {/* Mobile menu toggle */}
+        {!sidebarVisible && (
+          <button
+            onClick={() => setSidebarVisible(true)}
+            className="hidden lg:flex fixed left-4 top-4 z-40 p-2 bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow items-center gap-2"
+          >
+            <PanelLeft className="h-5 w-5 text-slate-600" />
+          </button>
+        )}
+        
+        {/* Mobile overlay */}
+        {sidebarOpen && (
+          <div className="fixed inset-0 bg-black/50 z-20 lg:hidden" onClick={() => setSidebarOpen(false)} />
+        )}
+        
+        {/* Main Content */}
+        <main className="flex-1 min-w-0">
+          {/* Mobile header */}
+          <div className="lg:hidden sticky top-0 z-10 bg-white border-b border-slate-200 px-4 py-3 flex items-center gap-3">
+            <button onClick={() => setSidebarOpen(true)} className="p-2 -ml-2 rounded-lg hover:bg-slate-100">
+              <PanelLeft className="h-5 w-5 text-slate-600" />
             </button>
-          ))}
-        </div>
-        <div className="space-y-4 pb-8">
-          {filteredResults.length === 0 ? (<div className="bg-white rounded-2xl p-8 text-center"><BookOpen className="w-12 h-12 text-slate-300 mx-auto mb-3" /><p className="text-slate-500">Žádné výsledky v této kategorii</p></div>)
-          : filteredResults.map(result => (<ResultCard key={result.id} result={result} onViewDetail={handleViewDetail} />))}
-        </div>
+            <span className="font-medium text-slate-800">{profile.name}</span>
+          </div>
+          
+          <div className="max-w-3xl mx-auto px-4 py-6">
+            {/* Profile Card */}
+            <div className="bg-white rounded-3xl shadow-lg overflow-hidden mb-6">
+              <div className="h-24" style={{ background: 'linear-gradient(135deg, ' + profile.color + ' 0%, ' + profile.color + '99 100%)' }} />
+              <div className="px-6 pb-6 -mt-12">
+                <div className="flex items-end gap-4 mb-4">
+                  <div className="w-24 h-24 rounded-2xl flex items-center justify-center text-white text-3xl font-bold shadow-lg border-4 border-white" style={{ backgroundColor: profile.color }}>{profile.initials}</div>
+                  <div className="pb-2">
+                    <h1 className="text-2xl font-bold text-slate-800">{profile.name}</h1>
+                    <p className="text-slate-500 flex items-center gap-2"><BookOpen className="w-4 h-4" />Třída {profile.className}</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-4 gap-3 mt-6">
+                  <div className="bg-gradient-to-br from-indigo-50 to-purple-50 rounded-2xl p-4 text-center">
+                    <div className="flex items-center justify-center gap-1 mb-1">
+                      <span className="text-3xl font-bold text-indigo-600">{profile.averageScore}%</span>
+                      {profile.trend === 'up' && <TrendingUp className="w-5 h-5 text-emerald-500" />}
+                      {profile.trend === 'down' && <TrendingDown className="w-5 h-5 text-red-500" />}
+                      {profile.trend === 'stable' && <Minus className="w-5 h-5 text-slate-400" />}
+                    </div>
+                    <p className="text-xs text-slate-500">Průměr</p>
+                  </div>
+                  <div className="bg-slate-50 rounded-2xl p-4 text-center"><div className="text-2xl font-bold text-slate-800">{profile.totalTests}</div><p className="text-xs text-slate-500">Testů</p></div>
+                  <div className="bg-slate-50 rounded-2xl p-4 text-center"><div className="text-2xl font-bold text-slate-800">{profile.totalPractice}</div><p className="text-xs text-slate-500">Procvič.</p></div>
+                  <div className="bg-slate-50 rounded-2xl p-4 text-center"><div className="text-2xl font-bold text-slate-800">{profile.totalIndividual}</div><p className="text-xs text-slate-500">Samost.</p></div>
+                </div>
+                <div className="mt-6 p-4 rounded-2xl bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-100">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-xl bg-emerald-500 flex items-center justify-center"><Trophy className="w-6 h-6 text-white" /></div>
+                    <div>
+                      <h3 className="font-semibold text-emerald-800">{profile.averageScore >= 80 ? 'Výborný výkon!' : profile.averageScore >= 60 ? 'Dobrá práce!' : 'Pokračuj v učení!'}</h3>
+                      <p className="text-sm text-emerald-700">{profile.trend === 'up' ? 'Tvé výsledky se zlepšují 📈' : profile.trend === 'down' ? 'Zkus se více soustředit' : 'Udržuješ stabilní výkon'}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            {/* Filter tabs */}
+            <div className="bg-white rounded-2xl shadow-sm p-2 mb-6 flex gap-1">
+              {[
+                { key: 'all', label: 'Vše', count: profile.results.length },
+                { key: 'test', label: 'Testy', count: profile.totalTests },
+                { key: 'practice', label: 'Procvičování', count: profile.totalPractice },
+                { key: 'individual', label: 'Samostatné', count: profile.totalIndividual },
+              ].map(tab => (
+                <button
+                  key={tab.key}
+                  onClick={() => setFilter(tab.key as any)}
+                  className={`flex-1 py-2.5 px-3 rounded-xl text-sm font-medium transition-all flex items-center justify-center gap-2 ${
+                    filter === tab.key ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'
+                  }`}
+                >
+                  {tab.label}
+                  <span className={`text-xs px-1.5 py-0.5 rounded-full ${filter === tab.key ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-600'}`}>
+                    {tab.count}
+                  </span>
+                </button>
+              ))}
+            </div>
+            
+            {/* Results feed */}
+            <div className="space-y-4 pb-8">
+              {filteredResults.length === 0 ? (
+                <div className="bg-white rounded-2xl p-8 text-center">
+                  <BookOpen className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+                  <p className="text-slate-500">Žádné výsledky v této kategorii</p>
+                </div>
+              ) : (
+                filteredResults.map(result => (
+                  <ResultCard key={result.id} result={result} onViewDetail={handleViewDetail} />
+                ))
+              )}
+            </div>
+          </div>
+        </main>
       </div>
     </div>
   );
