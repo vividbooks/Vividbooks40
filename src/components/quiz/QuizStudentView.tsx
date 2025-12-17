@@ -68,6 +68,7 @@ interface ShareData {
 interface StudentShareData {
   studentId: string;
   studentName: string;
+  schoolName?: string;
   joinedAt: string;
   lastActiveAt: string;
   currentSlide: number;
@@ -182,6 +183,7 @@ export function QuizStudentView() {
   const [quiz, setQuiz] = useState<Quiz | null>(null);
   const [studentId, setStudentId] = useState<string | null>(null);
   const [studentName, setStudentName] = useState('');
+  const [schoolName, setSchoolName] = useState('');
   const [hasStarted, setHasStarted] = useState(false);
   const [isCompleted, setIsCompleted] = useState(false);
   
@@ -349,12 +351,13 @@ export function QuizStudentView() {
   };
 
   // Register new student
-  const registerStudent = async (newStudentId: string, name: string) => {
+  const registerStudent = async (newStudentId: string, name: string, school?: string) => {
     if (!shareId) return;
     
     const studentData: StudentShareData = {
       studentId: newStudentId,
       studentName: name,
+      schoolName: school || '',
       joinedAt: new Date().toISOString(),
       lastActiveAt: new Date().toISOString(),
       currentSlide: 0,
@@ -484,7 +487,7 @@ export function QuizStudentView() {
       } else {
         // Create new record
         setStudentId(finalStudentId);
-        await registerStudent(finalStudentId, studentName);
+        await registerStudent(finalStudentId, studentName, schoolName);
       }
       
       // Save session
@@ -748,35 +751,48 @@ export function QuizStudentView() {
   
   if (!hasStarted) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-500 flex items-center justify-center p-4">
+      <div className="min-h-screen bg-gradient-to-br from-cyan-500 via-blue-600 to-indigo-700 flex items-center justify-center p-4">
         {renderConnectionBanner()}
         <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl">
           <div className="text-center mb-8">
-            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center mx-auto mb-4">
+            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center mx-auto mb-4">
               <Users className="w-8 h-8 text-white" />
             </div>
-            <h1 className="text-2xl font-bold text-slate-800">{quiz.title}</h1>
-            <p className="text-slate-500 mt-1">{shareData.sessionName}</p>
+            <h1 className="text-2xl font-bold text-slate-800">Připojte se do soutěže!</h1>
+            <p className="text-slate-500 mt-1">{quiz.title}</p>
           </div>
           
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-2">
-                Tvé jméno
+                Jméno
               </label>
               <input
                 type="text"
                 value={studentName}
                 onChange={(e) => setStudentName(e.target.value)}
                 placeholder="Jan Novák"
-                className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none text-lg"
+                className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none text-lg"
+              />
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-2">
+                Jméno školy
+              </label>
+              <input
+                type="text"
+                value={schoolName}
+                onChange={(e) => setSchoolName(e.target.value)}
+                placeholder="ZŠ Příklad"
+                className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none text-lg"
               />
             </div>
             
             <button
               onClick={startSession}
               disabled={!studentName.trim() || !isOnline}
-              className="w-full py-4 rounded-2xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold text-lg transition-all flex items-center justify-center gap-2 shadow-lg shadow-indigo-500/25"
+              className="w-full py-4 rounded-2xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-700 hover:to-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold text-lg transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-500/25"
             >
               {!isOnline ? (
                 <>
@@ -786,7 +802,7 @@ export function QuizStudentView() {
               ) : (
                 <>
                   <Play className="w-5 h-5" />
-                  Začít kvíz
+                  Připojit se
                 </>
               )}
             </button>

@@ -52,6 +52,7 @@ const STUDENT_IDENTITY_KEY = 'vivid-student-identity';
 
 interface StudentData {
   name: string;
+  schoolName?: string;
   joinedAt: string;
   currentSlide: number;
   responses: SlideResponse[];
@@ -170,6 +171,7 @@ export function QuizJoinPage() {
   // Join state
   const [code, setCode] = useState(initialCode);
   const [name, setName] = useState('');
+  const [school, setSchool] = useState('');
   const [error, setError] = useState('');
   const [isJoining, setIsJoining] = useState(false);
   
@@ -571,6 +573,7 @@ export function QuizJoinPage() {
       // Prepare student data
       const studentData: StudentData = {
         name,
+        schoolName: school || '',
         joinedAt: existingStudentId 
           ? (sessionData.students![existingStudentId].joinedAt || new Date().toISOString())
           : new Date().toISOString(),
@@ -811,15 +814,15 @@ export function QuizJoinPage() {
   
   if (!isJoined) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-500 flex items-center justify-center p-4">
+      <div className="min-h-screen bg-gradient-to-br from-cyan-500 via-blue-600 to-indigo-700 flex items-center justify-center p-4">
         {renderConnectionBanner()}
         <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl">
           <div className="text-center mb-8">
-            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center mx-auto mb-4">
+            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center mx-auto mb-4">
               <Users className="w-8 h-8 text-white" />
             </div>
             <h1 className="text-2xl font-bold text-slate-800">
-              Připojit se ke kvízu
+              Připojte se do soutěže!
             </h1>
             <p className="text-slate-500 mt-1">Zadej kód od učitele</p>
           </div>
@@ -835,20 +838,33 @@ export function QuizJoinPage() {
                 onChange={(e) => setCode(e.target.value.toUpperCase())}
                 placeholder="ABCD12"
                 maxLength={6}
-                className="w-full px-4 py-4 text-center text-3xl font-mono font-bold rounded-2xl border-2 border-slate-200 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/20 outline-none uppercase tracking-[0.5em] transition-all"
+                className="w-full px-4 py-4 text-center text-3xl font-mono font-bold rounded-2xl border-2 border-slate-200 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/20 outline-none uppercase tracking-[0.5em] transition-all"
               />
             </div>
             
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-2">
-                Tvé jméno
+                Jméno
               </label>
               <input
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Jan Novák"
-                className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none text-lg"
+                className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none text-lg"
+              />
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-2">
+                Jméno školy
+              </label>
+              <input
+                type="text"
+                value={school}
+                onChange={(e) => setSchool(e.target.value)}
+                placeholder="ZŠ Příklad"
+                className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none text-lg"
               />
             </div>
             
@@ -862,7 +878,7 @@ export function QuizJoinPage() {
             <button
               onClick={joinSession}
               disabled={isJoining || !code || !name || !isOnline}
-              className="w-full py-4 rounded-2xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold text-lg transition-all flex items-center justify-center gap-2 shadow-lg shadow-indigo-500/25"
+              className="w-full py-4 rounded-2xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-700 hover:to-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold text-lg transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-500/25"
             >
               {isJoining ? (
                 <RefreshCw className="w-5 h-5 animate-spin" />
