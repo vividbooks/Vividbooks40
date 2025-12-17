@@ -301,7 +301,7 @@ export function ClassResultsGrid({ classId, className, onBack }: ClassResultsGri
                     onMouseLeave={() => setHoveredRow(null)}
                   >
                     {/* Student name */}
-                    <td className="sticky left-0 z-10 px-4 py-1" style={{ backgroundColor: isHoveredRow ? '#EEF2FF' : '#FFFFFF' }}>
+                    <td className="sticky left-0 z-10 px-4" style={{ backgroundColor: isHoveredRow ? '#EEF2FF' : '#FFFFFF', padding: '1px 16px' }}>
                       <div className="flex items-center gap-3">
                         <div 
                           className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold"
@@ -330,7 +330,7 @@ export function ClassResultsGrid({ classId, className, onBack }: ClassResultsGri
                             width: isIndividual ? '15px' : '120px',
                             minWidth: isIndividual ? '15px' : '120px',
                             maxWidth: isIndividual ? '15px' : '120px',
-                            padding: '2px 0',
+                            padding: '1px 0',
                           }}
                           onMouseEnter={() => setHoveredColumn(assignment.id)}
                           onMouseLeave={() => setHoveredColumn(null)}
@@ -341,9 +341,9 @@ export function ClassResultsGrid({ classId, className, onBack }: ClassResultsGri
                               className={isHighlighted ? 'ring-2 ring-indigo-400 ring-offset-1' : ''}
                               style={{ 
                                 width: '15px', 
-                                height: '50px', 
+                                height: '45px', 
                                 backgroundColor: bgColor,
-                                borderRadius: '5px',
+                                borderRadius: '8px',
                                 margin: '0 auto',
                               }}
                               title={score === null ? 'Nehotovo' : score === -1 ? 'Čeká' : `${score}/10`}
@@ -357,10 +357,10 @@ export function ClassResultsGrid({ classId, className, onBack }: ClassResultsGri
                               `}
                               style={{ 
                                 width: '120px', 
-                                height: '50px', 
+                                height: '45px', 
                                 backgroundColor: bgColor, 
                                 color: textColor,
-                                borderRadius: '5px',
+                                borderRadius: '8px',
                               }}
                             >
                               {score === null ? '-' : score === -1 ? '?' : `${score} / ${result?.max_score || 10}`}
@@ -371,14 +371,14 @@ export function ClassResultsGrid({ classId, className, onBack }: ClassResultsGri
                     })}
                     
                     {/* Average */}
-                    <td className="px-2 py-1 text-center">
+                    <td className="px-2 text-center" style={{ padding: '1px 8px' }}>
                       <div 
                         className="flex items-center justify-center text-sm font-bold text-white"
                         style={{ 
                           width: '70px', 
-                          height: '50px', 
+                          height: '45px', 
                           backgroundColor: '#4A90E2',
-                          borderRadius: '5px',
+                          borderRadius: '8px',
                           margin: '0 auto',
                         }}
                       >
