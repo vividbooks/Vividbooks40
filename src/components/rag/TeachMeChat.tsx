@@ -3,9 +3,9 @@
  */
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Send, Loader2, GraduationCap, X, BookOpen, Sparkles, RefreshCw, Volume2, VolumeX, ChevronDown } from 'lucide-react';
+import { Send, Loader2, GraduationCap, X, BookOpen, Sparkles, RefreshCw, Volume2, VolumeX, ChevronDown, Key } from 'lucide-react';
 import { chatWithRAG, simpleChatWithAI, isGeminiConfigured } from '../../utils/gemini-rag';
-import { chatWithOpenAI } from '../../utils/openai-chat';
+import { chatWithOpenAI, setOpenAIKey, getOpenAIKey } from '../../utils/openai-chat';
 import { speak as googleSpeak, stop as stopSpeaking, isSpeaking } from '../../utils/google-tts';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -88,6 +88,8 @@ export function TeachMeChat({
   const [voiceEnabled, setVoiceEnabled] = useState(true); // Mluvení zapnuto v základu
   const [selectedModel, setSelectedModel] = useState<ModelType | null>(null); // null = ještě nevybráno
   const [showModelDropdown, setShowModelDropdown] = useState(false);
+  const [showApiKeyInput, setShowApiKeyInput] = useState(false);
+  const [apiKeyInput, setApiKeyInput] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const lastMessageIdRef = useRef<string>(''); // Prázdný = přečte i welcome zprávu
@@ -349,13 +351,61 @@ Odpovídej česky! 😊`;
               <Sparkles className="w-5 h-5 text-yellow-400" />
               <h2 className="font-bold text-lg">AI Učitel</h2>
             </div>
-            <Button 
-              onClick={onClose}
-              className="bg-yellow-500 hover:bg-yellow-600 text-black font-bold h-8 px-3 text-sm"
-            >
-              Zavřít
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                onClick={() => setShowApiKeyInput(!showApiKeyInput)}
+                variant="ghost"
+                className={`h-8 px-2 ${showApiKeyInput ? 'text-yellow-400' : 'text-gray-400 hover:text-gray-300'}`}
+                title="Nastavení API klíče"
+              >
+                <Key className="w-4 h-4" />
+              </Button>
+              <Button 
+                onClick={onClose}
+                className="bg-yellow-500 hover:bg-yellow-600 text-black font-bold h-8 px-3 text-sm"
+              >
+                Zavřít
+              </Button>
+            </div>
           </div>
+
+          {/* API Key Input Panel */}
+          {showApiKeyInput && (
+            <div className="p-4 bg-white/5 border-b border-white/10">
+              <div className="flex items-center gap-2 mb-2">
+                <Key className="w-4 h-4 text-yellow-400" />
+                <span className="text-sm font-medium">OpenAI API Klíč</span>
+                {getOpenAIKey() && (
+                  <span className="text-xs text-green-400 ml-2">✓ Nastaven</span>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <input
+                  type="password"
+                  value={apiKeyInput}
+                  onChange={(e) => setApiKeyInput(e.target.value)}
+                  placeholder="sk-proj-..."
+                  className="flex-1 px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white text-sm placeholder-gray-500 focus:outline-none focus:border-yellow-400"
+                />
+                <Button
+                  onClick={() => {
+                    if (apiKeyInput.trim()) {
+                      setOpenAIKey(apiKeyInput.trim());
+                      setApiKeyInput('');
+                      setShowApiKeyInput(false);
+                    }
+                  }}
+                  disabled={!apiKeyInput.trim()}
+                  className="bg-yellow-500 hover:bg-yellow-600 text-black font-bold h-10 px-4 text-sm disabled:opacity-50"
+                >
+                  Uložit
+                </Button>
+              </div>
+              <p className="text-xs text-gray-400 mt-2">
+                Klíč se uloží do prohlížeče a bude použit pro OpenAI modely (GPT-5, GPT-4).
+              </p>
+            </div>
+          )}
 
           {/* Rozcestník */}
           <div className="flex-1 flex flex-col items-center justify-center p-6">

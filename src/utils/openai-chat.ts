@@ -1,7 +1,7 @@
 import OpenAI from 'openai';
 
 // Get API key from localStorage or env variable
-function getOpenAIKey(): string {
+export function getOpenAIKey(): string {
   // First check localStorage (runtime configuration)
   if (typeof window !== 'undefined') {
     const storedKey = localStorage.getItem('openai_api_key');
