@@ -302,7 +302,7 @@ export function MyClassesLayout({ theme, toggleTheme }: MyClassesLayoutProps) {
                           <div className="flex justify-center py-4">
                             <RefreshCw className="w-5 h-5 text-white/50 animate-spin" />
                           </div>
-                        ) : historicalSessions.slice(0, 10).map(session => (
+                        ) : historicalSessions.filter(s => s.studentsCount > 0).slice(0, 10).map(session => (
                           <button
                             key={session.id}
                             onClick={() => navigate(`/quiz/results/${session.id}?type=${session.type}`)}
@@ -323,7 +323,7 @@ export function MyClassesLayout({ theme, toggleTheme }: MyClassesLayoutProps) {
                             <ChevronRight className="h-4 w-4 text-white/40 group-hover:text-white/70" />
                           </button>
                         ))}
-                        {!loadingSessions && historicalSessions.length === 0 && (
+                        {!loadingSessions && historicalSessions.filter(s => s.studentsCount > 0).length === 0 && (
                           <div className="text-center py-8 text-white/60">
                             Zatím žádné relace
                           </div>
@@ -630,7 +630,7 @@ export function MyClassesLayout({ theme, toggleTheme }: MyClassesLayoutProps) {
                     <div className="flex items-center justify-center py-12">
                       <RefreshCw className="w-8 h-8 text-indigo-500 animate-spin" />
                     </div>
-                  ) : historicalSessions.length === 0 ? (
+                  ) : historicalSessions.filter(s => s.studentsCount > 0).length === 0 ? (
                     <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center">
                       <BarChart3 className="h-12 w-12 text-slate-300 mx-auto mb-4" />
                       <h3 className="text-lg font-semibold text-slate-700 mb-2">Zatím žádné relace</h3>
@@ -651,7 +651,7 @@ export function MyClassesLayout({ theme, toggleTheme }: MyClassesLayoutProps) {
                           </tr>
                         </thead>
                         <tbody>
-                          {historicalSessions.map(session => (
+                          {historicalSessions.filter(s => s.studentsCount > 0).map(session => (
                             <tr 
                               key={session.id} 
                               className="border-b border-slate-100 hover:bg-slate-50 transition-colors cursor-pointer"
