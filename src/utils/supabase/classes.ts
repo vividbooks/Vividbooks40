@@ -63,47 +63,81 @@ export interface ClassWithStudentsAndResults {
 // DEMO DATA
 // =============================================
 
-const DEMO_STUDENTS: Student[] = [
-  { id: 's1', name: 'Marie Netušilová', class_id: 'c1', initials: 'MN', color: '#EC4899', created_at: '2024-09-01' },
-  { id: 's2', name: 'Daniel Ondrášek', class_id: 'c1', initials: 'DO', color: '#EC4899', created_at: '2024-09-01' },
-  { id: 's3', name: 'Dominika Kruchňová', class_id: 'c1', initials: 'DK', color: '#F59E0B', created_at: '2024-09-01' },
-  { id: 's4', name: 'Ondřej Krňanský', class_id: 'c1', initials: 'OK', color: '#EC4899', created_at: '2024-09-01' },
-  { id: 's5', name: 'Tomáš Novák', class_id: 'c1', initials: 'TN', color: '#10B981', created_at: '2024-09-01' },
-  { id: 's6', name: 'Jana Svobodová', class_id: 'c1', initials: 'JS', color: '#6366F1', created_at: '2024-09-01' },
-  { id: 's7', name: 'Petr Dvořák', class_id: 'c1', initials: 'PD', color: '#F59E0B', created_at: '2024-09-01' },
-  { id: 's8', name: 'Eva Horáková', class_id: 'c1', initials: 'EH', color: '#EC4899', created_at: '2024-09-01' },
-  { id: 's9', name: 'Lukáš Marek', class_id: 'c1', initials: 'LM', color: '#10B981', created_at: '2024-09-01' },
-  { id: 's10', name: 'Kateřina Procházková', class_id: 'c1', initials: 'KP', color: '#6366F1', created_at: '2024-09-01' },
-  { id: 's11', name: 'Jakub Černý', class_id: 'c1', initials: 'JČ', color: '#EC4899', created_at: '2024-09-01' },
-  { id: 's12', name: 'Michaela Veselá', class_id: 'c1', initials: 'MV', color: '#F59E0B', created_at: '2024-09-01' },
+// Generate students for each class
+function generateStudentsForClass(classId: string, count: number): Student[] {
+  const firstNames = ['Anna', 'Jakub', 'Tereza', 'Martin', 'Karolína', 'David', 'Eliška', 'Tomáš', 'Natálie', 'Filip', 
+                      'Adéla', 'Ondřej', 'Viktorie', 'Lukáš', 'Barbora', 'Vojtěch', 'Kristýna', 'Matyáš', 'Sofie', 'Adam',
+                      'Michaela', 'Štěpán', 'Klára', 'Dominik', 'Nela', 'Matěj', 'Julie', 'Daniel', 'Emma', 'Jan'];
+  const lastNames = ['Nováková', 'Svoboda', 'Dvořáková', 'Černý', 'Procházková', 'Kučera', 'Veselá', 'Horák', 'Marková', 'Poláček',
+                     'Králová', 'Němec', 'Růžičková', 'Fiala', 'Šimková', 'Kolář', 'Benešová', 'Holub', 'Urbanová', 'Kopecký',
+                     'Vlčková', 'Marek', 'Pavlíková', 'Novotný', 'Jelínková', 'Urban', 'Krejčí', 'Dostál', 'Hrubá', 'Pospíšil'];
+  const colors = ['#EC4899', '#3B82F6', '#8B5CF6', '#10B981', '#F59E0B', '#EF4444', '#06B6D4', '#84CC16'];
+  
+  const students: Student[] = [];
+  for (let i = 0; i < count; i++) {
+    const firstName = firstNames[i % firstNames.length];
+    const lastName = lastNames[i % lastNames.length];
+    const name = `${firstName} ${lastName}`;
+    const initials = `${firstName[0]}${lastName[0]}`;
+    
+    students.push({
+      id: `s_${classId}_${i + 1}`,
+      name,
+      class_id: classId,
+      initials,
+      color: colors[i % colors.length],
+      created_at: '2024-09-01',
+    });
+  }
+  return students;
+}
+
+// Generate assignments for each class
+function generateAssignmentsForClass(classId: string): Assignment[] {
+  return [
+    { id: `a_${classId}_1`, title: 'Hmota a její vlastnosti', type: 'test', class_id: classId, due_date: '2024-09-15', created_at: '2024-09-01' },
+    { id: `a_${classId}_2`, title: 'Síla a pohyb', type: 'practice', class_id: classId, due_date: '2024-10-02', created_at: '2024-09-25' },
+    { id: `a_${classId}_3`, title: 'Newtonovy zákony', type: 'test', class_id: classId, due_date: '2024-10-18', created_at: '2024-10-10' },
+    { id: `a_${classId}_4`, title: 'Práce a energie', type: 'test', class_id: classId, due_date: '2024-11-05', created_at: '2024-10-28' },
+    { id: `a_${classId}_5`, title: 'Procvičování - Energie', type: 'practice', class_id: classId, due_date: '2024-11-15', created_at: '2024-11-08' },
+    { id: `a_${classId}_6`, title: 'Teplo a teplota', type: 'test', class_id: classId, due_date: '2024-12-01', created_at: '2024-11-24' },
+    { id: `i_${classId}_1`, title: 'Hmota - ind.', type: 'individual', class_id: classId, due_date: '2024-09-20', created_at: '2024-09-15' },
+    { id: `i_${classId}_2`, title: 'Energie - ind.', type: 'individual', class_id: classId, due_date: '2024-11-10', created_at: '2024-11-05' },
+  ];
+}
+
+const DEMO_CLASSES: ClassGroup[] = [
+  { id: '1', name: '6.A', teacher_id: 'demo', students_count: 28, created_at: '2024-09-01' },
+  { id: '2', name: '6.B', teacher_id: 'demo', students_count: 26, created_at: '2024-09-01' },
+  { id: '3', name: '7.A', teacher_id: 'demo', students_count: 24, created_at: '2024-09-01' },
+  { id: '4', name: '7.B', teacher_id: 'demo', students_count: 25, created_at: '2024-09-01' },
+  { id: '5', name: '8.A', teacher_id: 'demo', students_count: 22, created_at: '2024-09-01' },
+  { id: '6', name: '8.B', teacher_id: 'demo', students_count: 23, created_at: '2024-09-01' },
+  { id: '7', name: '9.A', teacher_id: 'demo', students_count: 21, created_at: '2024-09-01' },
+  { id: '8', name: '9.B', teacher_id: 'demo', students_count: 20, created_at: '2024-09-01' },
 ];
 
-const DEMO_ASSIGNMENTS: Assignment[] = [
-  { id: 'a1', title: 'Test Hmota', type: 'test', class_id: 'c1', due_date: '2024-09-08', created_at: '2024-09-01' },
-  { id: 'a2', title: 'Procvičování Newtonovy pohyby', type: 'practice', class_id: 'c1', due_date: '2024-09-21', created_at: '2024-09-15' },
-  { id: 'a3', title: 'Test Hmota', type: 'test', class_id: 'c1', due_date: '2024-09-21', created_at: '2024-09-18' },
-  { id: 'a4', title: 'Test Hmota', type: 'test', class_id: 'c1', due_date: '2024-10-08', created_at: '2024-10-01' },
-  { id: 'a5', title: 'Test', type: 'test', class_id: 'c1', due_date: '2024-10-08', created_at: '2024-10-05' },
-  { id: 'a6', title: 'Procvičování', type: 'practice', class_id: 'c1', due_date: '2024-10-30', created_at: '2024-10-25' },
-  // Individual work (from self-study)
-  { id: 'i1', title: 'Hmota - ind.', type: 'individual', class_id: 'c1', due_date: '2024-09-15', created_at: '2024-09-10' },
-  { id: 'i2', title: 'Částice - ind.', type: 'individual', class_id: 'c1', due_date: '2024-10-05', created_at: '2024-10-01' },
-];
+// Generate all demo data
+const DEMO_STUDENTS: Student[] = DEMO_CLASSES.flatMap(c => generateStudentsForClass(c.id, c.students_count || 20));
+const DEMO_ASSIGNMENTS: Assignment[] = DEMO_CLASSES.flatMap(c => generateAssignmentsForClass(c.id));
 
-// Generate random results
+// Generate random results for a specific class
 function generateDemoResults(): { [studentId: string]: { [assignmentId: string]: StudentResult } } {
   const results: { [studentId: string]: { [assignmentId: string]: StudentResult } } = {};
   
   DEMO_STUDENTS.forEach(student => {
     results[student.id] = {};
-    DEMO_ASSIGNMENTS.forEach(assignment => {
-      // Random: 70% has result, 20% not done, 10% pending
+    // Only use assignments for this student's class
+    const classAssignments = DEMO_ASSIGNMENTS.filter(a => a.class_id === student.class_id);
+    
+    classAssignments.forEach(assignment => {
+      // Random: 75% has result, 15% not done, 10% pending
       const rand = Math.random();
       let score: number | null = null;
       
-      if (rand < 0.7) {
-        // Has result - score between 3 and 10
-        score = Math.floor(Math.random() * 8) + 3;
+      if (rand < 0.75) {
+        // Has result - score between 4 and 10
+        score = Math.floor(Math.random() * 7) + 4;
       } else if (rand < 0.9) {
         // Not done
         score = null;
@@ -127,11 +161,15 @@ function generateDemoResults(): { [studentId: string]: { [assignmentId: string]:
   return results;
 }
 
-const DEMO_CLASSES: ClassGroup[] = [
-  { id: 'c1', name: '6.A', teacher_id: 'demo', students_count: 12, created_at: '2024-09-01' },
-  { id: 'c2', name: '6.B', teacher_id: 'demo', students_count: 22, created_at: '2024-09-01' },
-  { id: 'c3', name: '7.C', teacher_id: 'demo', students_count: 18, created_at: '2024-09-01' },
-];
+// Cache demo results to avoid regenerating on each call
+let cachedDemoResults: { [studentId: string]: { [assignmentId: string]: StudentResult } } | null = null;
+
+function getDemoResults(): { [studentId: string]: { [assignmentId: string]: StudentResult } } {
+  if (!cachedDemoResults) {
+    cachedDemoResults = generateDemoResults();
+  }
+  return cachedDemoResults;
+}
 
 // =============================================
 // DATA SOURCE TOGGLE
@@ -339,7 +377,18 @@ export async function createAssignment(assignment: Omit<Assignment, 'id' | 'crea
 
 export async function getResults(classId: string): Promise<{ [studentId: string]: { [assignmentId: string]: StudentResult } }> {
   if (!useSupabaseData) {
-    return generateDemoResults();
+    // Filter results for students in this class
+    const allResults = getDemoResults();
+    const classStudents = DEMO_STUDENTS.filter(s => s.class_id === classId);
+    const filteredResults: { [studentId: string]: { [assignmentId: string]: StudentResult } } = {};
+    
+    classStudents.forEach(student => {
+      if (allResults[student.id]) {
+        filteredResults[student.id] = allResults[student.id];
+      }
+    });
+    
+    return filteredResults;
   }
   
   try {
