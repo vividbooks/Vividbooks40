@@ -807,8 +807,9 @@ export function QuizJoinPage() {
   const currentSlideId = currentSlide ? currentSlide.id : '';
   const hasAnswered = responses.some(function(r) { return r.slideId === currentSlideId; });
   const currentResponse = responses.find(function(r) { return r.slideId === currentSlideId; });
-  const correctCount = responses.filter(function(r) { return r.isCorrect; }).length;
-  const wrongCount = responses.filter(function(r) { return !r.isCorrect; }).length;
+  // Only count responses where isCorrect has been set by teacher (not undefined)
+  const correctCount = responses.filter(function(r) { return r.isCorrect === true; }).length;
+  const wrongCount = responses.filter(function(r) { return r.isCorrect === false; }).length;
   const canNavigate = session && session.isLocked === false;
   
   // Require answer to proceed (for activity slides)
