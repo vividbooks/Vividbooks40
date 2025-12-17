@@ -43,25 +43,35 @@ export function MathText({ children, className, mathScale = 1.3 }: MathTextProps
     return <span className={className}>{children}</span>;
   }
 
-  // Pre-process: Fix JavaScript escape sequences that break LaTeX commands
-  // When users type \frac, \textbf, etc., these can get corrupted if processed as JS strings:
-  // \t -> tab, \f -> form feed, \r -> carriage return, \n -> newline, \b -> backspace
-  let processedInput = children
-    // Fix \frac (form feed + rac -> \frac)
-    .replace(/\frac\{/g, '\\frac{')
-    .replace(/rac\{([^}]*)\}\{([^}]*)\}/g, '\\frac{$1}{$2}')
-    // Fix \textbf (tab + extbf -> \textbf)
-    .replace(/\textbf\{/g, '\\textbf{')
-    .replace(/extbf\{/g, '\\textbf{')
-    // Fix \textit (tab + extit -> \textit)
-    .replace(/\textit\{/g, '\\textit{')
-    .replace(/extit\{/g, '\\textit{')
-    // Fix other common LaTeX commands with escape chars
-    .replace(/\bac\{/g, '\\bac{')      // \b -> backspace
-    .replace(/\right/g, '\\right')      // \r -> carriage return  
-    .replace(/\left/g, '\\left')
-    .replace(/\neq/g, '\\neq')          // \n -> newline
-    .replace(/\not/g, '\\not');
+  // Pre-process: Fix corrupted LaTeX commands
+  // The data might contain broken LaTeX like "\tNEROVNÁ" (should be \textbf{NEROVNÁ})
+  // or "\f" + fraction (should be \frac{}{})
+  
+  let processedInput = children;
+  
+  // Step 1: Fix literal "\t" followed by word (corrupted \textbf)
+  // Pattern: \t followed by uppercase word = was \textbf{}
+  processedInput = processedInput.replace(/\\t([A-ZÁČĎÉĚÍŇÓŘŠŤÚŮÝŽ][A-ZÁČĎÉĚÍŇÓŘŠŤÚŮÝŽa-záčďéěíňóřšťúůýž]*)/g, '\\textbf{$1}');
+  
+  // Step 2: Fix literal "\f" that appears before math content  
+  // Remove stray \f that precedes $ (math delimiter) or \frac
+  processedInput = processedInput.replace(/\\f\s*(?=\$)/g, ''); // Remove \f before $
+  processedInput = processedInput.replace(/\\f\s*(?=\\frac)/g, ''); // Remove \f before \frac
+  // If \f is followed by { it was probably \frac{
+  processedInput = processedInput.replace(/\\f\s*\{/g, '\\frac{');
+  
+  // Step 3: Handle actual control characters (ASCII codes)
+  processedInput = processedInput.replace(/\x0Crac\{/g, '\\frac{');  // form-feed + rac{
+  processedInput = processedInput.replace(/\x09extbf\{/g, '\\textbf{'); // tab + extbf{
+  processedInput = processedInput.replace(/\x09extit\{/g, '\\textit{'); // tab + extit{
+  
+  // Step 4: Handle orphaned command parts (backslash completely eaten)
+  processedInput = processedInput.replace(/(?<![\\a-zA-Z])rac\{([^}]*)\}\{([^}]*)\}/g, '\\frac{$1}{$2}');
+  processedInput = processedInput.replace(/(?<![\\a-zA-Z])extbf\{([^}]*)\}/g, '\\textbf{$1}');
+  processedInput = processedInput.replace(/(?<![\\a-zA-Z])extit\{([^}]*)\}/g, '\\textit{$1}');
+  
+  // Step 5: Clean up any remaining stray escape sequences before math
+  processedInput = processedInput.replace(/\\[tfnrb]\s*(?=\$)/g, ''); // Remove \t, \f, \n, \r, \b before $
   
   // Auto-wrap LaTeX math commands not inside $...$ with inline math delimiters
   // This handles cases where content contains \frac, \sqrt, etc. without $ wrapping
