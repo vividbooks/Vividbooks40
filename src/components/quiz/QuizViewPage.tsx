@@ -415,10 +415,13 @@ export function QuizViewPage() {
     return () => off(sessionRef);
   }, [sessionId]);
   
-  // Sync slide index to session
+  // Sync slide index to session and reset showResults for new slide
   useEffect(() => {
     if (sessionId && session?.isActive) {
-      update(ref(database, getSessionPath(sessionId)), { currentSlideIndex });
+      update(ref(database, getSessionPath(sessionId)), { 
+        currentSlideIndex,
+        showResults: false // Reset so students don't see results until teacher evaluates
+      });
     }
   }, [sessionId, currentSlideIndex, session?.isActive]);
   
@@ -836,6 +839,11 @@ export function QuizViewPage() {
                           });
                         }
                       }
+                      
+                      // Set showResults to true so students can see correct/incorrect
+                      await update(ref(database, getSessionPath(sessionId)), {
+                        showResults: true
+                      });
                     }}
                     className="w-full py-3 rounded-lg text-white text-sm font-bold flex items-center justify-center gap-2 transition-colors"
                     style={{ backgroundColor: hasUnevaluatedAnswers ? '#7C3AED' : '#4ade80' }}

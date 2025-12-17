@@ -707,12 +707,15 @@ export function QuizJoinPage() {
     // Calculate time spent on this slide in seconds
     const timeSpentSeconds = Math.round((Date.now() - slideStartTime) / 1000);
     
+    // DON'T set isCorrect here - let the teacher evaluate
+    // Student submits answer without knowing if it's correct
     const response: SlideResponse = {
       slideId: currentSlideForAnswer.id,
       activityType: currentSlideForAnswer.activityType,
       answer,
-      isCorrect,
-      points: isCorrect ? (currentSlideForAnswer as any).points || 1 : 0,
+      // isCorrect is NOT set here - will be set by teacher's "Vyhodnotit" button
+      isCorrect: undefined as any, // Explicitly undefined until teacher evaluates
+      points: 0, // Points will be set after teacher evaluation
       answeredAt: new Date().toISOString(),
       timeSpent: timeSpentSeconds,
     };
@@ -1207,8 +1210,8 @@ export function QuizJoinPage() {
                     const isSelected = selectedOption === option.id;
                     const isCorrectOption = option.isCorrect;
                     const wasSelected = currentResponse?.answer === option.id;
-                    // Only show correct/incorrect after teacher has evaluated (isCorrect is defined)
-                    const isEvaluated = currentResponse?.isCorrect !== undefined;
+                    // Only show correct/incorrect after teacher has clicked "Vyhodnotit"
+                    const isEvaluated = session?.showResults === true;
                     const showCorrectness = isEvaluated;
                     
                     return (
@@ -1264,7 +1267,7 @@ export function QuizJoinPage() {
               {currentSlide.type === 'activity' && currentSlide.activityType === 'open' && (
                 <div className="w-full max-w-2xl mx-auto px-6">
                   {(() => {
-                    const isEvaluated = currentResponse?.isCorrect !== undefined;
+                    const isEvaluated = session?.showResults === true;
                     return (
                       <>
                         <textarea
