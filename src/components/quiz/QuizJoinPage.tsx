@@ -1071,12 +1071,16 @@ export function QuizJoinPage() {
     <div className="flex flex-col h-screen" style={{ backgroundColor: '#F0F1F8' }}>
       {renderConnectionBanner()}
       
-      {/* Desktop: Top bar with stats */}
-      <div className="hidden lg:flex relative items-center justify-center px-6 py-4" style={{ backgroundColor: '#F0F1F8' }}>
-        <div className="w-1/2 max-w-xl flex items-center gap-1.5">
+      {/* Desktop: Top bar with stats - using grid for proper layout */}
+      <div className="hidden lg:grid px-6 py-4" style={{ backgroundColor: '#F0F1F8', gridTemplateColumns: '1fr auto 1fr' }}>
+        {/* Left spacer */}
+        <div />
+        {/* Center: Progress bar */}
+        <div className="flex items-center gap-1.5" style={{ width: '500px' }}>
           {renderProgressBar()}
         </div>
-        <div className="absolute right-6 flex items-center gap-4">
+        {/* Right: Stats */}
+        <div className="flex items-center justify-end gap-4">
           <div className="flex items-center gap-1.5 text-emerald-600">
             <CheckCircle className="w-5 h-5" />
             <span className="font-bold">{correctCount}</span>
@@ -1089,9 +1093,9 @@ export function QuizJoinPage() {
       </div>
       
       {/* Mobile: Top navigation */}
-      <div className="flex lg:hidden relative items-center gap-3 px-4 py-4" style={{ backgroundColor: '#F0F1F8' }}>
+      <div className="lg:hidden px-4 py-4" style={{ backgroundColor: '#F0F1F8' }}>
         {canNavigate ? (
-          <>
+          <div className="flex items-center gap-3">
             <button
               onClick={goToPrevSlide}
               disabled={currentSlideIndex === 0}
@@ -1109,13 +1113,13 @@ export function QuizJoinPage() {
             >
               <ArrowRight className="w-5 h-5" />
             </button>
-          </>
+          </div>
         ) : (
-          <>
-            <div className="flex-1 flex items-center gap-1.5 pr-20">
+          <div className="grid" style={{ gridTemplateColumns: '1fr auto' }}>
+            <div className="flex items-center gap-1.5 pr-4">
               {renderProgressBar()}
             </div>
-            <div className="absolute right-4 flex items-center gap-3">
+            <div className="flex items-center gap-3 flex-shrink-0">
               <div className="flex items-center gap-1 text-emerald-600">
                 <CheckCircle className="w-4 h-4" />
                 <span className="font-bold text-sm">{correctCount}</span>
@@ -1125,7 +1129,7 @@ export function QuizJoinPage() {
                 <span className="font-bold text-sm">{wrongCount}</span>
               </div>
             </div>
-          </>
+          </div>
         )}
       </div>
       
