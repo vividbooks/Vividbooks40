@@ -29,6 +29,7 @@ import {
   updateWorkSession,
   completeWorkSession,
 } from '../../utils/student-work';
+import { syncIndividualWorkToClass, isUsingSupabase } from '../../utils/supabase/classes';
 
 export function QuizSelfStudyPage() {
   const { id: boardId } = useParams<{ id: string }>();
@@ -237,6 +238,25 @@ export function QuizSelfStudyPage() {
       quiz.createdBy,
       quiz.id
     );
+    
+    // Sync to Supabase if enabled and quiz has a class assignment
+    if (isUsingSupabase() && quiz.createdBy) {
+      const identity = getStudentIdentity();
+      if (identity) {
+        await syncIndividualWorkToClass(
+          'c1', // TODO: Get actual class ID from quiz or student
+          quiz.id,
+          quiz.title,
+          [{
+            studentName: identity.name,
+            score: correctCount,
+            maxScore: totalQuestions,
+            timeSpentMs: totalTimeMs,
+            completedAt: new Date().toISOString(),
+          }]
+        );
+      }
+    }
     
     setIsCompleted(true);
   };

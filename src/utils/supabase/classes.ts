@@ -511,3 +511,137 @@ export async function syncIndividualWorkToClass(
   }
 }
 
+// =============================================
+// SYNC LIVE SESSION RESULTS TO SUPABASE
+// =============================================
+
+export interface LiveSessionResult {
+  studentName: string;
+  responses: Array<{
+    slideId: string;
+    score: number;
+    maxScore: number;
+    isCorrect: boolean;
+  }>;
+  totalScore: number;
+  maxPossibleScore: number;
+  timeSpentMs?: number;
+  completedAt: string;
+}
+
+/**
+ * Sync results from a live quiz session to Supabase
+ * Called when teacher ends the session
+ */
+export async function syncResultsToSupabase(
+  sessionId: string,
+  quizId: string,
+  quizTitle: string,
+  classId: string | undefined,
+  results: LiveSessionResult[]
+): Promise<void> {
+  if (!useSupabaseData) {
+    console.log('Supabase sync skipped - using demo data');
+    return;
+  }
+  
+  if (!classId) {
+    console.log('Supabase sync skipped - no class ID');
+    return;
+  }
+  
+  try {
+    // Create or find assignment for this session
+    const assignmentTitle = `${quizTitle} - ${new Date().toLocaleDateString('cs-CZ')}`;
+    
+    // Check if assignment exists for this session
+    const { data: existingAssignments } = await supabase
+      .from('assignments')
+      .select('id')
+      .eq('class_id', classId)
+      .eq('title', assignmentTitle)
+      .eq('type', 'test');
+    
+    let assignmentId: string;
+    
+    if (existingAssignments && existingAssignments.length > 0) {
+      assignmentId = existingAssignments[0].id;
+    } else {
+      const { data: newAssignment, error: assignmentError } = await supabase
+        .from('assignments')
+        .insert({
+          title: assignmentTitle,
+          type: 'test',
+          class_id: classId,
+          board_id: quizId,
+          due_date: new Date().toISOString().split('T')[0],
+        })
+        .select()
+        .single();
+      
+      if (assignmentError || !newAssignment) {
+        console.error('Error creating assignment:', assignmentError);
+        return;
+      }
+      assignmentId = newAssignment.id;
+    }
+    
+    // Save results for each student
+    for (const result of results) {
+      // Find or create student
+      const { data: students } = await supabase
+        .from('students')
+        .select('id')
+        .eq('class_id', classId)
+        .ilike('name', result.studentName);
+      
+      let studentId: string;
+      
+      if (students && students.length > 0) {
+        studentId = students[0].id;
+      } else {
+        // Create new student
+        const initials = result.studentName
+          .split(' ')
+          .map(n => n[0])
+          .join('')
+          .toUpperCase()
+          .slice(0, 2);
+        
+        const colors = ['#EC4899', '#F59E0B', '#10B981', '#6366F1', '#EF4444', '#8B5CF6'];
+        const randomColor = colors[Math.floor(Math.random() * colors.length)];
+        
+        const { data: newStudent, error: studentError } = await supabase
+          .from('students')
+          .insert({
+            name: result.studentName,
+            class_id: classId,
+            initials,
+            color: randomColor,
+          })
+          .select()
+          .single();
+        
+        if (studentError || !newStudent) {
+          console.error('Error creating student:', studentError);
+          continue;
+        }
+        studentId = newStudent.id;
+      }
+      
+      // Save result
+      await supabase.from('results').upsert({
+        student_id: studentId,
+        assignment_id: assignmentId,
+        score: result.totalScore,
+        max_score: result.maxPossibleScore,
+        completed_at: result.completedAt,
+        time_spent_ms: result.timeSpentMs,
+      }, { onConflict: 'student_id,assignment_id' });
+    }
+    
+    console.log(`Synced ${results.length} results to Supabase for session ${sessionId}`);
+  } catch (error) {
+    console.error('Error syncing results to Supabase:', error);
+  }
+}

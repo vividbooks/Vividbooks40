@@ -26,6 +26,7 @@ import {
   ChevronRight,
   X,
 } from 'lucide-react';
+import { syncResultsToSupabase } from '../../utils/supabase/classes';
 import {
   Quiz,
   QuizSlide,
@@ -158,11 +159,45 @@ export function TeacherSession({ quiz, teacherId, teacherName, onClose }: Teache
   
   // End session
   const endSession = async (viewResults: boolean = false) => {
-    if (sessionId) {
+    if (sessionId && session) {
       await updateSession({ 
         isActive: false, 
         endedAt: new Date().toISOString() 
       });
+      
+      // Sync results to Supabase
+      if (session.students) {
+        const studentResults = Object.entries(session.students).map(([_, student]) => {
+          const responses = student.responses || {};
+          const slideResults = Object.entries(responses).map(([slideId, response]) => ({
+            slideId,
+            score: response.isCorrect ? 1 : 0,
+            maxScore: 1,
+            isCorrect: response.isCorrect || false,
+          }));
+          
+          const totalScore = slideResults.filter(r => r.isCorrect).length;
+          const maxPossibleScore = quiz.slides.filter(s => s.type === 'activity').length;
+          
+          return {
+            studentName: student.name,
+            responses: slideResults,
+            totalScore,
+            maxPossibleScore,
+            timeSpentMs: student.totalTimeMs,
+            completedAt: new Date().toISOString(),
+          };
+        });
+        
+        // Sync to Supabase (will be skipped if not using Supabase)
+        await syncResultsToSupabase(
+          sessionId,
+          quiz.id,
+          quiz.title,
+          undefined, // TODO: Get class ID from quiz settings
+          studentResults
+        );
+      }
       
       if (viewResults) {
         navigate(`/quiz/results/${sessionId}`);
