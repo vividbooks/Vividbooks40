@@ -92,18 +92,32 @@ function generateStudentsForClass(classId: string, count: number): Student[] {
   return students;
 }
 
-// Generate assignments for each class
+// Generate assignments for each class - with individual work randomly interspersed
 function generateAssignmentsForClass(classId: string): Assignment[] {
-  return [
-    { id: `a_${classId}_1`, title: 'Hmota a její vlastnosti', type: 'test', class_id: classId, due_date: '2024-09-15', created_at: '2024-09-01' },
-    { id: `a_${classId}_2`, title: 'Síla a pohyb', type: 'practice', class_id: classId, due_date: '2024-10-02', created_at: '2024-09-25' },
-    { id: `a_${classId}_3`, title: 'Newtonovy zákony', type: 'test', class_id: classId, due_date: '2024-10-18', created_at: '2024-10-10' },
-    { id: `a_${classId}_4`, title: 'Práce a energie', type: 'test', class_id: classId, due_date: '2024-11-05', created_at: '2024-10-28' },
-    { id: `a_${classId}_5`, title: 'Procvičování - Energie', type: 'practice', class_id: classId, due_date: '2024-11-15', created_at: '2024-11-08' },
-    { id: `a_${classId}_6`, title: 'Teplo a teplota', type: 'test', class_id: classId, due_date: '2024-12-01', created_at: '2024-11-24' },
-    { id: `i_${classId}_1`, title: 'Hmota - ind.', type: 'individual', class_id: classId, due_date: '2024-09-20', created_at: '2024-09-15' },
-    { id: `i_${classId}_2`, title: 'Energie - ind.', type: 'individual', class_id: classId, due_date: '2024-11-10', created_at: '2024-11-05' },
+  // Use classId to seed pseudo-random individual work positions
+  const classNum = parseInt(classId) || 1;
+  
+  const assignments: Assignment[] = [
+    { id: `a_${classId}_1`, title: 'Hmota a její vlastnosti', type: 'test', class_id: classId, due_date: '2024-09-08', created_at: '2024-09-01' },
+    { id: `i_${classId}_1`, title: 'Hmota', type: 'individual', class_id: classId, due_date: '2024-09-10', created_at: '2024-09-09' },
+    { id: `a_${classId}_2`, title: 'Síla a pohyb', type: 'practice', class_id: classId, due_date: '2024-09-21', created_at: '2024-09-15' },
+    { id: `i_${classId}_2`, title: 'Síla', type: 'individual', class_id: classId, due_date: '2024-09-23', created_at: '2024-09-22' },
+    { id: `i_${classId}_3`, title: 'Pohyb', type: 'individual', class_id: classId, due_date: '2024-09-25', created_at: '2024-09-24' },
+    { id: `a_${classId}_3`, title: 'Newtonovy zákony', type: 'test', class_id: classId, due_date: '2024-10-05', created_at: '2024-09-28' },
+    { id: `i_${classId}_4`, title: 'Newton', type: 'individual', class_id: classId, due_date: '2024-10-08', created_at: '2024-10-06' },
+    { id: `a_${classId}_4`, title: 'Práce a energie', type: 'test', class_id: classId, due_date: '2024-10-20', created_at: '2024-10-12' },
+    { id: `i_${classId}_5`, title: 'Práce', type: 'individual', class_id: classId, due_date: '2024-10-22', created_at: '2024-10-21' },
+    { id: `a_${classId}_5`, title: 'Procvičování - Energie', type: 'practice', class_id: classId, due_date: '2024-11-02', created_at: '2024-10-26' },
+    { id: `i_${classId}_6`, title: 'Energie', type: 'individual', class_id: classId, due_date: '2024-11-05', created_at: '2024-11-03' },
+    { id: `i_${classId}_7`, title: 'Opak.', type: 'individual', class_id: classId, due_date: '2024-11-08', created_at: '2024-11-06' },
+    { id: `a_${classId}_6`, title: 'Teplo a teplota', type: 'test', class_id: classId, due_date: '2024-11-18', created_at: '2024-11-10' },
+    { id: `i_${classId}_8`, title: 'Teplo', type: 'individual', class_id: classId, due_date: '2024-11-20', created_at: '2024-11-19' },
+    { id: `a_${classId}_7`, title: 'Procvič. - Teplo', type: 'practice', class_id: classId, due_date: '2024-11-28', created_at: '2024-11-22' },
+    { id: `i_${classId}_9`, title: 'Test', type: 'individual', class_id: classId, due_date: '2024-12-01', created_at: '2024-11-29' },
+    { id: `a_${classId}_8`, title: 'Závěrečný test', type: 'test', class_id: classId, due_date: '2024-12-10', created_at: '2024-12-02' },
   ];
+  
+  return assignments;
 }
 
 const DEMO_CLASSES: ClassGroup[] = [
