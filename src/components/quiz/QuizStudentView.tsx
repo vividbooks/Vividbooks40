@@ -887,17 +887,14 @@ export function QuizStudentView() {
       {renderConnectionBanner()}
       
       {/* Desktop: Top bar */}
-      <div className="hidden lg:flex items-center justify-between px-6 py-4" style={{ backgroundColor: '#F0F1F8' }}>
-        {/* Left spacer */}
-        <div className="w-24" />
-        
+      <div className="hidden lg:flex relative items-center justify-center px-6 py-4" style={{ backgroundColor: '#F0F1F8' }}>
         {/* Center: Progress bar */}
-        <div className="flex-1 max-w-xl flex items-center gap-1.5">
+        <div className="w-1/2 max-w-xl flex items-center gap-1.5">
           {renderProgressBar()}
         </div>
         
-        {/* Right: Stats */}
-        <div className="w-24 flex items-center justify-end gap-4">
+        {/* Right: Stats - absolute positioned */}
+        <div className="absolute right-6 flex items-center gap-4">
           <div className="flex items-center gap-1.5 text-emerald-600">
             <CheckCircle className="w-5 h-5" />
             <span className="font-bold">{correctCount}</span>
