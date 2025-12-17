@@ -53,9 +53,6 @@ export function ClassResultsGrid({ classId, className, onBack }: ClassResultsGri
   const [hoveredColumn, setHoveredColumn] = useState<string | null>(null);
   const [hoveredCell, setHoveredCell] = useState<{ studentId: string; assignmentId: string } | null>(null);
   
-  // Selected board for detail panel
-  const [selectedBoard, setSelectedBoard] = useState<Assignment | null>(null);
-  
   // Load data
   useEffect(() => {
     loadData();
@@ -143,20 +140,10 @@ export function ClassResultsGrid({ classId, className, onBack }: ClassResultsGri
     return Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
   };
   
-  // Separate shared and individual assignments
-  const sharedAssignments = assignments.filter(a => a.type !== 'individual');
-  const individualAssignments = assignments.filter(a => a.type === 'individual');
-  
-  // Get the maximum number of individual results any student has
-  const maxIndividualCount = showIndividual 
-    ? Math.max(0, ...students.map(student => {
-        const studentResults = results[student.id] || {};
-        return individualAssignments.filter(a => {
-          const result = studentResults[a.id];
-          return result && result.score !== null && result.score !== -1;
-        }).length;
-      }))
-    : 0;
+  // Filter assignments by type
+  const filteredAssignments = showIndividual 
+    ? assignments 
+    : assignments.filter(a => a.type !== 'individual');
   
   if (loading) {
     return (
@@ -238,29 +225,25 @@ export function ClassResultsGrid({ classId, className, onBack }: ClassResultsGri
               {/* Date row */}
               <tr>
                 <th className="sticky left-0 z-10 bg-white" style={{ minWidth: '200px' }}></th>
-                {sharedAssignments.map((assignment) => (
-                  <th 
-                    key={`date-${assignment.id}`}
-                    className={`py-2 text-xs font-normal text-slate-400 text-center ${
-                      hoveredColumn === assignment.id ? 'bg-indigo-50' : ''
-                    }`}
-                    style={{ 
-                      width: '120px',
-                      minWidth: '120px',
-                      maxWidth: '120px',
-                      padding: '0',
-                    }}
-                  >
-                    {formatDate(assignment.due_date)}
-                  </th>
-                ))}
-                {/* Empty header cells for individual work section */}
-                {showIndividual && Array.from({ length: maxIndividualCount }).map((_, idx) => (
-                  <th 
-                    key={`ind-date-${idx}`}
-                    style={{ width: '15px', minWidth: '15px', maxWidth: '15px', padding: '0' }}
-                  ></th>
-                ))}
+                {filteredAssignments.map((assignment) => {
+                  const isIndividual = assignment.type === 'individual';
+                  return (
+                    <th 
+                      key={`date-${assignment.id}`}
+                      className={`py-2 text-xs font-normal text-slate-400 text-center ${
+                        hoveredColumn === assignment.id ? 'bg-indigo-50' : ''
+                      }`}
+                      style={{ 
+                        width: isIndividual ? '15px' : '120px',
+                        minWidth: isIndividual ? '15px' : '120px',
+                        maxWidth: isIndividual ? '15px' : '120px',
+                        padding: '0',
+                      }}
+                    >
+                      {isIndividual ? '' : formatDate(assignment.due_date)}
+                    </th>
+                  );
+                })}
                 <th className="px-4 py-2 text-xs font-normal text-slate-400 text-center" style={{ minWidth: '80px' }}>
                   Ø
                 </th>
@@ -271,42 +254,55 @@ export function ClassResultsGrid({ classId, className, onBack }: ClassResultsGri
                 <th className="sticky left-0 z-10 bg-white px-4 py-2 text-left text-sm font-medium text-slate-700 border-b border-slate-200">
                   Student
                 </th>
-                {sharedAssignments.map((assignment) => (
-                  <th 
-                    key={`name-${assignment.id}`}
-                    className={`py-2 border-b border-slate-200 cursor-pointer hover:bg-indigo-100 ${
-                      hoveredColumn === assignment.id ? 'bg-indigo-50' : ''
-                    }`}
-                    style={{ 
-                      width: '120px',
-                      minWidth: '120px',
-                      maxWidth: '120px',
-                      padding: '0',
-                    }}
-                    onClick={() => setSelectedBoard(assignment)}
-                    onMouseEnter={() => {
-                      setHoveredColumn(assignment.id);
-                      setHoveredRow(null);
-                      setHoveredCell(null);
-                    }}
-                    onMouseLeave={() => setHoveredColumn(null)}
-                  >
-                    <div className="flex flex-col items-center gap-1 py-1">
-                      {getAssignmentIcon(assignment.type)}
-                      <span className="text-xs text-slate-600 truncate" style={{ maxWidth: '110px' }} title={assignment.title}>
-                        {assignment.title.length > 14 ? `${assignment.title.slice(0, 14)}...` : assignment.title}
-                      </span>
-                    </div>
-                  </th>
-                ))}
-                {/* Individual work header - just empty cells */}
-                {showIndividual && Array.from({ length: maxIndividualCount }).map((_, idx) => (
-                  <th 
-                    key={`ind-name-${idx}`}
-                    className="border-b border-slate-200"
-                    style={{ width: '15px', minWidth: '15px', maxWidth: '15px', padding: '0' }}
-                  ></th>
-                ))}
+                {filteredAssignments.map((assignment) => {
+                  const isIndividual = assignment.type === 'individual';
+                  
+                  // Handle click on column header - navigate to board
+                  const handleColumnClick = () => {
+                    if (!isIndividual && assignment.board_id) {
+                      // Navigate to board results or board detail
+                      // For demo, we'll navigate to quiz results with assignment id
+                      navigate(`/quiz/results/${assignment.id}?type=class&classId=${classId}`);
+                    }
+                  };
+                  
+                  return (
+                    <th 
+                      key={`name-${assignment.id}`}
+                      className={`py-2 border-b border-slate-200 ${!isIndividual ? 'cursor-pointer hover:bg-indigo-100' : ''} ${
+                        hoveredColumn === assignment.id ? 'bg-indigo-50' : ''
+                      }`}
+                      style={{ 
+                        width: isIndividual ? '15px' : '120px',
+                        minWidth: isIndividual ? '15px' : '120px',
+                        maxWidth: isIndividual ? '15px' : '120px',
+                        padding: '0',
+                      }}
+                      onClick={handleColumnClick}
+                      onMouseEnter={() => {
+                        if (!isIndividual) {
+                          setHoveredColumn(assignment.id);
+                          setHoveredRow(null);
+                          setHoveredCell(null);
+                        }
+                      }}
+                      onMouseLeave={() => setHoveredColumn(null)}
+                    >
+                      {isIndividual ? (
+                        // Narrow column for individual - empty header
+                        <div style={{ width: '15px', height: '20px' }} title={assignment.title}></div>
+                      ) : (
+                        // Wide column for tests/practice - clickable
+                        <div className="flex flex-col items-center gap-1 py-1">
+                          {getAssignmentIcon(assignment.type)}
+                          <span className="text-xs text-slate-600 truncate" style={{ maxWidth: '110px' }} title={assignment.title}>
+                            {assignment.title.length > 14 ? `${assignment.title.slice(0, 14)}...` : assignment.title}
+                          </span>
+                        </div>
+                      )}
+                    </th>
+                  );
+                })}
                 <th className="px-4 py-2 text-center text-xs font-medium text-slate-700 border-b border-slate-200">
                   Průměr
                 </th>
@@ -315,20 +311,9 @@ export function ClassResultsGrid({ classId, className, onBack }: ClassResultsGri
             
             {/* Body */}
             <tbody>
-              {students.map((student) => {
+              {students.map((student, studentIdx) => {
                 const average = calculateAverage(student.id);
                 const isHoveredRow = hoveredRow === student.id;
-                
-                // Get this student's completed individual work (sorted by date, no gaps)
-                const studentIndividualResults = individualAssignments
-                  .map(a => {
-                    const result = results[student.id]?.[a.id];
-                    if (result && result.score !== null && result.score !== -1) {
-                      return { assignment: a, result };
-                    }
-                    return null;
-                  })
-                  .filter((item): item is { assignment: Assignment; result: StudentResult } => item !== null);
                 
                 return (
                   <tr 
@@ -359,22 +344,26 @@ export function ClassResultsGrid({ classId, className, onBack }: ClassResultsGri
                       </div>
                     </td>
                     
-                    {/* Shared assignment results */}
-                    {sharedAssignments.map((assignment) => {
+                    {/* Results */}
+                    {filteredAssignments.map((assignment) => {
                       const result = results[student.id]?.[assignment.id];
                       const score = result?.score ?? null;
                       const bgColor = getScoreColor(score);
                       const textColor = getTextColor(score);
+                      const isIndividual = assignment.type === 'individual';
                       const hasData = score !== null && score !== -1;
                       
+                      // Determine if this cell should be highlighted
                       const isCellHovered = hoveredCell?.studentId === student.id && hoveredCell?.assignmentId === assignment.id;
                       const isRowHighlighted = hoveredRow === student.id;
                       const isColumnHighlighted = hoveredColumn === assignment.id;
                       
+                      // Don't highlight empty cells (no data) when row/column is highlighted
                       const shouldShowRing = isCellHovered || 
                         (isRowHighlighted && hasData) || 
                         (isColumnHighlighted && hasData);
                       
+                      // Background for entire td when row or column is highlighted (but not for empty cells)
                       const showBgHighlight = (isRowHighlighted || isColumnHighlighted) && !isCellHovered && hasData;
                       const tdBgColor = showBgHighlight ? 'rgba(99, 102, 241, 0.08)' : 'transparent';
                       
@@ -382,76 +371,51 @@ export function ClassResultsGrid({ classId, className, onBack }: ClassResultsGri
                         <td 
                           key={`result-${student.id}-${assignment.id}`}
                           style={{ 
-                            width: '120px',
-                            minWidth: '120px',
-                            maxWidth: '120px',
+                            width: isIndividual ? '15px' : '120px',
+                            minWidth: isIndividual ? '15px' : '120px',
+                            maxWidth: isIndividual ? '15px' : '120px',
                             padding: '1px 0',
                             backgroundColor: tdBgColor,
                           }}
                           onMouseEnter={() => setHoveredCell({ studentId: student.id, assignmentId: assignment.id })}
                           onMouseLeave={() => setHoveredCell(null)}
                         >
-                          <div 
-                            className={`
-                              flex items-center justify-center text-sm font-medium
-                              ${shouldShowRing ? 'ring-2 ring-indigo-400 ring-offset-1' : ''}
-                            `}
-                            style={{ 
-                              width: '120px', 
-                              height: '45px', 
-                              backgroundColor: bgColor, 
-                              color: textColor,
-                              borderRadius: '8px',
-                              border: !hasData ? '1px solid #E5E7EB' : 'none',
-                            }}
-                          >
-                            {!hasData ? '-' : `${score} / ${result?.max_score || 10}`}
-                          </div>
+                          {isIndividual ? (
+                            // Narrow bar for individual work - no text
+                            <div 
+                              className={shouldShowRing ? 'ring-2 ring-indigo-400 ring-offset-1' : ''}
+                              style={{ 
+                                width: '15px', 
+                                height: '45px', 
+                                backgroundColor: bgColor,
+                                borderRadius: '8px',
+                                margin: '0 auto',
+                                border: !hasData ? '1px solid #E5E7EB' : 'none',
+                              }}
+                              title={!hasData ? 'Nehotovo' : `${score}/10`}
+                            />
+                          ) : (
+                            // Wide cell for tests/practice
+                            <div 
+                              className={`
+                                flex items-center justify-center text-sm font-medium
+                                ${shouldShowRing ? 'ring-2 ring-indigo-400 ring-offset-1' : ''}
+                              `}
+                              style={{ 
+                                width: '120px', 
+                                height: '45px', 
+                                backgroundColor: bgColor, 
+                                color: textColor,
+                                borderRadius: '8px',
+                                border: !hasData ? '1px solid #E5E7EB' : 'none',
+                              }}
+                            >
+                              {!hasData ? '-' : `${score} / ${result?.max_score || 10}`}
+                            </div>
+                          )}
                         </td>
                       );
                     })}
-                    
-                    {/* Individual work - rendered sequentially from left, no gaps */}
-                    {showIndividual && studentIndividualResults.map((item, idx) => {
-                      const score = item.result.score;
-                      const bgColor = getScoreColor(score);
-                      
-                      return (
-                        <td 
-                          key={`ind-${student.id}-${idx}`}
-                          style={{ 
-                            width: '15px',
-                            minWidth: '15px',
-                            maxWidth: '15px',
-                            padding: '1px 0',
-                          }}
-                        >
-                          <div 
-                            style={{ 
-                              width: '15px', 
-                              height: '45px', 
-                              backgroundColor: bgColor,
-                              borderRadius: '8px',
-                              margin: '0 auto',
-                            }}
-                            title={`${item.assignment.title}: ${score}/10`}
-                          />
-                        </td>
-                      );
-                    })}
-                    
-                    {/* Empty cells to fill up to maxIndividualCount */}
-                    {showIndividual && Array.from({ length: maxIndividualCount - studentIndividualResults.length }).map((_, idx) => (
-                      <td 
-                        key={`ind-empty-${student.id}-${idx}`}
-                        style={{ 
-                          width: '15px',
-                          minWidth: '15px',
-                          maxWidth: '15px',
-                          padding: '1px 0',
-                        }}
-                      ></td>
-                    ))}
                     
                     {/* Average */}
                     <td className="px-2 text-center" style={{ padding: '1px 8px' }}>
@@ -483,123 +447,18 @@ export function ClassResultsGrid({ classId, className, onBack }: ClassResultsGri
           <div className="text-sm text-slate-500">Studentů</div>
         </div>
         <div className="bg-white rounded-xl p-4 border border-slate-200">
-          <div className="text-2xl font-bold text-slate-800">{sharedAssignments.filter(a => a.type === 'test').length}</div>
+          <div className="text-2xl font-bold text-slate-800">{filteredAssignments.filter(a => a.type === 'test').length}</div>
           <div className="text-sm text-slate-500">Testů</div>
         </div>
         <div className="bg-white rounded-xl p-4 border border-slate-200">
-          <div className="text-2xl font-bold text-slate-800">{sharedAssignments.filter(a => a.type === 'practice').length}</div>
+          <div className="text-2xl font-bold text-slate-800">{filteredAssignments.filter(a => a.type === 'practice').length}</div>
           <div className="text-sm text-slate-500">Procvičování</div>
         </div>
         <div className="bg-white rounded-xl p-4 border border-slate-200">
-          <div className="text-2xl font-bold text-indigo-600">{individualAssignments.length}</div>
+          <div className="text-2xl font-bold text-indigo-600">{filteredAssignments.filter(a => a.type === 'individual').length}</div>
           <div className="text-sm text-slate-500">Individuální</div>
         </div>
       </div>
-      
-      {/* Board Detail Panel */}
-      {selectedBoard && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setSelectedBoard(null)}>
-          <div 
-            className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[80vh] overflow-hidden"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Header */}
-            <div className="p-6 border-b border-slate-200">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  {getAssignmentIcon(selectedBoard.type)}
-                  <div>
-                    <h2 className="text-xl font-bold text-slate-800">{selectedBoard.title}</h2>
-                    <p className="text-sm text-slate-500">
-                      {selectedBoard.type === 'test' ? 'Test' : 'Procvičování'} • {formatDate(selectedBoard.due_date)}
-                    </p>
-                  </div>
-                </div>
-                <button 
-                  onClick={() => setSelectedBoard(null)}
-                  className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg"
-                >
-                  <XCircle className="w-6 h-6" />
-                </button>
-              </div>
-            </div>
-            
-            {/* Content - Student Results for this board */}
-            <div className="p-6 overflow-y-auto max-h-[60vh]">
-              <h3 className="text-sm font-semibold text-slate-600 mb-4">Výsledky žáků</h3>
-              <div className="space-y-2">
-                {students.map(student => {
-                  const result = results[student.id]?.[selectedBoard.id];
-                  const score = result?.score ?? null;
-                  const hasData = score !== null && score !== -1;
-                  
-                  return (
-                    <div 
-                      key={student.id}
-                      className="flex items-center justify-between p-3 rounded-lg bg-slate-50 hover:bg-slate-100"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div 
-                          className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold"
-                          style={{ backgroundColor: student.color }}
-                        >
-                          {student.initials}
-                        </div>
-                        <span className="font-medium text-slate-700">{student.name}</span>
-                      </div>
-                      <div 
-                        className="px-4 py-2 rounded-lg text-sm font-medium"
-                        style={{ 
-                          backgroundColor: getScoreColor(score),
-                          color: getTextColor(score),
-                          border: !hasData ? '1px solid #E5E7EB' : 'none',
-                        }}
-                      >
-                        {hasData ? `${score} / 10` : 'Neúčast'}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-              
-              {/* Stats for this board */}
-              <div className="mt-6 pt-6 border-t border-slate-200">
-                <div className="grid grid-cols-3 gap-4 text-center">
-                  <div>
-                    <div className="text-2xl font-bold text-slate-800">
-                      {students.filter(s => {
-                        const r = results[s.id]?.[selectedBoard.id];
-                        return r?.score !== null && r?.score !== -1;
-                      }).length}
-                    </div>
-                    <div className="text-xs text-slate-500">Zúčastnilo se</div>
-                  </div>
-                  <div>
-                    <div className="text-2xl font-bold text-emerald-600">
-                      {(() => {
-                        const scores = students
-                          .map(s => results[s.id]?.[selectedBoard.id]?.score)
-                          .filter((s): s is number => s !== null && s !== undefined && s !== -1);
-                        return scores.length > 0 ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length * 10) : 0;
-                      })()}%
-                    </div>
-                    <div className="text-xs text-slate-500">Průměr</div>
-                  </div>
-                  <div>
-                    <div className="text-2xl font-bold text-slate-400">
-                      {students.filter(s => {
-                        const r = results[s.id]?.[selectedBoard.id];
-                        return r?.score === null || r?.score === undefined;
-                      }).length}
-                    </div>
-                    <div className="text-xs text-slate-500">Chybělo</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
