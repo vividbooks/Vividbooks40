@@ -338,15 +338,21 @@ export function ClassResultsGrid({ classId, className, onBack }: ClassResultsGri
                       const bgColor = getScoreColor(score);
                       const textColor = getTextColor(score);
                       const isIndividual = assignment.type === 'individual';
+                      const hasData = score !== null && score !== -1;
                       
                       // Determine if this cell should be highlighted
                       const isCellHovered = hoveredCell?.studentId === student.id && hoveredCell?.assignmentId === assignment.id;
                       const isRowHighlighted = hoveredRow === student.id;
                       const isColumnHighlighted = hoveredColumn === assignment.id;
-                      const isHighlighted = isCellHovered || isRowHighlighted || isColumnHighlighted;
                       
-                      // Background for entire td when row or column is highlighted
-                      const tdBgColor = (isRowHighlighted || isColumnHighlighted) && !isCellHovered ? 'rgba(99, 102, 241, 0.08)' : 'transparent';
+                      // Don't highlight empty individual cells when row/column is highlighted
+                      const shouldShowRing = isCellHovered || 
+                        (isRowHighlighted && (!isIndividual || hasData)) || 
+                        (isColumnHighlighted && hasData);
+                      
+                      // Background for entire td when row or column is highlighted (but not for empty individual cells)
+                      const showBgHighlight = (isRowHighlighted || isColumnHighlighted) && !isCellHovered && (!isIndividual || hasData);
+                      const tdBgColor = showBgHighlight ? 'rgba(99, 102, 241, 0.08)' : 'transparent';
                       
                       return (
                         <td 
@@ -364,23 +370,23 @@ export function ClassResultsGrid({ classId, className, onBack }: ClassResultsGri
                           {isIndividual ? (
                             // Narrow bar for individual work - no text
                             <div 
-                              className={isHighlighted ? 'ring-2 ring-indigo-400 ring-offset-1' : ''}
+                              className={shouldShowRing ? 'ring-2 ring-indigo-400 ring-offset-1' : ''}
                               style={{ 
                                 width: '15px', 
                                 height: '45px', 
                                 backgroundColor: bgColor,
                                 borderRadius: '8px',
                                 margin: '0 auto',
-                                border: score === null || score === -1 ? '1px solid #E5E7EB' : 'none',
+                                border: !hasData ? '1px solid #E5E7EB' : 'none',
                               }}
-                              title={score === null || score === -1 ? 'Nehotovo' : `${score}/10`}
+                              title={!hasData ? 'Nehotovo' : `${score}/10`}
                             />
                           ) : (
                             // Wide cell for tests/practice
                             <div 
                               className={`
                                 flex items-center justify-center text-sm font-medium
-                                ${isHighlighted ? 'ring-2 ring-indigo-400 ring-offset-1' : ''}
+                                ${shouldShowRing ? 'ring-2 ring-indigo-400 ring-offset-1' : ''}
                               `}
                               style={{ 
                                 width: '120px', 
@@ -388,10 +394,10 @@ export function ClassResultsGrid({ classId, className, onBack }: ClassResultsGri
                                 backgroundColor: bgColor, 
                                 color: textColor,
                                 borderRadius: '8px',
-                                border: score === null || score === -1 ? '1px solid #E5E7EB' : 'none',
+                                border: !hasData ? '1px solid #E5E7EB' : 'none',
                               }}
                             >
-                              {score === null || score === -1 ? '-' : `${score} / ${result?.max_score || 10}`}
+                              {!hasData ? '-' : `${score} / ${result?.max_score || 10}`}
                             </div>
                           )}
                         </td>
