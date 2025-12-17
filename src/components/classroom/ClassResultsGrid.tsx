@@ -345,13 +345,13 @@ export function ClassResultsGrid({ classId, className, onBack }: ClassResultsGri
                       const isRowHighlighted = hoveredRow === student.id;
                       const isColumnHighlighted = hoveredColumn === assignment.id;
                       
-                      // Don't highlight empty individual cells when row/column is highlighted
+                      // Don't highlight empty cells (no data) when row/column is highlighted
                       const shouldShowRing = isCellHovered || 
-                        (isRowHighlighted && (!isIndividual || hasData)) || 
+                        (isRowHighlighted && hasData) || 
                         (isColumnHighlighted && hasData);
                       
-                      // Background for entire td when row or column is highlighted (but not for empty individual cells)
-                      const showBgHighlight = (isRowHighlighted || isColumnHighlighted) && !isCellHovered && (!isIndividual || hasData);
+                      // Background for entire td when row or column is highlighted (but not for empty cells)
+                      const showBgHighlight = (isRowHighlighted || isColumnHighlighted) && !isCellHovered && hasData;
                       const tdBgColor = showBgHighlight ? 'rgba(99, 102, 241, 0.08)' : 'transparent';
                       
                       return (
