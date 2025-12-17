@@ -792,7 +792,11 @@ export function QuizStudentView() {
             <button
               onClick={startSession}
               disabled={!studentName.trim() || !isOnline}
-              className="w-full py-4 rounded-2xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-700 hover:to-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold text-lg transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-500/25"
+              className="w-full py-4 rounded-2xl text-white font-bold text-lg transition-all flex items-center justify-center gap-2 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+              style={{ 
+                background: 'linear-gradient(to right, #0891b2, #2563eb)',
+                boxShadow: '0 10px 15px -3px rgba(37, 99, 235, 0.25)'
+              }}
             >
               {!isOnline ? (
                 <>
