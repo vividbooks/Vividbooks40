@@ -43,8 +43,28 @@ export function MathText({ children, className, mathScale = 1.3 }: MathTextProps
     return <span className={className}>{children}</span>;
   }
 
+  // Pre-process: Fix JavaScript escape sequences that break LaTeX commands
+  // When users type \frac, \textbf, etc., these can get corrupted if processed as JS strings:
+  // \t -> tab, \f -> form feed, \r -> carriage return, \n -> newline, \b -> backspace
+  let processedInput = children
+    // Fix \frac (form feed + rac -> \frac)
+    .replace(/\frac\{/g, '\\frac{')
+    .replace(/rac\{([^}]*)\}\{([^}]*)\}/g, '\\frac{$1}{$2}')
+    // Fix \textbf (tab + extbf -> \textbf)
+    .replace(/\textbf\{/g, '\\textbf{')
+    .replace(/extbf\{/g, '\\textbf{')
+    // Fix \textit (tab + extit -> \textit)
+    .replace(/\textit\{/g, '\\textit{')
+    .replace(/extit\{/g, '\\textit{')
+    // Fix other common LaTeX commands with escape chars
+    .replace(/\bac\{/g, '\\bac{')      // \b -> backspace
+    .replace(/\right/g, '\\right')      // \r -> carriage return  
+    .replace(/\left/g, '\\left')
+    .replace(/\neq/g, '\\neq')          // \n -> newline
+    .replace(/\not/g, '\\not');
+
   // Check if the entire string is just a LaTeX expression
-  const trimmed = children.trim();
+  const trimmed = processedInput.trim();
   
   // Block math: $$...$$ or \[...\]
   if ((trimmed.startsWith('$$') && trimmed.endsWith('$$')) ||
@@ -59,7 +79,7 @@ export function MathText({ children, className, mathScale = 1.3 }: MathTextProps
         </ScaledMath>
       );
     } catch (e) {
-      return <span className={className}>{children}</span>;
+      return <span className={className}>{processedInput}</span>;
     }
   }
   
@@ -76,7 +96,7 @@ export function MathText({ children, className, mathScale = 1.3 }: MathTextProps
         </ScaledMath>
       );
     } catch (e) {
-      return <span className={className}>{children}</span>;
+      return <span className={className}>{processedInput}</span>;
     }
   }
 
@@ -86,20 +106,10 @@ export function MathText({ children, className, mathScale = 1.3 }: MathTextProps
 
   // Pre-process: Convert LaTeX text commands outside of math mode to styled HTML
   // This handles \textbf{}, \textit{}, \underline{} etc. that are not inside $...$
-  // Also handles cases where \t was interpreted as a tab character
   
   // Function to process text commands
   const processTextCommands = (text: string): React.ReactNode[] => {
     const result: React.ReactNode[] = [];
-    
-    // First, fix common escaping issues:
-    // - Replace tab + "extbf{" with "\textbf{" (when \t was interpreted as tab)
-    // - Replace tab + "extit{" with "\textit{"
-    let fixedText = text
-      .replace(/\textbf\{/g, '\\textbf{')  // tab+extbf -> \textbf
-      .replace(/\textit\{/g, '\\textit{')  // tab+extit -> \textit
-      .replace(/extbf\{/g, '\\textbf{')    // just extbf (backslash eaten) -> \textbf  
-      .replace(/extit\{/g, '\\textit{');   // just extit -> \textit
     
     // Match \textbf{...}, \textit{...}, \underline{...}, \emph{...}, \text{...}
     const textCmdRegex = /(\\textbf\{([^}]*)\}|\\textit\{([^}]*)\}|\\underline\{([^}]*)\}|\\emph\{([^}]*)\}|\\text\{([^}]*)\})/g;
@@ -107,10 +117,10 @@ export function MathText({ children, className, mathScale = 1.3 }: MathTextProps
     let lastIdx = 0;
     let cmdMatch;
     
-    while ((cmdMatch = textCmdRegex.exec(fixedText)) !== null) {
+    while ((cmdMatch = textCmdRegex.exec(text)) !== null) {
       // Add text before the match
       if (cmdMatch.index > lastIdx) {
-        result.push(fixedText.slice(lastIdx, cmdMatch.index));
+        result.push(text.slice(lastIdx, cmdMatch.index));
       }
       
       const fullMatch = cmdMatch[0];
@@ -128,8 +138,8 @@ export function MathText({ children, className, mathScale = 1.3 }: MathTextProps
     }
     
     // Add remaining text
-    if (lastIdx < fixedText.length) {
-      result.push(fixedText.slice(lastIdx));
+    if (lastIdx < text.length) {
+      result.push(text.slice(lastIdx));
     }
     
     return result.length > 0 ? result : [text];
@@ -142,10 +152,10 @@ export function MathText({ children, className, mathScale = 1.3 }: MathTextProps
   let lastIndex = 0;
   let match;
 
-  while ((match = latexRegex.exec(children)) !== null) {
+  while ((match = latexRegex.exec(processedInput)) !== null) {
     // Add text before the match (process text commands like \textbf)
     if (match.index > lastIndex) {
-      const textBefore = children.slice(lastIndex, match.index);
+      const textBefore = processedInput.slice(lastIndex, match.index);
       const processedParts = processTextCommands(textBefore);
       processedParts.forEach(part => {
         parts.push(typeof part === 'string' ? <span key={key++}>{part}</span> : React.cloneElement(part as React.ReactElement, { key: key++ }));
@@ -185,8 +195,8 @@ export function MathText({ children, className, mathScale = 1.3 }: MathTextProps
   }
 
   // Add remaining text (process text commands like \textbf)
-  if (lastIndex < children.length) {
-    const remainingText = children.slice(lastIndex);
+  if (lastIndex < processedInput.length) {
+    const remainingText = processedInput.slice(lastIndex);
     const processedParts = processTextCommands(remainingText);
     processedParts.forEach(part => {
       parts.push(typeof part === 'string' ? <span key={key++}>{part}</span> : React.cloneElement(part as React.ReactElement, { key: key++ }));
