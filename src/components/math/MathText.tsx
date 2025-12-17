@@ -84,6 +84,47 @@ export function MathText({ children, className, mathScale = 1.3 }: MathTextProps
   const parts: React.ReactNode[] = [];
   let key = 0;
 
+  // Pre-process: Convert LaTeX text commands outside of math mode to styled HTML
+  // This handles \textbf{}, \textit{}, \underline{} etc. that are not inside $...$
+  let processedChildren = children;
+  
+  // Function to process text commands
+  const processTextCommands = (text: string): React.ReactNode[] => {
+    const result: React.ReactNode[] = [];
+    // Match \textbf{...}, \textit{...}, \underline{...}, \emph{...}
+    const textCmdRegex = /(\\textbf\{([^}]*)\}|\\textit\{([^}]*)\}|\\underline\{([^}]*)\}|\\emph\{([^}]*)\}|\\text\{([^}]*)\})/g;
+    
+    let lastIdx = 0;
+    let cmdMatch;
+    
+    while ((cmdMatch = textCmdRegex.exec(text)) !== null) {
+      // Add text before the match
+      if (cmdMatch.index > lastIdx) {
+        result.push(text.slice(lastIdx, cmdMatch.index));
+      }
+      
+      const fullMatch = cmdMatch[0];
+      if (fullMatch.startsWith('\\textbf{')) {
+        result.push(<strong key={`cmd-${cmdMatch.index}`}>{cmdMatch[2]}</strong>);
+      } else if (fullMatch.startsWith('\\textit{') || fullMatch.startsWith('\\emph{')) {
+        result.push(<em key={`cmd-${cmdMatch.index}`}>{cmdMatch[3] || cmdMatch[5]}</em>);
+      } else if (fullMatch.startsWith('\\underline{')) {
+        result.push(<u key={`cmd-${cmdMatch.index}`}>{cmdMatch[4]}</u>);
+      } else if (fullMatch.startsWith('\\text{')) {
+        result.push(<span key={`cmd-${cmdMatch.index}`}>{cmdMatch[6]}</span>);
+      }
+      
+      lastIdx = cmdMatch.index + fullMatch.length;
+    }
+    
+    // Add remaining text
+    if (lastIdx < text.length) {
+      result.push(text.slice(lastIdx));
+    }
+    
+    return result.length > 0 ? result : [text];
+  };
+
   // Regex to match LaTeX expressions
   // Matches: $$...$$, $...$, \[...\], \(...\)
   const latexRegex = /(\$\$[\s\S]*?\$\$|\$[^$\n]+?\$|\\\[[\s\S]*?\\\]|\\\([\s\S]*?\\\))/g;
@@ -92,11 +133,13 @@ export function MathText({ children, className, mathScale = 1.3 }: MathTextProps
   let match;
 
   while ((match = latexRegex.exec(children)) !== null) {
-    // Add text before the match
+    // Add text before the match (process text commands like \textbf)
     if (match.index > lastIndex) {
-      parts.push(
-        <span key={key++}>{children.slice(lastIndex, match.index)}</span>
-      );
+      const textBefore = children.slice(lastIndex, match.index);
+      const processedParts = processTextCommands(textBefore);
+      processedParts.forEach(part => {
+        parts.push(typeof part === 'string' ? <span key={key++}>{part}</span> : React.cloneElement(part as React.ReactElement, { key: key++ }));
+      });
     }
 
     const latex = match[0];
@@ -131,9 +174,13 @@ export function MathText({ children, className, mathScale = 1.3 }: MathTextProps
     lastIndex = match.index + match[0].length;
   }
 
-  // Add remaining text
+  // Add remaining text (process text commands like \textbf)
   if (lastIndex < children.length) {
-    parts.push(<span key={key++}>{children.slice(lastIndex)}</span>);
+    const remainingText = children.slice(lastIndex);
+    const processedParts = processTextCommands(remainingText);
+    processedParts.forEach(part => {
+      parts.push(typeof part === 'string' ? <span key={key++}>{part}</span> : React.cloneElement(part as React.ReactElement, { key: key++ }));
+    });
   }
 
   if (parts.length === 0) {

@@ -64,14 +64,17 @@ interface Page {
 function ViewModeDropdown() {
   const { setViewMode } = useViewMode();
   
+  // Use BASE_URL to handle both localhost and GitHub Pages deployment
+  const baseUrl = import.meta.env.BASE_URL || '/';
+  
   const openAsTeacher = () => {
     setViewMode('teacher');
-    window.open('/docs/fyzika', '_blank');
+    window.open(`${baseUrl}docs/fyzika`, '_blank');
   };
   
   const openAsStudent = () => {
     setViewMode('student');
-    window.open('/library/student-wall', '_blank');
+    window.open(`${baseUrl}library/student-wall`, '_blank');
   };
   
   return (
