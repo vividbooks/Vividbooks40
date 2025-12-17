@@ -86,21 +86,31 @@ export function MathText({ children, className, mathScale = 1.3 }: MathTextProps
 
   // Pre-process: Convert LaTeX text commands outside of math mode to styled HTML
   // This handles \textbf{}, \textit{}, \underline{} etc. that are not inside $...$
-  let processedChildren = children;
+  // Also handles cases where \t was interpreted as a tab character
   
   // Function to process text commands
   const processTextCommands = (text: string): React.ReactNode[] => {
     const result: React.ReactNode[] = [];
-    // Match \textbf{...}, \textit{...}, \underline{...}, \emph{...}
+    
+    // First, fix common escaping issues:
+    // - Replace tab + "extbf{" with "\textbf{" (when \t was interpreted as tab)
+    // - Replace tab + "extit{" with "\textit{"
+    let fixedText = text
+      .replace(/\textbf\{/g, '\\textbf{')  // tab+extbf -> \textbf
+      .replace(/\textit\{/g, '\\textit{')  // tab+extit -> \textit
+      .replace(/extbf\{/g, '\\textbf{')    // just extbf (backslash eaten) -> \textbf  
+      .replace(/extit\{/g, '\\textit{');   // just extit -> \textit
+    
+    // Match \textbf{...}, \textit{...}, \underline{...}, \emph{...}, \text{...}
     const textCmdRegex = /(\\textbf\{([^}]*)\}|\\textit\{([^}]*)\}|\\underline\{([^}]*)\}|\\emph\{([^}]*)\}|\\text\{([^}]*)\})/g;
     
     let lastIdx = 0;
     let cmdMatch;
     
-    while ((cmdMatch = textCmdRegex.exec(text)) !== null) {
+    while ((cmdMatch = textCmdRegex.exec(fixedText)) !== null) {
       // Add text before the match
       if (cmdMatch.index > lastIdx) {
-        result.push(text.slice(lastIdx, cmdMatch.index));
+        result.push(fixedText.slice(lastIdx, cmdMatch.index));
       }
       
       const fullMatch = cmdMatch[0];
@@ -118,8 +128,8 @@ export function MathText({ children, className, mathScale = 1.3 }: MathTextProps
     }
     
     // Add remaining text
-    if (lastIdx < text.length) {
-      result.push(text.slice(lastIdx));
+    if (lastIdx < fixedText.length) {
+      result.push(fixedText.slice(lastIdx));
     }
     
     return result.length > 0 ? result : [text];
