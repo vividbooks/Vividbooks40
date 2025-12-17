@@ -887,7 +887,7 @@ export function QuizStudentView() {
       {renderConnectionBanner()}
       
       {/* Desktop: Top bar - using grid for proper layout */}
-      <div className="hidden lg:grid px-6 py-4" style={{ backgroundColor: '#F0F1F8', gridTemplateColumns: '1fr auto 1fr' }}>
+      <div className="hidden lg:grid px-6 py-4" style={{ backgroundColor: '#d1d5db', gridTemplateColumns: '1fr auto 1fr', borderBottom: '3px solid #6366f1' }}>
         {/* Left spacer */}
         <div />
         {/* Center: Progress bar */}
@@ -908,7 +908,7 @@ export function QuizStudentView() {
       </div>
       
       {/* Mobile: Top navigation */}
-      <div className="flex lg:hidden items-center gap-3 px-4 py-4" style={{ backgroundColor: '#F0F1F8' }}>
+      <div className="flex lg:hidden items-center gap-3 px-4 py-4" style={{ backgroundColor: '#d1d5db', borderBottom: '3px solid #6366f1' }}>
         <button
           onClick={goToPrevSlide}
           disabled={currentSlideIndex === 0}

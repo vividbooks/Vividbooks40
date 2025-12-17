@@ -1109,7 +1109,7 @@ export function QuizJoinPage() {
       {renderConnectionBanner()}
       
       {/* Desktop: Top bar with stats - using grid for proper layout */}
-      <div className="hidden lg:grid px-6 py-4" style={{ backgroundColor: '#E8E9F0', gridTemplateColumns: '1fr auto 1fr' }}>
+      <div className="hidden lg:grid px-6 py-4" style={{ backgroundColor: '#d1d5db', gridTemplateColumns: '1fr auto 1fr', borderBottom: '3px solid #6366f1' }}>
         {/* Left spacer */}
         <div />
         {/* Center: Progress bar */}
@@ -1130,7 +1130,7 @@ export function QuizJoinPage() {
       </div>
       
       {/* Mobile: Top navigation */}
-      <div className="lg:hidden px-4 py-4" style={{ backgroundColor: '#E8E9F0' }}>
+      <div className="lg:hidden px-4 py-4" style={{ backgroundColor: '#d1d5db', borderBottom: '3px solid #6366f1' }}>
         {canNavigate ? (
           <div className="flex items-center gap-3">
             <button
