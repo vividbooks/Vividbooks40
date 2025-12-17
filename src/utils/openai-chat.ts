@@ -1,6 +1,6 @@
 import OpenAI from 'openai';
 
-const OPENAI_API_KEY = import.meta.env.VITE_OPENAI_API_KEY || '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';
+const OPENAI_API_KEY = import.meta.env.VITE_OPENAI_API_KEY || '';
 
 // Inicializace OpenAI klienta
 // Pozor: V produkci by se mělo volat přes backend, aby klíč nebyl v prohlížeči.

@@ -607,8 +607,16 @@ export function QuizStudentView() {
       setSlideStartTime(Date.now()); // Reset slide timer
       setTimeout(() => setIsAnimating(false), 450);
       
-      // Scroll to top on mobile
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+      // Scroll to top on mobile - with fallback for older browsers
+      try {
+        if ('scrollBehavior' in document.documentElement.style) {
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        } else {
+          window.scrollTo(0, 0);
+        }
+      } catch (e) {
+        window.scrollTo(0, 0);
+      }
       
       // Update progress
       await update(ref(database, `${QUIZ_SHARES_PATH}/${shareId}/responses/${studentId}`), {
@@ -631,12 +639,13 @@ export function QuizStudentView() {
   // COMPUTED VALUES
   // ============================================
   
-  const currentSlide = quiz?.slides[currentSlideIndex];
-  const currentResponse = currentSlide ? responses[currentSlide.id] : undefined;
+  const currentSlide = quiz && quiz.slides ? quiz.slides[currentSlideIndex] : undefined;
+  const currentResponse = currentSlide && responses ? responses[currentSlide.id] : undefined;
   const hasAnswered = !!currentResponse;
-  const correctCount = Object.values(responses).filter(r => r.isCorrect).length;
-  const wrongCount = Object.values(responses).filter(r => !r.isCorrect).length;
-  const totalQuestions = quiz?.slides.filter(s => s.type === 'activity').length || 0;
+  const responsesArray = responses ? Object.values(responses) : [];
+  const correctCount = responsesArray.filter(function(r) { return r && r.isCorrect; }).length;
+  const wrongCount = responsesArray.filter(function(r) { return r && !r.isCorrect; }).length;
+  const totalQuestions = quiz && quiz.slides ? quiz.slides.filter(function(s) { return s.type === 'activity'; }).length : 0;
   
   const canProceed = () => {
     // Always require answer for activity slides before proceeding
@@ -650,9 +659,20 @@ export function QuizStudentView() {
   
   const triggerWiggle = () => {
     // Scroll to the answer button and wiggle it
-    answerButtonRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    try {
+      if (answerButtonRef.current) {
+        // Try smooth scroll, fall back to instant scroll for older browsers
+        if ('scrollBehavior' in document.documentElement.style) {
+          answerButtonRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        } else {
+          answerButtonRef.current.scrollIntoView(true);
+        }
+      }
+    } catch (e) {
+      // Ignore scroll errors on old browsers
+    }
     setShowWiggle(true);
-    setTimeout(() => setShowWiggle(false), 800);
+    setTimeout(function() { setShowWiggle(false); }, 800);
   };
 
   // ============================================

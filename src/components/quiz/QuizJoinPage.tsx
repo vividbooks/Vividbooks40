@@ -440,9 +440,11 @@ export function QuizJoinPage() {
     const studentRef = ref(database, `${QUIZ_SESSIONS_PATH}/${sessionId}/students/${studentId}`);
     
     const handleBeforeUnload = () => {
-      // Use sendBeacon for reliable offline update
-      const url = `https://${process.env.REACT_APP_FIREBASE_PROJECT_ID || 'your-project'}.firebaseio.com/${QUIZ_SESSIONS_PATH}/${sessionId}/students/${studentId}.json`;
-      navigator.sendBeacon?.(url, JSON.stringify({ isOnline: false }));
+      // Use sendBeacon for reliable offline update (if supported)
+      const url = 'https://' + (process.env.REACT_APP_FIREBASE_PROJECT_ID || 'your-project') + '.firebaseio.com/' + QUIZ_SESSIONS_PATH + '/' + sessionId + '/students/' + studentId + '.json';
+      if (navigator.sendBeacon) {
+        navigator.sendBeacon(url, JSON.stringify({ isOnline: false }));
+      }
       update(studentRef, { isOnline: false });
     };
     
@@ -725,8 +727,16 @@ export function QuizJoinPage() {
     const newIndex = localSlideIndex + 1;
     setLocalSlideIndex(newIndex);
     
-    // Scroll to top on mobile
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    // Scroll to top on mobile - with fallback for older browsers
+    try {
+      if ('scrollBehavior' in document.documentElement.style) {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      } else {
+        window.scrollTo(0, 0);
+      }
+    } catch (e) {
+      window.scrollTo(0, 0);
+    }
     
     if (sessionId && studentId) {
       await update(ref(database, `${QUIZ_SESSIONS_PATH}/${sessionId}/students/${studentId}`), {
@@ -740,13 +750,14 @@ export function QuizJoinPage() {
   // COMPUTED VALUES
   // ============================================
   
-  const currentSlideIndex = session?.isLocked === false ? localSlideIndex : (session?.currentSlideIndex || 0);
-  const currentSlide = quiz?.slides[currentSlideIndex];
-  const hasAnswered = responses.some(r => r.slideId === currentSlide?.id);
-  const currentResponse = responses.find(r => r.slideId === currentSlide?.id);
-  const correctCount = responses.filter(r => r.isCorrect).length;
-  const wrongCount = responses.filter(r => !r.isCorrect).length;
-  const canNavigate = session?.isLocked === false;
+  const currentSlideIndex = session && session.isLocked === false ? localSlideIndex : (session && session.currentSlideIndex ? session.currentSlideIndex : 0);
+  const currentSlide = quiz && quiz.slides ? quiz.slides[currentSlideIndex] : undefined;
+  const currentSlideId = currentSlide ? currentSlide.id : '';
+  const hasAnswered = responses.some(function(r) { return r.slideId === currentSlideId; });
+  const currentResponse = responses.find(function(r) { return r.slideId === currentSlideId; });
+  const correctCount = responses.filter(function(r) { return r.isCorrect; }).length;
+  const wrongCount = responses.filter(function(r) { return !r.isCorrect; }).length;
+  const canNavigate = session && session.isLocked === false;
   
   // Require answer to proceed (for activity slides)
   const canProceed = !currentSlide || currentSlide.type !== 'activity' || hasAnswered;
@@ -757,9 +768,20 @@ export function QuizJoinPage() {
   
   const triggerWiggle = () => {
     // Scroll to the answer button and wiggle it
-    answerButtonRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    try {
+      if (answerButtonRef.current) {
+        // Try smooth scroll, fall back to instant scroll for older browsers
+        if ('scrollBehavior' in document.documentElement.style) {
+          answerButtonRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        } else {
+          answerButtonRef.current.scrollIntoView(true);
+        }
+      }
+    } catch (e) {
+      // Ignore scroll errors on old browsers
+    }
     setShowWiggle(true);
-    setTimeout(() => setShowWiggle(false), 800);
+    setTimeout(function() { setShowWiggle(false); }, 800);
   };
 
   // ============================================

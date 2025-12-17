@@ -1,7 +1,7 @@
 import OpenAI from 'openai';
 
 // OpenAI API Key
-const OPENAI_API_KEY = import.meta.env.VITE_OPENAI_API_KEY || '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';
+const OPENAI_API_KEY = import.meta.env.VITE_OPENAI_API_KEY || '';
 
 export interface LottieDescriptionResult {
   shortDescription: string;

@@ -84,10 +84,12 @@
       },
       "devDependencies": {
             "@types/node": "^20.10.0",
+            "@vitejs/plugin-legacy": "^6.1.1",
             "@vitejs/plugin-react-swc": "^3.10.2",
             "autoprefixer": "^10.4.23",
             "gh-pages": "^6.3.0",
             "postcss": "^8.5.6",
+            "terser": "^5.44.1",
             "vite": "6.3.5"
       },
       "scripts": {
