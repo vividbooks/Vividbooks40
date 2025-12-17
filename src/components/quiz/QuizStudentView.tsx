@@ -1109,7 +1109,11 @@ export function QuizStudentView() {
                       ((currentSlide as any).activityType === 'abc' && !selectedOption) ||
                       ((currentSlide as any).activityType === 'open' && !textAnswer.trim())
                     }
-                    className={`flex items-center gap-2 px-8 py-4 rounded-xl bg-indigo-600 text-white font-semibold text-lg disabled:opacity-40 disabled:cursor-not-allowed hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-500/25 ${showWiggle ? 'animate-wiggle' : ''}`}
+                    className={`flex items-center gap-2 px-8 py-4 rounded-xl text-white font-semibold text-lg disabled:opacity-40 disabled:cursor-not-allowed transition-all ${showWiggle ? 'animate-wiggle' : ''}`}
+                    style={{ 
+                      backgroundColor: '#4F46E5', 
+                      boxShadow: '0 10px 15px -3px rgba(99, 102, 241, 0.25)',
+                    }}
                   >
                     <Send className="w-5 h-5" />
                     Odpovědět
