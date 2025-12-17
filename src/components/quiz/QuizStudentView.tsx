@@ -604,6 +604,9 @@ export function QuizStudentView() {
       setSlideStartTime(Date.now()); // Reset slide timer
       setTimeout(() => setIsAnimating(false), 450);
       
+      // Scroll to top on mobile
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      
       // Update progress
       await update(ref(database, `${QUIZ_SHARES_PATH}/${shareId}/responses/${studentId}`), {
         currentSlide: currentSlideIndex + 1,
@@ -639,21 +642,15 @@ export function QuizStudentView() {
   };
 
   // ============================================
-  // WIGGLE ANIMATION ON MOBILE
+  // WIGGLE ANIMATION - triggers when clicking disabled arrow
   // ============================================
   
-  useEffect(() => {
-    // Only trigger on mobile when option is selected but not yet answered
-    if (selectedOption && !hasAnswered && window.innerWidth < 1024) {
-      // Scroll to the answer button
-      setTimeout(() => {
-        answerButtonRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        // Trigger wiggle animation
-        setShowWiggle(true);
-        setTimeout(() => setShowWiggle(false), 1000);
-      }, 100);
-    }
-  }, [selectedOption, hasAnswered]);
+  const triggerWiggle = () => {
+    // Scroll to the answer button and wiggle it
+    answerButtonRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setShowWiggle(true);
+    setTimeout(() => setShowWiggle(false), 800);
+  };
 
   // ============================================
   // RENDER: CONNECTION BANNER
@@ -890,9 +887,8 @@ export function QuizStudentView() {
         </div>
         
         <button
-          onClick={goToNextSlide}
-          disabled={!canProceed()}
-          className={`w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 transition-all duration-300 ${!canProceed() ? 'cursor-not-allowed bg-slate-300 text-slate-400' : 'text-white'}`}
+          onClick={() => canProceed() ? goToNextSlide() : triggerWiggle()}
+          className={`w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 transition-all duration-300 ${!canProceed() ? 'bg-slate-300 text-slate-400' : 'text-white'}`}
           style={{ backgroundColor: canProceed() ? '#7C3AED' : undefined }}
         >
           <ArrowRight className="w-5 h-5" />
@@ -1096,9 +1092,8 @@ export function QuizStudentView() {
           {/* Desktop: Right arrow */}
           <div className="hidden lg:flex w-16 flex-shrink-0 items-center justify-center">
             <button
-              onClick={goToNextSlide}
-              disabled={!canProceed()}
-              className={`w-12 h-12 rounded-full flex items-center justify-center transition-all duration-300 ease-out ${!canProceed() ? 'cursor-not-allowed bg-slate-300 text-slate-400' : 'text-white hover:h-24'}`}
+              onClick={() => canProceed() ? goToNextSlide() : triggerWiggle()}
+              className={`w-12 h-12 rounded-full flex items-center justify-center transition-all duration-300 ease-out ${!canProceed() ? 'bg-slate-300 text-slate-400' : 'text-white hover:h-24'}`}
               style={{ backgroundColor: canProceed() ? '#7C3AED' : undefined }}
             >
               <ArrowRight className="w-5 h-5" />

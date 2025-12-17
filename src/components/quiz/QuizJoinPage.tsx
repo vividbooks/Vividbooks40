@@ -722,6 +722,9 @@ export function QuizJoinPage() {
     const newIndex = localSlideIndex + 1;
     setLocalSlideIndex(newIndex);
     
+    // Scroll to top on mobile
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    
     if (sessionId && studentId) {
       await update(ref(database, `${QUIZ_SESSIONS_PATH}/${sessionId}/students/${studentId}`), {
         currentSlide: newIndex,
@@ -746,19 +749,15 @@ export function QuizJoinPage() {
   const canProceed = !currentSlide || currentSlide.type !== 'activity' || hasAnswered;
 
   // ============================================
-  // WIGGLE ANIMATION ON MOBILE
+  // WIGGLE ANIMATION - triggers when clicking disabled arrow
   // ============================================
   
-  useEffect(() => {
-    // Only trigger on mobile when option is selected but not yet answered
-    if (selectedOption && !hasAnswered && !showResult && window.innerWidth < 1024) {
-      setTimeout(() => {
-        answerButtonRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        setShowWiggle(true);
-        setTimeout(() => setShowWiggle(false), 1000);
-      }, 100);
-    }
-  }, [selectedOption, hasAnswered, showResult]);
+  const triggerWiggle = () => {
+    // Scroll to the answer button and wiggle it
+    answerButtonRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setShowWiggle(true);
+    setTimeout(() => setShowWiggle(false), 800);
+  };
 
   // ============================================
   // RENDER: CONNECTION ERROR BANNER
@@ -1041,9 +1040,8 @@ export function QuizJoinPage() {
               {renderProgressBar()}
             </div>
             <button
-              onClick={goToNextSlide}
-              disabled={currentSlideIndex === quiz.slides.length - 1 || !canProceed}
-              className={`w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 transition-all duration-300 ${(currentSlideIndex === quiz.slides.length - 1 || !canProceed) ? 'cursor-not-allowed bg-slate-300 text-slate-400' : 'text-white'}`}
+              onClick={() => (currentSlideIndex < quiz.slides.length - 1 && canProceed) ? goToNextSlide() : (!canProceed ? triggerWiggle() : null)}
+              className={`w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 transition-all duration-300 ${(currentSlideIndex === quiz.slides.length - 1 || !canProceed) ? 'bg-slate-300 text-slate-400' : 'text-white'}`}
               style={{ backgroundColor: (currentSlideIndex < quiz.slides.length - 1 && canProceed) ? '#7C3AED' : undefined }}
             >
               <ArrowRight className="w-5 h-5" />
@@ -1255,9 +1253,8 @@ export function QuizJoinPage() {
           <div className="hidden lg:flex w-16 flex-shrink-0 items-center justify-center">
             {canNavigate && (
               <button
-                onClick={goToNextSlide}
-                disabled={currentSlideIndex === quiz.slides.length - 1 || !canProceed}
-                className={`w-12 h-12 rounded-full flex items-center justify-center transition-all duration-300 ease-out ${(currentSlideIndex === quiz.slides.length - 1 || !canProceed) ? 'cursor-not-allowed bg-slate-300 text-slate-400' : 'text-white hover:h-24'}`}
+                onClick={() => (currentSlideIndex < quiz.slides.length - 1 && canProceed) ? goToNextSlide() : (!canProceed ? triggerWiggle() : null)}
+                className={`w-12 h-12 rounded-full flex items-center justify-center transition-all duration-300 ease-out ${(currentSlideIndex === quiz.slides.length - 1 || !canProceed) ? 'bg-slate-300 text-slate-400' : 'text-white hover:h-24'}`}
                 style={{ backgroundColor: (currentSlideIndex < quiz.slides.length - 1 && canProceed) ? '#7C3AED' : undefined }}
               >
                 <ArrowRight className="w-5 h-5" />
