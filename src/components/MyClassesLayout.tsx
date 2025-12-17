@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   X,
@@ -89,6 +89,11 @@ export function MyClassesLayout({ theme, toggleTheme }: MyClassesLayoutProps) {
   const [historicalSessions, setHistoricalSessions] = useState<HistoricalSession[]>([]);
   const [loadingSessions, setLoadingSessions] = useState(true);
   
+  // Session filters
+  const [filterMonth, setFilterMonth] = useState<string>('all'); // 'all' or '2024-12' format
+  const [filterSubject, setFilterSubject] = useState<string>('all');
+  const [filterClassName, setFilterClassName] = useState<string>('all');
+  
   // Load historical sessions
   useEffect(() => {
     setLoadingSessions(true);
@@ -99,6 +104,60 @@ export function MyClassesLayout({ theme, toggleTheme }: MyClassesLayoutProps) {
     
     return unsubscribe;
   }, []);
+  
+  // Get unique months, subjects and classes from sessions for filter options
+  const filterOptions = React.useMemo(() => {
+    const months = new Set<string>();
+    const subjects = new Set<string>();
+    const classNames = new Set<string>();
+    
+    historicalSessions.forEach(session => {
+      // Extract month from createdAt
+      const date = new Date(session.createdAt);
+      const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+      months.add(monthKey);
+      
+      if (session.subject) subjects.add(session.subject);
+      if (session.className) classNames.add(session.className);
+    });
+    
+    return {
+      months: Array.from(months).sort().reverse(),
+      subjects: Array.from(subjects).sort(),
+      classNames: Array.from(classNames).sort(),
+    };
+  }, [historicalSessions]);
+  
+  // Filter sessions
+  const filteredSessions = React.useMemo(() => {
+    return historicalSessions.filter(session => {
+      // Filter by student count > 0
+      if (session.studentsCount === 0) return false;
+      
+      // Filter by month
+      if (filterMonth !== 'all') {
+        const date = new Date(session.createdAt);
+        const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+        if (monthKey !== filterMonth) return false;
+      }
+      
+      // Filter by subject
+      if (filterSubject !== 'all' && session.subject !== filterSubject) return false;
+      
+      // Filter by class
+      if (filterClassName !== 'all' && session.className !== filterClassName) return false;
+      
+      return true;
+    });
+  }, [historicalSessions, filterMonth, filterSubject, filterClassName]);
+  
+  // Format month for display
+  const formatMonth = (monthKey: string) => {
+    const [year, month] = monthKey.split('-');
+    const monthNames = ['Leden', 'Únor', 'Březen', 'Duben', 'Květen', 'Červen', 
+                        'Červenec', 'Srpen', 'Září', 'Říjen', 'Listopad', 'Prosinec'];
+    return `${monthNames[parseInt(month) - 1]} ${year}`;
+  };
   
   // Legacy mock data for results (fallback)
   const [results, setResults] = useState<TestResult[]>([
@@ -293,41 +352,124 @@ export function MyClassesLayout({ theme, toggleTheme }: MyClassesLayoutProps) {
                   {/* Tab Content */}
                   <div className="px-4 pb-20">
                     {activeTab === 'results' && (
-                      // Results List - Historical Sessions
+                      // Results List - Historical Sessions with Filters
+                      <div className="space-y-3">
+                        {/* Filters */}
                       <div className="space-y-2">
-                        <h3 className="text-xs font-bold text-white/60 uppercase tracking-wider mb-3 px-1">
-                          Poslední relace
+                          <h3 className="text-xs font-bold text-white/60 uppercase tracking-wider px-1">
+                            Filtry
                         </h3>
-                        {loadingSessions ? (
-                          <div className="flex justify-center py-4">
-                            <RefreshCw className="w-5 h-5 text-white/50 animate-spin" />
-                          </div>
-                        ) : historicalSessions.filter(s => s.studentsCount > 0).slice(0, 10).map(session => (
-                          <button
-                            key={session.id}
-                            onClick={() => navigate(`/quiz/results/${session.id}?type=${session.type}`)}
-                            className="w-full flex items-center gap-3 p-3 bg-white/10 hover:bg-white/20 rounded-xl transition-colors text-left group"
+                          
+                          {/* Month Filter */}
+                          <select
+                            value={filterMonth}
+                            onChange={(e) => setFilterMonth(e.target.value)}
+                            className="w-full px-3 py-2 bg-white/10 text-white text-sm rounded-lg border border-white/20 focus:border-white/40 focus:outline-none appearance-none cursor-pointer"
+                            style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 12px center' }}
                           >
-                            <div className="flex-1 min-w-0">
-                              <div className="font-medium text-white truncate">{session.quizTitle}</div>
-                              <div className="text-sm text-white/70 flex items-center gap-2">
-                                <span className={`w-2 h-2 rounded-full ${session.type === 'live' ? 'bg-indigo-400' : 'bg-emerald-400'}`}></span>
-                                {formatSessionDate(session.createdAt)}
-                                {session.isActive && <span className="text-green-400">• Aktivní</span>}
-                              </div>
+                            <option value="all" className="bg-slate-800">Všechny měsíce</option>
+                            {filterOptions.months.map(month => (
+                              <option key={month} value={month} className="bg-slate-800">
+                                {formatMonth(month)}
+                              </option>
+                            ))}
+                          </select>
+                          
+                          {/* Subject Filter */}
+                          {filterOptions.subjects.length > 0 && (
+                            <select
+                              value={filterSubject}
+                              onChange={(e) => setFilterSubject(e.target.value)}
+                              className="w-full px-3 py-2 bg-white/10 text-white text-sm rounded-lg border border-white/20 focus:border-white/40 focus:outline-none appearance-none cursor-pointer"
+                              style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 12px center' }}
+                            >
+                              <option value="all" className="bg-slate-800">Všechny předměty</option>
+                              {filterOptions.subjects.map(subject => (
+                                <option key={subject} value={subject} className="bg-slate-800">
+                                  {subject}
+                                </option>
+                              ))}
+                            </select>
+                          )}
+                          
+                          {/* Class Filter */}
+                          {filterOptions.classNames.length > 0 && (
+                            <select
+                              value={filterClassName}
+                              onChange={(e) => setFilterClassName(e.target.value)}
+                              className="w-full px-3 py-2 bg-white/10 text-white text-sm rounded-lg border border-white/20 focus:border-white/40 focus:outline-none appearance-none cursor-pointer"
+                              style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 12px center' }}
+                            >
+                              <option value="all" className="bg-slate-800">Všechny třídy</option>
+                              {filterOptions.classNames.map(className => (
+                                <option key={className} value={className} className="bg-slate-800">
+                                  {className}
+                                </option>
+                              ))}
+                            </select>
+                          )}
+                          
+                          {/* Clear filters button */}
+                          {(filterMonth !== 'all' || filterSubject !== 'all' || filterClassName !== 'all') && (
+                            <button
+                              onClick={() => {
+                                setFilterMonth('all');
+                                setFilterSubject('all');
+                                setFilterClassName('all');
+                              }}
+                              className="w-full px-3 py-1.5 text-xs text-white/70 hover:text-white bg-white/5 hover:bg-white/10 rounded-lg transition-colors"
+                            >
+                              Zrušit filtry
+                            </button>
+                          )}
+                        </div>
+                        
+                        {/* Divider */}
+                        <div className="border-t border-white/10 my-2"></div>
+                        
+                        {/* Sessions List */}
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between px-1">
+                            <h3 className="text-xs font-bold text-white/60 uppercase tracking-wider">
+                              Relace
+                            </h3>
+                            <span className="text-xs text-white/40">
+                              {filteredSessions.length}
+                            </span>
+                          </div>
+                          
+                          {loadingSessions ? (
+                            <div className="flex justify-center py-4">
+                              <RefreshCw className="w-5 h-5 text-white/50 animate-spin" />
+                            </div>
+                          ) : filteredSessions.slice(0, 15).map(session => (
+                            <button
+                              key={session.id}
+                              onClick={() => navigate(`/quiz/results/${session.id}?type=${session.type}`)}
+                              className="w-full flex items-center gap-3 p-3 bg-white/10 hover:bg-white/20 rounded-xl transition-colors text-left group"
+                            >
+                              <div className="flex-1 min-w-0">
+                                <div className="font-medium text-white truncate">{session.quizTitle}</div>
+                                <div className="text-sm text-white/70 flex items-center gap-2">
+                                  <span className={`w-2 h-2 rounded-full ${session.type === 'live' ? 'bg-indigo-400' : 'bg-emerald-400'}`}></span>
+                                  {formatSessionDate(session.createdAt)}
+                                  {session.className && <span className="text-white/50">• {session.className}</span>}
+                                  {session.isActive && <span className="text-green-400">• Aktivní</span>}
+                                </div>
                             </div>
                             <div className="text-right">
-                              <div className="font-bold text-white">{session.averageScore > 0 ? `${session.averageScore}%` : '-'}</div>
-                              <div className="text-xs text-white/60">{session.studentsCount} žáků</div>
+                                <div className="font-bold text-white">{session.averageScore > 0 ? `${session.averageScore}%` : '-'}</div>
+                                <div className="text-xs text-white/60">{session.studentsCount} žáků</div>
                             </div>
                             <ChevronRight className="h-4 w-4 text-white/40 group-hover:text-white/70" />
                           </button>
                         ))}
-                        {!loadingSessions && historicalSessions.filter(s => s.studentsCount > 0).length === 0 && (
+                          {!loadingSessions && filteredSessions.length === 0 && (
                           <div className="text-center py-8 text-white/60">
-                            Zatím žádné relace
+                              {historicalSessions.length > 0 ? 'Žádné relace pro vybrané filtry' : 'Zatím žádné relace'}
                           </div>
                         )}
+                        </div>
                       </div>
                     )}
                     
@@ -630,11 +772,15 @@ export function MyClassesLayout({ theme, toggleTheme }: MyClassesLayoutProps) {
                     <div className="flex items-center justify-center py-12">
                       <RefreshCw className="w-8 h-8 text-indigo-500 animate-spin" />
                     </div>
-                  ) : historicalSessions.filter(s => s.studentsCount > 0).length === 0 ? (
+                  ) : filteredSessions.length === 0 ? (
                     <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center">
                       <BarChart3 className="h-12 w-12 text-slate-300 mx-auto mb-4" />
-                      <h3 className="text-lg font-semibold text-slate-700 mb-2">Zatím žádné relace</h3>
-                      <p className="text-slate-500 mb-4">Zde se zobrazí všechny relace po jejich spuštění</p>
+                      <h3 className="text-lg font-semibold text-slate-700 mb-2">
+                        {historicalSessions.length > 0 ? 'Žádné relace pro vybrané filtry' : 'Zatím žádné relace'}
+                      </h3>
+                      <p className="text-slate-500 mb-4">
+                        {historicalSessions.length > 0 ? 'Zkuste změnit filtry v levém panelu' : 'Zde se zobrazí všechny relace po jejich spuštění'}
+                      </p>
                     </div>
                   ) : (
                     <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
@@ -643,6 +789,7 @@ export function MyClassesLayout({ theme, toggleTheme }: MyClassesLayoutProps) {
                           <tr>
                             <th className="text-left px-6 py-4 text-sm font-semibold text-slate-600">Název</th>
                             <th className="text-left px-6 py-4 text-sm font-semibold text-slate-600">Typ</th>
+                            <th className="text-left px-6 py-4 text-sm font-semibold text-slate-600">Třída</th>
                             <th className="text-left px-6 py-4 text-sm font-semibold text-slate-600">Datum</th>
                             <th className="text-center px-6 py-4 text-sm font-semibold text-slate-600">Průměr</th>
                             <th className="text-center px-6 py-4 text-sm font-semibold text-slate-600">Žáků</th>
@@ -651,7 +798,7 @@ export function MyClassesLayout({ theme, toggleTheme }: MyClassesLayoutProps) {
                           </tr>
                         </thead>
                         <tbody>
-                          {historicalSessions.filter(s => s.studentsCount > 0).map(session => (
+                          {filteredSessions.map(session => (
                             <tr 
                               key={session.id} 
                               className="border-b border-slate-100 hover:bg-slate-50 transition-colors cursor-pointer"
@@ -675,6 +822,9 @@ export function MyClassesLayout({ theme, toggleTheme }: MyClassesLayoutProps) {
                                     <><FileText className="w-3 h-3" /> Sdílení</>
                                   )}
                                 </span>
+                              </td>
+                              <td className="px-6 py-4 text-slate-600">
+                                {session.className || '-'}
                               </td>
                               <td className="px-6 py-4 text-slate-600">
                                 {formatSessionDate(session.createdAt)}

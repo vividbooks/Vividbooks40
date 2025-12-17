@@ -22,6 +22,7 @@ export interface HistoricalSession {
   // Quiz info
   quizId: string;
   quizTitle: string;
+  subject?: string;
   
   // Session info
   sessionCode?: string;
@@ -106,6 +107,7 @@ export async function getAllSessions(): Promise<HistoricalSession[]> {
           type: 'live',
           quizId: data.quizId || data.quizData?.id || '',
           quizTitle: data.quizTitle || data.quizData?.title || 'Bez názvu',
+          subject: data.subject || data.quizData?.subject || '',
           sessionCode: data.sessionCode,
           isActive: data.isActive === true,
           createdAt: data.createdAt || new Date().toISOString(),
@@ -151,6 +153,8 @@ export async function getAllSessions(): Promise<HistoricalSession[]> {
           type: 'shared',
           quizId: data.quizId || '',
           quizTitle: data.quizTitle || 'Bez názvu',
+          subject: data.subject || '',
+          className: data.className || '',
           isActive: data.isActive === true,
           createdAt: data.createdAt || new Date().toISOString(),
           endedAt: data.endedAt,
@@ -231,6 +235,7 @@ export function subscribeToSessions(
           type: 'live',
           quizId: sessionData.quizId || sessionData.quizData?.id || '',
           quizTitle: sessionData.quizTitle || sessionData.quizData?.title || 'Bez názvu',
+          subject: sessionData.subject || sessionData.quizData?.subject || '',
           sessionCode: sessionData.sessionCode,
           isActive: sessionData.isActive === true,
           createdAt: sessionData.createdAt || new Date().toISOString(),
@@ -275,6 +280,8 @@ export function subscribeToSessions(
           type: 'shared',
           quizId: sessionData.quizId || '',
           quizTitle: sessionData.quizTitle || 'Bez názvu',
+          subject: sessionData.subject || '',
+          className: sessionData.className || '',
           isActive: sessionData.isActive === true,
           createdAt: sessionData.createdAt || new Date().toISOString(),
           endedAt: sessionData.endedAt,
