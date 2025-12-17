@@ -62,6 +62,42 @@ export function MathText({ children, className, mathScale = 1.3 }: MathTextProps
     .replace(/\left/g, '\\left')
     .replace(/\neq/g, '\\neq')          // \n -> newline
     .replace(/\not/g, '\\not');
+  
+  // Auto-wrap LaTeX math commands not inside $...$ with inline math delimiters
+  // This handles cases where content contains \frac, \sqrt, etc. without $ wrapping
+  const mathPatterns = [
+    /\\frac\{[^}]*\}\{[^}]*\}/g,        // \frac{a}{b}
+    /\\sqrt(?:\[[^\]]*\])?\{[^}]*\}/g,  // \sqrt{x} or \sqrt[n]{x}
+    /\\sum/g, /\\prod/g, /\\int/g,      // summation, product, integral
+    /\\times/g, /\\div/g, /\\pm/g,      // operators
+    /\\cdot/g, /\\ldots/g, /\\dots/g,
+    /\\alpha/g, /\\beta/g, /\\gamma/g, /\\delta/g, /\\pi/g,  // Greek letters
+    /\\infty/g, /\\leq/g, /\\geq/g, /\\neq/g,
+    /\{,\}/g,  // European decimal comma notation like 0{,}06
+  ];
+  
+  // Check if content has math patterns but no $ delimiters
+  const hasMathPatterns = mathPatterns.some(p => p.test(processedInput));
+  const hasDollarDelimiters = processedInput.includes('$') || processedInput.includes('\\(') || processedInput.includes('\\[');
+  
+  // If it has math patterns but no delimiters, wrap each recognizable math segment
+  if (hasMathPatterns && !hasDollarDelimiters) {
+    // Wrap \frac{}{} in $...$
+    processedInput = processedInput.replace(
+      /(\\frac\{[^}]*\}\{[^}]*\})/g, 
+      '$$$1$$'
+    );
+    // Wrap \sqrt{} in $...$
+    processedInput = processedInput.replace(
+      /(\\sqrt(?:\[[^\]]*\])?\{[^}]*\})/g, 
+      '$$$1$$'
+    );
+    // Wrap numbers with {,} (European decimal) in $...$
+    processedInput = processedInput.replace(
+      /(\d+\{,\}\d+)/g,
+      '$$$1$$'
+    );
+  }
 
   // Check if the entire string is just a LaTeX expression
   const trimmed = processedInput.trim();
