@@ -1891,10 +1891,32 @@ export function MyContentLayout({ theme, toggleTheme }: MyContentLayoutProps) {
   const handleBulkMoveToFolder = (folderId: string) => {
     selectedItems.forEach(item => {
       const [type, id] = item.split(':');
-      handleMoveItemToFolder(id, type, folderId);
+      // Directly move items without going through handleMoveItemToFolder to avoid state issues
+      if (type === 'worksheet') {
+        moveWorksheetToFolder(id, folderId);
+      } else if (type === 'quiz') {
+        moveQuizToFolder(id, folderId);
+        console.log('[handleBulkMoveToFolder] Quiz moved:', id, 'to folder:', folderId);
+      } else if (type === 'file') {
+        moveFileToFolder(id, folderId);
+      } else if (type === 'link') {
+        setMyLinks(prev => {
+          const updated = prev.map(link => 
+            link.id === id ? { ...link, folderId } : link
+          );
+          localStorage.setItem('vivid-my-links', JSON.stringify(updated));
+          return updated;
+        });
+      } else if (type === 'document') {
+        handleMoveDocumentToFolder(id, folderId);
+      }
     });
+    // Refresh all lists after moving
+    setWorksheets(getWorksheetList());
+    setQuizzes(getQuizList());
     clearSelection();
     setMoveToFolderOpen(false);
+    toast.success('Položky přesunuty do složky');
   };
 
   const handleBulkDelete = () => {
