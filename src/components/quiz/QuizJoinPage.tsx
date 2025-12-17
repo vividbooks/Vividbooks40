@@ -1103,10 +1103,19 @@ export function QuizJoinPage() {
           <div className="flex-1 flex items-stretch px-4">
             <div className="w-full max-w-5xl mx-auto rounded-3xl shadow-2xl overflow-hidden flex flex-col bg-white">
               {/* Question */}
-              <div className="flex-1 flex items-center justify-center p-4 md:p-8">
+              <div className="flex-1 flex flex-col items-center justify-center p-4 md:p-8">
                 <h1 className="text-xl sm:text-2xl md:text-4xl lg:text-5xl font-bold text-[#4E5871] text-center leading-tight break-words max-w-full overflow-hidden">
                   <MathText>{(currentSlide as any).question || (currentSlide as any).title || 'Otázka'}</MathText>
                 </h1>
+                
+                {/* Question image */}
+                {(currentSlide as any).media?.url && (currentSlide as any).media?.type === 'image' && (
+                  <img 
+                    src={(currentSlide as any).media.url} 
+                    alt="Obrázek k otázce"
+                    className="mt-4 max-w-full max-h-48 md:max-h-64 rounded-xl shadow-lg object-contain"
+                  />
+                )}
               </div>
               
               {/* ABC Options */}

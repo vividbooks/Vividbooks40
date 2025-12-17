@@ -80,10 +80,19 @@ function ABCSlideView({ slide, showHint, showSolution, selectedAnswer, onSelectA
   return (
     <div className="flex flex-col h-full">
       {/* Question */}
-      <div className="flex-1 flex items-center justify-center p-8">
+      <div className="flex-1 flex flex-col items-center justify-center p-8">
         <h1 className="text-4xl md:text-5xl font-bold text-[#4E5871] text-center leading-tight">
           <MathText>{slide.question || 'Otázka...'}</MathText>
         </h1>
+        
+        {/* Question image */}
+        {slide.media?.url && slide.media?.type === 'image' && (
+          <img 
+            src={slide.media.url} 
+            alt="Obrázek k otázce"
+            className="mt-4 max-w-full max-h-48 md:max-h-64 rounded-xl shadow-lg object-contain"
+          />
+        )}
       </div>
       
       {/* Options */}
@@ -144,9 +153,19 @@ function ABCSlideView({ slide, showHint, showSolution, selectedAnswer, onSelectA
 function OpenSlideView({ slide }: { slide: OpenActivitySlide }) {
   return (
     <div className="flex flex-col h-full items-center justify-center p-8">
-      <h1 className="text-4xl md:text-5xl font-bold text-[#4E5871] text-center leading-tight mb-8">
+      <h1 className="text-4xl md:text-5xl font-bold text-[#4E5871] text-center leading-tight mb-4">
         {slide.question || 'Otevřená otázka...'}
       </h1>
+      
+      {/* Question image */}
+      {slide.media?.url && slide.media?.type === 'image' && (
+        <img 
+          src={slide.media.url} 
+          alt="Obrázek k otázce"
+          className="mb-6 max-w-full max-h-48 md:max-h-64 rounded-xl shadow-lg object-contain"
+        />
+      )}
+      
       <div className="w-full max-w-2xl">
         <textarea 
           className="w-full h-40 p-4 rounded-xl border-2 border-slate-200 focus:border-indigo-400 focus:ring-0 text-lg resize-none"

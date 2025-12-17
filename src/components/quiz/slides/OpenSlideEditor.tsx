@@ -25,6 +25,8 @@ interface OpenSlideEditorProps {
 export function OpenSlideEditor({ slide, onUpdate }: OpenSlideEditorProps) {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [newAnswer, setNewAnswer] = useState('');
+  const [showImageInput, setShowImageInput] = useState(false);
+  const [imageUrl, setImageUrl] = useState(slide.media?.url || '');
   
   const addCorrectAnswer = () => {
     if (!newAnswer.trim()) return;
@@ -63,11 +65,62 @@ export function OpenSlideEditor({ slide, onUpdate }: OpenSlideEditorProps) {
           rows={3}
         />
         
-        {/* Media button */}
-        <button className="mt-2 flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm text-slate-500 hover:bg-slate-100 transition-colors">
-          <ImageIcon className="w-4 h-4" />
-          Přidat obrázek
-        </button>
+        {/* Image section */}
+        {slide.media?.url ? (
+          <div className="mt-4 relative">
+            <img 
+              src={slide.media.url} 
+              alt="Obrázek k otázce"
+              className="max-w-full max-h-48 rounded-lg border border-slate-200"
+            />
+            <button
+              onClick={() => onUpdate(slide.id, { media: undefined })}
+              className="absolute top-2 right-2 p-1.5 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          </div>
+        ) : showImageInput ? (
+          <div className="mt-4 space-y-2">
+            <input
+              type="text"
+              value={imageUrl}
+              onChange={(e) => setImageUrl(e.target.value)}
+              placeholder="URL obrázku (např. https://example.com/obrazek.jpg)"
+              className="w-full px-4 py-2 rounded-lg border border-slate-200 focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 outline-none text-sm"
+            />
+            <div className="flex gap-2">
+              <button
+                onClick={() => {
+                  if (imageUrl.trim()) {
+                    onUpdate(slide.id, { media: { type: 'image', url: imageUrl.trim() } });
+                  }
+                  setShowImageInput(false);
+                }}
+                className="px-3 py-1.5 bg-amber-500 text-white rounded-lg text-sm hover:bg-amber-600 transition-colors"
+              >
+                Uložit
+              </button>
+              <button
+                onClick={() => {
+                  setShowImageInput(false);
+                  setImageUrl('');
+                }}
+                className="px-3 py-1.5 bg-slate-200 text-slate-600 rounded-lg text-sm hover:bg-slate-300 transition-colors"
+              >
+                Zrušit
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button 
+            onClick={() => setShowImageInput(true)}
+            className="mt-2 flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm text-slate-500 hover:bg-slate-100 transition-colors"
+          >
+            <ImageIcon className="w-4 h-4" />
+            Přidat obrázek
+          </button>
+        )}
       </div>
       
       {/* Correct answers */}
