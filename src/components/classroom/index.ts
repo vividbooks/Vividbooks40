@@ -8,3 +8,4 @@ export { FirebaseTeacherPanel } from './FirebaseTeacherPanel';
 export { JoinSession } from './JoinSession';
 export { StudentIndividualWork } from './StudentIndividualWork';
 export { ClassResultsGrid } from './ClassResultsGrid';
+export { StudentProfilePage } from './StudentProfilePage';

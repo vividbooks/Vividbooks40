@@ -24,6 +24,7 @@ import { ClassroomShareProvider } from './contexts/ClassroomShareContext';
 import { FirebaseStudentView } from './components/classroom';
 import { JoinSession } from './components/classroom/JoinSession';
 import { CustomerSuccess } from './components/admin/CustomerSuccess';
+import { StudentProfilePage } from './components/classroom/StudentProfilePage';
 import { supabase } from './utils/supabase/client';
 import { projectId, publicAnonKey } from './utils/supabase/info.tsx';
 
@@ -129,6 +130,10 @@ export default function App() {
         <Route 
           path="/library/my-classes" 
           element={<MyClassesLayout theme={theme} toggleTheme={toggleTheme} />} 
+        />
+        <Route 
+          path="/library/student/:studentId" 
+          element={<StudentProfilePage />} 
         />
         
         <Route 

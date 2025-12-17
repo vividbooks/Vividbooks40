@@ -319,13 +319,14 @@ export function ClassResultsGrid({ classId, className, onBack }: ClassResultsGri
                   <tr 
                     key={student.id}
                   >
-                    {/* Student name - hover highlights entire row */}
+                    {/* Student name - click to view profile, hover highlights entire row */}
                     <td 
-                      className="sticky left-0 z-10 cursor-pointer" 
+                      className="sticky left-0 z-10 cursor-pointer hover:bg-indigo-100 transition-colors" 
                       style={{ 
                         backgroundColor: isHoveredRow ? '#EEF2FF' : '#FFFFFF', 
                         padding: '1px 16px',
                       }}
+                      onClick={() => navigate(`/library/student/${student.id}`)}
                       onMouseEnter={() => {
                         setHoveredRow(student.id);
                         setHoveredColumn(null);
@@ -340,7 +341,7 @@ export function ClassResultsGrid({ classId, className, onBack }: ClassResultsGri
                         >
                           {student.initials}
                         </div>
-                        <span className="text-sm font-medium text-slate-700">{student.name}</span>
+                        <span className="text-sm font-medium text-slate-700 hover:text-indigo-600 hover:underline">{student.name}</span>
                       </div>
                     </td>
                     
