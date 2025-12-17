@@ -78,11 +78,16 @@ export function MyClassesLayout({ theme, toggleTheme }: MyClassesLayoutProps) {
   // Use new grid component for class detail
   const [useNewGrid, setUseNewGrid] = useState(true);
   
-  // Mock data for classes
+  // Demo data for classes
   const [classes, setClasses] = useState<ClassGroup[]>([
-    { id: '1', name: '6.A', studentsCount: 24, createdAt: '2024-09-01' },
-    { id: '2', name: '6.B', studentsCount: 22, createdAt: '2024-09-01' },
-    { id: '3', name: '7.C', studentsCount: 12, createdAt: '2024-09-01' },
+    { id: '1', name: '6.A', studentsCount: 28, createdAt: '2024-09-01' },
+    { id: '2', name: '6.B', studentsCount: 26, createdAt: '2024-09-01' },
+    { id: '3', name: '7.A', studentsCount: 24, createdAt: '2024-09-01' },
+    { id: '4', name: '7.B', studentsCount: 25, createdAt: '2024-09-01' },
+    { id: '5', name: '8.A', studentsCount: 22, createdAt: '2024-09-01' },
+    { id: '6', name: '8.B', studentsCount: 23, createdAt: '2024-09-01' },
+    { id: '7', name: '9.A', studentsCount: 21, createdAt: '2024-09-01' },
+    { id: '8', name: '9.B', studentsCount: 20, createdAt: '2024-09-01' },
   ]);
   
   // Historical sessions from Firebase
@@ -166,29 +171,41 @@ export function MyClassesLayout({ theme, toggleTheme }: MyClassesLayoutProps) {
     { id: '3', testName: 'Fyzikální veličiny', className: '7.C', date: '2024-11-25', averageScore: 71, studentsCount: 12 },
   ]);
 
-  // Mock data for students with their test results - colors based on score value
+  // Demo data for students with their test results - colors based on score value
   // Score can be: number (0-10), null (not done), '?' (pending)
   const studentsData = [
-    { id: '1', name: 'Marie Netušilová', initials: 'MN', color: '#EC4899', results: [9, 9, 9, 9], average: 80 },
-    { id: '2', name: 'Daniel Ondrášek', initials: 'DO', color: '#EC4899', results: [7, 8, 9, 6], average: 65 },
-    { id: '3', name: 'Dominika Kruchňová', initials: 'DK', color: '#F59E0B', results: [3, null, 5, 4], average: 70 },
-    { id: '4', name: 'Ondřej Krňanský', initials: 'OK', color: '#EC4899', results: [6, 7, 6, 5], average: 30 },
-    { id: '5', name: 'František Cáb', initials: 'FC', color: '#EF4444', results: [4, 5, 4, 3], average: 8 },
-    { id: '6', name: 'Vítek Škop', initials: 'VŠ', color: '#EC4899', results: [8, 9, 8, '?'], average: 50 },
-    { id: '7', name: 'Marie Netušilová', initials: 'MN', color: '#8B5CF6', results: [7, 8, 7, 8], average: 60 },
-    { id: '8', name: 'Daniel Ondrášek', initials: 'DO', color: '#EC4899', results: [5, 6, 4, 3], average: 90 },
-    { id: '9', name: 'Dominika Kruchňová', initials: 'DK', color: '#EC4899', results: [null, null, 5, '?'], average: 80 },
-    { id: '10', name: 'Ondřej Krňanský', initials: 'OK', color: '#10B981', results: [9, 9, 9, 9], average: 80 },
-    { id: '11', name: 'František Cáb', initials: 'FC', color: '#EF4444', results: [4, 3, 4, 3], average: 80 },
-    { id: '12', name: 'Vítek Škop', initials: 'VŠ', color: '#EC4899', results: [8, 7, 8, null], average: 80 },
+    { id: '1', name: 'Anna Nováková', initials: 'AN', color: '#EC4899', results: [9, 10, 9, 9], average: 93 },
+    { id: '2', name: 'Jakub Svoboda', initials: 'JS', color: '#3B82F6', results: [8, 9, 8, 9], average: 85 },
+    { id: '3', name: 'Tereza Dvořáková', initials: 'TD', color: '#8B5CF6', results: [7, 8, 9, 8], average: 80 },
+    { id: '4', name: 'Martin Černý', initials: 'MČ', color: '#10B981', results: [9, 8, 7, 8], average: 80 },
+    { id: '5', name: 'Karolína Procházková', initials: 'KP', color: '#F59E0B', results: [6, 7, 8, 7], average: 70 },
+    { id: '6', name: 'David Kučera', initials: 'DK', color: '#EF4444', results: [5, 6, 7, 6], average: 60 },
+    { id: '7', name: 'Eliška Veselá', initials: 'EV', color: '#EC4899', results: [8, 9, 8, '?'], average: 83 },
+    { id: '8', name: 'Tomáš Horák', initials: 'TH', color: '#3B82F6', results: [7, 7, 8, 7], average: 73 },
+    { id: '9', name: 'Natálie Marková', initials: 'NM', color: '#8B5CF6', results: [9, 9, 10, 9], average: 93 },
+    { id: '10', name: 'Filip Poláček', initials: 'FP', color: '#10B981', results: [6, 5, 6, 5], average: 55 },
+    { id: '11', name: 'Adéla Králová', initials: 'AK', color: '#F59E0B', results: [8, 8, 9, 8], average: 83 },
+    { id: '12', name: 'Ondřej Němec', initials: 'ON', color: '#EF4444', results: [4, 5, 5, 4], average: 45 },
+    { id: '13', name: 'Viktorie Růžičková', initials: 'VR', color: '#EC4899', results: [7, 8, 7, 8], average: 75 },
+    { id: '14', name: 'Lukáš Fiala', initials: 'LF', color: '#3B82F6', results: [9, 10, 9, 10], average: 95 },
+    { id: '15', name: 'Barbora Šimková', initials: 'BŠ', color: '#8B5CF6', results: [6, 7, 6, null], average: 63 },
+    { id: '16', name: 'Vojtěch Kolář', initials: 'VK', color: '#10B981', results: [8, 8, 9, 8], average: 83 },
+    { id: '17', name: 'Kristýna Benešová', initials: 'KB', color: '#F59E0B', results: [5, 6, 5, 6], average: 55 },
+    { id: '18', name: 'Matyáš Holub', initials: 'MH', color: '#EF4444', results: [7, 7, 8, 7], average: 73 },
+    { id: '19', name: 'Sofie Urbanová', initials: 'SU', color: '#EC4899', results: [9, 9, 9, '?'], average: 90 },
+    { id: '20', name: 'Adam Kopecký', initials: 'AKo', color: '#3B82F6', results: [6, 7, 7, 6], average: 65 },
+    { id: '21', name: 'Michaela Vlčková', initials: 'MV', color: '#8B5CF6', results: [8, 9, 8, 9], average: 85 },
+    { id: '22', name: 'Štěpán Marek', initials: 'ŠM', color: '#10B981', results: [10, 10, 10, 10], average: 100 },
+    { id: '23', name: 'Klára Pavlíková', initials: 'KPa', color: '#F59E0B', results: [7, 8, 7, 8], average: 75 },
+    { id: '24', name: 'Dominik Novotný', initials: 'DN', color: '#EF4444', results: [5, 5, 6, 5], average: 53 },
   ];
 
   // Test columns for the class detail view
   const testColumns = [
-    { id: '1', date: '8. 9.', name: 'Test Hmota' },
-    { id: '2', date: '21. 9.', name: 'Procvičování Newtono...' },
-    { id: '3', date: '1. 10.', name: 'Test Hmota' },
-    { id: '4', date: '29. 10.', name: 'Test Hmota' },
+    { id: '1', date: '15. 9.', name: 'Hmota a její vlastnosti' },
+    { id: '2', date: '2. 10.', name: 'Síla a pohyb' },
+    { id: '3', date: '18. 10.', name: 'Newtonovy zákony' },
+    { id: '4', date: '5. 11.', name: 'Práce a energie' },
   ];
 
   // Get score color based on value - gradient from green to red
