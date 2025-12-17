@@ -424,51 +424,15 @@ export function MyClassesLayout({ theme, toggleTheme }: MyClassesLayoutProps) {
                           )}
                         </div>
                         
-                        {/* Divider */}
-                        <div className="border-t border-white/10 my-2"></div>
-                        
-                        {/* Sessions List */}
-                        <div className="space-y-2">
-                          <div className="flex items-center justify-between px-1">
-                            <h3 className="text-xs font-bold text-white/60 uppercase tracking-wider">
-                              Relace
-                            </h3>
-                            <span className="text-xs text-white/40">
-                              {filteredSessions.length}
-                            </span>
-                          </div>
-                          
+                        {/* Info about filter results */}
+                        <div className="mt-4 text-center text-sm text-white/60">
                           {loadingSessions ? (
-                            <div className="flex justify-center py-4">
-                              <RefreshCw className="w-5 h-5 text-white/50 animate-spin" />
+                            <div className="flex justify-center py-2">
+                              <RefreshCw className="w-4 h-4 text-white/50 animate-spin" />
                             </div>
-                          ) : filteredSessions.slice(0, 15).map(session => (
-                            <button
-                              key={session.id}
-                              onClick={() => navigate(`/quiz/results/${session.id}?type=${session.type}`)}
-                              className="w-full flex items-center gap-3 p-3 bg-white/10 hover:bg-white/20 rounded-xl transition-colors text-left group"
-                            >
-                              <div className="flex-1 min-w-0">
-                                <div className="font-medium text-white truncate">{session.quizTitle}</div>
-                                <div className="text-sm text-white/70 flex items-center gap-2">
-                                  <span className={`w-2 h-2 rounded-full ${session.type === 'live' ? 'bg-indigo-400' : 'bg-emerald-400'}`}></span>
-                                  {formatSessionDate(session.createdAt)}
-                                  {session.className && <span className="text-white/50">• {session.className}</span>}
-                                  {session.isActive && <span className="text-green-400">• Aktivní</span>}
-                                </div>
-                            </div>
-                            <div className="text-right">
-                                <div className="font-bold text-white">{session.averageScore > 0 ? `${session.averageScore}%` : '-'}</div>
-                                <div className="text-xs text-white/60">{session.studentsCount} žáků</div>
-                            </div>
-                            <ChevronRight className="h-4 w-4 text-white/40 group-hover:text-white/70" />
-                          </button>
-                        ))}
-                          {!loadingSessions && filteredSessions.length === 0 && (
-                          <div className="text-center py-8 text-white/60">
-                              {historicalSessions.length > 0 ? 'Žádné relace pro vybrané filtry' : 'Zatím žádné relace'}
-                          </div>
-                        )}
+                          ) : (
+                            <span>{filteredSessions.length} relací</span>
+                          )}
                         </div>
                       </div>
                     )}
