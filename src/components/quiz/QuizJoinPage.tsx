@@ -191,6 +191,8 @@ export function QuizJoinPage() {
   
   // Local slide index for unlocked mode
   const [localSlideIndex, setLocalSlideIndex] = useState(0);
+  const [prevSlideIndex, setPrevSlideIndex] = useState(0);
+  const [isAnimating, setIsAnimating] = useState(false);
   
   // Time tracking
   const [sessionStartTime] = useState<number>(Date.now());
@@ -492,6 +494,13 @@ export function QuizJoinPage() {
   
   useEffect(() => {
     if (session?.isLocked !== false && session?.currentSlideIndex !== undefined) {
+      // Trigger animation when teacher changes slide
+      if (session.currentSlideIndex !== localSlideIndex) {
+        setPrevSlideIndex(localSlideIndex);
+        setIsAnimating(true);
+        setTimeout(() => setIsAnimating(false), 300);
+      }
+      
       setLocalSlideIndex(session.currentSlideIndex);
       
       if (sessionId && studentId) {
@@ -710,9 +719,16 @@ export function QuizJoinPage() {
   // ============================================
   
   const goToPrevSlide = async () => {
-    if (!quiz || localSlideIndex <= 0) return;
+    if (!quiz || localSlideIndex <= 0 || isAnimating) return;
+    
+    setPrevSlideIndex(localSlideIndex);
+    setIsAnimating(true);
+    
     const newIndex = localSlideIndex - 1;
     setLocalSlideIndex(newIndex);
+    
+    // Reset animation after it completes
+    setTimeout(() => setIsAnimating(false), 300);
     
     if (sessionId && studentId) {
       await update(ref(database, `${QUIZ_SESSIONS_PATH}/${sessionId}/students/${studentId}`), {
@@ -723,9 +739,16 @@ export function QuizJoinPage() {
   };
   
   const goToNextSlide = async () => {
-    if (!quiz || localSlideIndex >= quiz.slides.length - 1) return;
+    if (!quiz || localSlideIndex >= quiz.slides.length - 1 || isAnimating) return;
+    
+    setPrevSlideIndex(localSlideIndex);
+    setIsAnimating(true);
+    
     const newIndex = localSlideIndex + 1;
     setLocalSlideIndex(newIndex);
+    
+    // Reset animation after it completes
+    setTimeout(() => setIsAnimating(false), 300);
     
     // Scroll to top on mobile - with fallback for older browsers
     try {
@@ -1123,7 +1146,14 @@ export function QuizJoinPage() {
           
           {/* Slide card */}
           <div className="flex-1 flex items-stretch px-4">
-            <div className="w-full max-w-5xl mx-auto rounded-3xl shadow-2xl overflow-hidden flex flex-col bg-white">
+            <div 
+              className={`
+                w-full max-w-5xl mx-auto rounded-3xl shadow-2xl overflow-hidden flex flex-col bg-white
+                ${currentSlideIndex > prevSlideIndex && isAnimating ? 'animate-slide-in' : ''}
+                ${currentSlideIndex < prevSlideIndex && isAnimating ? 'animate-slide-in-left' : ''}
+              `}
+              key={currentSlideIndex}
+            >
               {/* Question */}
               <div className="flex-1 flex flex-col items-center justify-center p-4 md:p-8">
                 <h1 className="text-xl sm:text-2xl md:text-4xl lg:text-5xl font-bold text-[#4E5871] text-center leading-tight break-words max-w-full overflow-hidden">
