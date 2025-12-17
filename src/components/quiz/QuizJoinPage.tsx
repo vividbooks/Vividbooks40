@@ -879,10 +879,7 @@ export function QuizJoinPage() {
               onClick={joinSession}
               disabled={isJoining || !code || !name || !isOnline}
               className="w-full py-4 rounded-2xl text-white font-bold text-lg transition-all flex items-center justify-center gap-2 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
-              style={{ 
-                background: 'linear-gradient(to right, #0891b2, #2563eb)',
-                boxShadow: '0 10px 15px -3px rgba(37, 99, 235, 0.25)'
-              }}
+              style={{ backgroundColor: '#7C3AED' }}
             >
               {isJoining ? (
                 <RefreshCw className="w-5 h-5 animate-spin" />
