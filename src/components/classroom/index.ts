@@ -6,3 +6,4 @@ export { StudentControlledView } from './StudentControlledView';
 export { FirebaseStudentView } from './FirebaseStudentView';
 export { FirebaseTeacherPanel } from './FirebaseTeacherPanel';
 export { JoinSession } from './JoinSession';
+export { StudentIndividualWork } from './StudentIndividualWork';

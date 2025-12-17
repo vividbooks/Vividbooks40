@@ -269,6 +269,76 @@ export interface LiveQuizSession {
 }
 
 // =============================================
+// STUDENT INDIVIDUAL WORK (Self-study mode)
+// =============================================
+
+/**
+ * Record of a student's individual work session on a board
+ */
+export interface StudentWorkSession {
+  id: string;
+  
+  // Board/Quiz info
+  boardId: string;
+  boardTitle: string;
+  boardSource: 'user' | 'vividbooks'; // user-created or from library
+  boardOwnerId?: string; // Teacher who owns the board (if user-created)
+  
+  // Student info
+  studentId: string;
+  studentName: string;
+  studentEmail?: string;
+  
+  // Session data
+  startedAt: string;
+  completedAt?: string;
+  totalTimeMs: number;
+  
+  // Results
+  responses: {
+    [slideId: string]: SlideResponse;
+  };
+  correctCount: number;
+  totalQuestions: number;
+  score: number; // percentage 0-100
+  
+  // Status
+  status: 'in_progress' | 'completed' | 'abandoned';
+}
+
+/**
+ * Student's work history (all their individual sessions)
+ */
+export interface StudentWorkHistory {
+  studentId: string;
+  studentName: string;
+  studentEmail?: string;
+  
+  // All work sessions indexed by session ID
+  sessions: {
+    [sessionId: string]: StudentWorkSession;
+  };
+  
+  // Stats
+  totalSessionsCompleted: number;
+  totalTimeSpentMs: number;
+  lastActiveAt: string;
+}
+
+/**
+ * Teacher's view of student work in their classroom
+ */
+export interface ClassroomStudentWork {
+  // Indexed by board ID
+  [boardId: string]: {
+    boardTitle: string;
+    students: {
+      [studentId: string]: StudentWorkSession;
+    };
+  };
+}
+
+// =============================================
 // HELPER FUNCTIONS
 // =============================================
 

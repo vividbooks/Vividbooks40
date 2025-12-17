@@ -16,6 +16,7 @@ import {
 import VividLogo from '../imports/Group70';
 import { ToolsDropdown } from './ToolsDropdown';
 import { ToolsMenu } from './ToolsMenu';
+import { StudentIndividualWork } from './classroom/StudentIndividualWork';
 
 interface MyClassesLayoutProps {
   theme: 'light' | 'dark';
@@ -47,8 +48,8 @@ export function MyClassesLayout({ theme, toggleTheme }: MyClassesLayoutProps) {
   const [toolsOpen, setToolsOpen] = useState(false);
   const [logoHovered, setLogoHovered] = useState(false);
   
-  // Tab state: 'results' or 'classes'
-  const [activeTab, setActiveTab] = useState<'results' | 'classes'>('results');
+  // Tab state: 'results', 'classes', or 'individual'
+  const [activeTab, setActiveTab] = useState<'results' | 'classes' | 'individual'>('results');
   
   // Selected class for detail view
   const [selectedClass, setSelectedClass] = useState<ClassGroup | null>(null);
@@ -240,12 +241,23 @@ export function MyClassesLayout({ theme, toggleTheme }: MyClassesLayoutProps) {
                         <Users className="h-5 w-5" />
                         Moje třídy
                       </button>
+                      <button
+                        onClick={() => setActiveTab('individual')}
+                        className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-medium rounded-lg transition-all ${
+                          activeTab === 'individual' 
+                            ? 'bg-white text-green-700 shadow-sm' 
+                            : 'text-white/80 hover:text-white hover:bg-white/10'
+                        }`}
+                      >
+                        <ClipboardList className="h-5 w-5" />
+                        Individuální
+                      </button>
                     </div>
                   </div>
 
                   {/* Tab Content */}
                   <div className="px-4 pb-20">
-                    {activeTab === 'results' ? (
+                    {activeTab === 'results' && (
                       // Results List
                       <div className="space-y-2">
                         <h3 className="text-xs font-bold text-white/60 uppercase tracking-wider mb-3 px-1">
@@ -273,7 +285,9 @@ export function MyClassesLayout({ theme, toggleTheme }: MyClassesLayoutProps) {
                           </div>
                         )}
                       </div>
-                    ) : (
+                    )}
+                    
+                    {activeTab === 'classes' && (
                       // Classes List
                       <div className="space-y-2">
                         <div className="flex items-center justify-between mb-3">
@@ -305,6 +319,15 @@ export function MyClassesLayout({ theme, toggleTheme }: MyClassesLayoutProps) {
                             Zatím žádné třídy
                           </div>
                         )}
+                      </div>
+                    )}
+                    
+                    {activeTab === 'individual' && (
+                      // Individual Work Notice
+                      <div className="text-center py-8 text-white/80">
+                        <ClipboardList className="h-8 w-8 mx-auto mb-3 opacity-60" />
+                        <p className="text-sm">Individuální práce studentů</p>
+                        <p className="text-xs text-white/60 mt-1">Zobrazení v hlavním panelu →</p>
                       </div>
                     )}
                   </div>
@@ -339,15 +362,22 @@ export function MyClassesLayout({ theme, toggleTheme }: MyClassesLayoutProps) {
               {!selectedClass && (
                 <div className="mb-8">
                   <h1 className="text-3xl font-bold text-slate-800 mb-2" style={{ fontFamily: "'Fenomen Sans', sans-serif" }}>
-                    {activeTab === 'results' ? 'Výsledky testů' : 'Správa tříd'}
+                    {activeTab === 'results' ? 'Výsledky testů' : activeTab === 'classes' ? 'Správa tříd' : 'Individuální práce'}
                   </h1>
                   <p className="text-slate-600">
                     {activeTab === 'results' 
                       ? 'Přehled výsledků z testů a procvičování vašich žáků'
-                      : 'Vytvářejte skupiny žáků a sledujte jejich pokrok'
+                      : activeTab === 'classes'
+                      ? 'Vytvářejte skupiny žáků a sledujte jejich pokrok'
+                      : 'Výsledky studentů z jejich samostatného procvičování'
                     }
                   </p>
                 </div>
+              )}
+              
+              {/* Individual Work Tab Content */}
+              {activeTab === 'individual' && !selectedClass && (
+                <StudentIndividualWork />
               )}
 
               {selectedClass ? (

@@ -48,6 +48,42 @@ import { saveWorksheet } from '../../utils/worksheet-storage';
 import { MathText } from '../math/MathText';
 import { QRCodeSVG } from 'qrcode.react';
 
+// Toggle switch component - simple working version
+const ToggleSwitch = ({ enabled, onChange, label }: { enabled: boolean; onChange: (v: boolean) => void; label: string }) => {
+  return (
+    <div className="flex items-center justify-between py-3">
+      <span className="text-white font-medium">{label}</span>
+      <div 
+        onClick={() => onChange(!enabled)}
+        style={{
+          width: '52px',
+          height: '28px',
+          backgroundColor: enabled ? '#10b981' : '#64748b',
+          borderRadius: '14px',
+          cursor: 'pointer',
+          position: 'relative',
+          transition: 'background-color 0.2s',
+          flexShrink: 0,
+        }}
+      >
+        <div 
+          style={{
+            width: '22px',
+            height: '22px',
+            backgroundColor: 'white',
+            borderRadius: '11px',
+            position: 'absolute',
+            top: '3px',
+            left: enabled ? '27px' : '3px',
+            transition: 'left 0.2s',
+            boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
+          }}
+        />
+      </div>
+    </div>
+  );
+};
+
 // Firebase paths
 const QUIZ_SESSIONS_PATH = 'quiz_sessions';
 
@@ -560,18 +596,6 @@ export function QuizViewPage() {
     }
   };
   
-  // Toggle switch component
-  const ToggleSwitch = ({ enabled, onChange, label }: { enabled: boolean; onChange: (v: boolean) => void; label: string }) => (
-    <div className="flex items-center justify-between py-3">
-      <span className="text-white font-medium">{label}</span>
-      <button
-        onClick={() => onChange(!enabled)}
-        className={`w-14 h-8 rounded-full transition-colors ${enabled ? 'bg-emerald-500' : 'bg-slate-500'}`}
-      >
-        <div className={`w-6 h-6 rounded-full bg-white shadow-md transform transition-transform ${enabled ? 'translate-x-7' : 'translate-x-1'}`} />
-      </button>
-    </div>
-  );
   
   // Render the right panel content
   const renderRightPanel = () => {
