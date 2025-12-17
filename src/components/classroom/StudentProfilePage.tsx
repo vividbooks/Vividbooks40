@@ -192,7 +192,7 @@ export function StudentProfilePage() {
   
   // Sidebar states
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [sidebarVisible, setSidebarVisible] = useState(true);
+  
   const [toolsOpen, setToolsOpen] = useState(false);
   const [logoHovered, setLogoHovered] = useState(false);
   
@@ -238,8 +238,7 @@ export function StudentProfilePage() {
             transition-all duration-300 ease-in-out
             fixed left-0 z-30 w-[294px]
             ${sidebarOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full'}
-            lg:sticky lg:translate-x-0 lg:shadow-none
-            ${!sidebarVisible ? 'lg:w-0 lg:overflow-hidden lg:border-r-0' : 'lg:w-[312px]'}
+            lg:sticky lg:translate-x-0 lg:shadow-none lg:w-[312px]
           `}
           style={{ backgroundColor: '#084939' }}
         >
@@ -270,9 +269,7 @@ export function StudentProfilePage() {
                     <button onClick={() => setSidebarOpen(false)} className="lg:hidden p-1.5 rounded-md transition-colors text-white/70 hover:text-white hover:bg-white/10">
                       <X className="h-5 w-5" />
                     </button>
-                    <button onClick={() => setSidebarVisible(false)} className="hidden lg:block p-1.5 rounded-md transition-colors text-white/70 hover:text-white hover:bg-white/10" title="Skrýt menu">
-                      <PanelLeftClose className="h-[23px] w-[23px]" />
-                    </button>
+
                   </div>
                 </div>
               )}
@@ -347,14 +344,7 @@ export function StudentProfilePage() {
         </aside>
         
         {/* Mobile menu toggle */}
-        {!sidebarVisible && (
-          <button
-            onClick={() => setSidebarVisible(true)}
-            className="hidden lg:flex fixed left-4 top-4 z-40 p-2 bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow items-center gap-2"
-          >
-            <PanelLeft className="h-5 w-5 text-slate-600" />
-          </button>
-        )}
+
         
         {/* Mobile overlay */}
         {sidebarOpen && (
