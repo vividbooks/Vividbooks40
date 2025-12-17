@@ -97,6 +97,10 @@ export function QuizResultsPage() {
               responses: studentData.responses ? Object.values(studentData.responses) : [],
               joinedAt: studentData.joinedAt || data.createdAt,
               isOnline: false,
+              // Include time tracking data
+              totalTimeMs: studentData.totalTimeMs || 0,
+              startTime: studentData.startTime,
+              completedAt: studentData.completedAt,
             };
           });
           
@@ -128,7 +132,11 @@ export function QuizResultsPage() {
       const responses = student.responses || [];
       const correctCount = responses.filter(r => r.isCorrect).length;
       const totalAnswered = responses.length;
-      const totalTime = responses.reduce((sum, r) => sum + (r.timeSpent || 0), 0);
+      // Use totalTimeMs from session if available (more accurate), otherwise sum up slide times
+      const slidesTime = responses.reduce((sum, r) => sum + (r.timeSpent || 0), 0);
+      const totalTime = (student as any).totalTimeMs 
+        ? Math.round((student as any).totalTimeMs / 1000) // Convert ms to seconds
+        : slidesTime;
       
       return {
         id,

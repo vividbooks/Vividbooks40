@@ -75,6 +75,9 @@ interface StudentShareData {
   completedAt?: string;
   responses: Record<string, SlideResponse>;
   deviceId: string;
+  // Time tracking
+  startTime?: string;
+  totalTimeMs?: number;
 }
 
 interface SavedShareSession {
@@ -190,6 +193,10 @@ export function QuizStudentView() {
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
   const [textAnswer, setTextAnswer] = useState('');
   const [showMathKeyboard, setShowMathKeyboard] = useState(false);
+  
+  // Time tracking
+  const [sessionStartTime] = useState<number>(Date.now());
+  const [slideStartTime, setSlideStartTime] = useState<number>(Date.now());
   
   // Refs
   const heartbeatInterval = useRef<NodeJS.Timeout | null>(null);
@@ -350,6 +357,9 @@ export function QuizStudentView() {
       isOnline: true,
       responses: {},
       deviceId: getDeviceId(),
+      // Time tracking
+      startTime: new Date().toISOString(),
+      totalTimeMs: 0,
     };
     
     try {
@@ -518,6 +528,9 @@ export function QuizStudentView() {
       answer = textAnswer;
     }
     
+    // Calculate time spent on this slide in seconds
+    const timeSpentSeconds = Math.round((Date.now() - slideStartTime) / 1000);
+    
     const response: SlideResponse = {
       slideId: currentSlide.id,
       activityType: (currentSlide as any).activityType,
@@ -525,11 +538,14 @@ export function QuizStudentView() {
       isCorrect,
       points: isCorrect ? ((currentSlide as any).points || 1) : 0,
       answeredAt: new Date().toISOString(),
-      timeSpent: 0,
+      timeSpent: timeSpentSeconds,
     };
     
     const newResponses = { ...responses, [currentSlide.id]: response };
     setResponses(newResponses);
+    
+    // Calculate total session time
+    const totalTimeMs = Date.now() - sessionStartTime;
     
     // Save to Firebase
     try {
@@ -538,13 +554,14 @@ export function QuizStudentView() {
           responses: newResponses,
           currentSlide: currentSlideIndex,
           lastActiveAt: new Date().toISOString(),
+          totalTimeMs,
         })
       );
     } catch (error) {
       console.error('Failed to save answer:', error);
       setConnectionError('Odpověď se možná neuložila');
     }
-  }, [quiz, shareId, studentId, currentSlideIndex, responses, selectedOption, textAnswer]);
+  }, [quiz, shareId, studentId, currentSlideIndex, responses, selectedOption, textAnswer, slideStartTime, sessionStartTime]);
 
   // ============================================
   // NAVIGATION
@@ -557,6 +574,7 @@ export function QuizStudentView() {
       setCurrentSlideIndex(prev => prev - 1);
       setSelectedOption(null);
       setTextAnswer('');
+      setSlideStartTime(Date.now()); // Reset slide timer
       setTimeout(() => setIsAnimating(false), 450);
     }
   };
@@ -579,6 +597,7 @@ export function QuizStudentView() {
       setCurrentSlideIndex(prev => prev + 1);
       setSelectedOption(null);
       setTextAnswer('');
+      setSlideStartTime(Date.now()); // Reset slide timer
       setTimeout(() => setIsAnimating(false), 450);
       
       // Update progress
@@ -587,10 +606,12 @@ export function QuizStudentView() {
         lastActiveAt: new Date().toISOString(),
       });
     } else {
-      // Complete the quiz
+      // Complete the quiz - save final total time
+      const totalTimeMs = Date.now() - sessionStartTime;
       await update(ref(database, `${QUIZ_SHARES_PATH}/${shareId}/responses/${studentId}`), {
         completedAt: new Date().toISOString(),
         isOnline: false,
+        totalTimeMs,
       });
       setIsCompleted(true);
     }

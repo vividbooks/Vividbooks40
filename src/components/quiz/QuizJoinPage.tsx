@@ -59,6 +59,9 @@ interface StudentData {
   isFocused?: boolean;
   lastSeen: string;
   deviceId: string;
+  // Time tracking
+  startTime?: string;
+  totalTimeMs?: number;
 }
 
 interface SavedSession {
@@ -186,6 +189,10 @@ export function QuizJoinPage() {
   
   // Local slide index for unlocked mode
   const [localSlideIndex, setLocalSlideIndex] = useState(0);
+  
+  // Time tracking
+  const [sessionStartTime] = useState<number>(Date.now());
+  const [slideStartTime, setSlideStartTime] = useState<number>(Date.now());
   
   // Refs for cleanup
   const heartbeatInterval = useRef<NodeJS.Timeout | null>(null);
@@ -487,12 +494,13 @@ export function QuizJoinPage() {
     }
   }, [session?.currentSlideIndex, session?.isLocked, sessionId, studentId]);
   
-  // Reset selection when slide changes
+  // Reset selection and start time when slide changes
   const effectiveSlideIndex = session?.isLocked === false ? localSlideIndex : (session?.currentSlideIndex || 0);
   useEffect(() => {
     setSelectedOption(null);
     setTextAnswer('');
     setShowResult(false);
+    setSlideStartTime(Date.now()); // Reset slide timer
   }, [effectiveSlideIndex]);
 
   // ============================================
@@ -572,6 +580,13 @@ export function QuizJoinPage() {
         isFocused: true,
         lastSeen: new Date().toISOString(),
         deviceId: getDeviceId(),
+        // Time tracking - preserve existing startTime or set new one
+        startTime: existingStudentId
+          ? ((sessionData.students![existingStudentId] as any).startTime || new Date().toISOString())
+          : new Date().toISOString(),
+        totalTimeMs: existingStudentId
+          ? ((sessionData.students![existingStudentId] as any).totalTimeMs || 0)
+          : 0,
       };
       
       // Save/update student in Firebase
@@ -645,6 +660,9 @@ export function QuizJoinPage() {
       answer = textAnswer;
     }
     
+    // Calculate time spent on this slide in seconds
+    const timeSpentSeconds = Math.round((Date.now() - slideStartTime) / 1000);
+    
     const response: SlideResponse = {
       slideId: currentSlideForAnswer.id,
       activityType: currentSlideForAnswer.activityType,
@@ -652,12 +670,15 @@ export function QuizJoinPage() {
       isCorrect,
       points: isCorrect ? (currentSlideForAnswer as any).points || 1 : 0,
       answeredAt: new Date().toISOString(),
-      timeSpent: 0,
+      timeSpent: timeSpentSeconds,
     };
     
     const newResponses = [...responses, response];
     setResponses(newResponses);
     setShowResult(true);
+    
+    // Calculate total session time
+    const totalTimeMs = Date.now() - sessionStartTime;
     
     // Save to Firebase with retry
     try {
@@ -666,13 +687,14 @@ export function QuizJoinPage() {
           responses: newResponses,
           currentSlide: slideIndex,
           lastSeen: new Date().toISOString(),
+          totalTimeMs,
         })
       );
     } catch (error) {
       console.error('Failed to save answer:', error);
       setConnectionError('Odpověď se možná neuložila. Zkontroluj připojení.');
     }
-  }, [session, quiz, sessionId, studentId, localSlideIndex, responses, selectedOption, textAnswer]);
+  }, [session, quiz, sessionId, studentId, localSlideIndex, responses, selectedOption, textAnswer, slideStartTime, sessionStartTime]);
 
   // ============================================
   // NAVIGATION
