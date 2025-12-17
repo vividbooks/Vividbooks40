@@ -16,7 +16,13 @@ import {
 import VividLogo from '../imports/Group70';
 import { ToolsDropdown } from './ToolsDropdown';
 import { ToolsMenu } from './ToolsMenu';
-import { StudentIndividualWork } from './classroom/StudentIndividualWork';
+import { StudentIndividualWork, ClassResultsGrid } from './classroom';
+import { 
+  getClasses as getSupabaseClasses,
+  ClassGroup as SupabaseClassGroup,
+  setDataSource,
+  isUsingSupabase,
+} from '../utils/supabase/classes';
 
 interface MyClassesLayoutProps {
   theme: 'light' | 'dark';
@@ -57,6 +63,12 @@ export function MyClassesLayout({ theme, toggleTheme }: MyClassesLayoutProps) {
   // Hover states for highlighting
   const [hoveredRow, setHoveredRow] = useState<string | null>(null);
   const [hoveredColumn, setHoveredColumn] = useState<number | null>(null);
+  
+  // Data source toggle
+  const [useSupabaseData, setUseSupabaseData] = useState(false);
+  
+  // Use new grid component for class detail
+  const [useNewGrid, setUseNewGrid] = useState(true);
   
   // Mock data for classes
   const [classes, setClasses] = useState<ClassGroup[]>([
@@ -381,37 +393,46 @@ export function MyClassesLayout({ theme, toggleTheme }: MyClassesLayoutProps) {
               )}
 
               {selectedClass ? (
-                // Class Detail View - podle specifikace
-                <div className="space-y-0">
-                  {/* 1. Horní lišta (Subjects bar) - pill buttons */}
-                  <div className="flex items-center justify-between py-4 border-b border-[#E6E6E6]">
-                    <div className="flex items-center gap-3">
-                      <span className="text-xs text-[#6A6A6A] mr-2">Předměty</span>
+                // Class Detail View
+                <div className="space-y-4">
+                  {/* Header with back button and class name */}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                      <button 
+                        onClick={() => setSelectedClass(null)}
+                        className="p-2 rounded-lg hover:bg-slate-100 text-slate-500"
+                      >
+                        <ChevronRight className="h-5 w-5 rotate-180" />
+                      </button>
+                      <h2 className="text-2xl font-bold text-slate-800">{selectedClass.name}</h2>
+                    </div>
+                    
                       {/* Subject pills */}
-                      <button className="flex items-center gap-2 px-4 py-2 bg-[#F0F0F0] rounded-full text-sm font-medium text-slate-700 hover:bg-slate-200 transition-colors">
-                        <div className="w-4 h-4 rounded-full bg-indigo-500"></div>
+                    <div className="flex items-center gap-2">
+                      <button className="flex items-center gap-2 px-3 py-1.5 bg-indigo-100 rounded-full text-sm font-medium text-indigo-700">
+                        <div className="w-3 h-3 rounded-full bg-indigo-500"></div>
                         Fyzika
                       </button>
-                      <button className="flex items-center gap-2 px-4 py-2 bg-[#F0F0F0] rounded-full text-sm font-medium text-slate-500 hover:bg-slate-200 transition-colors">
-                        <div className="w-4 h-4 rounded-full bg-emerald-500"></div>
+                      <button className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 rounded-full text-sm font-medium text-slate-500 hover:bg-slate-200">
+                        <div className="w-3 h-3 rounded-full bg-emerald-500"></div>
                         Informatika
                       </button>
-                      <button className="flex items-center gap-2 px-4 py-2 bg-[#F0F0F0] rounded-full text-sm font-medium text-slate-500 hover:bg-slate-200 transition-colors">
-                        <div className="w-4 h-4 rounded-full bg-red-400"></div>
-                        Angličtina
-                      </button>
-                      <button className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-indigo-600 hover:text-indigo-700">
-                        + Přidat předmět
+                      <button className="px-3 py-1.5 text-sm font-medium text-indigo-600 hover:text-indigo-700">
+                        + Předmět
                       </button>
                     </div>
-                    <button className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-indigo-600 hover:text-indigo-700">
-                      + Přidat ŠVP
-                    </button>
                   </div>
 
-                  {/* Main content: Single unified table */}
-                  <div className="bg-white border border-[#E6E6E6] rounded-lg overflow-hidden">
-                    <div className="overflow-x-auto">
+                  {/* New Results Grid Component */}
+                  <ClassResultsGrid 
+                    classId={selectedClass.id} 
+                    className={selectedClass.name}
+                    onBack={() => setSelectedClass(null)}
+                  />
+                </div>
+              ) : false ? (
+                // OLD TABLE REMOVED - hidden block
+                <div className="hidden">
                       <table className="w-full border-collapse">
                         <thead>
                           {/* Year + Date headers row */}
@@ -569,8 +590,6 @@ export function MyClassesLayout({ theme, toggleTheme }: MyClassesLayoutProps) {
                           </tr>
                         </tbody>
                       </table>
-                    </div>
-                  </div>
                 </div>
               ) : activeTab === 'results' ? (
                 // Results Overview

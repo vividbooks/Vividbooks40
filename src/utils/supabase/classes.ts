@@ -1,0 +1,513 @@
+/**
+ * Supabase Classes & Results Management
+ * 
+ * Tables needed in Supabase:
+ * - classes: id, name, teacher_id, created_at
+ * - students: id, name, class_id, email, created_at
+ * - assignments: id, title, type (test/practice/individual), class_id, board_id, due_date, created_at
+ * - results: id, student_id, assignment_id, score, max_score, completed_at, time_spent_ms
+ */
+
+import { supabase } from './client';
+
+// =============================================
+// TYPES
+// =============================================
+
+export interface ClassGroup {
+  id: string;
+  name: string;
+  teacher_id: string;
+  students_count?: number;
+  created_at: string;
+}
+
+export interface Student {
+  id: string;
+  name: string;
+  class_id: string;
+  email?: string;
+  initials: string;
+  color: string;
+  created_at: string;
+}
+
+export interface Assignment {
+  id: string;
+  title: string;
+  type: 'test' | 'practice' | 'individual';
+  class_id: string;
+  board_id?: string;
+  due_date: string;
+  created_at: string;
+}
+
+export interface StudentResult {
+  id: string;
+  student_id: string;
+  assignment_id: string;
+  score: number | null; // null = not done, -1 = pending
+  max_score: number;
+  completed_at?: string;
+  time_spent_ms?: number;
+}
+
+export interface ClassWithStudentsAndResults {
+  classGroup: ClassGroup;
+  students: Student[];
+  assignments: Assignment[];
+  results: { [studentId: string]: { [assignmentId: string]: StudentResult } };
+}
+
+// =============================================
+// DEMO DATA
+// =============================================
+
+const DEMO_STUDENTS: Student[] = [
+  { id: 's1', name: 'Marie Netušilová', class_id: 'c1', initials: 'MN', color: '#EC4899', created_at: '2024-09-01' },
+  { id: 's2', name: 'Daniel Ondrášek', class_id: 'c1', initials: 'DO', color: '#EC4899', created_at: '2024-09-01' },
+  { id: 's3', name: 'Dominika Kruchňová', class_id: 'c1', initials: 'DK', color: '#F59E0B', created_at: '2024-09-01' },
+  { id: 's4', name: 'Ondřej Krňanský', class_id: 'c1', initials: 'OK', color: '#EC4899', created_at: '2024-09-01' },
+  { id: 's5', name: 'Tomáš Novák', class_id: 'c1', initials: 'TN', color: '#10B981', created_at: '2024-09-01' },
+  { id: 's6', name: 'Jana Svobodová', class_id: 'c1', initials: 'JS', color: '#6366F1', created_at: '2024-09-01' },
+  { id: 's7', name: 'Petr Dvořák', class_id: 'c1', initials: 'PD', color: '#F59E0B', created_at: '2024-09-01' },
+  { id: 's8', name: 'Eva Horáková', class_id: 'c1', initials: 'EH', color: '#EC4899', created_at: '2024-09-01' },
+  { id: 's9', name: 'Lukáš Marek', class_id: 'c1', initials: 'LM', color: '#10B981', created_at: '2024-09-01' },
+  { id: 's10', name: 'Kateřina Procházková', class_id: 'c1', initials: 'KP', color: '#6366F1', created_at: '2024-09-01' },
+  { id: 's11', name: 'Jakub Černý', class_id: 'c1', initials: 'JČ', color: '#EC4899', created_at: '2024-09-01' },
+  { id: 's12', name: 'Michaela Veselá', class_id: 'c1', initials: 'MV', color: '#F59E0B', created_at: '2024-09-01' },
+];
+
+const DEMO_ASSIGNMENTS: Assignment[] = [
+  { id: 'a1', title: 'Test Hmota', type: 'test', class_id: 'c1', due_date: '2024-09-08', created_at: '2024-09-01' },
+  { id: 'a2', title: 'Procvičování Newtonovy pohyby', type: 'practice', class_id: 'c1', due_date: '2024-09-21', created_at: '2024-09-15' },
+  { id: 'a3', title: 'Test Hmota', type: 'test', class_id: 'c1', due_date: '2024-09-21', created_at: '2024-09-18' },
+  { id: 'a4', title: 'Test Hmota', type: 'test', class_id: 'c1', due_date: '2024-10-08', created_at: '2024-10-01' },
+  { id: 'a5', title: 'Test', type: 'test', class_id: 'c1', due_date: '2024-10-08', created_at: '2024-10-05' },
+  { id: 'a6', title: 'Procvičování', type: 'practice', class_id: 'c1', due_date: '2024-10-30', created_at: '2024-10-25' },
+  // Individual work (from self-study)
+  { id: 'i1', title: 'Hmota - ind.', type: 'individual', class_id: 'c1', due_date: '2024-09-15', created_at: '2024-09-10' },
+  { id: 'i2', title: 'Částice - ind.', type: 'individual', class_id: 'c1', due_date: '2024-10-05', created_at: '2024-10-01' },
+];
+
+// Generate random results
+function generateDemoResults(): { [studentId: string]: { [assignmentId: string]: StudentResult } } {
+  const results: { [studentId: string]: { [assignmentId: string]: StudentResult } } = {};
+  
+  DEMO_STUDENTS.forEach(student => {
+    results[student.id] = {};
+    DEMO_ASSIGNMENTS.forEach(assignment => {
+      // Random: 70% has result, 20% not done, 10% pending
+      const rand = Math.random();
+      let score: number | null = null;
+      
+      if (rand < 0.7) {
+        // Has result - score between 3 and 10
+        score = Math.floor(Math.random() * 8) + 3;
+      } else if (rand < 0.9) {
+        // Not done
+        score = null;
+      } else {
+        // Pending (use -1 as marker)
+        score = -1;
+      }
+      
+      results[student.id][assignment.id] = {
+        id: `r_${student.id}_${assignment.id}`,
+        student_id: student.id,
+        assignment_id: assignment.id,
+        score,
+        max_score: 10,
+        completed_at: score !== null && score !== -1 ? new Date().toISOString() : undefined,
+        time_spent_ms: score !== null && score !== -1 ? Math.floor(Math.random() * 600000) + 60000 : undefined,
+      };
+    });
+  });
+  
+  return results;
+}
+
+const DEMO_CLASSES: ClassGroup[] = [
+  { id: 'c1', name: '6.A', teacher_id: 'demo', students_count: 12, created_at: '2024-09-01' },
+  { id: 'c2', name: '6.B', teacher_id: 'demo', students_count: 22, created_at: '2024-09-01' },
+  { id: 'c3', name: '7.C', teacher_id: 'demo', students_count: 18, created_at: '2024-09-01' },
+];
+
+// =============================================
+// DATA SOURCE TOGGLE
+// =============================================
+
+let useSupabaseData = false;
+
+export function setDataSource(useSupabase: boolean): void {
+  useSupabaseData = useSupabase;
+}
+
+export function isUsingSupabase(): boolean {
+  return useSupabaseData;
+}
+
+// =============================================
+// CLASS FUNCTIONS
+// =============================================
+
+export async function getClasses(teacherId: string): Promise<ClassGroup[]> {
+  if (!useSupabaseData) {
+    return DEMO_CLASSES;
+  }
+  
+  try {
+    const { data, error } = await supabase
+      .from('classes')
+      .select('*')
+      .eq('teacher_id', teacherId)
+      .order('name');
+    
+    if (error) throw error;
+    return data || [];
+  } catch (error) {
+    console.error('Error fetching classes:', error);
+    return DEMO_CLASSES; // Fallback to demo
+  }
+}
+
+export async function createClass(name: string, teacherId: string): Promise<ClassGroup | null> {
+  if (!useSupabaseData) {
+    const newClass: ClassGroup = {
+      id: `c_${Date.now()}`,
+      name,
+      teacher_id: teacherId,
+      students_count: 0,
+      created_at: new Date().toISOString(),
+    };
+    DEMO_CLASSES.push(newClass);
+    return newClass;
+  }
+  
+  try {
+    const { data, error } = await supabase
+      .from('classes')
+      .insert({ name, teacher_id: teacherId })
+      .select()
+      .single();
+    
+    if (error) throw error;
+    return data;
+  } catch (error) {
+    console.error('Error creating class:', error);
+    return null;
+  }
+}
+
+export async function deleteClass(classId: string): Promise<boolean> {
+  if (!useSupabaseData) {
+    const index = DEMO_CLASSES.findIndex(c => c.id === classId);
+    if (index !== -1) {
+      DEMO_CLASSES.splice(index, 1);
+      return true;
+    }
+    return false;
+  }
+  
+  try {
+    const { error } = await supabase
+      .from('classes')
+      .delete()
+      .eq('id', classId);
+    
+    if (error) throw error;
+    return true;
+  } catch (error) {
+    console.error('Error deleting class:', error);
+    return false;
+  }
+}
+
+// =============================================
+// STUDENT FUNCTIONS
+// =============================================
+
+export async function getStudents(classId: string): Promise<Student[]> {
+  if (!useSupabaseData) {
+    return DEMO_STUDENTS.filter(s => s.class_id === classId);
+  }
+  
+  try {
+    const { data, error } = await supabase
+      .from('students')
+      .select('*')
+      .eq('class_id', classId)
+      .order('name');
+    
+    if (error) throw error;
+    return data || [];
+  } catch (error) {
+    console.error('Error fetching students:', error);
+    return DEMO_STUDENTS.filter(s => s.class_id === classId);
+  }
+}
+
+export async function addStudent(student: Omit<Student, 'id' | 'created_at'>): Promise<Student | null> {
+  if (!useSupabaseData) {
+    const newStudent: Student = {
+      ...student,
+      id: `s_${Date.now()}`,
+      created_at: new Date().toISOString(),
+    };
+    DEMO_STUDENTS.push(newStudent);
+    return newStudent;
+  }
+  
+  try {
+    const { data, error } = await supabase
+      .from('students')
+      .insert(student)
+      .select()
+      .single();
+    
+    if (error) throw error;
+    return data;
+  } catch (error) {
+    console.error('Error adding student:', error);
+    return null;
+  }
+}
+
+// =============================================
+// ASSIGNMENT FUNCTIONS
+// =============================================
+
+export async function getAssignments(classId: string, includeIndividual: boolean = true): Promise<Assignment[]> {
+  if (!useSupabaseData) {
+    let assignments = DEMO_ASSIGNMENTS.filter(a => a.class_id === classId);
+    if (!includeIndividual) {
+      assignments = assignments.filter(a => a.type !== 'individual');
+    }
+    return assignments;
+  }
+  
+  try {
+    let query = supabase
+      .from('assignments')
+      .select('*')
+      .eq('class_id', classId)
+      .order('due_date');
+    
+    if (!includeIndividual) {
+      query = query.neq('type', 'individual');
+    }
+    
+    const { data, error } = await query;
+    
+    if (error) throw error;
+    return data || [];
+  } catch (error) {
+    console.error('Error fetching assignments:', error);
+    return DEMO_ASSIGNMENTS.filter(a => a.class_id === classId);
+  }
+}
+
+export async function createAssignment(assignment: Omit<Assignment, 'id' | 'created_at'>): Promise<Assignment | null> {
+  if (!useSupabaseData) {
+    const newAssignment: Assignment = {
+      ...assignment,
+      id: `a_${Date.now()}`,
+      created_at: new Date().toISOString(),
+    };
+    DEMO_ASSIGNMENTS.push(newAssignment);
+    return newAssignment;
+  }
+  
+  try {
+    const { data, error } = await supabase
+      .from('assignments')
+      .insert(assignment)
+      .select()
+      .single();
+    
+    if (error) throw error;
+    return data;
+  } catch (error) {
+    console.error('Error creating assignment:', error);
+    return null;
+  }
+}
+
+// =============================================
+// RESULTS FUNCTIONS
+// =============================================
+
+export async function getResults(classId: string): Promise<{ [studentId: string]: { [assignmentId: string]: StudentResult } }> {
+  if (!useSupabaseData) {
+    return generateDemoResults();
+  }
+  
+  try {
+    // First get all students and assignments for this class
+    const students = await getStudents(classId);
+    const assignments = await getAssignments(classId);
+    
+    const studentIds = students.map(s => s.id);
+    const assignmentIds = assignments.map(a => a.id);
+    
+    const { data, error } = await supabase
+      .from('results')
+      .select('*')
+      .in('student_id', studentIds)
+      .in('assignment_id', assignmentIds);
+    
+    if (error) throw error;
+    
+    // Transform to nested object
+    const results: { [studentId: string]: { [assignmentId: string]: StudentResult } } = {};
+    
+    students.forEach(student => {
+      results[student.id] = {};
+    });
+    
+    (data || []).forEach((result: StudentResult) => {
+      if (!results[result.student_id]) {
+        results[result.student_id] = {};
+      }
+      results[result.student_id][result.assignment_id] = result;
+    });
+    
+    return results;
+  } catch (error) {
+    console.error('Error fetching results:', error);
+    return generateDemoResults();
+  }
+}
+
+export async function saveResult(result: Omit<StudentResult, 'id'>): Promise<StudentResult | null> {
+  if (!useSupabaseData) {
+    // Update demo data
+    return { ...result, id: `r_${Date.now()}` };
+  }
+  
+  try {
+    const { data, error } = await supabase
+      .from('results')
+      .upsert(result, { onConflict: 'student_id,assignment_id' })
+      .select()
+      .single();
+    
+    if (error) throw error;
+    return data;
+  } catch (error) {
+    console.error('Error saving result:', error);
+    return null;
+  }
+}
+
+// =============================================
+// FULL CLASS DATA
+// =============================================
+
+export async function getClassWithData(classId: string, includeIndividual: boolean = true): Promise<ClassWithStudentsAndResults | null> {
+  const classes = await getClasses('demo');
+  const classGroup = classes.find(c => c.id === classId);
+  
+  if (!classGroup) return null;
+  
+  const students = await getStudents(classId);
+  const assignments = await getAssignments(classId, includeIndividual);
+  const results = await getResults(classId);
+  
+  return {
+    classGroup,
+    students,
+    assignments,
+    results,
+  };
+}
+
+// =============================================
+// SYNC INDIVIDUAL WORK FROM FIREBASE
+// =============================================
+
+export async function syncIndividualWorkToClass(
+  classId: string,
+  boardId: string,
+  boardTitle: string,
+  studentResults: Array<{ studentName: string; score: number; maxScore: number; timeSpentMs: number; completedAt: string }>
+): Promise<void> {
+  // Create or find assignment for this individual work
+  const assignmentTitle = `${boardTitle} - ind.`;
+  
+  // In demo mode, just add to the arrays
+  if (!useSupabaseData) {
+    const existingAssignment = DEMO_ASSIGNMENTS.find(
+      a => a.type === 'individual' && a.title === assignmentTitle && a.class_id === classId
+    );
+    
+    if (!existingAssignment) {
+      DEMO_ASSIGNMENTS.push({
+        id: `i_${Date.now()}`,
+        title: assignmentTitle,
+        type: 'individual',
+        class_id: classId,
+        board_id: boardId,
+        due_date: new Date().toISOString().split('T')[0],
+        created_at: new Date().toISOString(),
+      });
+    }
+    return;
+  }
+  
+  // Supabase mode - create assignment and results
+  try {
+    // Check if assignment exists
+    const { data: existingAssignments } = await supabase
+      .from('assignments')
+      .select('id')
+      .eq('class_id', classId)
+      .eq('board_id', boardId)
+      .eq('type', 'individual');
+    
+    let assignmentId: string;
+    
+    if (existingAssignments && existingAssignments.length > 0) {
+      assignmentId = existingAssignments[0].id;
+    } else {
+      const { data: newAssignment } = await supabase
+        .from('assignments')
+        .insert({
+          title: assignmentTitle,
+          type: 'individual',
+          class_id: classId,
+          board_id: boardId,
+          due_date: new Date().toISOString().split('T')[0],
+        })
+        .select()
+        .single();
+      
+      if (!newAssignment) return;
+      assignmentId = newAssignment.id;
+    }
+    
+    // Save results for each student
+    for (const result of studentResults) {
+      // Find student by name
+      const { data: students } = await supabase
+        .from('students')
+        .select('id')
+        .eq('class_id', classId)
+        .ilike('name', result.studentName);
+      
+      if (students && students.length > 0) {
+        await supabase.from('results').upsert({
+          student_id: students[0].id,
+          assignment_id: assignmentId,
+          score: result.score,
+          max_score: result.maxScore,
+          completed_at: result.completedAt,
+          time_spent_ms: result.timeSpentMs,
+        }, { onConflict: 'student_id,assignment_id' });
+      }
+    }
+  } catch (error) {
+    console.error('Error syncing individual work:', error);
+  }
+}
+
