@@ -321,7 +321,7 @@ export function FirebaseTeacherPanel({ isOpen, onClose, documentTitle, documentP
             {showQRCode && (
               <div className="mt-3 p-4 bg-white rounded-xl flex flex-col items-center">
                 <QRCodeSVG 
-                  value={`${window.location.origin}/join/${sessionId}`}
+                  value={`${window.location.origin}${import.meta.env.BASE_URL || '/'}join/${sessionId}`}
                   size={180}
                   level="M"
                   includeMargin={true}
@@ -331,7 +331,7 @@ export function FirebaseTeacherPanel({ isOpen, onClose, documentTitle, documentP
                 </p>
                 <button
                   onClick={() => {
-                    navigator.clipboard.writeText(`${window.location.origin}/join/${sessionId}`);
+                    navigator.clipboard.writeText(`${window.location.origin}${import.meta.env.BASE_URL || '/'}join/${sessionId}`);
                     setCopied(true);
                     setTimeout(() => setCopied(false), 2000);
                   }}

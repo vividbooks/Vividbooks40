@@ -316,7 +316,7 @@ export function TeacherSession({ quiz, teacherId, teacherName, onClose }: Teache
           </div>
           
           <p className="text-xs mt-3 text-center" style={{ color: '#64748b' }}>
-            Studenti: <span style={{ color: '#94a3b8' }}>localhost:3000/quiz/join</span>
+            Studenti: <span style={{ color: '#94a3b8' }}>{window.location.origin}{import.meta.env.BASE_URL || '/'}quiz/join</span>
           </p>
         </div>
         

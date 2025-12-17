@@ -520,7 +520,9 @@ export function QuizViewPage() {
       const shareRef = ref(database, `quiz_shares/${shareId}`);
       await set(shareRef, shareData);
       
-      const link = `${window.location.origin}/quiz/student/${shareId}`;
+      // Use BASE_URL for correct path on GitHub Pages
+      const baseUrl = import.meta.env.BASE_URL || '/';
+      const link = `${window.location.origin}${baseUrl}quiz/student/${shareId}`;
       setShareLink(link);
     } catch (error) {
       console.error('Error creating share session:', error);
@@ -592,7 +594,7 @@ export function QuizViewPage() {
             </div>
             
             <p className="text-xs mt-3 text-center" style={{ color: '#64748b' }}>
-              Studenti: <span style={{ color: '#94a3b8' }}>{window.location.origin}/quiz/join</span>
+              Studenti: <span style={{ color: '#94a3b8' }}>{window.location.origin}{import.meta.env.BASE_URL || '/'}quiz/join</span>
             </p>
           </div>
           
