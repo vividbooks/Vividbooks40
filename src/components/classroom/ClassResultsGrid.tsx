@@ -214,7 +214,7 @@ export function ClassResultsGrid({ classId, className, onBack }: ClassResultsGri
       {/* Results Grid */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full border-collapse">
+          <table className="w-full" style={{ borderSpacing: '2px', borderCollapse: 'separate' }}>
             {/* Header */}
             <thead>
               {/* Date row */}
@@ -225,21 +225,21 @@ export function ClassResultsGrid({ classId, className, onBack }: ClassResultsGri
                   return (
                     <th 
                       key={`date-${assignment.id}`}
-                      className={`py-2 text-xs font-normal text-slate-400 text-center border-b border-slate-100 ${
+                      className={`py-2 text-xs font-normal text-slate-400 text-center ${
                         hoveredColumn === assignment.id ? 'bg-indigo-50' : ''
                       }`}
                       style={{ 
-                        width: isIndividual ? '32px' : '100px',
-                        minWidth: isIndividual ? '32px' : '100px',
-                        maxWidth: isIndividual ? '32px' : '100px',
-                        padding: isIndividual ? '0 2px' : '0 8px',
+                        width: isIndividual ? '15px' : '120px',
+                        minWidth: isIndividual ? '15px' : '120px',
+                        maxWidth: isIndividual ? '15px' : '120px',
+                        padding: '0',
                       }}
                     >
                       {isIndividual ? '' : formatDate(assignment.due_date)}
                     </th>
                   );
                 })}
-                <th className="px-4 py-2 text-xs font-normal text-slate-400 text-center border-b border-slate-100" style={{ minWidth: '80px' }}>
+                <th className="px-4 py-2 text-xs font-normal text-slate-400 text-center" style={{ minWidth: '80px' }}>
                   Ø
                 </th>
               </tr>
@@ -258,31 +258,23 @@ export function ClassResultsGrid({ classId, className, onBack }: ClassResultsGri
                         hoveredColumn === assignment.id ? 'bg-indigo-50' : ''
                       }`}
                       style={{ 
-                        width: isIndividual ? '32px' : '100px',
-                        minWidth: isIndividual ? '32px' : '100px',
-                        maxWidth: isIndividual ? '32px' : '100px',
-                        padding: isIndividual ? '0 2px' : '0 8px',
+                        width: isIndividual ? '15px' : '120px',
+                        minWidth: isIndividual ? '15px' : '120px',
+                        maxWidth: isIndividual ? '15px' : '120px',
+                        padding: '0',
                       }}
                       onMouseEnter={() => setHoveredColumn(assignment.id)}
                       onMouseLeave={() => setHoveredColumn(null)}
                     >
                       {isIndividual ? (
-                        // Narrow column for individual - just icon
-                        <div className="flex justify-center">
-                          <div 
-                            className="w-5 h-5 rounded flex items-center justify-center" 
-                            style={{ backgroundColor: '#E0E7FF' }}
-                            title={assignment.title}
-                          >
-                            <ClipboardList className="w-3 h-3" style={{ color: '#4F46E5' }} />
-                          </div>
-                        </div>
+                        // Narrow column for individual - empty header
+                        <div style={{ width: '15px', height: '20px' }} title={assignment.title}></div>
                       ) : (
                         // Wide column for tests/practice
                         <div className="flex flex-col items-center gap-1">
                           {getAssignmentIcon(assignment.type)}
-                          <span className="text-xs text-slate-600 truncate" style={{ maxWidth: '90px' }} title={assignment.title}>
-                            {assignment.title.length > 12 ? `${assignment.title.slice(0, 12)}...` : assignment.title}
+                          <span className="text-xs text-slate-600 truncate" style={{ maxWidth: '110px' }} title={assignment.title}>
+                            {assignment.title.length > 14 ? `${assignment.title.slice(0, 14)}...` : assignment.title}
                           </span>
                         </div>
                       )}
@@ -304,12 +296,12 @@ export function ClassResultsGrid({ classId, className, onBack }: ClassResultsGri
                 return (
                   <tr 
                     key={student.id}
-                    className={`border-b border-slate-50 ${isHoveredRow ? 'bg-indigo-50' : studentIdx % 2 === 0 ? 'bg-white' : 'bg-slate-25'}`}
+                    className={isHoveredRow ? 'bg-indigo-50' : ''}
                     onMouseEnter={() => setHoveredRow(student.id)}
                     onMouseLeave={() => setHoveredRow(null)}
                   >
                     {/* Student name */}
-                    <td className="sticky left-0 z-10 px-4 py-2" style={{ backgroundColor: isHoveredRow ? '#EEF2FF' : studentIdx % 2 === 0 ? '#FFFFFF' : '#FAFAFA' }}>
+                    <td className="sticky left-0 z-10 px-4 py-1" style={{ backgroundColor: isHoveredRow ? '#EEF2FF' : '#FFFFFF' }}>
                       <div className="flex items-center gap-3">
                         <div 
                           className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold"
@@ -333,43 +325,43 @@ export function ClassResultsGrid({ classId, className, onBack }: ClassResultsGri
                       return (
                         <td 
                           key={`result-${student.id}-${assignment.id}`}
-                          className={`py-1.5 text-center ${hoveredColumn === assignment.id ? 'bg-indigo-50/50' : ''}`}
+                          className={hoveredColumn === assignment.id ? 'bg-indigo-50/50' : ''}
                           style={{ 
-                            width: isIndividual ? '32px' : '100px',
-                            minWidth: isIndividual ? '32px' : '100px',
-                            maxWidth: isIndividual ? '32px' : '100px',
-                            padding: isIndividual ? '4px 2px' : '4px 8px',
+                            width: isIndividual ? '15px' : '120px',
+                            minWidth: isIndividual ? '15px' : '120px',
+                            maxWidth: isIndividual ? '15px' : '120px',
+                            padding: '2px 0',
                           }}
                           onMouseEnter={() => setHoveredColumn(assignment.id)}
                           onMouseLeave={() => setHoveredColumn(null)}
                         >
                           {isIndividual ? (
-                            // Narrow "bobble" for individual work
+                            // Narrow bar for individual work - no text
                             <div 
-                              className={`
-                                mx-auto w-6 h-10 rounded-full flex items-center justify-center
-                                ${isHighlighted ? 'ring-2 ring-indigo-400 ring-offset-1' : ''}
-                              `}
-                              style={{ backgroundColor: bgColor }}
+                              className={isHighlighted ? 'ring-2 ring-indigo-400 ring-offset-1' : ''}
+                              style={{ 
+                                width: '15px', 
+                                height: '50px', 
+                                backgroundColor: bgColor,
+                                borderRadius: '5px',
+                                margin: '0 auto',
+                              }}
                               title={score === null ? 'Nehotovo' : score === -1 ? 'Čeká' : `${score}/10`}
-                            >
-                              {score !== null && score !== -1 && (
-                                <span className="text-[10px] font-bold" style={{ color: textColor }}>
-                                  {score}
-                                </span>
-                              )}
-                              {score === -1 && (
-                                <span className="text-[10px] font-bold" style={{ color: textColor }}>?</span>
-                              )}
-                            </div>
+                            />
                           ) : (
                             // Wide cell for tests/practice
                             <div 
                               className={`
-                                mx-auto py-2 rounded-lg text-sm font-medium
+                                flex items-center justify-center text-sm font-medium
                                 ${isHighlighted ? 'ring-2 ring-indigo-400 ring-offset-1' : ''}
                               `}
-                              style={{ backgroundColor: bgColor, color: textColor, width: '84px' }}
+                              style={{ 
+                                width: '120px', 
+                                height: '50px', 
+                                backgroundColor: bgColor, 
+                                color: textColor,
+                                borderRadius: '5px',
+                              }}
                             >
                               {score === null ? '-' : score === -1 ? '?' : `${score} / ${result?.max_score || 10}`}
                             </div>
@@ -379,10 +371,16 @@ export function ClassResultsGrid({ classId, className, onBack }: ClassResultsGri
                     })}
                     
                     {/* Average */}
-                    <td className="px-2 py-1.5 text-center">
+                    <td className="px-2 py-1 text-center">
                       <div 
-                        className="mx-auto w-[70px] py-2 rounded-lg text-sm font-bold text-white"
-                        style={{ backgroundColor: '#4A90E2' }}
+                        className="flex items-center justify-center text-sm font-bold text-white"
+                        style={{ 
+                          width: '70px', 
+                          height: '50px', 
+                          backgroundColor: '#4A90E2',
+                          borderRadius: '5px',
+                          margin: '0 auto',
+                        }}
                       >
                         {average !== null ? `${average}%` : '-'}
                       </div>
