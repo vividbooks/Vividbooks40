@@ -248,12 +248,26 @@ export function QuizJoinPage() {
       setName(identity.name);
     }
     
-    // Try to reconnect to saved session
+    // If URL has a code, check if it matches the saved session
+    if (initialCode && savedSession) {
+      // Extract session code from saved session ID (format: quiz_XXXXXX_timestamp)
+      const savedCodeMatch = savedSession.sessionId.match(/quiz_([A-Z0-9]+)_/);
+      const savedCode = savedCodeMatch ? savedCodeMatch[1] : null;
+      
+      if (savedCode && savedCode.toUpperCase() !== initialCode.toUpperCase()) {
+        // URL code is different from saved session - clear saved and use URL code
+        console.log('URL code differs from saved session, clearing saved session');
+        clearSavedSession();
+        return; // Don't auto-reconnect, let user join with URL code
+      }
+    }
+    
+    // Try to reconnect to saved session (only if no URL code or URL matches saved)
     if (savedSession) {
       console.log('Found saved session, attempting reconnect:', savedSession);
       attemptReconnect(savedSession);
     }
-  }, []);
+  }, [initialCode]);
 
   // Attempt to reconnect to a saved session
   const attemptReconnect = async (savedSession: SavedSession) => {
@@ -529,6 +543,17 @@ export function QuizJoinPage() {
     if (!code || !name) {
       setError('Vyplň kód a jméno');
       return;
+    }
+    
+    // Clear any saved session that doesn't match the code being joined
+    const savedSession = getSavedSession();
+    if (savedSession) {
+      const savedCodeMatch = savedSession.sessionId.match(/quiz_([A-Z0-9]+)_/);
+      const savedCode = savedCodeMatch ? savedCodeMatch[1] : null;
+      if (!savedCode || savedCode.toUpperCase() !== code.toUpperCase()) {
+        console.log('Clearing old session before joining new one');
+        clearSavedSession();
+      }
     }
     
     setIsJoining(true);
