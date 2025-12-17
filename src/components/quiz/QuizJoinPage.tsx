@@ -709,12 +709,13 @@ export function QuizJoinPage() {
     
     // DON'T set isCorrect here - let the teacher evaluate
     // Student submits answer without knowing if it's correct
+    // Note: Using null instead of undefined because Firebase strips undefined values
     const response: SlideResponse = {
       slideId: currentSlideForAnswer.id,
       activityType: currentSlideForAnswer.activityType,
       answer,
       // isCorrect is NOT set here - will be set by teacher's "Vyhodnotit" button
-      isCorrect: undefined as any, // Explicitly undefined until teacher evaluates
+      isCorrect: null as any, // null until teacher evaluates (Firebase strips undefined)
       points: 0, // Points will be set after teacher evaluation
       answeredAt: new Date().toISOString(),
       timeSpent: timeSpentSeconds,
@@ -807,9 +808,11 @@ export function QuizJoinPage() {
   const currentSlideId = currentSlide ? currentSlide.id : '';
   const hasAnswered = responses.some(function(r) { return r.slideId === currentSlideId; });
   const currentResponse = responses.find(function(r) { return r.slideId === currentSlideId; });
-  // Only count responses where isCorrect has been set by teacher (not undefined)
+  // Only count responses where isCorrect has been set by teacher (not null/undefined)
   const correctCount = responses.filter(function(r) { return r.isCorrect === true; }).length;
   const wrongCount = responses.filter(function(r) { return r.isCorrect === false; }).length;
+  // Count of answers submitted but not yet evaluated
+  const pendingCount = responses.filter(function(r) { return r.isCorrect === null || r.isCorrect === undefined; }).length;
   const canNavigate = session && session.isLocked === false;
   
   // Require answer to proceed (for activity slides)

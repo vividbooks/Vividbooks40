@@ -791,7 +791,8 @@ export function QuizViewPage() {
               const hasUnevaluatedAnswers = studentsWithAnswer.some(([_, student]) => {
                 const responses = student.responses || [];
                 const response = responses.find(r => r.slideId === currentSlideData.id);
-                return response && response.isCorrect === undefined;
+                // Check for null or undefined (Firebase strips undefined, so we use null)
+                return response && (response.isCorrect === undefined || response.isCorrect === null);
               });
               
               if (studentsWithAnswer.length > 0) {
