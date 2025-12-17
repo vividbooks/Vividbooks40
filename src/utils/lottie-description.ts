@@ -1,7 +1,15 @@
 import OpenAI from 'openai';
 
-// OpenAI API Key
-const OPENAI_API_KEY = import.meta.env.VITE_OPENAI_API_KEY || '';
+// Get API key from localStorage or env variable
+function getOpenAIKey(): string {
+  // First check localStorage (runtime configuration)
+  if (typeof window !== 'undefined') {
+    const storedKey = localStorage.getItem('openai_api_key');
+    if (storedKey) return storedKey;
+  }
+  // Fallback to env variable
+  return import.meta.env.VITE_OPENAI_API_KEY || '';
+}
 
 export interface LottieDescriptionResult {
   shortDescription: string;
@@ -9,10 +17,12 @@ export interface LottieDescriptionResult {
   keywords: string[];
 }
 
-const openai = new OpenAI({
-  apiKey: OPENAI_API_KEY,
-  dangerouslyAllowBrowser: true 
-});
+function createOpenAIClient() {
+  return new OpenAI({
+    apiKey: getOpenAIKey(),
+    dangerouslyAllowBrowser: true 
+  });
+}
 
 /**
  * Main function: Generate description for a Lottie animation
@@ -164,6 +174,7 @@ Formát odpovědi (JSON):
   console.log('analyzeFramesWithOpenAI: Sending request to OpenAI...');
 
   try {
+    const openai = createOpenAIClient();
     const completion = await openai.chat.completions.create({
       model: "gpt-4o",
       messages: [

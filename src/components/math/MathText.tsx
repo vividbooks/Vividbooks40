@@ -66,9 +66,10 @@ export function MathText({ children, className, mathScale = 1.3 }: MathTextProps
   processedInput = processedInput.replace(/\x09extit\{/g, '\\textit{'); // tab + extit{
   
   // Step 4: Handle orphaned command parts (backslash completely eaten)
-  processedInput = processedInput.replace(/(?<![\\a-zA-Z])rac\{([^}]*)\}\{([^}]*)\}/g, '\\frac{$1}{$2}');
-  processedInput = processedInput.replace(/(?<![\\a-zA-Z])extbf\{([^}]*)\}/g, '\\textbf{$1}');
-  processedInput = processedInput.replace(/(?<![\\a-zA-Z])extit\{([^}]*)\}/g, '\\textit{$1}');
+  // Use word boundary or start-of-string instead of lookbehind for older browser compatibility
+  processedInput = processedInput.replace(/(^|[^\\a-zA-Z])rac\{([^}]*)\}\{([^}]*)\}/g, '$1\\frac{$2}{$3}');
+  processedInput = processedInput.replace(/(^|[^\\a-zA-Z])extbf\{([^}]*)\}/g, '$1\\textbf{$2}');
+  processedInput = processedInput.replace(/(^|[^\\a-zA-Z])extit\{([^}]*)\}/g, '$1\\textit{$2}');
   
   // Step 5: Clean up any remaining stray escape sequences before math
   processedInput = processedInput.replace(/\\[tfnrb]\s*(?=\$)/g, ''); // Remove \t, \f, \n, \r, \b before $

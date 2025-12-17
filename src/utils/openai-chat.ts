@@ -1,14 +1,32 @@
 import OpenAI from 'openai';
 
-const OPENAI_API_KEY = import.meta.env.VITE_OPENAI_API_KEY || '';
+// Get API key from localStorage or env variable
+function getOpenAIKey(): string {
+  // First check localStorage (runtime configuration)
+  if (typeof window !== 'undefined') {
+    const storedKey = localStorage.getItem('openai_api_key');
+    if (storedKey) return storedKey;
+  }
+  // Fallback to env variable
+  return import.meta.env.VITE_OPENAI_API_KEY || '';
+}
+
+// Set API key at runtime
+export function setOpenAIKey(key: string): void {
+  if (typeof window !== 'undefined') {
+    localStorage.setItem('openai_api_key', key);
+  }
+}
 
 // Inicializace OpenAI klienta
 // Pozor: V produkci by se mělo volat přes backend, aby klíč nebyl v prohlížeči.
 // Pro účely dema/vývoje použijeme dangerouslyAllowBrowser: true
-const openai = new OpenAI({
-  apiKey: OPENAI_API_KEY,
-  dangerouslyAllowBrowser: true 
-});
+function createOpenAIClient() {
+  return new OpenAI({
+    apiKey: getOpenAIKey(),
+    dangerouslyAllowBrowser: true 
+  });
+}
 
 export interface ChatParams {
   message: string;
@@ -36,6 +54,7 @@ export async function chatWithOpenAI(params: ChatParams): Promise<string> {
 
     // GPT-5 chat.completions currently only supports default temperature (1),
     // so we omit temperature for GPT-5 to avoid 400 errors.
+    const openai = createOpenAIClient();
     const completion = await openai.chat.completions.create({
       messages: messages,
       model: params.model,
