@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { 
   Menu, 
@@ -895,6 +895,17 @@ export function MyContentLayout({ theme, toggleTheme }: MyContentLayoutProps) {
   
   // Quizzes from storage
   const [quizzes, setQuizzes] = useState<QuizListItem[]>([]);
+  
+  // Computed: quizzes in the currently open folder (uses state, not localStorage)
+  const quizzesInCurrentFolder = useMemo(() => {
+    if (!openFolder) return [];
+    return quizzes.filter(q => q.folderId === openFolder.id);
+  }, [quizzes, openFolder]);
+  
+  // Computed: root quizzes (no folder)
+  const rootQuizzes = useMemo(() => {
+    return quizzes.filter(q => !q.folderId);
+  }, [quizzes]);
   
   // Load worksheets and quizzes on mount and when needed
   useEffect(() => {
@@ -2597,7 +2608,7 @@ export function MyContentLayout({ theme, toggleTheme }: MyContentLayoutProps) {
                       ))}
 
                       {/* Quizzes/Boards in this folder */}
-                      {sortContent(getQuizzesInFolder(openFolder.id), 'worksheet').map((quiz) => (
+                      {sortContent(quizzesInCurrentFolder, 'worksheet').map((quiz) => (
                         <QuizPreviewCard
                           key={quiz.id}
                           ref={(el) => registerItemRef(`quiz:${quiz.id}`, el)}
@@ -2975,7 +2986,7 @@ export function MyContentLayout({ theme, toggleTheme }: MyContentLayoutProps) {
                       })}
                       
                       {/* Quizzes/Boards */}
-                      {sortContent(getQuizzesInFolder(openFolder.id), 'worksheet').map((quiz) => {
+                      {sortContent(quizzesInCurrentFolder, 'worksheet').map((quiz) => {
                         const isSelected = selectedItems.has(`quiz:${quiz.id}`);
                         return (
                           <div 
@@ -3867,7 +3878,7 @@ export function MyContentLayout({ theme, toggleTheme }: MyContentLayoutProps) {
                     )}
 
                     {/* Root Documents, Worksheets, Quizzes, Files and Links (not in folders) - Grid Layout with Previews */}
-                    {(myDocuments.length > 0 || getRootWorksheets().length > 0 || getRootQuizzes().length > 0 || getRootFiles().length > 0 || getRootLinks().length > 0) && (
+                    {(myDocuments.length > 0 || getRootWorksheets().length > 0 || rootQuizzes.length > 0 || getRootFiles().length > 0 || getRootLinks().length > 0) && (
                       <div className="flex flex-wrap gap-8 mt-6">
                         {/* Documents */}
                         {sortContent(myDocuments, 'file').map((doc) => {
@@ -4023,7 +4034,7 @@ export function MyContentLayout({ theme, toggleTheme }: MyContentLayoutProps) {
                         ))}
 
                         {/* Quizzes/Boards (root level) */}
-                        {sortContent(getRootQuizzes(), 'worksheet').map((quiz) => (
+                        {sortContent(rootQuizzes, 'worksheet').map((quiz) => (
                           <QuizPreviewCard
                             key={quiz.id}
                             ref={(el) => registerItemRef(`quiz:${quiz.id}`, el)}
@@ -4436,7 +4447,7 @@ export function MyContentLayout({ theme, toggleTheme }: MyContentLayoutProps) {
                       })}
                       
                       {/* Quizzes/Boards */}
-                      {sortContent(getRootQuizzes(), 'worksheet').map((quiz) => {
+                      {sortContent(rootQuizzes, 'worksheet').map((quiz) => {
                         const isSelected = selectedItems.has(`quiz:${quiz.id}`);
                         return (
                           <div 
@@ -4597,7 +4608,7 @@ export function MyContentLayout({ theme, toggleTheme }: MyContentLayoutProps) {
                       })}
                       
                       {/* Empty state in list */}
-                      {myFolders.filter(f => f.copiedFrom !== 'vividbooks-category').length === 0 && myDocuments.length === 0 && getRootWorksheets().length === 0 && getRootQuizzes().length === 0 && getRootFiles().length === 0 && getRootLinks().length === 0 && (
+                      {myFolders.filter(f => f.copiedFrom !== 'vividbooks-category').length === 0 && myDocuments.length === 0 && getRootWorksheets().length === 0 && rootQuizzes.length === 0 && getRootFiles().length === 0 && getRootLinks().length === 0 && (
                         <div className="text-center py-12 text-muted-foreground">
                           <Folder className="h-10 w-10 mx-auto mb-3 opacity-30" />
                           <p>Zatím nemáte žádný obsah</p>
@@ -4607,7 +4618,7 @@ export function MyContentLayout({ theme, toggleTheme }: MyContentLayoutProps) {
                     )}
 
                     {/* Empty State - only show in grid mode */}
-                    {viewMode === 'grid' && myFolders.filter(f => f.copiedFrom !== 'vividbooks-category').length === 0 && myDocuments.length === 0 && getRootWorksheets().length === 0 && getRootQuizzes().length === 0 && getRootFiles().length === 0 && getRootLinks().length === 0 && (
+                    {viewMode === 'grid' && myFolders.filter(f => f.copiedFrom !== 'vividbooks-category').length === 0 && myDocuments.length === 0 && getRootWorksheets().length === 0 && rootQuizzes.length === 0 && getRootFiles().length === 0 && getRootLinks().length === 0 && (
                       <div className="text-center py-16 border-2 border-dashed rounded-2xl bg-accent/10">
                         <Folder className="h-12 w-12 mx-auto mb-4 text-muted-foreground/30" />
                         <p className="text-muted-foreground font-medium">Zatím nemáte žádné soubory</p>
