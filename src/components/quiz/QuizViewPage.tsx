@@ -291,6 +291,10 @@ export function QuizViewPage() {
   const [isStartingSession, setIsStartingSession] = useState(false);
   const [copied, setCopied] = useState(false);
   const [showEndDialog, setShowEndDialog] = useState(false);
+  const [showLiveSettings, setShowLiveSettings] = useState(false);
+  
+  // Live session settings
+  const [liveShowSolutionHints, setLiveShowSolutionHints] = useState(true);
   
   // Share settings
   const [sessionName, setSessionName] = useState('Nová relace');
@@ -372,13 +376,17 @@ export function QuizViewPage() {
       id: newSessionId,
       quizId: quiz.id,
       teacherId: profile?.userId || 'anonymous',
-      teacherName: profile?.firstName || 'Učitel',
+      teacherName: (profile as any)?.firstName || profile?.name || 'Učitel',
       isActive: true,
       currentSlideIndex: currentSlideIndex,
       isPaused: false,
       showResults: false,
+      isLocked: true, // Default: students follow teacher
       students: {},
       createdAt: new Date().toISOString(),
+      settings: {
+        showSolutionHints: liveShowSolutionHints,
+      },
     };
     
     try {
@@ -910,6 +918,55 @@ export function QuizViewPage() {
       );
     }
     
+    // Live session settings panel
+    if (showLiveSettings) {
+      return (
+        <div className="flex flex-col h-full" style={{ backgroundColor: '#4a5568' }}>
+          {/* Header */}
+          <div className="p-4">
+            <button 
+              onClick={() => setShowLiveSettings(false)}
+              className="flex items-center gap-2 text-white/70 hover:text-white mb-4"
+            >
+              <ArrowLeft className="w-5 h-5" />
+            </button>
+            <h2 className="text-2xl font-bold text-white text-center mb-2">Živé promítání</h2>
+            <p className="text-white/60 text-center text-sm">Nastavení relace</p>
+          </div>
+          
+          {/* Settings form */}
+          <div className="flex-1 px-6 flex flex-col">
+            {/* Toggle settings */}
+            <div className="space-y-1 mt-4">
+              <ToggleSwitch
+                enabled={liveShowSolutionHints}
+                onChange={setLiveShowSolutionHints}
+                label="Zobrazit řešení a nápovědu"
+              />
+              <p className="text-white/50 text-xs pl-1 pb-3">
+                Při špatné odpovědi se ukáže správná odpověď. Pokud má otázka nápovědu, zobrazí se tlačítko.
+              </p>
+            </div>
+            
+            {/* Start button */}
+            <div className="mt-auto pb-6">
+              <button
+                onClick={() => {
+                  setShowLiveSettings(false);
+                  startLiveSession();
+                }}
+                disabled={isStartingSession}
+                className="w-full py-5 rounded-xl font-bold text-xl transition-colors disabled:opacity-50"
+                style={{ backgroundColor: '#e8f84a', color: '#1e293b' }}
+              >
+                {isStartingSession ? 'Spouštím...' : 'Spustit promítání'}
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    
     // Share settings panel
     if (showShareSettings) {
       return (
@@ -1028,31 +1085,24 @@ export function QuizViewPage() {
           
           {/* Options */}
           <div className="flex-1 px-6 space-y-4">
-            {/* Live projection */}
+            {/* Live projection - show settings first */}
             <button 
-              onClick={startLiveSession}
-              disabled={isStartingSession}
-              className="w-full flex items-center gap-4 p-5 rounded-2xl transition-colors disabled:opacity-50"
+              onClick={() => setShowLiveSettings(true)}
+              className="w-full flex items-center gap-4 p-5 rounded-2xl transition-colors"
               style={{ backgroundColor: '#e8f84a' }}
             >
               <div className="w-14 h-14 flex items-center justify-center">
-                {isStartingSession ? (
-                  <RefreshCw className="w-10 h-10 text-slate-800 animate-spin" />
-                ) : (
-                  <svg viewBox="0 0 64 64" className="w-full h-full">
-                    <circle cx="32" cy="20" r="10" fill="#4E5871" opacity="0.3" />
-                    <circle cx="18" cy="38" r="8" fill="#4E5871" opacity="0.5" />
-                    <circle cx="46" cy="38" r="8" fill="#4E5871" opacity="0.5" />
-                    <circle cx="32" cy="48" r="8" fill="#4E5871" />
-                    <rect x="26" y="10" width="12" height="10" rx="2" fill="#4E5871" />
-                    <polygon points="32,6 38,12 26,12" fill="#4E5871" />
-                  </svg>
-                )}
+                <svg viewBox="0 0 64 64" className="w-full h-full">
+                  <circle cx="32" cy="20" r="10" fill="#4E5871" opacity="0.3" />
+                  <circle cx="18" cy="38" r="8" fill="#4E5871" opacity="0.5" />
+                  <circle cx="46" cy="38" r="8" fill="#4E5871" opacity="0.5" />
+                  <circle cx="32" cy="48" r="8" fill="#4E5871" />
+                  <rect x="26" y="10" width="12" height="10" rx="2" fill="#4E5871" />
+                  <polygon points="32,6 38,12 26,12" fill="#4E5871" />
+                </svg>
               </div>
               <div className="text-left">
-                <span className="text-lg font-bold text-slate-800 block">
-                  {isStartingSession ? 'Spouštím...' : 'Živé promítání'}
-                </span>
+                <span className="text-lg font-bold text-slate-800 block">Živé promítání</span>
                 <span className="text-sm text-slate-600">Studenti sledují společně</span>
               </div>
             </button>

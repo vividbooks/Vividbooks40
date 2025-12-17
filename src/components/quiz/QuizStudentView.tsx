@@ -648,7 +648,10 @@ export function QuizStudentView() {
   const totalQuestions = quiz && quiz.slides ? quiz.slides.filter(function(s) { return s.type === 'activity'; }).length : 0;
   
   const canProceed = () => {
-    // Always require answer for activity slides before proceeding
+    // If requireAnswerToProgress is disabled, always allow proceeding
+    if (!shareData?.settings?.requireAnswerToProgress) return true;
+    
+    // Otherwise, require answer for activity slides before proceeding
     if (!currentSlide || currentSlide.type !== 'activity') return true;
     return !!responses[currentSlide.id]; // Must have submitted answer
   };
@@ -887,7 +890,7 @@ export function QuizStudentView() {
       {renderConnectionBanner()}
       
       {/* Desktop: Top bar - using grid for proper layout */}
-      <div className="hidden lg:grid px-6 py-4" style={{ backgroundColor: '#d1d5db', gridTemplateColumns: '1fr auto 1fr', borderBottom: '3px solid #6366f1' }}>
+      <div className="hidden lg:grid px-6 py-4" style={{ backgroundColor: '#F0F1F8', gridTemplateColumns: '1fr auto 1fr' }}>
         {/* Left spacer */}
         <div />
         {/* Center: Progress bar */}
@@ -908,7 +911,7 @@ export function QuizStudentView() {
       </div>
       
       {/* Mobile: Top navigation */}
-      <div className="flex lg:hidden items-center gap-3 px-4 py-4" style={{ backgroundColor: '#d1d5db', borderBottom: '3px solid #6366f1' }}>
+      <div className="flex lg:hidden items-center gap-3 px-4 py-4" style={{ backgroundColor: '#F0F1F8' }}>
         <button
           onClick={goToPrevSlide}
           disabled={currentSlideIndex === 0}
@@ -972,52 +975,67 @@ export function QuizStudentView() {
               
               {/* ABC Options */}
               {currentSlide.type === 'activity' && (currentSlide as any).activityType === 'abc' && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4 p-4 md:p-6 max-w-4xl mx-auto w-full">
-                  {(currentSlide as ABCActivitySlide).options.map((option) => {
-                    const isSelected = selectedOption === option.id;
-                    const showResult = hasAnswered && shareData.settings.showActivityResults;
-                    const isCorrect = showResult && option.isCorrect;
-                    const wasSelected = currentResponse?.answer === option.id;
-                    const isWrong = showResult && wasSelected && !option.isCorrect;
-                    
-                    return (
-                      <button
-                        key={option.id}
-                        onClick={() => !hasAnswered && setSelectedOption(option.id)}
-                        disabled={hasAnswered}
-                        className={`
-                          relative p-3 lg:p-4 rounded-2xl text-left transition-all border-2 flex items-center gap-3 lg:gap-4
-                          ${isCorrect ? 'bg-green-50 border-green-500' : ''}
-                          ${isWrong ? 'bg-red-50 border-red-500' : ''}
-                          ${!hasAnswered && isSelected ? 'border-indigo-500 bg-indigo-50' : ''}
-                          ${!hasAnswered && !isSelected ? 'bg-white border-slate-100 hover:border-indigo-200 hover:shadow-md' : ''}
-                          ${showResult && !isCorrect && !isWrong ? 'bg-white border-slate-100 opacity-50' : ''}
-                        `}
-                      >
-                        <span 
-                          className="w-10 h-10 lg:w-12 lg:h-12 rounded-xl flex items-center justify-center font-bold text-base lg:text-lg flex-shrink-0 transition-colors"
-                          style={{
-                            backgroundColor: isCorrect ? '#bbf7d0' 
-                              : isWrong ? '#fecaca'
-                              : !hasAnswered && isSelected ? '#c7d2fe' 
-                              : '#E2E8F0',
-                            color: isCorrect ? '#166534' 
-                              : isWrong ? '#991b1b'
-                              : !hasAnswered && isSelected ? '#3730a3' 
-                              : '#475569',
-                          }}
+                <>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4 p-4 md:p-6 max-w-4xl mx-auto w-full">
+                    {(currentSlide as ABCActivitySlide).options.map((option) => {
+                      const isSelected = selectedOption === option.id;
+                      const showResult = hasAnswered && shareData.settings.showActivityResults;
+                      const isCorrect = showResult && option.isCorrect;
+                      const wasSelected = currentResponse?.answer === option.id;
+                      const isWrong = showResult && wasSelected && !option.isCorrect;
+                      
+                      return (
+                        <button
+                          key={option.id}
+                          onClick={() => !hasAnswered && setSelectedOption(option.id)}
+                          disabled={hasAnswered}
+                          className={`
+                            relative p-3 lg:p-4 rounded-2xl text-left transition-all border-2 flex items-center gap-3 lg:gap-4
+                            ${isCorrect ? 'bg-green-50 border-green-500' : ''}
+                            ${isWrong ? 'bg-red-50 border-red-500' : ''}
+                            ${!hasAnswered && isSelected ? 'border-indigo-500 bg-indigo-50' : ''}
+                            ${!hasAnswered && !isSelected ? 'bg-white border-slate-100 hover:border-indigo-200 hover:shadow-md' : ''}
+                            ${showResult && !isCorrect && !isWrong ? 'bg-white border-slate-100 opacity-50' : ''}
+                          `}
                         >
-                          {option.label || option.id?.toUpperCase() || '?'}
-                        </span>
-                        <span className="text-base sm:text-lg lg:text-xl font-medium text-[#4E5871] flex-1 break-words overflow-hidden">
-                          <MathText>{option.content || ''}</MathText>
-                        </span>
-                        
-                        {isCorrect && <CheckCircle className="w-6 h-6 text-green-600" />}
-                      </button>
-                    );
-                  })}
-                </div>
+                          <span 
+                            className="w-10 h-10 lg:w-12 lg:h-12 rounded-xl flex items-center justify-center font-bold text-base lg:text-lg flex-shrink-0 transition-colors"
+                            style={{
+                              backgroundColor: isCorrect ? '#bbf7d0' 
+                                : isWrong ? '#fecaca'
+                                : !hasAnswered && isSelected ? '#c7d2fe' 
+                                : '#E2E8F0',
+                              color: isCorrect ? '#166534' 
+                                : isWrong ? '#991b1b'
+                                : !hasAnswered && isSelected ? '#3730a3' 
+                                : '#475569',
+                            }}
+                          >
+                            {option.label || option.id?.toUpperCase() || '?'}
+                          </span>
+                          <span className="text-base sm:text-lg lg:text-xl font-medium text-[#4E5871] flex-1 break-words overflow-hidden">
+                            <MathText>{option.content || ''}</MathText>
+                          </span>
+                          
+                          {isCorrect && <CheckCircle className="w-6 h-6 text-green-600" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  
+                  {/* Show explanation/hint for ABC after answer */}
+                  {shareData.settings.showSolutionHints && hasAnswered && (currentSlide as ABCActivitySlide).explanation && (
+                    <div className="mt-4 mx-6 p-4 rounded-xl bg-amber-50 border border-amber-200">
+                      <div className="flex items-center gap-2 text-amber-700 font-medium mb-2">
+                        <HelpCircle className="w-5 h-5" />
+                        <span>Vysvětlení:</span>
+                      </div>
+                      <p className="text-slate-700">
+                        <MathText>{(currentSlide as ABCActivitySlide).explanation || ''}</MathText>
+                      </p>
+                    </div>
+                  )}
+                </>
               )}
               
               {/* Open question */}
@@ -1080,6 +1098,19 @@ export function QuizStudentView() {
                           </span>
                         </>
                       )}
+                    </div>
+                  )}
+                  
+                  {/* Show explanation/hint for open question after answer */}
+                  {shareData.settings.showSolutionHints && hasAnswered && (currentSlide as OpenActivitySlide).explanation && (
+                    <div className="mt-4 p-4 rounded-xl bg-amber-50 border border-amber-200">
+                      <div className="flex items-center gap-2 text-amber-700 font-medium mb-2">
+                        <HelpCircle className="w-5 h-5" />
+                        <span>Vysvětlení:</span>
+                      </div>
+                      <p className="text-slate-700">
+                        <MathText>{(currentSlide as OpenActivitySlide).explanation || ''}</MathText>
+                      </p>
                     </div>
                   )}
                 </div>

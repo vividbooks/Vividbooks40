@@ -26,6 +26,7 @@ import {
   WifiOff,
   AlertCircle,
   Calculator,
+  HelpCircle,
 } from 'lucide-react';
 import { MathInputModal, MathDisplay } from '../math/MathKeyboard';
 import { MathText } from '../math/MathText';
@@ -203,9 +204,15 @@ export function QuizJoinPage() {
   const [showWiggle, setShowWiggle] = useState(false);
   const answerButtonRef = useRef<HTMLButtonElement | null>(null);
   
-  // Refs for cleanup
+  // Refs for cleanup and state tracking
   const heartbeatInterval = useRef<NodeJS.Timeout | null>(null);
   const sessionUnsubscribe = useRef<(() => void) | null>(null);
+  const responsesRef = useRef<SlideResponse[]>(responses);
+  
+  // Keep ref in sync with state
+  useEffect(() => {
+    responsesRef.current = responses;
+  }, [responses]);
 
   // ============================================
   // NETWORK STATUS MONITORING
@@ -396,10 +403,11 @@ export function QuizJoinPage() {
         // Sync responses from server (in case of multi-device or teacher evaluation)
         if (studentId && data.students?.[studentId]) {
           const serverResponses = data.students[studentId].responses || [];
+          const currentResponses = responsesRef.current;
           // Update if server has more responses OR if any isCorrect value has changed (teacher evaluated)
-          const hasNewResponses = serverResponses.length > responses.length;
+          const hasNewResponses = serverResponses.length > currentResponses.length;
           const hasEvaluationChanged = serverResponses.some((sr: any, idx: number) => {
-            const localResponse = responses[idx];
+            const localResponse = currentResponses[idx];
             return localResponse && sr.isCorrect !== localResponse.isCorrect;
           });
           if (hasNewResponses || hasEvaluationChanged) {
@@ -712,16 +720,17 @@ export function QuizJoinPage() {
     // Calculate time spent on this slide in seconds
     const timeSpentSeconds = Math.round((Date.now() - slideStartTime) / 1000);
     
-    // DON'T set isCorrect here - let the teacher evaluate
-    // Student submits answer without knowing if it's correct
-    // Note: Using null instead of undefined because Firebase strips undefined values
+    // If showSolutionHints is enabled, set isCorrect immediately
+    // Otherwise, let the teacher evaluate via "Vyhodnotit" button
+    const shouldShowImmediateResult = session?.settings?.showSolutionHints === true;
+    
     const response: SlideResponse = {
       slideId: currentSlideForAnswer.id,
       activityType: currentSlideForAnswer.activityType,
       answer,
-      // isCorrect is NOT set here - will be set by teacher's "Vyhodnotit" button
-      isCorrect: null as any, // null until teacher evaluates (Firebase strips undefined)
-      points: 0, // Points will be set after teacher evaluation
+      // Set isCorrect immediately if showSolutionHints is enabled, otherwise null until teacher evaluates
+      isCorrect: shouldShowImmediateResult ? isCorrect : (null as any),
+      points: shouldShowImmediateResult && isCorrect ? 1 : 0,
       answeredAt: new Date().toISOString(),
       timeSpent: timeSpentSeconds,
     };
@@ -1108,29 +1117,27 @@ export function QuizJoinPage() {
     <div className="flex flex-col h-screen" style={{ backgroundColor: '#F0F1F8' }}>
       {renderConnectionBanner()}
       
-      {/* Desktop: Top bar with stats - using grid for proper layout */}
-      <div className="hidden lg:grid px-6 py-4" style={{ backgroundColor: '#d1d5db', gridTemplateColumns: '1fr auto 1fr', borderBottom: '3px solid #6366f1' }}>
-        {/* Left spacer */}
-        <div />
-        {/* Center: Progress bar */}
-        <div className="flex items-center gap-1.5" style={{ width: '500px' }}>
+      {/* Progress bar header - ALWAYS VISIBLE */}
+      <div className="flex items-center justify-center px-4 py-2" style={{ backgroundColor: '#F0F1F8' }}>
+        {/* Progress bar - centered with max width */}
+        <div className="flex items-center gap-1.5" style={{ width: '300px', maxWidth: '50%' }}>
           {renderProgressBar()}
         </div>
-        {/* Right: Stats */}
-        <div className="flex items-center justify-end gap-4">
-          <div className="flex items-center gap-1.5 text-emerald-600">
-            <CheckCircle className="w-5 h-5" />
-            <span className="font-bold">{correctCount}</span>
+        {/* Stats */}
+        <div className="flex items-center gap-3 ml-4">
+          <div className="flex items-center gap-1 text-emerald-600">
+            <CheckCircle className="w-4 h-4" />
+            <span className="font-semibold text-sm">{correctCount}</span>
           </div>
-          <div className="flex items-center gap-1.5 text-red-500">
-            <XCircle className="w-5 h-5" />
-            <span className="font-bold">{wrongCount}</span>
+          <div className="flex items-center gap-1 text-red-500">
+            <XCircle className="w-4 h-4" />
+            <span className="font-semibold text-sm">{wrongCount}</span>
           </div>
         </div>
       </div>
       
-      {/* Mobile: Top navigation */}
-      <div className="lg:hidden px-4 py-4" style={{ backgroundColor: '#d1d5db', borderBottom: '3px solid #6366f1' }}>
+      {/* Navigation arrows for unlocked mode - hidden */}
+      <div className="hidden">
         {canNavigate ? (
           <div className="flex items-center gap-3">
             <button
@@ -1214,69 +1221,86 @@ export function QuizJoinPage() {
               
               {/* ABC Options */}
               {currentSlide.type === 'activity' && currentSlide.activityType === 'abc' && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4 p-4 md:p-6 max-w-4xl mx-auto w-full">
-                  {(currentSlide as ABCActivitySlide).options.map((option) => {
-                    const isSelected = selectedOption === option.id;
-                    const isCorrectOption = option.isCorrect;
-                    const wasSelected = currentResponse?.answer === option.id;
-                    // Only show correct/incorrect after teacher has clicked "Vyhodnotit"
-                    const isEvaluated = session?.showResults === true;
-                    const showCorrectness = isEvaluated;
-                    
-                    return (
-                      <button
-                        key={option.id}
-                        onClick={() => !hasAnswered && !showResult && setSelectedOption(option.id)}
-                        disabled={hasAnswered || showResult}
-                        className={`
-                          relative p-3 lg:p-4 rounded-2xl text-left transition-all border-2 flex items-center gap-3 lg:gap-4
-                          ${showCorrectness && isCorrectOption ? 'bg-green-50 border-green-500' : ''}
-                          ${showCorrectness && wasSelected && !isCorrectOption ? 'bg-red-50 border-red-500' : ''}
-                          ${!showCorrectness && (hasAnswered || showResult) && wasSelected ? 'border-indigo-500 bg-indigo-50' : ''}
-                          ${!showCorrectness && !hasAnswered && !showResult && isSelected ? 'border-indigo-500 bg-indigo-50' : ''}
-                          ${!showCorrectness && !hasAnswered && !showResult && !isSelected ? 'bg-white border-slate-100 hover:border-indigo-200 hover:shadow-md' : ''}
-                          ${!showCorrectness && (hasAnswered || showResult) && !wasSelected ? 'bg-white border-slate-100 opacity-50' : ''}
-                          ${showCorrectness && !isCorrectOption && !wasSelected ? 'bg-white border-slate-100 opacity-50' : ''}
-                        `}
-                      >
-                        <span 
-                          className="w-10 h-10 lg:w-12 lg:h-12 rounded-xl flex items-center justify-center font-bold text-base lg:text-lg flex-shrink-0 transition-colors"
-                          style={{
-                            backgroundColor: showCorrectness && isCorrectOption ? '#bbf7d0' 
-                              : showCorrectness && wasSelected && !isCorrectOption ? '#fecaca'
-                              : (hasAnswered || showResult || isSelected) && wasSelected ? '#c7d2fe'
-                              : !hasAnswered && !showResult && isSelected ? '#c7d2fe' 
-                              : '#E2E8F0',
-                            color: showCorrectness && isCorrectOption ? '#166534' 
-                              : showCorrectness && wasSelected && !isCorrectOption ? '#991b1b'
-                              : (hasAnswered || showResult || isSelected) && wasSelected ? '#3730a3'
-                              : !hasAnswered && !showResult && isSelected ? '#3730a3' 
-                              : '#475569',
-                          }}
-                        >
-                          {option.label || option.id?.toUpperCase() || '?'}
-                        </span>
-                        <span className="text-base sm:text-lg lg:text-xl font-medium text-[#4E5871] flex-1 break-words overflow-hidden">
-                          <MathText>{option.content || ''}</MathText>
-                        </span>
+                <>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4 p-4 md:p-6 max-w-4xl mx-auto w-full">
+                    {(() => {
+                      const isEvaluated = session?.showResults === true || (currentResponse?.isCorrect !== null && currentResponse?.isCorrect !== undefined);
+                      const showCorrectness = isEvaluated;
+                      
+                      return (currentSlide as ABCActivitySlide).options.map((option) => {
+                        const isSelected = selectedOption === option.id;
+                        const isCorrectOption = option.isCorrect;
+                        const wasSelected = currentResponse?.answer === option.id;
                         
-                        {showCorrectness && isCorrectOption && (
-                          <CheckCircle className="w-6 h-6 text-green-600" />
-                        )}
-                        {hasAnswered && !showCorrectness && wasSelected && (
-                          <span className="text-xs px-2 py-1 rounded bg-indigo-100 text-indigo-600 font-medium">Odesláno</span>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
+                        return (
+                          <button
+                            key={option.id}
+                            onClick={() => !hasAnswered && !showResult && setSelectedOption(option.id)}
+                            disabled={hasAnswered || showResult}
+                            className={`
+                              relative p-3 lg:p-4 rounded-2xl text-left transition-all border-2 flex items-center gap-3 lg:gap-4
+                              ${showCorrectness && isCorrectOption ? 'bg-green-50 border-green-500' : ''}
+                              ${showCorrectness && wasSelected && !isCorrectOption ? 'bg-red-50 border-red-500' : ''}
+                              ${!showCorrectness && (hasAnswered || showResult) && wasSelected ? 'border-indigo-500 bg-indigo-50' : ''}
+                              ${!showCorrectness && !hasAnswered && !showResult && isSelected ? 'border-indigo-500 bg-indigo-50' : ''}
+                              ${!showCorrectness && !hasAnswered && !showResult && !isSelected ? 'bg-white border-slate-100 hover:border-indigo-200 hover:shadow-md' : ''}
+                              ${!showCorrectness && (hasAnswered || showResult) && !wasSelected ? 'bg-white border-slate-100 opacity-50' : ''}
+                              ${showCorrectness && !isCorrectOption && !wasSelected ? 'bg-white border-slate-100 opacity-50' : ''}
+                            `}
+                          >
+                            <span 
+                              className="w-10 h-10 lg:w-12 lg:h-12 rounded-xl flex items-center justify-center font-bold text-base lg:text-lg flex-shrink-0 transition-colors"
+                              style={{
+                                backgroundColor: showCorrectness && isCorrectOption ? '#bbf7d0' 
+                                  : showCorrectness && wasSelected && !isCorrectOption ? '#fecaca'
+                                  : (hasAnswered || showResult || isSelected) && wasSelected ? '#c7d2fe'
+                                  : !hasAnswered && !showResult && isSelected ? '#c7d2fe' 
+                                  : '#E2E8F0',
+                                color: showCorrectness && isCorrectOption ? '#166534' 
+                                  : showCorrectness && wasSelected && !isCorrectOption ? '#991b1b'
+                                  : (hasAnswered || showResult || isSelected) && wasSelected ? '#3730a3'
+                                  : !hasAnswered && !showResult && isSelected ? '#3730a3' 
+                                  : '#475569',
+                              }}
+                            >
+                              {option.label || option.id?.toUpperCase() || '?'}
+                            </span>
+                            <span className="text-base sm:text-lg lg:text-xl font-medium text-[#4E5871] flex-1 break-words overflow-hidden">
+                              <MathText>{option.content || ''}</MathText>
+                            </span>
+                            
+                            {showCorrectness && isCorrectOption && (
+                              <CheckCircle className="w-6 h-6 text-green-600" />
+                            )}
+                            {hasAnswered && !showCorrectness && wasSelected && (
+                              <span className="text-xs px-2 py-1 rounded bg-indigo-100 text-indigo-600 font-medium">Odesláno</span>
+                            )}
+                          </button>
+                        );
+                      });
+                    })()}
+                  </div>
+                  
+                  {/* Show explanation/hint for ABC after answer is evaluated */}
+                  {session?.settings?.showSolutionHints && hasAnswered && (currentResponse?.isCorrect !== null && currentResponse?.isCorrect !== undefined) && (currentSlide as ABCActivitySlide).explanation && (
+                    <div className="mt-4 mx-6 p-4 rounded-xl bg-amber-50 border border-amber-200">
+                      <div className="flex items-center gap-2 text-amber-700 font-medium mb-2">
+                        <HelpCircle className="w-5 h-5" />
+                        <span>Vysvětlení:</span>
+                      </div>
+                      <p className="text-slate-700">
+                        <MathText>{(currentSlide as ABCActivitySlide).explanation || ''}</MathText>
+                      </p>
+                    </div>
+                  )}
+                </>
               )}
               
               {/* Open question */}
               {currentSlide.type === 'activity' && currentSlide.activityType === 'open' && (
                 <div className="w-full max-w-2xl mx-auto px-6">
                   {(() => {
-                    const isEvaluated = session?.showResults === true;
+                    const isEvaluated = session?.showResults === true || (currentResponse?.isCorrect !== null && currentResponse?.isCorrect !== undefined);
                     return (
                       <>
                         <textarea
@@ -1345,6 +1369,19 @@ export function QuizJoinPage() {
                           </span>
                         </>
                       )}
+                    </div>
+                  )}
+                  
+                  {/* Show explanation/hint for open question after answer is evaluated */}
+                  {session?.settings?.showSolutionHints && hasAnswered && currentResponse?.isCorrect !== undefined && (currentSlide as OpenActivitySlide).explanation && (
+                    <div className="mt-4 p-4 rounded-xl bg-amber-50 border border-amber-200">
+                      <div className="flex items-center gap-2 text-amber-700 font-medium mb-2">
+                        <HelpCircle className="w-5 h-5" />
+                        <span>Vysvětlení:</span>
+                      </div>
+                      <p className="text-slate-700">
+                        <MathText>{(currentSlide as OpenActivitySlide).explanation || ''}</MathText>
+                      </p>
                     </div>
                   )}
                 </div>

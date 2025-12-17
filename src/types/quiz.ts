@@ -261,6 +261,11 @@ export interface LiveQuizSession {
   // Timestamps
   createdAt: string;
   endedAt?: string;
+  
+  // Settings for live session
+  settings?: {
+    showSolutionHints?: boolean;
+  };
 }
 
 // =============================================
