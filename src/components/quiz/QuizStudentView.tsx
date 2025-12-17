@@ -892,8 +892,8 @@ export function QuizStudentView() {
         <button
           onClick={goToNextSlide}
           disabled={!canProceed()}
-          className={`w-12 h-12 rounded-full flex items-center justify-center text-white flex-shrink-0 ${!canProceed() ? 'opacity-30 cursor-not-allowed' : ''}`}
-          style={{ backgroundColor: '#7C3AED' }}
+          className={`w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 transition-all duration-300 ${!canProceed() ? 'cursor-not-allowed bg-slate-300 text-slate-400' : 'text-white'}`}
+          style={{ backgroundColor: canProceed() ? '#7C3AED' : undefined }}
         >
           <ArrowRight className="w-5 h-5" />
         </button>
@@ -1098,8 +1098,8 @@ export function QuizStudentView() {
             <button
               onClick={goToNextSlide}
               disabled={!canProceed()}
-              className={`w-12 h-12 rounded-full flex items-center justify-center text-white transition-all duration-300 ease-out ${!canProceed() ? 'opacity-30 cursor-not-allowed' : 'hover:h-24'}`}
-              style={{ backgroundColor: '#7C3AED' }}
+              className={`w-12 h-12 rounded-full flex items-center justify-center transition-all duration-300 ease-out ${!canProceed() ? 'cursor-not-allowed bg-slate-300 text-slate-400' : 'text-white hover:h-24'}`}
+              style={{ backgroundColor: canProceed() ? '#7C3AED' : undefined }}
             >
               <ArrowRight className="w-5 h-5" />
             </button>
