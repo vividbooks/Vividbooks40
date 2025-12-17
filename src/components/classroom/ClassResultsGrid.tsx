@@ -44,8 +44,12 @@ export function ClassResultsGrid({ classId, className, onBack }: ClassResultsGri
   const [useSupabase, setUseSupabase] = useState(false);
   
   // Hover states for highlighting
+  // hoveredRow: when hovering student name cell - highlights entire row
+  // hoveredColumn: when hovering column header - highlights entire column  
+  // hoveredCell: when hovering a single result cell - highlights only that cell
   const [hoveredRow, setHoveredRow] = useState<string | null>(null);
   const [hoveredColumn, setHoveredColumn] = useState<string | null>(null);
+  const [hoveredCell, setHoveredCell] = useState<{ studentId: string; assignmentId: string } | null>(null);
   
   // Load data
   useEffect(() => {
@@ -69,8 +73,7 @@ export function ClassResultsGrid({ classId, className, onBack }: ClassResultsGri
   
   // Get score color based on value
   const getScoreColor = (score: number | null): string => {
-    if (score === null) return '#FFFFFF'; // White for no data
-    if (score === -1) return '#FEF3C7'; // Pending - yellow
+    if (score === null || score === -1) return '#FFFFFF'; // White for no data or pending
     if (score >= 9) return '#6DE89B';
     if (score >= 8) return '#7ECD7E';
     if (score >= 7) return '#9FD99F';
@@ -254,7 +257,7 @@ export function ClassResultsGrid({ classId, className, onBack }: ClassResultsGri
                   return (
                     <th 
                       key={`name-${assignment.id}`}
-                      className={`py-2 border-b border-slate-200 ${
+                      className={`py-2 border-b border-slate-200 ${!isIndividual ? 'cursor-pointer' : ''} ${
                         hoveredColumn === assignment.id ? 'bg-indigo-50' : ''
                       }`}
                       style={{ 
@@ -263,7 +266,13 @@ export function ClassResultsGrid({ classId, className, onBack }: ClassResultsGri
                         maxWidth: isIndividual ? '15px' : '120px',
                         padding: '0',
                       }}
-                      onMouseEnter={() => setHoveredColumn(assignment.id)}
+                      onMouseEnter={() => {
+                        if (!isIndividual) {
+                          setHoveredColumn(assignment.id);
+                          setHoveredRow(null);
+                          setHoveredCell(null);
+                        }
+                      }}
                       onMouseLeave={() => setHoveredColumn(null)}
                     >
                       {isIndividual ? (
@@ -296,12 +305,21 @@ export function ClassResultsGrid({ classId, className, onBack }: ClassResultsGri
                 return (
                   <tr 
                     key={student.id}
-                    className={isHoveredRow ? 'bg-indigo-50' : ''}
-                    onMouseEnter={() => setHoveredRow(student.id)}
-                    onMouseLeave={() => setHoveredRow(null)}
                   >
-                    {/* Student name */}
-                    <td className="sticky left-0 z-10 px-4" style={{ backgroundColor: isHoveredRow ? '#EEF2FF' : '#FFFFFF', padding: '1px 16px' }}>
+                    {/* Student name - hover highlights entire row */}
+                    <td 
+                      className="sticky left-0 z-10 cursor-pointer" 
+                      style={{ 
+                        backgroundColor: isHoveredRow ? '#EEF2FF' : '#FFFFFF', 
+                        padding: '1px 16px',
+                      }}
+                      onMouseEnter={() => {
+                        setHoveredRow(student.id);
+                        setHoveredColumn(null);
+                        setHoveredCell(null);
+                      }}
+                      onMouseLeave={() => setHoveredRow(null)}
+                    >
                       <div className="flex items-center gap-3">
                         <div 
                           className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold"
@@ -319,21 +337,29 @@ export function ClassResultsGrid({ classId, className, onBack }: ClassResultsGri
                       const score = result?.score ?? null;
                       const bgColor = getScoreColor(score);
                       const textColor = getTextColor(score);
-                      const isHighlighted = isHoveredRow || hoveredColumn === assignment.id;
                       const isIndividual = assignment.type === 'individual';
+                      
+                      // Determine if this cell should be highlighted
+                      const isCellHovered = hoveredCell?.studentId === student.id && hoveredCell?.assignmentId === assignment.id;
+                      const isRowHighlighted = hoveredRow === student.id;
+                      const isColumnHighlighted = hoveredColumn === assignment.id;
+                      const isHighlighted = isCellHovered || isRowHighlighted || isColumnHighlighted;
+                      
+                      // Background for entire td when row or column is highlighted
+                      const tdBgColor = (isRowHighlighted || isColumnHighlighted) && !isCellHovered ? 'rgba(99, 102, 241, 0.08)' : 'transparent';
                       
                       return (
                         <td 
                           key={`result-${student.id}-${assignment.id}`}
-                          className={hoveredColumn === assignment.id ? 'bg-indigo-50/50' : ''}
                           style={{ 
                             width: isIndividual ? '15px' : '120px',
                             minWidth: isIndividual ? '15px' : '120px',
                             maxWidth: isIndividual ? '15px' : '120px',
                             padding: '1px 0',
+                            backgroundColor: tdBgColor,
                           }}
-                          onMouseEnter={() => setHoveredColumn(assignment.id)}
-                          onMouseLeave={() => setHoveredColumn(null)}
+                          onMouseEnter={() => setHoveredCell({ studentId: student.id, assignmentId: assignment.id })}
+                          onMouseLeave={() => setHoveredCell(null)}
                         >
                           {isIndividual ? (
                             // Narrow bar for individual work - no text
@@ -345,9 +371,9 @@ export function ClassResultsGrid({ classId, className, onBack }: ClassResultsGri
                                 backgroundColor: bgColor,
                                 borderRadius: '8px',
                                 margin: '0 auto',
-                                border: score === null ? '1px solid #E5E7EB' : 'none',
+                                border: score === null || score === -1 ? '1px solid #E5E7EB' : 'none',
                               }}
-                              title={score === null ? 'Nehotovo' : score === -1 ? 'Čeká' : `${score}/10`}
+                              title={score === null || score === -1 ? 'Nehotovo' : `${score}/10`}
                             />
                           ) : (
                             // Wide cell for tests/practice
@@ -362,10 +388,10 @@ export function ClassResultsGrid({ classId, className, onBack }: ClassResultsGri
                                 backgroundColor: bgColor, 
                                 color: textColor,
                                 borderRadius: '8px',
-                                border: score === null ? '1px solid #E5E7EB' : 'none',
+                                border: score === null || score === -1 ? '1px solid #E5E7EB' : 'none',
                               }}
                             >
-                              {score === null ? '-' : score === -1 ? '?' : `${score} / ${result?.max_score || 10}`}
+                              {score === null || score === -1 ? '-' : `${score} / ${result?.max_score || 10}`}
                             </div>
                           )}
                         </td>
