@@ -195,6 +195,10 @@ export default function App() {
           element={<QuizJoinPage />} 
         />
         <Route 
+          path="/quiz/join/:code" 
+          element={<QuizJoinPage />} 
+        />
+        <Route 
           path="/quiz/results/:sessionId" 
           element={<QuizResultsPage />} 
         />

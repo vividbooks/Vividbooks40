@@ -9,7 +9,7 @@
  */
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useParams } from 'react-router-dom';
 import { ref, onValue, off, set, update, get } from 'firebase/database';
 import { database } from '../../utils/firebase-config';
 import {
@@ -161,7 +161,8 @@ async function retryOperation<T>(
 
 export function QuizJoinPage() {
   const [searchParams] = useSearchParams();
-  const initialCode = searchParams.get('code') || '';
+  const { code: urlCode } = useParams<{ code?: string }>();
+  const initialCode = urlCode || searchParams.get('code') || '';
   
   // Connection state
   const [isOnline, setIsOnline] = useState(navigator.onLine);
@@ -1175,8 +1176,11 @@ export function QuizJoinPage() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4 p-4 md:p-6 max-w-4xl mx-auto w-full">
                   {(currentSlide as ABCActivitySlide).options.map((option) => {
                     const isSelected = selectedOption === option.id;
-                    const isCorrect = option.isCorrect;
+                    const isCorrectOption = option.isCorrect;
                     const wasSelected = currentResponse?.answer === option.id;
+                    // Only show correct/incorrect after teacher has evaluated (isCorrect is defined)
+                    const isEvaluated = currentResponse?.isCorrect !== undefined;
+                    const showCorrectness = isEvaluated;
                     
                     return (
                       <button
@@ -1185,23 +1189,27 @@ export function QuizJoinPage() {
                         disabled={hasAnswered || showResult}
                         className={`
                           relative p-3 lg:p-4 rounded-2xl text-left transition-all border-2 flex items-center gap-3 lg:gap-4
-                          ${(showResult || hasAnswered) && isCorrect ? 'bg-green-50 border-green-500' : ''}
-                          ${(showResult || hasAnswered) && wasSelected && !isCorrect ? 'bg-red-50 border-red-500' : ''}
-                          ${!showResult && !hasAnswered && isSelected ? 'border-indigo-500 bg-indigo-50' : ''}
-                          ${!showResult && !hasAnswered && !isSelected ? 'bg-white border-slate-100 hover:border-indigo-200 hover:shadow-md' : ''}
-                          ${(showResult || hasAnswered) && !isCorrect && !wasSelected ? 'bg-white border-slate-100 opacity-50' : ''}
+                          ${showCorrectness && isCorrectOption ? 'bg-green-50 border-green-500' : ''}
+                          ${showCorrectness && wasSelected && !isCorrectOption ? 'bg-red-50 border-red-500' : ''}
+                          ${!showCorrectness && (hasAnswered || showResult) && wasSelected ? 'border-indigo-500 bg-indigo-50' : ''}
+                          ${!showCorrectness && !hasAnswered && !showResult && isSelected ? 'border-indigo-500 bg-indigo-50' : ''}
+                          ${!showCorrectness && !hasAnswered && !showResult && !isSelected ? 'bg-white border-slate-100 hover:border-indigo-200 hover:shadow-md' : ''}
+                          ${!showCorrectness && (hasAnswered || showResult) && !wasSelected ? 'bg-white border-slate-100 opacity-50' : ''}
+                          ${showCorrectness && !isCorrectOption && !wasSelected ? 'bg-white border-slate-100 opacity-50' : ''}
                         `}
                       >
                         <span 
                           className="w-10 h-10 lg:w-12 lg:h-12 rounded-xl flex items-center justify-center font-bold text-base lg:text-lg flex-shrink-0 transition-colors"
                           style={{
-                            backgroundColor: (showResult || hasAnswered) && isCorrect ? '#bbf7d0' 
-                              : (showResult || hasAnswered) && wasSelected && !isCorrect ? '#fecaca'
-                              : !showResult && !hasAnswered && isSelected ? '#c7d2fe' 
+                            backgroundColor: showCorrectness && isCorrectOption ? '#bbf7d0' 
+                              : showCorrectness && wasSelected && !isCorrectOption ? '#fecaca'
+                              : (hasAnswered || showResult || isSelected) && wasSelected ? '#c7d2fe'
+                              : !hasAnswered && !showResult && isSelected ? '#c7d2fe' 
                               : '#E2E8F0',
-                            color: (showResult || hasAnswered) && isCorrect ? '#166534' 
-                              : (showResult || hasAnswered) && wasSelected && !isCorrect ? '#991b1b'
-                              : !showResult && !hasAnswered && isSelected ? '#3730a3' 
+                            color: showCorrectness && isCorrectOption ? '#166534' 
+                              : showCorrectness && wasSelected && !isCorrectOption ? '#991b1b'
+                              : (hasAnswered || showResult || isSelected) && wasSelected ? '#3730a3'
+                              : !hasAnswered && !showResult && isSelected ? '#3730a3' 
                               : '#475569',
                           }}
                         >
@@ -1211,8 +1219,11 @@ export function QuizJoinPage() {
                           <MathText>{option.content || ''}</MathText>
                         </span>
                         
-                        {(showResult || hasAnswered) && isCorrect && (
+                        {showCorrectness && isCorrectOption && (
                           <CheckCircle className="w-6 h-6 text-green-600" />
+                        )}
+                        {hasAnswered && !showCorrectness && wasSelected && (
+                          <span className="text-xs px-2 py-1 rounded bg-indigo-100 text-indigo-600 font-medium">Odesláno</span>
                         )}
                       </button>
                     );
@@ -1223,21 +1234,33 @@ export function QuizJoinPage() {
               {/* Open question */}
               {currentSlide.type === 'activity' && currentSlide.activityType === 'open' && (
                 <div className="w-full max-w-2xl mx-auto px-6">
-                  <textarea
-                    value={textAnswer}
-                    onChange={(e) => setTextAnswer(e.target.value)}
-                    disabled={hasAnswered || showResult}
-                    placeholder="Napište svou odpověď..."
-                    className={`
-                      w-full h-36 p-5 rounded-2xl border-2 text-lg resize-none shadow-sm
-                      ${(showResult || hasAnswered)
-                        ? currentResponse?.isCorrect 
-                          ? 'bg-green-50 border-green-500' 
-                          : 'bg-red-50 border-red-500'
-                        : 'border-slate-200 focus:border-indigo-400 focus:ring-0'
-                      }
-                    `}
-                  />
+                  {(() => {
+                    const isEvaluated = currentResponse?.isCorrect !== undefined;
+                    return (
+                      <>
+                        <textarea
+                          value={textAnswer}
+                          onChange={(e) => setTextAnswer(e.target.value)}
+                          disabled={hasAnswered || showResult}
+                          placeholder="Napište svou odpověď..."
+                          className={`
+                            w-full h-36 p-5 rounded-2xl border-2 text-lg resize-none shadow-sm
+                            ${isEvaluated
+                              ? currentResponse?.isCorrect 
+                                ? 'bg-green-50 border-green-500' 
+                                : 'bg-red-50 border-red-500'
+                              : hasAnswered
+                                ? 'bg-indigo-50 border-indigo-500'
+                                : 'border-slate-200 focus:border-indigo-400 focus:ring-0'
+                            }
+                          `}
+                        />
+                        {hasAnswered && !isEvaluated && (
+                          <p className="text-center text-sm text-indigo-600 mt-2 font-medium">✓ Odpověď odeslána, čekám na vyhodnocení</p>
+                        )}
+                      </>
+                    );
+                  })()}
                   
                   {/* Math preview */}
                   {textAnswer.includes('$') && !hasAnswered && !showResult && (
@@ -1265,9 +1288,10 @@ export function QuizJoinPage() {
                     </button>
                   )}
                   
-                  {(showResult || hasAnswered) && (
+                  {/* Only show result after teacher evaluation */}
+                  {currentResponse?.isCorrect !== undefined && (
                     <div className="mt-4 flex items-center justify-center gap-2">
-                      {currentResponse?.isCorrect ? (
+                      {currentResponse.isCorrect ? (
                         <>
                           <CheckCircle className="w-6 h-6 text-green-500" />
                           <span className="text-green-600 font-medium">Správně!</span>

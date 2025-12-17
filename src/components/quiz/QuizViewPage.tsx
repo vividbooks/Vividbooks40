@@ -46,6 +46,7 @@ import { ref, set, onValue, off, update } from 'firebase/database';
 import { boardToWorksheet, getConversionSummary } from '../../utils/content-converter';
 import { saveWorksheet } from '../../utils/worksheet-storage';
 import { MathText } from '../math/MathText';
+import { QRCodeSVG } from 'qrcode.react';
 
 // Firebase paths
 const QUIZ_SESSIONS_PATH = 'quiz_sessions';
@@ -567,53 +568,59 @@ export function QuizViewPage() {
     if (sessionId && sessionCode) {
       return (
         <div className="flex flex-col h-full text-white" style={{ backgroundColor: '#1e2533' }}>
-          {/* Session code */}
-          <div className="p-6" style={{ borderBottom: '1px solid #334155' }}>
-            <p className="text-sm mb-3" style={{ color: '#94a3b8' }}>Kód pro připojení</p>
+          {/* Session code and QR */}
+          <div className="p-4" style={{ borderBottom: '1px solid #334155' }}>
+            {/* QR Code - full join URL */}
+            <div className="flex justify-center mb-4">
+              <div className="bg-white p-3 rounded-xl">
+                <QRCodeSVG 
+                  value={`${window.location.origin}${import.meta.env.BASE_URL || '/'}quiz/join/${sessionCode}`}
+                  size={160}
+                  level="M"
+                />
+              </div>
+            </div>
             
             {/* Code display */}
             <div 
-              className="text-center py-4 px-6 rounded-xl mb-3"
+              className="text-center py-3 px-4 rounded-xl mb-3"
               style={{ backgroundColor: '#334155' }}
             >
+              <p className="text-xs mb-1" style={{ color: '#64748b' }}>Kód pro ruční zadání</p>
               <div 
-                className="text-4xl font-mono font-bold tracking-widest select-all"
+                className="text-3xl font-mono font-bold tracking-widest select-all"
                 style={{ color: '#ffffff', letterSpacing: '0.2em' }}
               >
                 {sessionCode}
               </div>
             </div>
             
-            {/* Action buttons */}
-            <div className="flex items-center gap-2">
-              <button
-                onClick={copySessionCode}
-                className="flex-1 py-2 px-4 rounded-lg transition-colors flex items-center justify-center gap-2"
-                style={{ backgroundColor: '#334155', color: '#ffffff' }}
-              >
-                {copied ? (
-                  <>
-                    <CheckCircle className="w-4 h-4" style={{ color: '#4ade80' }} />
-                    <span className="text-sm">Zkopírováno!</span>
-                  </>
-                ) : (
-                  <>
-                    <Copy className="w-4 h-4" style={{ color: '#94a3b8' }} />
-                    <span className="text-sm">Kopírovat</span>
-                  </>
-                )}
-              </button>
-              <button
-                className="p-2 rounded-lg transition-colors"
-                style={{ backgroundColor: '#334155' }}
-                title="QR kód"
-              >
-                <QrCode className="w-5 h-5" style={{ color: '#94a3b8' }} />
-              </button>
-            </div>
+            {/* Copy full link button */}
+            <button
+              onClick={() => {
+                const fullLink = `${window.location.origin}${import.meta.env.BASE_URL || '/'}quiz/join/${sessionCode}`;
+                navigator.clipboard.writeText(fullLink);
+                setCopied(true);
+                setTimeout(() => setCopied(false), 2000);
+              }}
+              className="w-full py-3 px-4 rounded-lg transition-colors flex items-center justify-center gap-2"
+              style={{ backgroundColor: '#334155', color: '#ffffff' }}
+            >
+              {copied ? (
+                <>
+                  <CheckCircle className="w-4 h-4" style={{ color: '#4ade80' }} />
+                  <span className="text-sm font-medium">Odkaz zkopírován!</span>
+                </>
+              ) : (
+                <>
+                  <Copy className="w-4 h-4" style={{ color: '#94a3b8' }} />
+                  <span className="text-sm font-medium">Kopírovat odkaz pro studenty</span>
+                </>
+              )}
+            </button>
             
             <p className="text-xs mt-3 text-center" style={{ color: '#64748b' }}>
-              Studenti: <span style={{ color: '#94a3b8' }}>{window.location.origin}{import.meta.env.BASE_URL || '/'}quiz/join</span>
+              Nebo: <span style={{ color: '#94a3b8' }}>{window.location.origin}{import.meta.env.BASE_URL || '/'}quiz/join</span>
             </p>
           </div>
           
