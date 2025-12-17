@@ -194,6 +194,10 @@ export function QuizJoinPage() {
   const [sessionStartTime] = useState<number>(Date.now());
   const [slideStartTime, setSlideStartTime] = useState<number>(Date.now());
   
+  // Wiggle animation for answer button
+  const [showWiggle, setShowWiggle] = useState(false);
+  const answerButtonRef = useRef<HTMLButtonElement | null>(null);
+  
   // Refs for cleanup
   const heartbeatInterval = useRef<NodeJS.Timeout | null>(null);
   const sessionUnsubscribe = useRef<(() => void) | null>(null);
@@ -737,6 +741,24 @@ export function QuizJoinPage() {
   const correctCount = responses.filter(r => r.isCorrect).length;
   const wrongCount = responses.filter(r => !r.isCorrect).length;
   const canNavigate = session?.isLocked === false;
+  
+  // Require answer to proceed (for activity slides)
+  const canProceed = !currentSlide || currentSlide.type !== 'activity' || hasAnswered;
+
+  // ============================================
+  // WIGGLE ANIMATION ON MOBILE
+  // ============================================
+  
+  useEffect(() => {
+    // Only trigger on mobile when option is selected but not yet answered
+    if (selectedOption && !hasAnswered && !showResult && window.innerWidth < 1024) {
+      setTimeout(() => {
+        answerButtonRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        setShowWiggle(true);
+        setTimeout(() => setShowWiggle(false), 1000);
+      }, 100);
+    }
+  }, [selectedOption, hasAnswered, showResult]);
 
   // ============================================
   // RENDER: CONNECTION ERROR BANNER
@@ -1020,8 +1042,8 @@ export function QuizJoinPage() {
             </div>
             <button
               onClick={goToNextSlide}
-              disabled={currentSlideIndex === quiz.slides.length - 1}
-              className={`w-12 h-12 rounded-full flex items-center justify-center text-white flex-shrink-0 ${currentSlideIndex === quiz.slides.length - 1 ? 'opacity-30 cursor-not-allowed' : ''}`}
+              disabled={currentSlideIndex === quiz.slides.length - 1 || !canProceed}
+              className={`w-12 h-12 rounded-full flex items-center justify-center text-white flex-shrink-0 ${(currentSlideIndex === quiz.slides.length - 1 || !canProceed) ? 'opacity-30 cursor-not-allowed' : ''}`}
               style={{ backgroundColor: '#7C3AED' }}
             >
               <ArrowRight className="w-5 h-5" />
@@ -1066,8 +1088,8 @@ export function QuizJoinPage() {
           <div className="flex-1 flex items-stretch px-4">
             <div className="w-full max-w-5xl mx-auto rounded-3xl shadow-2xl overflow-hidden flex flex-col bg-white">
               {/* Question */}
-              <div className="flex-1 flex items-center justify-center p-8">
-                <h1 className="text-4xl md:text-5xl font-bold text-[#4E5871] text-center leading-tight">
+              <div className="flex-1 flex items-center justify-center p-4 md:p-8">
+                <h1 className="text-xl sm:text-2xl md:text-4xl lg:text-5xl font-bold text-[#4E5871] text-center leading-tight break-words max-w-full overflow-hidden">
                   <MathText>{(currentSlide as any).question || (currentSlide as any).title || 'Otázka'}</MathText>
                 </h1>
               </div>
@@ -1109,7 +1131,7 @@ export function QuizJoinPage() {
                         >
                           {option.label || option.id?.toUpperCase() || '?'}
                         </span>
-                        <span className="text-lg lg:text-xl font-medium text-[#4E5871] flex-1">
+                        <span className="text-base sm:text-lg lg:text-xl font-medium text-[#4E5871] flex-1 break-words overflow-hidden">
                           <MathText>{option.content || ''}</MathText>
                         </span>
                         
@@ -1200,15 +1222,16 @@ export function QuizJoinPage() {
               )}
               
               {/* Submit button or waiting indicator */}
-              <div className="flex justify-center py-10">
+              <div className="flex justify-center py-6 md:py-10">
                 {!hasAnswered && !showResult && currentSlide.type === 'activity' ? (
                   <button
+                    ref={answerButtonRef}
                     onClick={submitAnswer}
                     disabled={
                       (currentSlide.activityType === 'abc' && !selectedOption) ||
                       (currentSlide.activityType === 'open' && !textAnswer.trim())
                     }
-                    className="flex items-center gap-2 px-8 py-3 rounded-xl bg-indigo-600 text-white font-semibold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-indigo-700 transition-colors"
+                    className={`flex items-center gap-2 px-8 py-4 rounded-xl bg-indigo-600 text-white font-semibold text-lg disabled:opacity-40 disabled:cursor-not-allowed hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-500/25 ${showWiggle ? 'animate-wiggle' : ''}`}
                   >
                     <Send className="w-5 h-5" />
                     Odpovědět
@@ -1233,8 +1256,8 @@ export function QuizJoinPage() {
             {canNavigate && (
               <button
                 onClick={goToNextSlide}
-                disabled={currentSlideIndex === quiz.slides.length - 1}
-                className={`w-12 h-12 rounded-full flex items-center justify-center text-white transition-all duration-300 ease-out ${currentSlideIndex === quiz.slides.length - 1 ? 'opacity-30 cursor-not-allowed' : 'hover:h-24'}`}
+                disabled={currentSlideIndex === quiz.slides.length - 1 || !canProceed}
+                className={`w-12 h-12 rounded-full flex items-center justify-center text-white transition-all duration-300 ease-out ${(currentSlideIndex === quiz.slides.length - 1 || !canProceed) ? 'opacity-30 cursor-not-allowed' : 'hover:h-24'}`}
                 style={{ backgroundColor: '#7C3AED' }}
               >
                 <ArrowRight className="w-5 h-5" />

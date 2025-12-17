@@ -6920,3 +6920,21 @@ html {
   will-change: transform, opacity;
   backface-visibility: hidden;
 }
+
+/* Wiggle animation for answer button */
+@keyframes wiggle {
+  0%, 100% { transform: rotate(0deg) scale(1); }
+  10% { transform: rotate(-3deg) scale(1.05); }
+  20% { transform: rotate(3deg) scale(1.05); }
+  30% { transform: rotate(-3deg) scale(1.05); }
+  40% { transform: rotate(3deg) scale(1.05); }
+  50% { transform: rotate(-2deg) scale(1.03); }
+  60% { transform: rotate(2deg) scale(1.03); }
+  70% { transform: rotate(-1deg) scale(1.02); }
+  80% { transform: rotate(1deg) scale(1.02); }
+  90% { transform: rotate(0deg) scale(1.01); }
+}
+
+.animate-wiggle {
+  animation: wiggle 0.8s ease-in-out;
+}

@@ -198,6 +198,10 @@ export function QuizStudentView() {
   const [sessionStartTime] = useState<number>(Date.now());
   const [slideStartTime, setSlideStartTime] = useState<number>(Date.now());
   
+  // Wiggle animation for answer button
+  const [showWiggle, setShowWiggle] = useState(false);
+  const answerButtonRef = useRef<HTMLButtonElement | null>(null);
+  
   // Refs
   const heartbeatInterval = useRef<NodeJS.Timeout | null>(null);
 
@@ -433,6 +437,23 @@ export function QuizStudentView() {
   }, [shareId, studentId]);
 
   // ============================================
+  // WIGGLE ANIMATION ON MOBILE
+  // ============================================
+  
+  useEffect(() => {
+    // Only trigger on mobile when option is selected but not yet answered
+    if (selectedOption && !hasAnswered && window.innerWidth < 1024) {
+      // Scroll to the answer button
+      setTimeout(() => {
+        answerButtonRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        // Trigger wiggle animation
+        setShowWiggle(true);
+        setTimeout(() => setShowWiggle(false), 1000);
+      }, 100);
+    }
+  }, [selectedOption, hasAnswered]);
+
+  // ============================================
   // START SESSION
   // ============================================
   
@@ -629,9 +650,9 @@ export function QuizStudentView() {
   const totalQuestions = quiz?.slides.filter(s => s.type === 'activity').length || 0;
   
   const canProceed = () => {
-    if (!shareData?.settings.requireAnswerToProgress) return true;
+    // Always require answer for activity slides before proceeding
     if (!currentSlide || currentSlide.type !== 'activity') return true;
-    return !!responses[currentSlide.id];
+    return !!responses[currentSlide.id]; // Must have submitted answer
   };
 
   // ============================================
@@ -903,8 +924,8 @@ export function QuizStudentView() {
               key={currentSlideIndex}
             >
               {/* Question */}
-              <div className="flex-1 flex items-center justify-center p-8">
-                <h1 className="text-4xl md:text-5xl font-bold text-[#4E5871] text-center leading-tight">
+              <div className="flex-1 flex items-center justify-center p-4 md:p-8">
+                <h1 className="text-xl sm:text-2xl md:text-4xl lg:text-5xl font-bold text-[#4E5871] text-center leading-tight break-words max-w-full overflow-hidden">
                   <MathText>{(currentSlide as any).question || (currentSlide as any).title || 'Otázka'}</MathText>
                 </h1>
               </div>
@@ -948,7 +969,7 @@ export function QuizStudentView() {
                         >
                           {option.label || option.id?.toUpperCase() || '?'}
                         </span>
-                        <span className="text-lg lg:text-xl font-medium text-[#4E5871] flex-1">
+                        <span className="text-base sm:text-lg lg:text-xl font-medium text-[#4E5871] flex-1 break-words overflow-hidden">
                           <MathText>{option.content || ''}</MathText>
                         </span>
                         
@@ -1037,15 +1058,16 @@ export function QuizStudentView() {
               )}
               
               {/* Submit button */}
-              <div className="flex justify-center py-10">
+              <div className="flex justify-center py-6 md:py-10">
                 {!hasAnswered && currentSlide.type === 'activity' ? (
                   <button
+                    ref={answerButtonRef}
                     onClick={submitAnswer}
                     disabled={
                       ((currentSlide as any).activityType === 'abc' && !selectedOption) ||
                       ((currentSlide as any).activityType === 'open' && !textAnswer.trim())
                     }
-                    className="flex items-center gap-2 px-8 py-3 rounded-xl bg-indigo-600 text-white font-semibold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-indigo-700 transition-colors"
+                    className={`flex items-center gap-2 px-8 py-4 rounded-xl bg-indigo-600 text-white font-semibold text-lg disabled:opacity-40 disabled:cursor-not-allowed hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-500/25 ${showWiggle ? 'animate-wiggle' : ''}`}
                   >
                     <Send className="w-5 h-5" />
                     Odpovědět
