@@ -462,13 +462,24 @@ export function StudentWallLayout({ theme, toggleTheme }: StudentWallLayoutProps
 
   // Filter results by subject first
   const subjectResults = useMemo(() => {
-    return results.filter(r => 
-      r.subject === selectedSubject || 
-      r.assignmentType === 'individual' || // Individual work shows in all subjects
-      r.assignmentType === 'live' || 
-      r.subject === 'Quiz' ||
-      !r.subject // If no subject, show in all
-    );
+    return results.filter(r => {
+      // Strict subject matching
+      if (r.subject === selectedSubject) return true;
+      
+      // For results without subject, check if they belong to this subject based on title
+      if (!r.subject || r.subject === 'Quiz') {
+        // Try to match by title keywords
+        const title = r.assignmentTitle.toLowerCase();
+        if (selectedSubject === 'Matematika') {
+          return title.includes('matem') || title.includes('math') || title.includes('počít') || title.includes('rovnic');
+        }
+        if (selectedSubject === 'Fyzika') {
+          return title.includes('fyzik') || title.includes('newton') || title.includes('síla') || title.includes('pohyb') || title.includes('energie');
+        }
+      }
+      
+      return false;
+    });
   }, [results, selectedSubject]);
 
   // Calculate stats (based on subject-filtered results)
@@ -725,6 +736,24 @@ export function StudentWallLayout({ theme, toggleTheme }: StudentWallLayoutProps
 
           {/* Stats Overview */}
           <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 p-6 mb-8">
+            {/* Subject filter - above stats */}
+            <div className="flex gap-2 mb-4">
+              {SUBJECTS.map(subject => (
+                <button
+                  key={subject}
+                  onClick={() => setSelectedSubject(subject)}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all ${
+                    selectedSubject === subject
+                      ? 'bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 shadow-sm'
+                      : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-600'
+                  }`}
+                >
+                  <div className={`w-2.5 h-2.5 rounded-full ${selectedSubject === subject ? 'bg-indigo-500' : 'bg-slate-400'}`} />
+                  {subject}
+                </button>
+              ))}
+            </div>
+            
             <div className="grid grid-cols-4 gap-4">
               <button 
                 onClick={() => setShowAverageChart(!showAverageChart)}
@@ -895,24 +924,6 @@ export function StudentWallLayout({ theme, toggleTheme }: StudentWallLayoutProps
                 )}
               </div>
             )}
-            
-            {/* Subject filter */}
-            <div className="mt-4 flex gap-2">
-              {SUBJECTS.map(subject => (
-                <button
-                  key={subject}
-                  onClick={() => setSelectedSubject(subject)}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all ${
-                    selectedSubject === subject
-                      ? 'bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 shadow-sm'
-                      : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-600'
-                  }`}
-                >
-                  <div className={`w-2.5 h-2.5 rounded-full ${selectedSubject === subject ? 'bg-indigo-500' : 'bg-slate-400'}`} />
-                  {subject}
-                </button>
-              ))}
-            </div>
             
             {/* Motivational message */}
             <div className="mt-4 p-4 rounded-2xl bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-900/20 dark:to-teal-900/20 border border-emerald-100 dark:border-emerald-800">
