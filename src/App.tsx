@@ -25,6 +25,7 @@ import { FirebaseStudentView } from './components/classroom';
 import { JoinSession } from './components/classroom/JoinSession';
 import { CustomerSuccess } from './components/admin/CustomerSuccess';
 import { StudentProfilePage } from './components/classroom/StudentProfilePage';
+import { TestStudentEditor } from './components/student/TestStudentEditor';
 import { supabase } from './utils/supabase/client';
 import { projectId, publicAnonKey } from './utils/supabase/info.tsx';
 
@@ -90,6 +91,12 @@ export default function App() {
         <Route 
           path="/join/:sessionId" 
           element={<JoinSession />} 
+        />
+        
+        {/* Test route for student document editor */}
+        <Route 
+          path="/test-student-editor" 
+          element={<TestStudentEditor />} 
         />
         
         <Route 
