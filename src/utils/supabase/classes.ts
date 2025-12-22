@@ -354,7 +354,7 @@ export async function getClasses(teacherId?: string): Promise<ClassGroup[]> {
   }
   
   try {
-    // Use direct fetch instead of Supabase client (more reliable)
+    // Use direct fetch with timeout
     const projectId = 'njbtqmsxbyvpwigfceke';
     const apiKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5qYnRxbXN4Ynl2cHdpZ2ZjZWtlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI4MzczODksImV4cCI6MjA3ODQxMzM4OX0.nY0THq2YU9wrjYsPoxYwXRXczE3Vh7cB1opzAV8c50g';
     
@@ -365,14 +365,20 @@ export async function getClasses(teacherId?: string): Promise<ClassGroup[]> {
       url += `&teacher_id=eq.${teacherId}`;
     }
     
+    // Add timeout using AbortController
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
+    
     const response = await fetch(url, {
       headers: {
         'apikey': apiKey,
         'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json'
-      }
+      },
+      signal: controller.signal
     });
     
+    clearTimeout(timeoutId);
     const duration = Date.now() - startTime;
     
     if (!response.ok) {
@@ -386,7 +392,11 @@ export async function getClasses(teacherId?: string): Promise<ClassGroup[]> {
     return data || [];
   } catch (error: any) {
     const duration = Date.now() - startTime;
-    console.error(`[getClasses] Error after ${duration}ms:`, error);
+    if (error.name === 'AbortError') {
+      console.error(`[getClasses] Timeout after ${duration}ms`);
+    } else {
+      console.error(`[getClasses] Error after ${duration}ms:`, error);
+    }
     return [];
   }
 }
@@ -494,20 +504,26 @@ export async function getStudents(classId: string): Promise<Student[]> {
   }
   
   try {
-    // Use direct fetch instead of Supabase client (more reliable)
+    // Use direct fetch with timeout
     const projectId = 'njbtqmsxbyvpwigfceke';
     const apiKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5qYnRxbXN4Ynl2cHdpZ2ZjZWtlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI4MzczODksImV4cCI6MjA3ODQxMzM4OX0.nY0THq2YU9wrjYsPoxYwXRXczE3Vh7cB1opzAV8c50g';
     
     const url = `https://${projectId}.supabase.co/rest/v1/students?select=*&class_id=eq.${classId}&order=name`;
+    
+    // Add timeout using AbortController
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
     
     const response = await fetch(url, {
       headers: {
         'apikey': apiKey,
         'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json'
-      }
+      },
+      signal: controller.signal
     });
     
+    clearTimeout(timeoutId);
     const duration = Date.now() - startTime;
     
     if (!response.ok) {
@@ -519,9 +535,13 @@ export async function getStudents(classId: string): Promise<Student[]> {
     console.log(`[getStudents] Completed in ${duration}ms, found ${data?.length || 0} students`);
     
     return data || [];
-  } catch (error) {
+  } catch (error: any) {
     const duration = Date.now() - startTime;
-    console.error(`[getStudents] Error after ${duration}ms:`, error);
+    if (error.name === 'AbortError') {
+      console.error(`[getStudents] Timeout after ${duration}ms`);
+    } else {
+      console.error(`[getStudents] Error after ${duration}ms:`, error);
+    }
     return [];
   }
 }
@@ -708,16 +728,20 @@ export async function getStudentAuthStatus(studentId: string): Promise<{
 // =============================================
 
 export async function getAssignments(classId: string, includeIndividual: boolean = true): Promise<Assignment[]> {
+  const startTime = Date.now();
+  console.log('[getAssignments] Starting for class:', classId);
+  
   if (!getUseSupabaseData()) {
     let assignments = DEMO_ASSIGNMENTS.filter(a => a.class_id === classId);
     if (!includeIndividual) {
       assignments = assignments.filter(a => a.type !== 'individual');
     }
+    console.log(`[getAssignments] Completed (demo) in ${Date.now() - startTime}ms`);
     return assignments;
   }
   
   try {
-    // Use direct fetch instead of Supabase client
+    // Use direct fetch with timeout
     const projectId = 'njbtqmsxbyvpwigfceke';
     const apiKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5qYnRxbXN4Ynl2cHdpZ2ZjZWtlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI4MzczODksImV4cCI6MjA3ODQxMzM4OX0.nY0THq2YU9wrjYsPoxYwXRXczE3Vh7cB1opzAV8c50g';
     
@@ -726,13 +750,19 @@ export async function getAssignments(classId: string, includeIndividual: boolean
       url += '&type=neq.individual';
     }
     
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
+    
     const response = await fetch(url, {
       headers: {
         'apikey': apiKey,
         'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json'
-      }
+      },
+      signal: controller.signal
     });
+    
+    clearTimeout(timeoutId);
     
     if (!response.ok) {
       console.error('[getAssignments] HTTP error', response.status);
@@ -740,9 +770,15 @@ export async function getAssignments(classId: string, includeIndividual: boolean
     }
     
     const data = await response.json();
+    console.log(`[getAssignments] Completed in ${Date.now() - startTime}ms, found ${data?.length || 0} assignments`);
     return data || [];
-  } catch (error) {
-    console.error('Error fetching assignments:', error);
+  } catch (error: any) {
+    const duration = Date.now() - startTime;
+    if (error.name === 'AbortError') {
+      console.error(`[getAssignments] Timeout after ${duration}ms`);
+    } else {
+      console.error(`[getAssignments] Error after ${duration}ms:`, error);
+    }
     return [];
   }
 }
@@ -778,6 +814,9 @@ export async function createAssignment(assignment: Omit<Assignment, 'id' | 'crea
 // =============================================
 
 export async function getResults(classId: string): Promise<{ [studentId: string]: { [assignmentId: string]: StudentResult } }> {
+  const startTime = Date.now();
+  console.log('[getResults] Starting for class:', classId);
+  
   if (!getUseSupabaseData()) {
     // Filter results for students in this class
     const allResults = getDemoResults();
@@ -790,18 +829,21 @@ export async function getResults(classId: string): Promise<{ [studentId: string]
       }
     });
     
+    console.log(`[getResults] Completed (demo) in ${Date.now() - startTime}ms`);
     return filteredResults;
   }
   
   try {
-    // First get all students and assignments for this class
-    const students = await getStudents(classId);
-    const assignments = await getAssignments(classId);
+    // Get students and assignments in parallel for better performance
+    const [students, assignments] = await Promise.all([
+      getStudents(classId),
+      getAssignments(classId),
+    ]);
     
     const studentIds = students.map(s => s.id);
     const assignmentIds = assignments.map(a => a.id);
     
-    // Use direct fetch instead of Supabase client
+    // Use direct fetch with timeout
     const projectId = 'njbtqmsxbyvpwigfceke';
     const apiKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5qYnRxbXN4Ynl2cHdpZ2ZjZWtlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI4MzczODksImV4cCI6MjA3ODQxMzM4OX0.nY0THq2YU9wrjYsPoxYwXRXczE3Vh7cB1opzAV8c50g';
     
@@ -813,13 +855,20 @@ export async function getResults(classId: string): Promise<{ [studentId: string]
     if (studentIdsParam) url += `&${studentIdsParam}`;
     if (assignmentIdsParam) url += `&${assignmentIdsParam}`;
     
+    // Add timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
+    
     const response = await fetch(url, {
       headers: {
         'apikey': apiKey,
         'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json'
-      }
+      },
+      signal: controller.signal
     });
+    
+    clearTimeout(timeoutId);
     
     let data: StudentResult[] = [];
     if (response.ok) {
@@ -840,9 +889,15 @@ export async function getResults(classId: string): Promise<{ [studentId: string]
       results[result.student_id][result.assignment_id] = result;
     });
     
+    console.log(`[getResults] Completed in ${Date.now() - startTime}ms, found ${data.length} results`);
     return results;
-  } catch (error) {
-    console.error('Error fetching results:', error);
+  } catch (error: any) {
+    const duration = Date.now() - startTime;
+    if (error.name === 'AbortError') {
+      console.error(`[getResults] Timeout after ${duration}ms`);
+    } else {
+      console.error(`[getResults] Error after ${duration}ms:`, error);
+    }
     return {};
   }
 }
@@ -873,21 +928,39 @@ export async function saveResult(result: Omit<StudentResult, 'id'>): Promise<Stu
 // =============================================
 
 export async function getClassWithData(classId: string, includeIndividual: boolean = true): Promise<ClassWithStudentsAndResults | null> {
-  const classes = await getClasses();
-  const classGroup = classes.find(c => c.id === classId);
+  const startTime = Date.now();
+  console.log('[getClassWithData] Starting for class:', classId);
   
-  if (!classGroup) return null;
-  
-  const students = await getStudents(classId);
-  const assignments = await getAssignments(classId, includeIndividual);
-  const results = await getResults(classId);
-  
-  return {
-    classGroup,
-    students,
-    assignments,
-    results,
-  };
+  try {
+    const classes = await getClasses();
+    const classGroup = classes.find(c => c.id === classId);
+    
+    if (!classGroup) {
+      console.log('[getClassWithData] Class not found');
+      return null;
+    }
+    
+    // Load data in parallel for better performance
+    const [students, assignments, results] = await Promise.all([
+      getStudents(classId).catch(e => { console.error('[getClassWithData] getStudents error:', e); return []; }),
+      getAssignments(classId, includeIndividual).catch(e => { console.error('[getClassWithData] getAssignments error:', e); return []; }),
+      getResults(classId).catch(e => { console.error('[getClassWithData] getResults error:', e); return {}; }),
+    ]);
+    
+    const duration = Date.now() - startTime;
+    console.log(`[getClassWithData] Completed in ${duration}ms`);
+    
+    return {
+      classGroup,
+      students,
+      assignments,
+      results,
+    };
+  } catch (error) {
+    const duration = Date.now() - startTime;
+    console.error(`[getClassWithData] Error after ${duration}ms:`, error);
+    return null;
+  }
 }
 
 // =============================================
@@ -900,13 +973,14 @@ export async function syncIndividualWorkToClass(
   boardTitle: string,
   studentResults: Array<{ studentName: string; score: number; maxScore: number; timeSpentMs: number; completedAt: string }>
 ): Promise<void> {
-  // Create or find assignment for this individual work
+  console.log('[syncIndividualWork] Starting sync:', { classId, boardId, boardTitle, results: studentResults.length });
+  
   const assignmentTitle = `${boardTitle} - ind.`;
   
-  // In demo mode, just add to the arrays
+  // Demo mode
   if (!getUseSupabaseData()) {
     const existingAssignment = DEMO_ASSIGNMENTS.find(
-      a => a.type === 'individual' && a.title === assignmentTitle && a.class_id === classId
+      a => a.type === 'individual' && a.board_id === boardId && a.class_id === classId
     );
     
     if (!existingAssignment) {
@@ -920,62 +994,117 @@ export async function syncIndividualWorkToClass(
         created_at: new Date().toISOString(),
       });
     }
+    console.log('[syncIndividualWork] Demo mode - saved to DEMO_ASSIGNMENTS');
     return;
   }
   
-  // Supabase mode - create assignment and results
+  // Supabase mode
+  const projectId = 'njbtqmsxbyvpwigfceke';
+  const apiKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5qYnRxbXN4Ynl2cHdpZ2ZjZWtlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI4MzczODksImV4cCI6MjA3ODQxMzM4OX0.nY0THq2YU9wrjYsPoxYwXRXczE3Vh7cB1opzAV8c50g';
+  
   try {
-    // Check if assignment exists
-    const { data: existingAssignments } = await supabase
-      .from('assignments')
-      .select('id')
-      .eq('class_id', classId)
-      .eq('board_id', boardId)
-      .eq('type', 'individual');
-    
+    // 1. Find or create assignment (using title to identify, since board_id column doesn't exist)
     let assignmentId: string;
     
-    if (existingAssignments && existingAssignments.length > 0) {
+    // Check if assignment exists by title and class
+    const checkUrl = `https://${projectId}.supabase.co/rest/v1/assignments?select=id&class_id=eq.${classId}&title=eq.${encodeURIComponent(assignmentTitle)}&type=eq.individual`;
+    const checkResponse = await fetch(checkUrl, {
+      headers: {
+        'apikey': apiKey,
+        'Authorization': `Bearer ${apiKey}`,
+      }
+    });
+    
+    const existingAssignments = await checkResponse.json();
+    console.log('[syncIndividualWork] Existing assignments:', existingAssignments);
+    
+    if (Array.isArray(existingAssignments) && existingAssignments.length > 0) {
       assignmentId = existingAssignments[0].id;
+      console.log('[syncIndividualWork] Found existing assignment:', assignmentId);
     } else {
-      const { data: newAssignment } = await supabase
-        .from('assignments')
-        .insert({
+      // Create new assignment (without board_id since column doesn't exist)
+      const createUrl = `https://${projectId}.supabase.co/rest/v1/assignments`;
+      const createResponse = await fetch(createUrl, {
+        method: 'POST',
+        headers: {
+          'apikey': apiKey,
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+          'Prefer': 'return=representation',
+        },
+        body: JSON.stringify({
           title: assignmentTitle,
           type: 'individual',
           class_id: classId,
-          board_id: boardId,
+          subject: 'Individuální práce',
           due_date: new Date().toISOString().split('T')[0],
-        })
-        .select()
-        .single();
+        }),
+      });
       
-      if (!newAssignment) return;
-      assignmentId = newAssignment.id;
+      if (!createResponse.ok) {
+        const errorData = await createResponse.json();
+        console.error('[syncIndividualWork] Failed to create assignment:', errorData);
+        return;
+      }
+      
+      const newAssignments = await createResponse.json();
+      console.log('[syncIndividualWork] Created assignment:', newAssignments);
+      
+      if (!Array.isArray(newAssignments) || newAssignments.length === 0) {
+        console.error('[syncIndividualWork] No assignment returned');
+        return;
+      }
+      assignmentId = newAssignments[0].id;
     }
     
-    // Save results for each student
+    // 2. Save results for each student
     for (const result of studentResults) {
       // Find student by name
-      const { data: students } = await supabase
-        .from('students')
-        .select('id')
-        .eq('class_id', classId)
-        .ilike('name', result.studentName);
+      const students = await getStudents(classId);
+      const student = students.find(s => s.name === result.studentName);
       
-      if (students && students.length > 0) {
-        await supabase.from('results').upsert({
-          student_id: students[0].id,
+      if (!student) {
+        console.log('[syncIndividualWork] Student not found:', result.studentName);
+        continue;
+      }
+      
+      console.log('[syncIndividualWork] Found student:', student.name, student.id);
+      
+      // Upsert result
+      const resultUrl = `https://${projectId}.supabase.co/rest/v1/results`;
+      const percentage = result.maxScore > 0 ? Math.round((result.score / result.maxScore) * 100) : 0;
+      const resultResponse = await fetch(resultUrl, {
+        method: 'POST',
+        headers: {
+          'apikey': apiKey,
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+          'Prefer': 'resolution=merge-duplicates',
+        },
+        body: JSON.stringify({
+          student_id: student.id,
           assignment_id: assignmentId,
           score: result.score,
           max_score: result.maxScore,
+          percentage: percentage,
+          correct_count: result.score,
+          total_questions: result.maxScore,
           completed_at: result.completedAt,
           time_spent_ms: result.timeSpentMs,
-        }, { onConflict: 'student_id,assignment_id' });
+        }),
+      });
+      
+      if (resultResponse.ok) {
+        console.log('[syncIndividualWork] Saved result for:', student.name, result.score, '/', result.maxScore);
+      } else {
+        const errorText = await resultResponse.text();
+        console.error('[syncIndividualWork] Failed to save result:', errorText);
       }
     }
+    
+    console.log('[syncIndividualWork] Sync complete');
   } catch (error) {
-    console.error('Error syncing individual work:', error);
+    console.error('[syncIndividualWork] Error:', error);
   }
 }
 

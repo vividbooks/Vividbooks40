@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { X } from 'lucide-react';
 
 export interface AvatarConfig {
@@ -72,7 +72,7 @@ export default function SimpleAvatarCreator({ initialAvatar, onSave, onCancel }:
   const updateAvatar = (key: keyof AvatarConfig, value: string) => setAvatar(prev => ({ ...prev, [key]: value }));
 
   const renderFace = () => {
-    const shapes: Record<string, JSX.Element> = {
+    const shapes: Record<string, React.JSX.Element> = {
       round: <circle cx="100" cy="105" r="63" fill={avatar.skinTone} />,
       square: <rect x="37" y="42" width="126" height="126" rx="15" ry="15" fill={avatar.skinTone} />,
       triangle: <path d="M108.2,161.16l61.12-105.88c3.84-6.66-.96-14.96-8.64-14.96H38.42c-7.68,0-12.46,8.3-8.62,14.94l61.12,105.88c3.84,6.66,13.44,6.66,17.28,0Z" fill={avatar.skinTone} transform="translate(100, 95) scale(1.2) translate(-100, -95)" />
@@ -81,7 +81,7 @@ export default function SimpleAvatarCreator({ initialAvatar, onSave, onCancel }:
   };
 
   const renderEyes = () => {
-    const styles: Record<string, JSX.Element> = {
+    const styles: Record<string, React.JSX.Element> = {
       dots: (
         <>
           <circle cx="78.86" cy="111.32" r="10.44" fill="#000" />
@@ -177,7 +177,7 @@ export default function SimpleAvatarCreator({ initialAvatar, onSave, onCancel }:
   };
 
   const renderMouth = () => {
-    const styles: Record<string, JSX.Element> = {
+    const styles: Record<string, React.JSX.Element> = {
       smile: (
         <path d="M77.06,122.2c1.84-1.16,8.44,1.44,10.84,1.8,7.56,1.16,13.64.42,21.14-.72,2.92-.44,9.92-2.74,12.02-2.6,3.7.26,1.02,9.44,0,11.82-7.94,18.5-35.78,19.04-43.3.26-.82-2.06-2.66-9.34-.68-10.58Z" fill="#211c16" />
       ),
@@ -200,31 +200,35 @@ export default function SimpleAvatarCreator({ initialAvatar, onSave, onCancel }:
         <path d="M78.64,124.56s19.54-13.3,45.92.1" fill="none" stroke="#000" strokeLinecap="round" strokeMiterlimit={10} strokeWidth="6" />
       ),
       teeth: (
-        <>
-          <path d="M29.6,63.01c1.66-.78,7.57.97,9.72,1.22,6.78.78,12.23.28,18.96-.49,2.62-.3,8.89-1.86,10.77-1.75,3.32.18.91,6.39,0,7.99-7.13,12.51-32.09,12.87-38.83.17-.74-1.39-2.39-6.31-.62-7.14Z" fill="#211c16" transform="translate(50, 60)" />
-          <path d="M47.14,66.23h0c1.37,0,2.47,1.11,2.47,2.47v2.6c0,.53-.43.96-.96.96h-3.02c-.53,0-.96-.43-.96-.96v-2.6c0-1.37,1.11-2.47,2.47-2.47Z" fill="#fff" transform="translate(50, 60) rotate(-175.68 47.14 68.26)" />
-          <path d="M53.22,66.31h0c1.37,0,2.47,1.11,2.47,2.47v2.6c0,.53-.43.96-.96.96h-3.02c-.53,0-.96-.43-.96-.96v-2.6c0-1.37,1.11-2.47,2.47-2.47Z" fill="#fff" transform="translate(50, 60) rotate(177.14 53.22 68.34)" />
-        </>
+        <g transform="translate(100, 130) scale(2) translate(-50, -70)">
+          <path d="M29.6,63.01c1.66-.78,7.57.97,9.72,1.22,6.78.78,12.23.28,18.96-.49,2.62-.3,8.89-1.86,10.77-1.75,3.32.18.91,6.39,0,7.99-7.13,12.51-32.09,12.87-38.83.17-.74-1.39-2.39-6.31-.62-7.14Z" fill="#211c16" />
+          <path d="M47.14,66.23h0c1.37,0,2.47,1.11,2.47,2.47v2.6c0,.53-.43.96-.96.96h-3.02c-.53,0-.96-.43-.96-.96v-2.6c0-1.37,1.11-2.47,2.47-2.47Z" fill="#fff" transform="rotate(-175.68 47.14 68.26)" />
+          <path d="M53.22,66.31h0c1.37,0,2.47,1.11,2.47,2.47v2.6c0,.53-.43.96-.96.96h-3.02c-.53,0-.96-.43-.96-.96v-2.6c0-1.37,1.11-2.47,2.47-2.47Z" fill="#fff" transform="rotate(177.14 53.22 68.34)" />
+        </g>
       ),
       wavy: (
-        <path d="M32.28,68.33c1.33-3.53,4.75-10.08,8.11-4.58s4.3,9.14,7.08.68,6.6.32,8.25,3.01c2.02,3.3,4.49,2.34,8.83-5.37" fill="none" stroke="#211c16" strokeLinecap="round" strokeMiterlimit={10} strokeWidth="2" transform="translate(50, 55)" />
+        <g transform="translate(100, 130) scale(2) translate(-50, -65)">
+          <path d="M32.28,68.33c1.33-3.53,4.75-10.08,8.11-4.58s4.3,9.14,7.08.68,6.6.32,8.25,3.01c2.02,3.3,4.49,2.34,8.83-5.37" fill="none" stroke="#211c16" strokeLinecap="round" strokeMiterlimit={10} strokeWidth="2" />
+        </g>
       ),
       goofy: (
-        <>
-          <path d="M46.29,71.4h0c1.37,0,2.47,1.11,2.47,2.47v3.56h-4.95v-3.56c0-1.37,1.11-2.47,2.47-2.47Z" fill="#fff" transform="translate(50, 50) rotate(-165.02 46.29 73.67)" />
-          <path d="M52.01,71.95h0c1.37,0,2.47,1.11,2.47,2.47v3.56h-4.95v-3.56c0-1.37,1.11-2.47,2.47-2.47Z" fill="#fff" transform="translate(50, 50) rotate(177.14 52.01 74.2)" />
-          <path d="M43.68,70s16.91,7.33,26.26-10.48" fill="none" stroke="#211c16" strokeLinecap="round" strokeMiterlimit={10} strokeWidth="2" transform="translate(50, 50)" />
-        </>
+        <g transform="translate(100, 125) scale(2) translate(-50, -70)">
+          <path d="M46.29,71.4h0c1.37,0,2.47,1.11,2.47,2.47v3.56h-4.95v-3.56c0-1.37,1.11-2.47,2.47-2.47Z" fill="#fff" transform="rotate(-165.02 46.29 73.67)" />
+          <path d="M52.01,71.95h0c1.37,0,2.47,1.11,2.47,2.47v3.56h-4.95v-3.56c0-1.37,1.11-2.47,2.47-2.47Z" fill="#fff" transform="rotate(177.14 52.01 74.2)" />
+          <path d="M43.68,70s16.91,7.33,26.26-10.48" fill="none" stroke="#211c16" strokeLinecap="round" strokeMiterlimit={10} strokeWidth="2" />
+        </g>
       ),
       kiss: (
-        <path d="M54.01,73.79c-3.99,2.85-8.55.41-9.73-4-.36-1.36.71-2.72,1.76-2.08,1.15.69,1.39,5.62,5.13,4.77,3.47-.78,1.86-5.35,3.27-5.98,2.84-1.27,1.88,5.64-.43,7.29Z" fill="#211c16" transform="translate(50, 50)" />
+        <g transform="translate(100, 130) scale(2) translate(-50, -70)">
+          <path d="M54.01,73.79c-3.99,2.85-8.55.41-9.73-4-.36-1.36.71-2.72,1.76-2.08,1.15.69,1.39,5.62,5.13,4.77,3.47-.78,1.86-5.35,3.27-5.98,2.84-1.27,1.88,5.64-.43,7.29Z" fill="#211c16" />
+        </g>
       )
     };
     return styles[avatar.mouthStyle];
   };
 
   const renderHair = () => {
-    const styles: Record<string, JSX.Element | null> = {
+    const styles: Record<string, React.JSX.Element | null> = {
       none: null,
       short: (
         <path d="M136.28,92.54c-.88-3.08-5-25.1-6.1-25.86-2.08-1.44-5.38,3.82-7.42,5.22-13.68,9.34-30.14.2-39.52-10.66-1.02-1.2-1.6-3.76-3.44-3.7-1.96.06-2.52,2.2-3.66,3.46-7.58,8.2-16.62,15.7-27.06,19.86-4.14,1.64-8.64,2.42-12.86,3.86-4.8-12.46-3.12-26.4,4.3-37.52,16.72-25.04,56.9-29.38,81.7-14.8,2.08,1.22,4.52,3.98,6.8,4.82,2.82,1.02,7.44-.2,10.9.7,16.4,4.26,27.24,21.22,27.24,37.7,0,2.66-2.02,15.16-3.56,16.64-1.2,1.16-5.04-2.14-6.84-2.84-7.04-2.72-14.34-.94-20.46,3.18Z" fill={avatar.hairColor} />
@@ -321,7 +325,7 @@ export default function SimpleAvatarCreator({ initialAvatar, onSave, onCancel }:
   );
 
   const FacePreview = ({ shape, size = 40 }: { shape: string; size?: number }) => {
-    const shapes: Record<string, JSX.Element> = {
+    const shapes: Record<string, React.JSX.Element> = {
       round: <circle cx="100" cy="105" r="63" fill="#FFDCDC" />,
       square: <rect x="37" y="42" width="126" height="126" rx="15" ry="15" fill="#FFDCDC" />,
       triangle: <path d="M108.2,161.16l61.12-105.88c3.84-6.66-.96-14.96-8.64-14.96H38.42c-7.68,0-12.46,8.3-8.62,14.94l61.12,105.88c3.84,6.66,13.44,6.66,17.28,0Z" fill="#FFDCDC" transform="translate(100, 95) scale(1.2) translate(-100, -95)" />
@@ -330,7 +334,7 @@ export default function SimpleAvatarCreator({ initialAvatar, onSave, onCancel }:
   };
 
   const EyePreview = ({ style, size = 40 }: { style: string; size?: number }) => {
-    const styles: Record<string, JSX.Element> = {
+    const styles: Record<string, React.JSX.Element> = {
       dots: (
         <>
           <circle cx="78.86" cy="111.32" r="10.44" fill="#000" />
@@ -426,7 +430,7 @@ export default function SimpleAvatarCreator({ initialAvatar, onSave, onCancel }:
   };
 
   const MouthPreview = ({ style, size = 40 }: { style: string; size?: number }) => {
-    const styles: Record<string, JSX.Element> = {
+    const styles: Record<string, React.JSX.Element> = {
       smile: (
         <path d="M77.06,122.2c1.84-1.16,8.44,1.44,10.84,1.8,7.56,1.16,13.64.42,21.14-.72,2.92-.44,9.92-2.74,12.02-2.6,3.7.26,1.02,9.44,0,11.82-7.94,18.5-35.78,19.04-43.3.26-.82-2.06-2.66-9.34-.68-10.58Z" fill="#211c16" />
       ),
@@ -449,31 +453,35 @@ export default function SimpleAvatarCreator({ initialAvatar, onSave, onCancel }:
         <path d="M78.64,124.56s19.54-13.3,45.92.1" fill="none" stroke="#000" strokeLinecap="round" strokeMiterlimit={10} strokeWidth="6" />
       ),
       teeth: (
-        <>
-          <path d="M29.6,63.01c1.66-.78,7.57.97,9.72,1.22,6.78.78,12.23.28,18.96-.49,2.62-.3,8.89-1.86,10.77-1.75,3.32.18.91,6.39,0,7.99-7.13,12.51-32.09,12.87-38.83.17-.74-1.39-2.39-6.31-.62-7.14Z" fill="#211c16" transform="translate(50, 60)" />
-          <path d="M47.14,66.23h0c1.37,0,2.47,1.11,2.47,2.47v2.6c0,.53-.43.96-.96.96h-3.02c-.53,0-.96-.43-.96-.96v-2.6c0-1.37,1.11-2.47,2.47-2.47Z" fill="#fff" transform="translate(50, 60) rotate(-175.68 47.14 68.26)" />
-          <path d="M53.22,66.31h0c1.37,0,2.47,1.11,2.47,2.47v2.6c0,.53-.43.96-.96.96h-3.02c-.53,0-.96-.43-.96-.96v-2.6c0-1.37,1.11-2.47,2.47-2.47Z" fill="#fff" transform="translate(50, 60) rotate(177.14 53.22 68.34)" />
-        </>
+        <g transform="translate(100, 130) scale(2) translate(-50, -70)">
+          <path d="M29.6,63.01c1.66-.78,7.57.97,9.72,1.22,6.78.78,12.23.28,18.96-.49,2.62-.3,8.89-1.86,10.77-1.75,3.32.18.91,6.39,0,7.99-7.13,12.51-32.09,12.87-38.83.17-.74-1.39-2.39-6.31-.62-7.14Z" fill="#211c16" />
+          <path d="M47.14,66.23h0c1.37,0,2.47,1.11,2.47,2.47v2.6c0,.53-.43.96-.96.96h-3.02c-.53,0-.96-.43-.96-.96v-2.6c0-1.37,1.11-2.47,2.47-2.47Z" fill="#fff" transform="rotate(-175.68 47.14 68.26)" />
+          <path d="M53.22,66.31h0c1.37,0,2.47,1.11,2.47,2.47v2.6c0,.53-.43.96-.96.96h-3.02c-.53,0-.96-.43-.96-.96v-2.6c0-1.37,1.11-2.47,2.47-2.47Z" fill="#fff" transform="rotate(177.14 53.22 68.34)" />
+        </g>
       ),
       wavy: (
-        <path d="M32.28,68.33c1.33-3.53,4.75-10.08,8.11-4.58s4.3,9.14,7.08.68,6.6.32,8.25,3.01c2.02,3.3,4.49,2.34,8.83-5.37" fill="none" stroke="#211c16" strokeLinecap="round" strokeMiterlimit={10} strokeWidth="2" transform="translate(50, 55)" />
+        <g transform="translate(100, 130) scale(2) translate(-50, -65)">
+          <path d="M32.28,68.33c1.33-3.53,4.75-10.08,8.11-4.58s4.3,9.14,7.08.68,6.6.32,8.25,3.01c2.02,3.3,4.49,2.34,8.83-5.37" fill="none" stroke="#211c16" strokeLinecap="round" strokeMiterlimit={10} strokeWidth="2" />
+        </g>
       ),
       goofy: (
-        <>
-          <path d="M46.29,71.4h0c1.37,0,2.47,1.11,2.47,2.47v3.56h-4.95v-3.56c0-1.37,1.11-2.47,2.47-2.47Z" fill="#fff" transform="translate(50, 50) rotate(-165.02 46.29 73.67)" />
-          <path d="M52.01,71.95h0c1.37,0,2.47,1.11,2.47,2.47v3.56h-4.95v-3.56c0-1.37,1.11-2.47,2.47-2.47Z" fill="#fff" transform="translate(50, 50) rotate(177.14 52.01 74.2)" />
-          <path d="M43.68,70s16.91,7.33,26.26-10.48" fill="none" stroke="#211c16" strokeLinecap="round" strokeMiterlimit={10} strokeWidth="2" transform="translate(50, 50)" />
-        </>
+        <g transform="translate(100, 125) scale(2) translate(-50, -70)">
+          <path d="M46.29,71.4h0c1.37,0,2.47,1.11,2.47,2.47v3.56h-4.95v-3.56c0-1.37,1.11-2.47,2.47-2.47Z" fill="#fff" transform="rotate(-165.02 46.29 73.67)" />
+          <path d="M52.01,71.95h0c1.37,0,2.47,1.11,2.47,2.47v3.56h-4.95v-3.56c0-1.37,1.11-2.47,2.47-2.47Z" fill="#fff" transform="rotate(177.14 52.01 74.2)" />
+          <path d="M43.68,70s16.91,7.33,26.26-10.48" fill="none" stroke="#211c16" strokeLinecap="round" strokeMiterlimit={10} strokeWidth="2" />
+        </g>
       ),
       kiss: (
-        <path d="M54.01,73.79c-3.99,2.85-8.55.41-9.73-4-.36-1.36.71-2.72,1.76-2.08,1.15.69,1.39,5.62,5.13,4.77,3.47-.78,1.86-5.35,3.27-5.98,2.84-1.27,1.88,5.64-.43,7.29Z" fill="#211c16" transform="translate(50, 50)" />
+        <g transform="translate(100, 130) scale(2) translate(-50, -70)">
+          <path d="M54.01,73.79c-3.99,2.85-8.55.41-9.73-4-.36-1.36.71-2.72,1.76-2.08,1.15.69,1.39,5.62,5.13,4.77,3.47-.78,1.86-5.35,3.27-5.98,2.84-1.27,1.88,5.64-.43,7.29Z" fill="#211c16" />
+        </g>
       )
     };
     return <svg viewBox="0 0 200 200" width={size} height={size}>{styles[style]}</svg>;
   };
 
   const HairPreview = ({ style, size = 40, color = "#8B5A2B" }: { style: string; size?: number; color?: string }) => {
-    const styles: Record<string, JSX.Element | null> = {
+    const styles: Record<string, React.JSX.Element | null> = {
       none: null,
       short: <path d="M136.28,92.54c-.88-3.08-5-25.1-6.1-25.86-2.08-1.44-5.38,3.82-7.42,5.22-13.68,9.34-30.14.2-39.52-10.66-1.02-1.2-1.6-3.76-3.44-3.7-1.96.06-2.52,2.2-3.66,3.46-7.58,8.2-16.62,15.7-27.06,19.86-4.14,1.64-8.64,2.42-12.86,3.86-4.8-12.46-3.12-26.4,4.3-37.52,16.72-25.04,56.9-29.38,81.7-14.8,2.08,1.22,4.52,3.98,6.8,4.82,2.82,1.02,7.44-.2,10.9.7,16.4,4.26,27.24,21.22,27.24,37.7,0,2.66-2.02,15.16-3.56,16.64-1.2,1.16-5.04-2.14-6.84-2.84-7.04-2.72-14.34-.94-20.46,3.18Z" fill={color} />,
       pigtails: (
@@ -543,33 +551,62 @@ export default function SimpleAvatarCreator({ initialAvatar, onSave, onCancel }:
   });
 
   return (
-    <div style={{ background: 'linear-gradient(to bottom right, #f9fafb, #f3f4f6)', padding: '16px' }} onClick={() => setOpenPicker(null)}>
-      <div style={{ maxWidth: '896px', margin: '0 auto' }}>
-        <h1 style={{ fontSize: '1.875rem', fontWeight: '900', textAlign: 'center', color: '#1f2937', marginBottom: '24px' }}>
-          Avatar Creator
+    <div style={{ background: 'linear-gradient(to bottom right, #f9fafb, #f3f4f6)', padding: '24px', position: 'relative' }} onClick={() => setOpenPicker(null)}>
+      {/* Close button */}
+      {onCancel && (
+        <button
+          onClick={onCancel}
+          style={{
+            position: 'absolute',
+            top: '16px',
+            right: '16px',
+            width: '40px',
+            height: '40px',
+            borderRadius: '50%',
+            backgroundColor: '#f3f4f6',
+            border: 'none',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+            transition: 'background-color 0.2s',
+          }}
+          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#e5e7eb'}
+          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#f3f4f6'}
+        >
+          <X style={{ width: '20px', height: '20px', color: '#6b7280' }} />
+        </button>
+      )}
+      
+      <div style={{ maxWidth: '1350px', margin: '0 auto' }}>
+        <h1 style={{ fontSize: '1.5rem', fontWeight: '800', textAlign: 'center', color: '#1f2937', marginBottom: '20px' }}>
+          Vytvoř si avatar
         </h1>
         
         <div style={{ 
           display: 'grid', 
-          gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', 
+          gridTemplateColumns: '1fr 1fr', 
           gap: '24px', 
           alignItems: 'start',
         }}>
-          {/* Preview */}
-          <div style={{ backgroundColor: 'white', borderRadius: '24px', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)', padding: '32px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+          {/* Left column: Avatar Preview + Colors + Buttons */}
+          <div style={{ backgroundColor: 'white', borderRadius: '24px', boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1)', padding: '24px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+            {/* Avatar Preview */}
             <div 
               style={{ 
                 backgroundColor: avatar.backgroundColor, 
-                width: 280, 
-                height: 280,
+                width: 200, 
+                height: 200,
                 borderRadius: '50%',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 transition: 'background-color 0.3s',
+                boxShadow: '0 8px 16px rgba(0,0,0,0.15)',
               }}
             >
-              <svg viewBox="0 0 200 200" style={{ width: '240px', height: '240px' }}>
+              <svg viewBox="0 0 200 200" style={{ width: '170px', height: '170px' }}>
                 {renderFace()}
                 {renderEyes()}
                 {renderMouth()}
@@ -578,7 +615,7 @@ export default function SimpleAvatarCreator({ initialAvatar, onSave, onCancel }:
             </div>
             
             {/* Color Circles */}
-            <div style={{ position: 'relative', display: 'flex', gap: '32px', marginTop: '32px' }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ position: 'relative', display: 'flex', gap: '24px', marginTop: '24px' }} onClick={(e) => e.stopPropagation()}>
               <div style={{ position: 'relative' }}>
                 <ColorCircle 
                   color={avatar.backgroundColor} 
@@ -631,18 +668,20 @@ export default function SimpleAvatarCreator({ initialAvatar, onSave, onCancel }:
               </div>
             </div>
             
-            <div style={{ display: 'flex', gap: '12px', marginTop: '24px' }}>
+            {/* Random & Reset buttons */}
+            <div style={{ display: 'flex', gap: '12px', marginTop: '20px' }}>
               <button
                 onClick={randomize}
                 style={{
                   background: 'linear-gradient(to right, #8b5cf6, #ec4899)',
                   color: 'white',
-                  padding: '10px 24px',
+                  padding: '10px 20px',
                   borderRadius: '9999px',
                   fontWeight: 'bold',
                   border: 'none',
                   cursor: 'pointer',
                   boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                  fontSize: '14px',
                 }}
               >
                 🎲 Random
@@ -652,20 +691,42 @@ export default function SimpleAvatarCreator({ initialAvatar, onSave, onCancel }:
                 style={{
                   backgroundColor: '#e5e7eb',
                   color: '#374151',
-                  padding: '10px 24px',
+                  padding: '10px 20px',
                   borderRadius: '9999px',
                   fontWeight: 'bold',
                   border: 'none',
                   cursor: 'pointer',
+                  fontSize: '14px',
                 }}
               >
                 ↺ Reset
               </button>
             </div>
+            
+            {/* Save button */}
+            {onSave && (
+              <button
+                onClick={() => onSave(avatar)}
+                style={{
+                  background: 'linear-gradient(to right, #6366f1, #8b5cf6)',
+                  color: 'white',
+                  padding: '12px 32px',
+                  borderRadius: '9999px',
+                  fontWeight: 'bold',
+                  border: 'none',
+                  cursor: 'pointer',
+                  boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                  marginTop: '16px',
+                  width: '100%',
+                }}
+              >
+                ✓ Uložit avatar
+              </button>
+            )}
           </div>
           
-          {/* Controls */}
-          <div style={{ backgroundColor: 'white', borderRadius: '24px', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)', padding: '24px', maxHeight: '550px', overflowY: 'auto' }}>
+          {/* Right column: Controls (Face, Eyes, Mouth, Hair) */}
+          <div style={{ backgroundColor: 'white', borderRadius: '24px', boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1)', padding: '24px', maxHeight: '480px', overflowY: 'auto' }}>
             <OptionPicker
               label="Obličej"
               options={['round', 'square', 'triangle']}
@@ -700,45 +761,6 @@ export default function SimpleAvatarCreator({ initialAvatar, onSave, onCancel }:
             />
           </div>
         </div>
-        
-        {/* Save/Cancel buttons */}
-        {(onSave || onCancel) && (
-          <div style={{ display: 'flex', justifyContent: 'center', gap: '16px', marginTop: '24px' }}>
-            {onCancel && (
-              <button
-                onClick={onCancel}
-                style={{
-                  backgroundColor: '#e5e7eb',
-                  color: '#374151',
-                  padding: '12px 32px',
-                  borderRadius: '9999px',
-                  fontWeight: 'bold',
-                  border: 'none',
-                  cursor: 'pointer',
-                }}
-              >
-                Zrušit
-              </button>
-            )}
-            {onSave && (
-              <button
-                onClick={() => onSave(avatar)}
-                style={{
-                  background: 'linear-gradient(to right, #6366f1, #8b5cf6)',
-                  color: 'white',
-                  padding: '12px 32px',
-                  borderRadius: '9999px',
-                  fontWeight: 'bold',
-                  border: 'none',
-                  cursor: 'pointer',
-                  boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
-                }}
-              >
-                Uložit avatar
-              </button>
-            )}
-          </div>
-        )}
       </div>
     </div>
   );
@@ -747,7 +769,7 @@ export default function SimpleAvatarCreator({ initialAvatar, onSave, onCancel }:
 // Component to render just the avatar SVG (for display purposes)
 export function AvatarDisplay({ avatar, size = 40 }: { avatar: AvatarConfig; size?: number }) {
   const renderFace = () => {
-    const shapes: Record<string, JSX.Element> = {
+    const shapes: Record<string, React.JSX.Element> = {
       round: <circle cx="100" cy="105" r="63" fill={avatar.skinTone} />,
       square: <rect x="37" y="42" width="126" height="126" rx="15" ry="15" fill={avatar.skinTone} />,
       triangle: <path d="M108.2,161.16l61.12-105.88c3.84-6.66-.96-14.96-8.64-14.96H38.42c-7.68,0-12.46,8.3-8.62,14.94l61.12,105.88c3.84,6.66,13.44,6.66,17.28,0Z" fill={avatar.skinTone} transform="translate(100, 95) scale(1.2) translate(-100, -95)" />
@@ -756,7 +778,7 @@ export function AvatarDisplay({ avatar, size = 40 }: { avatar: AvatarConfig; siz
   };
 
   const renderEyes = () => {
-    const styles: Record<string, JSX.Element> = {
+    const styles: Record<string, React.JSX.Element> = {
       dots: (
         <>
           <circle cx="78.86" cy="111.32" r="10.44" fill="#000" />
@@ -852,7 +874,7 @@ export function AvatarDisplay({ avatar, size = 40 }: { avatar: AvatarConfig; siz
   };
 
   const renderMouth = () => {
-    const styles: Record<string, JSX.Element> = {
+    const styles: Record<string, React.JSX.Element> = {
       smile: (
         <path d="M77.06,122.2c1.84-1.16,8.44,1.44,10.84,1.8,7.56,1.16,13.64.42,21.14-.72,2.92-.44,9.92-2.74,12.02-2.6,3.7.26,1.02,9.44,0,11.82-7.94,18.5-35.78,19.04-43.3.26-.82-2.06-2.66-9.34-.68-10.58Z" fill="#211c16" />
       ),
@@ -873,13 +895,37 @@ export function AvatarDisplay({ avatar, size = 40 }: { avatar: AvatarConfig; siz
       ),
       sad: (
         <path d="M78.64,124.56s19.54-13.3,45.92.1" fill="none" stroke="#000" strokeLinecap="round" strokeMiterlimit={10} strokeWidth="6" />
+      ),
+      teeth: (
+        <g transform="translate(100, 130) scale(2) translate(-50, -70)">
+          <path d="M29.6,63.01c1.66-.78,7.57.97,9.72,1.22,6.78.78,12.23.28,18.96-.49,2.62-.3,8.89-1.86,10.77-1.75,3.32.18.91,6.39,0,7.99-7.13,12.51-32.09,12.87-38.83.17-.74-1.39-2.39-6.31-.62-7.14Z" fill="#211c16" />
+          <path d="M47.14,66.23h0c1.37,0,2.47,1.11,2.47,2.47v2.6c0,.53-.43.96-.96.96h-3.02c-.53,0-.96-.43-.96-.96v-2.6c0-1.37,1.11-2.47,2.47-2.47Z" fill="#fff" transform="rotate(-175.68 47.14 68.26)" />
+          <path d="M53.22,66.31h0c1.37,0,2.47,1.11,2.47,2.47v2.6c0,.53-.43.96-.96.96h-3.02c-.53,0-.96-.43-.96-.96v-2.6c0-1.37,1.11-2.47,2.47-2.47Z" fill="#fff" transform="rotate(177.14 53.22 68.34)" />
+        </g>
+      ),
+      wavy: (
+        <g transform="translate(100, 130) scale(2) translate(-50, -65)">
+          <path d="M32.28,68.33c1.33-3.53,4.75-10.08,8.11-4.58s4.3,9.14,7.08.68,6.6.32,8.25,3.01c2.02,3.3,4.49,2.34,8.83-5.37" fill="none" stroke="#211c16" strokeLinecap="round" strokeMiterlimit={10} strokeWidth="2" />
+        </g>
+      ),
+      goofy: (
+        <g transform="translate(100, 125) scale(2) translate(-50, -70)">
+          <path d="M46.29,71.4h0c1.37,0,2.47,1.11,2.47,2.47v3.56h-4.95v-3.56c0-1.37,1.11-2.47,2.47-2.47Z" fill="#fff" transform="rotate(-165.02 46.29 73.67)" />
+          <path d="M52.01,71.95h0c1.37,0,2.47,1.11,2.47,2.47v3.56h-4.95v-3.56c0-1.37,1.11-2.47,2.47-2.47Z" fill="#fff" transform="rotate(177.14 52.01 74.2)" />
+          <path d="M43.68,70s16.91,7.33,26.26-10.48" fill="none" stroke="#211c16" strokeLinecap="round" strokeMiterlimit={10} strokeWidth="2" />
+        </g>
+      ),
+      kiss: (
+        <g transform="translate(100, 130) scale(2) translate(-50, -70)">
+          <path d="M54.01,73.79c-3.99,2.85-8.55.41-9.73-4-.36-1.36.71-2.72,1.76-2.08,1.15.69,1.39,5.62,5.13,4.77,3.47-.78,1.86-5.35,3.27-5.98,2.84-1.27,1.88,5.64-.43,7.29Z" fill="#211c16" />
+        </g>
       )
     };
     return styles[avatar.mouthStyle];
   };
 
   const renderHair = () => {
-    const styles: Record<string, JSX.Element | null> = {
+    const styles: Record<string, React.JSX.Element | null> = {
       none: null,
       short: <path d="M136.28,92.54c-.88-3.08-5-25.1-6.1-25.86-2.08-1.44-5.38,3.82-7.42,5.22-13.68,9.34-30.14.2-39.52-10.66-1.02-1.2-1.6-3.76-3.44-3.7-1.96.06-2.52,2.2-3.66,3.46-7.58,8.2-16.62,15.7-27.06,19.86-4.14,1.64-8.64,2.42-12.86,3.86-4.8-12.46-3.12-26.4,4.3-37.52,16.72-25.04,56.9-29.38,81.7-14.8,2.08,1.22,4.52,3.98,6.8,4.82,2.82,1.02,7.44-.2,10.9.7,16.4,4.26,27.24,21.22,27.24,37.7,0,2.66-2.02,15.16-3.56,16.64-1.2,1.16-5.04-2.14-6.84-2.84-7.04-2.72-14.34-.94-20.46,3.18Z" fill={avatar.hairColor} />,
       pigtails: (

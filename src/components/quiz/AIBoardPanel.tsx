@@ -274,9 +274,7 @@ export function AIBoardPanel({
 Vrať POUZE JSON pole se slidy, žádný další text.`;
 
     try {
-      const geminiKey = localStorage.getItem('gemini_api_key') || import.meta.env.VITE_GEMINI_API_KEY || '';
-      if (!geminiKey) throw new Error('Gemini API klíč není nastaven. Zapni proxy: localStorage.setItem("use_ai_proxy", "true")');
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`, {
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=AIzaSyDcPJrEcxThsVskj2LvYf6VB3mGTM45Ih0`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

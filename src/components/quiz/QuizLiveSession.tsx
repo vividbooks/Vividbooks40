@@ -94,7 +94,6 @@ export function TeacherSession({ quiz, teacherId, teacherName, onClose }: Teache
     const sessionData: LiveQuizSession = {
       id: newSessionId,
       quizId: quiz.id,
-      code: code, // IMPORTANT: Store code so students can find the session!
       teacherId,
       teacherName,
       isActive: true,

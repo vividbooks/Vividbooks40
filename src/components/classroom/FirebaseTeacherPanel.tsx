@@ -13,15 +13,11 @@ import {
   Copy,
   Check,
   Lock,
-  Unlock,
-  Bell,
-  Send
+  Unlock
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { MOCK_CLASSES } from '../../types/classroom-share';
 import * as FirebaseSync from '../../utils/classroom-firebase';
-import { getClasses, ClassGroup, notifyClassOfLiveSession } from '../../utils/supabase/classes';
-import { supabase } from '../../utils/supabase/client';
 
 interface TeacherPanelProps {
   isOpen: boolean;
@@ -33,9 +29,6 @@ interface TeacherPanelProps {
 export function FirebaseTeacherPanel({ isOpen, onClose, documentTitle, documentPath }: TeacherPanelProps) {
   const [selectedClass, setSelectedClass] = useState<string | null>(null);
   const [showClassSelector, setShowClassSelector] = useState(true);
-  const [realClasses, setRealClasses] = useState<ClassGroup[]>([]);
-  const [loadingClasses, setLoadingClasses] = useState(true);
-  const [notifyingClass, setNotifyingClass] = useState<string | null>(null);
   const [isSharing, setIsSharing] = useState(false);
   const [sessionId, setSessionId] = useState<string>('');
   const [connectedStudents, setConnectedStudents] = useState<FirebaseSync.ConnectedStudent[]>([]);
@@ -44,37 +37,6 @@ export function FirebaseTeacherPanel({ isOpen, onClose, documentTitle, documentP
   const [studentCanControl, setStudentCanControl] = useState(true); // Student control toggle - default unlocked
   
   const sessionRef = useRef<string>('');
-  
-  // Load real classes from Supabase
-  useEffect(() => {
-    async function loadClasses() {
-      try {
-        const classes = await getClasses();
-        setRealClasses(classes);
-      } catch (error) {
-        console.error('Failed to load classes:', error);
-      } finally {
-        setLoadingClasses(false);
-      }
-    }
-    loadClasses();
-  }, []);
-
-  // Function to notify all students in a class about the live session
-  const notifyClassStudents = async (classId: string) => {
-    if (!sessionId) return;
-    
-    setNotifyingClass(classId);
-    try {
-      await notifyClassOfLiveSession(classId, sessionId, documentPath, documentTitle);
-      console.log('Notified class:', classId);
-    } catch (error) {
-      console.error('Failed to notify class:', error);
-    } finally {
-      setNotifyingClass(null);
-    }
-  };
-
   const scrollThrottle = useRef<NodeJS.Timeout | null>(null);
 
   // Start sharing
@@ -341,50 +303,6 @@ export function FirebaseTeacherPanel({ isOpen, onClose, documentTitle, documentP
             </div>
           )}
         </div>
-
-        {/* Class Notification Section - Notify students to join */}
-        {isSharing && (
-          <div className="px-4 pb-4">
-            <div className="bg-gradient-to-r from-indigo-500/20 to-purple-500/20 border border-indigo-400/30 rounded-xl p-4 mb-4">
-              <div className="flex items-center gap-2 mb-3">
-                <Bell className="w-5 h-5 text-indigo-400" />
-                <span className="font-semibold text-indigo-200">Připojit třídu automaticky</span>
-              </div>
-              <p className="text-sm text-white/60 mb-3">
-                Vyberte třídu a studenti, kteří jsou právě online, se automaticky připojí k této relaci.
-              </p>
-              <div className="space-y-2">
-                {loadingClasses ? (
-                  <div className="text-center py-4 text-white/50">Načítám třídy...</div>
-                ) : realClasses.length > 0 ? (
-                  realClasses.map((cls) => (
-                    <button
-                      key={cls.id}
-                      onClick={() => notifyClassStudents(cls.id)}
-                      disabled={notifyingClass === cls.id}
-                      className="w-full flex items-center justify-between p-3 rounded-xl bg-slate-700/50 hover:bg-indigo-500/30 border border-transparent hover:border-indigo-400/50 transition-all"
-                    >
-                      <div className="flex items-center gap-2">
-                        <Users className="w-4 h-4 text-white/70" />
-                        <span>{cls.name}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm text-white/60">{cls.students?.length || 0} žáků</span>
-                        {notifyingClass === cls.id ? (
-                          <div className="w-5 h-5 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin" />
-                        ) : (
-                          <Send className="w-4 h-4 text-indigo-400" />
-                        )}
-                      </div>
-                    </button>
-                  ))
-                ) : (
-                  <div className="text-center py-4 text-white/50">Zatím nemáte žádné třídy</div>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* QR Code for joining */}
         {isSharing && (

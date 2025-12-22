@@ -1,12 +1,18 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Save, Settings, ChevronDown, X, Undo, Redo, Eye, Plus, Trash2, Play, Image as ImageIcon, PanelRight, Sparkles, History } from 'lucide-react';
+import { ArrowLeft, Save, Settings, ChevronDown, ChevronUp, X, Undo, Redo, Eye, Plus, Trash2, Play, Image as ImageIcon, PanelRight, Sparkles, History, Send, FileText, AlertTriangle, BotOff, Calendar, Loader2, Star, MessageSquare } from 'lucide-react';
+import { submitAssignment, addAIFlag, getSubmission, updateSubmissionStatus } from '../utils/student-assignments';
+import { useStudentAuth } from '../contexts/StudentAuthContext';
+import { toast } from 'sonner';
+import { CommentsPanel } from './shared/CommentsPanel';
+import { GradingModal } from './shared/GradingModal';
+import { saveGrading, getCommentsFromStorage } from '../utils/document-comments';
+import { DocumentComment } from '../types/document-comments';
 import { HtmlRenderer } from './HtmlRenderer';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Switch } from './ui/switch';
-import { toast } from 'sonner@2.0.3';
 import { RichTextEditor } from './RichTextEditor';
 import { SectionMediaItem } from '../types/section-media';
 import { SectionMediaManager } from './admin/SectionMediaManager';
@@ -51,11 +57,33 @@ interface MyContentEditorProps {
 export function MyContentEditor({ theme, toggleTheme }: MyContentEditorProps) {
   const { id } = useParams<{ id: string }>();
   const [searchParams] = useSearchParams();
-  const isStudentMode = searchParams.get('studentMode') === 'true' || searchParams.get('studentAssignmentId') !== null;
+  const studentAssignmentId = searchParams.get('studentAssignmentId');
+  const isStudentMode = searchParams.get('studentMode') === 'true' || studentAssignmentId !== null;
   const isTeacherView = searchParams.get('teacherView') === 'true';
   const viewingStudentId = searchParams.get('studentId');
   const isReadOnly = searchParams.get('readOnly') === 'true';
   const navigate = useNavigate();
+  const { student } = useStudentAuth();
+  
+  // Assignment context (loaded from localStorage when student works on assignment)
+  const [assignmentContext, setAssignmentContext] = useState<{
+    assignmentId: string;
+    title: string;
+    description: string;
+    dueDate?: string;
+    allowAI: boolean;
+    submissionId: string;
+  } | null>(null);
+  const [showAssignmentPanel, setShowAssignmentPanel] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  // Teacher grading state
+  const [showCommentsPanel, setShowCommentsPanel] = useState(isTeacherView);
+  const [showGradingModal, setShowGradingModal] = useState(false);
+  const [isGrading, setIsGrading] = useState(false);
+  const [selectedTextForComment, setSelectedTextForComment] = useState('');
+  const [selectionRange, setSelectionRange] = useState<{ from: number; to: number } | null>(null);
+  const [studentInfo, setStudentInfo] = useState<{ name: string; submissionId: string } | null>(null);
   const [item, setItem] = useState<ContentItem | null>(null);
   const [isTitleHovered, setIsTitleHovered] = useState(false);
   const [isTitleFocused, setIsTitleFocused] = useState(false);
@@ -100,6 +128,159 @@ export function MyContentEditor({ theme, toggleTheme }: MyContentEditorProps) {
   // Get current document type config
   const currentDocType = DOCUMENT_TYPES.find(t => t.id === documentType) || DOCUMENT_TYPES[0];
   const DocIcon = currentDocType.icon;
+  
+  // Load assignment context for student mode
+  useEffect(() => {
+    if (isStudentMode && studentAssignmentId) {
+      const contextJson = localStorage.getItem('student_assignment_context');
+      if (contextJson) {
+        try {
+          const context = JSON.parse(contextJson);
+          if (context.assignmentId === studentAssignmentId) {
+            setAssignmentContext(context);
+          }
+        } catch (e) {
+          console.error('Error parsing assignment context:', e);
+        }
+      }
+    }
+  }, [isStudentMode, studentAssignmentId]);
+  
+  // Handle assignment submission
+  const handleSubmitAssignment = useCallback(async () => {
+    if (!assignmentContext?.submissionId || !student?.id) {
+      toast.error('Nelze odevzdat - chybí informace o úkolu');
+      return;
+    }
+    
+    setIsSubmitting(true);
+    try {
+      // Save document first
+      const docData = {
+        id: id,
+        title: title,
+        content: content,
+        documentType: documentType,
+        featuredMedia: featuredMedia,
+        sectionImages: sectionImages,
+        slug: slug,
+        showTOC: showTOC,
+        updatedAt: new Date().toISOString(),
+      };
+      localStorage.setItem(`vivid-doc-${id}`, JSON.stringify(docData));
+      
+      // Submit the assignment
+      await submitAssignment(assignmentContext.submissionId);
+      
+      toast.success('Úkol úspěšně odevzdán!', {
+        description: 'Učitel bude informován o vašem odevzdání.',
+      });
+      
+      // Navigate back to student workspace
+      navigate('/student/my-content');
+    } catch (error) {
+      console.error('Error submitting assignment:', error);
+      toast.error('Nepodařilo se odevzdat úkol');
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [assignmentContext, student, id, title, content, documentType, featuredMedia, sectionImages, slug, showTOC, navigate]);
+  
+  // Handle paste detection for AI flag
+  const handlePasteDetected = useCallback(async (pastedText: string, wordCount: number) => {
+    if (!assignmentContext?.submissionId || assignmentContext.allowAI) return;
+    
+    // Log paste event as potential AI flag
+    try {
+      await addAIFlag(assignmentContext.submissionId, {
+        type: 'paste',
+        confidence: 0.3, // Low confidence - just flagging paste, not analyzing content
+        textSnippet: pastedText.substring(0, 100),
+        details: `Vloženo ${wordCount} slov`,
+      });
+    } catch (e) {
+      console.error('Error adding AI flag:', e);
+    }
+  }, [assignmentContext]);
+  
+  // Load student info for teacher view
+  useEffect(() => {
+    if (isTeacherView && viewingStudentId) {
+      // Load student info from localStorage (teacher context)
+      const teacherContext = localStorage.getItem('teacher_viewing_context');
+      if (teacherContext) {
+        try {
+          const context = JSON.parse(teacherContext);
+          setStudentInfo({
+            name: context.studentName || 'Student',
+            submissionId: context.submissionId || '',
+          });
+        } catch (e) {
+          console.error('Error parsing teacher context:', e);
+        }
+      }
+    }
+  }, [isTeacherView, viewingStudentId]);
+  
+  // Handle grading submission
+  const handleGrade = useCallback(async (score: number, comment: string) => {
+    if (!studentInfo?.submissionId) {
+      toast.error('Chybí informace o odevzdání');
+      return;
+    }
+    
+    setIsGrading(true);
+    try {
+      // Get teacher info from localStorage
+      const userProfile = localStorage.getItem('vivid-user-profile');
+      const teacher = userProfile ? JSON.parse(userProfile) : { id: 'unknown', name: 'Učitel' };
+      
+      // Save grading
+      await saveGrading(studentInfo.submissionId, {
+        score,
+        maxScore: 100,
+        finalComment: comment,
+        gradedAt: new Date().toISOString(),
+        gradedBy: teacher.id || 'unknown',
+        gradedByName: teacher.name || 'Učitel',
+      });
+      
+      // Update submission status
+      await updateSubmissionStatus(studentInfo.submissionId, 'graded');
+      
+      toast.success('Hodnocení odesláno!', {
+        description: `${studentInfo.name} obdrží hodnocení ${score}%`,
+      });
+      
+      setShowGradingModal(false);
+      
+      // Navigate back after short delay
+      setTimeout(() => {
+        window.history.back();
+      }, 1500);
+    } catch (error) {
+      console.error('Error grading:', error);
+      toast.error('Nepodařilo se uložit hodnocení');
+    } finally {
+      setIsGrading(false);
+    }
+  }, [studentInfo]);
+  
+  // Handle text selection for comments
+  const handleTextSelection = useCallback(() => {
+    if (!isTeacherView) return;
+    
+    const selection = window.getSelection();
+    if (selection && selection.toString().trim()) {
+      setSelectedTextForComment(selection.toString().trim());
+      // Get selection range (simplified - would need editor integration for precise position)
+      const range = selection.getRangeAt(0);
+      setSelectionRange({
+        from: range.startOffset,
+        to: range.endOffset,
+      });
+    }
+  }, [isTeacherView]);
   
   // Version history hook
   const versionHistory = useVersionHistory({
@@ -417,36 +598,153 @@ export function MyContentEditor({ theme, toggleTheme }: MyContentEditorProps) {
         <ArrowLeft className="h-5 w-5" />
       </button>
       
-      {/* Teacher viewing student work indicator */}
-      {isTeacherView && (
+      {/* Assignment Instructions Button - For Student Mode */}
+      {isStudentMode && assignmentContext && (
         <div 
-          className="fixed z-50 px-3 py-1.5 rounded-full bg-indigo-100 text-indigo-700 text-xs font-medium flex items-center gap-2"
-          style={{ left: isAIPanelOpen ? '456px' : '56px', top: '20px' }}
+          className="fixed z-50"
+          style={{ left: isAIPanelOpen ? '456px' : '56px', top: '14px' }}
         >
-          <Eye className="w-3.5 h-3.5" />
-          Prohlížíte práci studenta
+          <button
+            onClick={() => setShowAssignmentPanel(!showAssignmentPanel)}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg transition-all bg-indigo-100 hover:bg-indigo-200 text-indigo-700"
+          >
+            <FileText className="h-4 w-4" />
+            <span className="text-sm font-medium">Zadání</span>
+            {showAssignmentPanel ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+          </button>
+          
+          {/* Assignment Panel Dropdown */}
+          {showAssignmentPanel && (
+            <div 
+              className="absolute top-12 left-0 w-80 bg-white rounded-xl shadow-xl border border-slate-200 overflow-hidden"
+              style={{ zIndex: 9999 }}
+            >
+              <div className="p-4 bg-indigo-50 border-b border-indigo-100">
+                <h3 className="font-semibold text-indigo-900">{assignmentContext.title}</h3>
+                {assignmentContext.dueDate && (
+                  <div className="flex items-center gap-1 mt-1 text-sm text-indigo-700">
+                    <Calendar className="h-3.5 w-3.5" />
+                    <span>Do: {new Date(assignmentContext.dueDate).toLocaleDateString('cs-CZ')}</span>
+                  </div>
+                )}
+              </div>
+              <div className="p-4">
+                <p className="text-sm text-slate-600 whitespace-pre-wrap">{assignmentContext.description}</p>
+                
+                {/* AI Status */}
+                <div className={`flex items-center gap-2 mt-4 p-2 rounded-lg text-sm ${
+                  assignmentContext.allowAI 
+                    ? 'bg-purple-50 text-purple-700' 
+                    : 'bg-amber-50 text-amber-700'
+                }`}>
+                  {assignmentContext.allowAI ? (
+                    <>
+                      <Sparkles className="h-4 w-4" />
+                      <span>AI asistent je povolen</span>
+                    </>
+                  ) : (
+                    <>
+                      <BotOff className="h-4 w-4" />
+                      <span>AI asistent není povolen</span>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
+      
+      {/* Teacher viewing student work indicator */}
+      {isTeacherView && (
+        <>
+          <div 
+            className="fixed z-50 px-3 py-1.5 rounded-full bg-indigo-100 text-indigo-700 text-xs font-medium flex items-center gap-2"
+            style={{ left: isAIPanelOpen ? '456px' : '56px', top: '20px' }}
+          >
+            <Eye className="w-3.5 h-3.5" />
+            Prohlížíte práci: {studentInfo?.name || 'Student'}
+          </div>
+          
+          {/* Grade Button for Teacher */}
+          <button
+            onClick={() => setShowGradingModal(true)}
+            className="fixed z-50 flex items-center gap-2 px-5 py-2.5 rounded-lg transition-all text-white font-medium"
+            style={{ 
+              right: '24px', 
+              top: '14px',
+              background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.background = 'linear-gradient(135deg, #4f46e5, #7c3aed)'}
+            onMouseLeave={(e) => e.currentTarget.style.background = 'linear-gradient(135deg, #6366f1, #8b5cf6)'}
+          >
+            <Star className="w-4 h-4" />
+            Oznámkovat
+          </button>
+          
+          {/* Comments Toggle Button */}
+          <button
+            onClick={() => setShowCommentsPanel(!showCommentsPanel)}
+            className={`fixed z-50 flex items-center gap-2 px-4 py-2 rounded-lg transition-all font-medium ${
+              showCommentsPanel 
+                ? 'bg-indigo-600 text-white' 
+                : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-50'
+            }`}
+            style={{ right: '160px', top: '14px' }}
+          >
+            <MessageSquare className="w-4 h-4" />
+            Komentáře
+          </button>
+        </>
+      )}
 
-      {/* Fixed AI Button - next to back button */}
-      <button
-        onClick={() => {
-          setIsAIPanelOpen(true);
-          setIsRightSidebarOpen(false);
-        }}
-        className="fixed z-50 flex items-center gap-2 px-4 py-2 rounded-lg transition-all text-white"
-        style={{ 
-          left: isAIPanelOpen ? '456px' : '56px', 
-          top: '14px',
-          backgroundColor: '#4E5871' 
-        }}
-        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#3d4659'}
-        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#4E5871'}
-        title="AI Asistent"
-      >
-        <Sparkles className="h-4 w-4" />
-        <span className="text-sm font-medium">AI asistent</span>
-      </button>
+      {/* Fixed AI Button - next to back button (hidden if AI not allowed for student) */}
+      {(!isStudentMode || !assignmentContext || assignmentContext.allowAI) && !isReadOnly && (
+        <button
+          onClick={() => {
+            setIsAIPanelOpen(true);
+            setIsRightSidebarOpen(false);
+          }}
+          className="fixed z-50 flex items-center gap-2 px-4 py-2 rounded-lg transition-all text-white"
+          style={{ 
+            left: isStudentMode && assignmentContext 
+              ? (isAIPanelOpen ? '600px' : '200px') 
+              : (isAIPanelOpen ? '456px' : '56px'), 
+            top: '14px',
+            backgroundColor: '#4E5871' 
+          }}
+          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#3d4659'}
+          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#4E5871'}
+          title="AI Asistent"
+        >
+          <Sparkles className="h-4 w-4" />
+          <span className="text-sm font-medium">AI asistent</span>
+        </button>
+      )}
+      
+      {/* Submit Assignment Button - For Student Mode */}
+      {isStudentMode && assignmentContext && !isReadOnly && (
+        <button
+          onClick={handleSubmitAssignment}
+          disabled={isSubmitting || !content.trim()}
+          className="fixed z-50 flex items-center gap-2 px-5 py-2.5 rounded-lg transition-all text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+          style={{ 
+            right: '24px', 
+            top: '14px',
+            backgroundColor: isSubmitting ? '#9ca3af' : '#16a34a',
+          }}
+          onMouseEnter={(e) => !isSubmitting && (e.currentTarget.style.backgroundColor = '#15803d')}
+          onMouseLeave={(e) => !isSubmitting && (e.currentTarget.style.backgroundColor = '#16a34a')}
+          title="Odevzdat úkol"
+        >
+          {isSubmitting ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Send className="h-4 w-4" />
+          )}
+          <span>{isSubmitting ? 'Odevzdávám...' : 'Odevzdat úkol'}</span>
+        </button>
+      )}
 
       {/* Main Content Area - shifts right when AI panel is open */}
       <div 
@@ -477,44 +775,46 @@ export function MyContentEditor({ theme, toggleTheme }: MyContentEditorProps) {
             <div className="flex items-center gap-3" style={{ paddingLeft: '180px' }}>
             </div>
 
-            {/* Center: Document Type Badge with border on hover */}
-            <div className="absolute left-1/2 transform -translate-x-1/2">
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <button 
-                    className="group px-5 py-2.5 rounded-xl text-[#4E5871] font-medium text-sm transition-all flex items-center gap-2"
-                    style={{ border: '1px solid transparent' }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.border = '1px solid #a0b0c8';
-                      e.currentTarget.style.backgroundColor = 'rgba(239, 241, 248, 0.6)';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.border = '1px solid transparent';
-                      e.currentTarget.style.backgroundColor = 'transparent';
-                    }}
-                  >
-                    <DocIcon className="h-4 w-4" />
-                    <span>{currentDocType.label}</span>
-                    <ChevronDown className="h-3.5 w-3.5 opacity-60" />
-                  </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="center" className="w-48">
-                  {DOCUMENT_TYPES.filter(t => !['worksheet', 'workbook'].includes(t.id)).slice(0, 6).map((type) => {
-                    const TypeIcon = type.icon;
-                    return (
-                      <DropdownMenuItem 
-                        key={type.id}
-                        onClick={() => setDocumentType(type.id)}
-                        className={documentType === type.id ? 'bg-accent' : ''}
-                      >
-                        <TypeIcon className="h-4 w-4 mr-2" />
-                        {type.label}
-                      </DropdownMenuItem>
-                    );
-                  })}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
+            {/* Center: Document Type Badge with border on hover (hidden for students) */}
+            {!isStudentMode && (
+              <div className="absolute left-1/2 transform -translate-x-1/2">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button 
+                      className="group px-5 py-2.5 rounded-xl text-[#4E5871] font-medium text-sm transition-all flex items-center gap-2"
+                      style={{ border: '1px solid transparent' }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.border = '1px solid #a0b0c8';
+                        e.currentTarget.style.backgroundColor = 'rgba(239, 241, 248, 0.6)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.border = '1px solid transparent';
+                        e.currentTarget.style.backgroundColor = 'transparent';
+                      }}
+                    >
+                      <DocIcon className="h-4 w-4" />
+                      <span>{currentDocType.label}</span>
+                      <ChevronDown className="h-3.5 w-3.5 opacity-60" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="center" className="w-48">
+                    {DOCUMENT_TYPES.filter(t => !['worksheet', 'workbook'].includes(t.id)).slice(0, 6).map((type) => {
+                      const TypeIcon = type.icon;
+                      return (
+                        <DropdownMenuItem 
+                          key={type.id}
+                          onClick={() => setDocumentType(type.id)}
+                          className={documentType === type.id ? 'bg-accent' : ''}
+                        >
+                          <TypeIcon className="h-4 w-4 mr-2" />
+                          {type.label}
+                        </DropdownMenuItem>
+                      );
+                    })}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            )}
 
             {/* Right Side - Undo/Redo */}
             <div className="flex items-center gap-2">
@@ -524,22 +824,20 @@ export function MyContentEditor({ theme, toggleTheme }: MyContentEditorProps) {
               </div>
 
               {/* Version History Button */}
-              {!isReadOnly && (
-                <button
-                  onClick={() => setVersionHistoryOpen(true)}
-                  className={`relative p-2.5 rounded-[6px] transition-all ${
-                    versionHistory.hasUnsavedChanges 
-                      ? 'bg-amber-100 hover:bg-amber-200 text-amber-700' 
-                      : 'bg-[#D1D9E6] hover:bg-[#c0cce6] text-[#4E5871]'
-                  }`}
-                  title={`Historie verzí${versionHistory.totalVersions > 0 ? ` (${versionHistory.totalVersions})` : ''}`}
-                >
-                  <History className="h-4 w-4" />
-                  {versionHistory.autoSavePending && (
-                    <span className="absolute -top-1 -right-1 w-2 h-2 bg-amber-500 rounded-full animate-pulse" />
-                  )}
-                </button>
-              )}
+              <button
+                onClick={() => setVersionHistoryOpen(true)}
+                className={`relative p-2.5 rounded-[6px] transition-all ${
+                  versionHistory.hasUnsavedChanges 
+                    ? 'bg-amber-100 hover:bg-amber-200 text-amber-700' 
+                    : 'bg-[#D1D9E6] hover:bg-[#c0cce6] text-[#4E5871]'
+                }`}
+                title={`Historie verzí${versionHistory.totalVersions > 0 ? ` (${versionHistory.totalVersions})` : ''}`}
+              >
+                <History className="h-4 w-4" />
+                {versionHistory.autoSavePending && (
+                  <span className="absolute -top-1 -right-1 w-2 h-2 bg-amber-500 rounded-full animate-pulse" />
+                )}
+              </button>
 
               {/* Undo/Redo */}
               <div className="flex items-center gap-1">
@@ -563,21 +861,23 @@ export function MyContentEditor({ theme, toggleTheme }: MyContentEditorProps) {
                 </button>
               </div>
 
-              {/* Right Sidebar Toggle */}
-              <button
-                onClick={() => {
-                  const newState = !isRightSidebarOpen;
-                  setIsRightSidebarOpen(newState);
-                  if (newState) {
-                    setIsAIPanelOpen(false); // Close AI panel when opening right sidebar
-                  }
-                }}
-                className={`flex items-center gap-2 px-3 py-2.5 rounded-[6px] transition-all text-[#4E5871] ml-2 ${isRightSidebarOpen ? 'bg-[#D1D9E6] hover:bg-[#c0cce6]' : 'bg-transparent hover:bg-black/5'}`}
-                title={isRightSidebarOpen ? "Skrýt pravý sloupec" : "Zobrazit pravý sloupec"}
-              >
-                <Settings className="h-4 w-4" />
-                <span className="text-sm font-medium">Pravý sloupec</span>
-              </button>
+              {/* Right Sidebar Toggle (hidden for students) */}
+              {!isStudentMode && (
+                <button
+                  onClick={() => {
+                    const newState = !isRightSidebarOpen;
+                    setIsRightSidebarOpen(newState);
+                    if (newState) {
+                      setIsAIPanelOpen(false); // Close AI panel when opening right sidebar
+                    }
+                  }}
+                  className={`flex items-center gap-2 px-3 py-2.5 rounded-[6px] transition-all text-[#4E5871] ml-2 ${isRightSidebarOpen ? 'bg-[#D1D9E6] hover:bg-[#c0cce6]' : 'bg-transparent hover:bg-black/5'}`}
+                  title={isRightSidebarOpen ? "Skrýt pravý sloupec" : "Zobrazit pravý sloupec"}
+                >
+                  <Settings className="h-4 w-4" />
+                  <span className="text-sm font-medium">Pravý sloupec</span>
+                </button>
+              )}
             </div>
           </div>
                          </div>
@@ -637,6 +937,8 @@ export function MyContentEditor({ theme, toggleTheme }: MyContentEditorProps) {
               content={content} 
               onChange={isReadOnly ? () => {} : setContent}
               readOnly={isReadOnly}
+              enablePasteDetection={isStudentMode && assignmentContext && !assignmentContext.allowAI}
+              onPasteDetected={handlePasteDetected}
             />
           </div>
 
@@ -955,7 +1257,7 @@ export function MyContentEditor({ theme, toggleTheme }: MyContentEditorProps) {
 
       {/* Version History Modal */}
       {versionHistoryOpen && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-black/50 z-[9999] flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[80vh] overflow-hidden">
             <VersionHistoryPanel
               versions={versionHistory.versions}
@@ -974,6 +1276,39 @@ export function MyContentEditor({ theme, toggleTheme }: MyContentEditorProps) {
           </div>
         </div>
       )}
+
+      {/* Comments Panel - Right Side for Teacher */}
+      {isTeacherView && showCommentsPanel && (
+        <div 
+          className="fixed right-0 top-14 bottom-0 w-80 bg-white border-l border-slate-200 shadow-lg z-40"
+          onMouseUp={handleTextSelection}
+        >
+          <CommentsPanel
+            documentId={id || ''}
+            isTeacher={true}
+            teacherId={JSON.parse(localStorage.getItem('vivid-user-profile') || '{}').id}
+            teacherName={JSON.parse(localStorage.getItem('vivid-user-profile') || '{}').name}
+            selectedText={selectedTextForComment}
+            selectionRange={selectionRange || undefined}
+            onAddComment={(comment) => {
+              toast.success('Komentář přidán');
+              setSelectedTextForComment('');
+              setSelectionRange(null);
+            }}
+            onClose={() => setShowCommentsPanel(false)}
+          />
+        </div>
+      )}
+
+      {/* Grading Modal */}
+      <GradingModal
+        isOpen={showGradingModal}
+        onClose={() => setShowGradingModal(false)}
+        onSubmit={handleGrade}
+        studentName={studentInfo?.name || 'Student'}
+        assignmentTitle={title}
+        isSubmitting={isGrading}
+      />
 
       </div>
     </div>

@@ -116,15 +116,19 @@ export function LicenseAdminPage() {
 
     setSaving(true);
     try {
+      const schoolId = `school-${Date.now()}`;
+      const licenseId = `license-${Date.now()}`;
+      
       if (!usingLocalStorage) {
-        // Save to Supabase - let Supabase auto-generate the UUID
+        // Save to Supabase
         const { data: createdSchool, error: schoolError } = await supabase
           .from('schools')
           .insert({
+            id: schoolId,
             code: newSchool.code.toUpperCase(),
             name: newSchool.name,
-            city: newSchool.city || null,
-            address: newSchool.address || null,
+            city: newSchool.city,
+            address: newSchool.address,
           })
           .select()
           .single();
@@ -134,11 +138,12 @@ export function LicenseAdminPage() {
           throw new Error(schoolError.message);
         }
         
-        // Create default license in Supabase using the auto-generated school ID
+        // Create default license in Supabase
         const { error: licenseError } = await supabase
           .from('school_licenses')
           .insert({
-            school_id: createdSchool.id,
+            id: licenseId,
+            school_id: schoolId,
             subjects: [],
             features: { 
               vividboardWall: true,
@@ -162,10 +167,9 @@ export function LicenseAdminPage() {
         
         setSchools([...schools, transformedSchool]);
         
-        // Note: License is already created in Supabase above, just update local state
         const defaultLicense: SchoolLicense = {
-          id: `license-${Date.now()}`,
-          schoolId: createdSchool.id,
+          id: licenseId,
+          schoolId: schoolId,
           subjects: [],
           features: { vividboardWall: true, ecosystemVividbooks: false, vividboard: false },
           updatedAt: new Date().toISOString()
@@ -178,7 +182,7 @@ export function LicenseAdminPage() {
         setSchools([...schools, created]);
         
         const defaultLicense: SchoolLicense = {
-          id: `license-${Date.now()}`,
+          id: licenseId,
           schoolId: created.id,
           subjects: [],
           features: { vividboardWall: true, ecosystemVividbooks: false, vividboard: false },

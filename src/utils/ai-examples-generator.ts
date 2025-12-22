@@ -80,7 +80,7 @@ export async function generateExamplesFromSample(
   const { count = 15, difficultyProgression = true } = options;
   
   // Gemini API klíč
-  const apiKey = (typeof window !== 'undefined' ? localStorage.getItem('gemini_api_key') : null) || import.meta.env.VITE_GEMINI_API_KEY || '';
+  const apiKey = import.meta.env.VITE_GEMINI_API_KEY || 'AIzaSyDcPJrEcxThsVskj2LvYf6VB3mGTM45Ih0';
 
   const easyCount = Math.floor(count / 3);
   const mediumCount = Math.floor(count / 3);

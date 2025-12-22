@@ -1,7 +1,7 @@
 /**
  * AI Worksheet Generator
  * 
- * Utility pro generování pracovních listů pomocí AI (Gemini)
+ * Utility pro generování pracovních listů pomocí AI (Anthropic Claude)
  */
 
 import {
@@ -20,7 +20,6 @@ import {
   generateBlockId,
 } from '../types/worksheet';
 import { AIAction, AIMessage, createAIMessage } from '../types/worksheet-editor';
-import { chatWithAIProxy, shouldUseProxy } from './ai-chat-proxy';
 
 // ============================================
 // TYPES
@@ -282,63 +281,27 @@ export async function generateWorksheetContent(
     }
 
     return parsed;
-  } catch (error: any) {
+  } catch (error) {
     console.error('AI generation error:', error);
-    
-    // Parse specific error types
-    let userMessage = 'Omlouvám se, při generování došlo k chybě. Zkuste to prosím znovu.';
-    
-    if (error?.message?.includes('429') || error?.message?.includes('RATE_LIMIT')) {
-      userMessage = '❌ Překročen limit Gemini API. Počkej chvíli a zkus to znovu.';
-    } else if (error?.message?.includes('403') || error?.message?.includes('PERMISSION_DENIED')) {
-      userMessage = '❌ Gemini API klíč nemá oprávnění. Zkontroluj konfiguraci.';
-    } else if (error?.message?.includes('400')) {
-      userMessage = '❌ Neplatný požadavek na Gemini API. Zkus jiný prompt.';
-    } else if (error?.message?.includes('quota') || error?.message?.includes('QUOTA')) {
-      userMessage = '❌ Vyčerpána kvóta Gemini API. Zkontroluj svůj Google Cloud účet.';
-    }
-    
     return {
-      message: userMessage,
+      message: 'Omlouvám se, při generování došlo k chybě. Zkuste to prosím znovu.',
       error: error instanceof Error ? error.message : 'Unknown error',
     };
   }
 }
 
 /**
- * Gemini API klíč - preferuje localStorage, pak env variable, pak fallback
+ * Gemini API klíč
  */
-function getGeminiApiKey(): string {
-  if (typeof window !== 'undefined') {
-    const storedKey = localStorage.getItem('gemini_api_key');
-    if (storedKey) return storedKey;
-  }
-  // No fallback - must use proxy or set key in localStorage/env
-  return import.meta.env.VITE_GEMINI_API_KEY || '';
-}
-
+const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || 'AIzaSyDcPJrEcxThsVskj2LvYf6VB3mGTM45Ih0';
 
 /**
- * Volá Gemini API (přes Supabase proxy v produkci)
+ * Volá Gemini API
  */
 async function callGeminiAPI(userMessage: string): Promise<string> {
   console.log('Calling Gemini API with gemini-2.5-flash...');
   
-  // Use Supabase Edge Function proxy in production
-  if (shouldUseProxy()) {
-    console.log('Using Supabase proxy for Gemini API');
-    return await chatWithAIProxy(
-      [
-        { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user', content: userMessage }
-      ],
-      'gemini-2.5-flash',
-      { temperature: 0.7, max_tokens: 8192 }
-    );
-  }
-
-  // Direct API call for development
-  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${getGeminiApiKey()}`, {
+  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -362,9 +325,8 @@ async function callGeminiAPI(userMessage: string): Promise<string> {
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    const errorMessage = errorData.error?.message || errorData.error?.status || 'Unknown error';
-    console.error('Gemini API error:', response.status, errorMessage, errorData);
-    throw new Error(`Gemini API error: ${response.status} - ${errorMessage}`);
+    console.error('Gemini API error:', errorData);
+    throw new Error(`Gemini API error: ${response.status} - ${errorData.error?.message || 'Unknown error'}`);
   }
 
   const data = await response.json();

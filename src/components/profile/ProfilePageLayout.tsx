@@ -186,26 +186,6 @@ export function ProfilePageLayout({ theme, toggleTheme }: ProfilePageLayoutProps
     if (localLicense) setLicense(localLicense);
   };
 
-  const handleLogout = async () => {
-    try {
-      // Sign out from Supabase
-      await supabase.auth.signOut();
-      
-      // Clear localStorage
-      localStorage.removeItem('vivid-teacher-school');
-      localStorage.removeItem('vivid-teacher-school-teachers');
-      localStorage.removeItem('viewMode');
-      localStorage.removeItem('vividbooks_current_user_profile');
-      
-      // Redirect to login page
-      navigate('/');
-    } catch (error) {
-      console.error('Logout error:', error);
-      // Still redirect even if error
-      navigate('/');
-    }
-  };
-
   const handleSchoolPaired = async (pairedSchool: School) => {
     const { data: { user } } = await supabase.auth.getUser();
     
@@ -476,17 +456,6 @@ export function ProfilePageLayout({ theme, toggleTheme }: ProfilePageLayoutProps
                       </button>
                     </div>
                   )}
-
-                  {/* Logout button */}
-                  <div className="mt-6 pt-4 border-t border-slate-200">
-                    <button
-                      onClick={handleLogout}
-                      className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left transition-all text-red-600 hover:bg-red-50"
-                    >
-                      <LogOut className="w-5 h-5" />
-                      <span>Odhlásit se</span>
-                    </button>
-                  </div>
                 </div>
               )}
             </div>

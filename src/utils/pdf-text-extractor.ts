@@ -3,7 +3,7 @@
  * Spouští se na pozadí po uploadu souboru
  */
 
-const GEMINI_API_KEY = (typeof window !== 'undefined' ? localStorage.getItem('gemini_api_key') : null) || import.meta.env.VITE_GEMINI_API_KEY || '';
+const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || 'AIzaSyDcPJrEcxThsVskj2LvYf6VB3mGTM45Ih0';
 
 /**
  * Nahraje soubor do Gemini Files API a vrátí file URI

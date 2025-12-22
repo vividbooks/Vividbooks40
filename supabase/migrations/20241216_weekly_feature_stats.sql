@@ -121,5 +121,3 @@ ORDER BY week_start ASC;
 
 
 
-
-

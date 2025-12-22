@@ -950,7 +950,7 @@ export default function ClassChatLayout() {
                 {toolsOpen ? (
                   <div className="h-full" style={{ backgroundColor: '#4E5871' }}>
                     <ToolsMenu 
-                      activeItem="library"
+                      activeItem="messages"
                       onItemClick={() => {
                         setToolsOpen(false);
                         setSidebarOpen(false);
@@ -1104,7 +1104,7 @@ export default function ClassChatLayout() {
               {toolsOpen ? (
                 <div className="h-full" style={{ backgroundColor: '#4E5871' }}>
                   <ToolsMenu 
-                    activeItem="library"
+                    activeItem="messages"
                     onItemClick={() => {
                       setToolsOpen(false);
                       setSidebarOpen(false);
@@ -1402,16 +1402,22 @@ export default function ClassChatLayout() {
                               } ${isOnline ? 'text-white/90' : 'text-white/50'}`}
                             >
                               <div className="relative">
-                                <div 
-                                  className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium"
-                                  style={{ 
-                                    backgroundColor: member.type === 'teacher' ? '#d97706' : '#4f46e5',
-                                    color: 'white',
-                                    opacity: isOnline ? 1 : 0.6
-                                  }}
-                                >
-                                  {member.name.charAt(0).toUpperCase()}
-                                </div>
+                                {member.avatar && member.type === 'student' ? (
+                                  <div style={{ opacity: isOnline ? 1 : 0.6 }}>
+                                    <AvatarDisplay avatar={member.avatar} size={32} />
+                                  </div>
+                                ) : (
+                                  <div 
+                                    className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium"
+                                    style={{ 
+                                      backgroundColor: member.type === 'teacher' ? '#d97706' : (member.color || '#4f46e5'),
+                                      color: 'white',
+                                      opacity: isOnline ? 1 : 0.6
+                                    }}
+                                  >
+                                    {member.initials || member.name.charAt(0).toUpperCase()}
+                                  </div>
+                                )}
                                 <div 
                                   className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-[#2D3546]"
                                   style={{ 
@@ -1569,19 +1575,28 @@ export default function ClassChatLayout() {
                     >
                       <div className="flex items-start gap-3">
                         {showAuthor ? (
-                          <div 
-                            className="shrink-0 rounded-full flex items-center justify-center text-sm font-semibold"
-                            style={{ 
-                              width: '36px',
-                              height: '36px',
-                              minWidth: '36px',
-                              minHeight: '36px',
-                              backgroundColor: msg.senderType === 'teacher' ? '#d97706' : '#4f46e5',
-                              color: 'white'
-                            }}
-                          >
-                            {msg.senderName?.charAt(0)?.toUpperCase() || '?'}
-                          </div>
+                          (() => {
+                            // Find member to get their avatar
+                            const member = classMembers.find(m => m.id === msg.senderId);
+                            if (member?.avatar && msg.senderType === 'student') {
+                              return <AvatarDisplay avatar={member.avatar} size={36} />;
+                            }
+                            return (
+                              <div 
+                                className="shrink-0 rounded-full flex items-center justify-center text-sm font-semibold"
+                                style={{ 
+                                  width: '36px',
+                                  height: '36px',
+                                  minWidth: '36px',
+                                  minHeight: '36px',
+                                  backgroundColor: msg.senderType === 'teacher' ? '#d97706' : (member?.color || '#4f46e5'),
+                                  color: 'white'
+                                }}
+                              >
+                                {member?.initials || msg.senderName?.charAt(0)?.toUpperCase() || '?'}
+                              </div>
+                            );
+                          })()
                         ) : (
                           <div style={{ width: '36px', minWidth: '36px' }} />
                         )}

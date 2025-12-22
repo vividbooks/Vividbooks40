@@ -266,11 +266,3 @@ export function createEmptySubmission(
   };
 }
 
-
-
-
-
-
-
-
-

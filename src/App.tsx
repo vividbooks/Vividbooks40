@@ -26,7 +26,11 @@ import { FirebaseStudentView } from './components/classroom';
 import { JoinSession } from './components/classroom/JoinSession';
 import { CustomerSuccess } from './components/admin/CustomerSuccess';
 import { StudentProfilePage } from './components/classroom/StudentProfilePage';
+import ClassChatLayout from './components/classroom/ClassChatLayout';
 import { StudentLoginPage, StudentSetupPassword, StudentDashboard, LiveSessionNotification } from './components/student';
+import { StudentWorkspace } from './components/student/StudentWorkspace';
+import { StudentContentLayout } from './components/student/StudentContentLayout';
+import { StudentAssignmentEditor } from './components/student/StudentAssignmentEditor';
 import { TeacherLoginPage } from './components/teacher/TeacherLoginPage';
 import { supabase } from './utils/supabase/client';
 import { projectId, publicAnonKey } from './utils/supabase/info.tsx';
@@ -101,6 +105,9 @@ export default function App() {
         <Route path="/student/login" element={<StudentLoginPage />} />
         <Route path="/student/setup/:token" element={<StudentSetupPassword />} />
         <Route path="/student/dashboard" element={<StudentDashboard />} />
+        <Route path="/student/workspace" element={<StudentContentLayout theme={theme} toggleTheme={toggleTheme} />} />
+        <Route path="/student/my-content" element={<StudentContentLayout theme={theme} toggleTheme={toggleTheme} />} />
+        <Route path="/student/assignment/:assignmentId" element={<StudentAssignmentEditor theme={theme} toggleTheme={toggleTheme} />} />
         
         {/* Teacher routes */}
         <Route path="/teacher/login" element={<TeacherLoginPage />} />
@@ -162,6 +169,9 @@ export default function App() {
           path="/library/student-wall" 
           element={<StudentWallLayout theme={theme} toggleTheme={toggleTheme} />} 
         />
+        
+        <Route path="/class-chat" element={<ClassChatLayout />} />
+        <Route path="/class-chat/:classId" element={<ClassChatLayout />} />
         
         <Route 
           path="/library/student-wall/folder/:folderId" 

@@ -193,5 +193,3 @@ CREATE TRIGGER teachers_updated_at
 
 
 
-
-

@@ -210,11 +210,3 @@ export function GradedWorkCard({ submission, onViewDocument }: GradedWorkCardPro
 
 export default GradedWorkCard;
 
-
-
-
-
-
-
-
-

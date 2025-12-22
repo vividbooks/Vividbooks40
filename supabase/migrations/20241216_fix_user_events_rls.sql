@@ -46,5 +46,3 @@ CREATE POLICY "Service role has full access" ON user_events
 
 
 
-
-

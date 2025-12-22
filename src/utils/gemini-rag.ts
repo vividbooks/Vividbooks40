@@ -7,48 +7,22 @@
  */
 
 import { GoogleGenAI } from '@google/genai';
-import { chatWithAIProxy, shouldUseProxy } from './ai-chat-proxy';
 
-// API klíč - preferuje localStorage, pak env variable, pak fallback
+// API klíč - preferuje environment variable, fallback na hardcoded
 // V produkci přesuňte do .env souboru jako VITE_GEMINI_API_KEY
-function getGeminiApiKey(): string {
-  // First check localStorage
-  if (typeof window !== 'undefined') {
-    const storedKey = localStorage.getItem('gemini_api_key');
-    if (storedKey) return storedKey;
-  }
-  // Then check env variable - no fallback (use proxy instead)
-  return import.meta.env.VITE_GEMINI_API_KEY || '';
-}
+const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || 'AIzaSyDcPJrEcxThsVskj2LvYf6VB3mGTM45Ih0';
 
-// Export setter for runtime configuration
-export function setGeminiApiKey(key: string): void {
-  if (typeof window !== 'undefined') {
-    localStorage.setItem('gemini_api_key', key);
-  }
-}
-
-// Export getter for checking current key
-export function getGeminiKey(): string {
-  return getGeminiApiKey();
-}
-
-// Inicializace Gemini AI - lazy initialization to use current key
-function createGeminiAI() {
-  return new GoogleGenAI({ apiKey: getGeminiApiKey() });
-}
-const ai = createGeminiAI();
+// Inicializace Gemini AI
+const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
 
 const STORE_NAME = 'vividbooks-content';
 let storeId: string | null = null;
 
 /**
  * Kontrola, zda je Gemini API nakonfigurováno
- * Vrací true pokud je k dispozici lokální klíč NEBO proxy
  */
 export function isGeminiConfigured(): boolean {
-  // Either local key or proxy (which uses Supabase secrets)
-  return !!getGeminiApiKey() || shouldUseProxy();
+  return !!GEMINI_API_KEY;
 }
 
 /**
@@ -135,7 +109,7 @@ ${params.content}
 `.trim();
 
     // 2. Initial Resumable Upload Request
-    const uploadUrlResponse = await fetch(`https://generativelanguage.googleapis.com/upload/v1beta/files?key=${getGeminiApiKey()}`, {
+    const uploadUrlResponse = await fetch(`https://generativelanguage.googleapis.com/upload/v1beta/files?key=${GEMINI_API_KEY}`, {
       method: 'POST',
       headers: {
         'X-Goog-Upload-Protocol': 'resumable',
@@ -194,7 +168,7 @@ ${params.content}
       await new Promise(resolve => setTimeout(resolve, 1000));
       attempts++;
       
-      const checkResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/${fileName}?key=${getGeminiApiKey()}`);
+      const checkResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/${fileName}?key=${GEMINI_API_KEY}`);
       const checkData = await checkResponse.json();
       state = checkData.state;
       
@@ -232,7 +206,7 @@ export async function deleteDocumentFromRAG(ragDocumentId: string): Promise<bool
   }
 
   try {
-    await fetch(`https://generativelanguage.googleapis.com/v1beta/${ragDocumentId}?key=${getGeminiApiKey()}`, {
+    await fetch(`https://generativelanguage.googleapis.com/v1beta/${ragDocumentId}?key=${GEMINI_API_KEY}`, {
       method: 'DELETE'
     });
     return true;
@@ -290,13 +264,11 @@ export async function chatWithRAG(params: ChatWithRAGParams): Promise<ChatResult
 
   try {
     let fileUri: string | undefined;
-    const hasLocalKey = !!getGeminiApiKey();
 
-    // Pokud máme ID souboru A lokální klíč, získáme jeho URI pro kontext
-    // (Proxy nepodporuje file_uri - potřebujeme lokální klíč pro RAG)
-    if (params.ragDocumentId && hasLocalKey) {
+    // Pokud máme ID souboru, získáme jeho URI pro kontext
+    if (params.ragDocumentId) {
       try {
-        const fileResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/${params.ragDocumentId}?key=${getGeminiApiKey()}`);
+        const fileResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/${params.ragDocumentId}?key=${GEMINI_API_KEY}`);
         if (fileResponse.ok) {
           const fileData = await fileResponse.json();
           fileUri = fileData.uri;
@@ -307,18 +279,6 @@ export async function chatWithRAG(params: ChatWithRAGParams): Promise<ChatResult
       } catch (e) {
         console.warn('Error fetching file metadata:', e);
       }
-    }
-    
-    // Pokud nemáme file context a můžeme použít proxy, použijeme simpleChatWithAI
-    if (!fileUri && shouldUseProxy()) {
-      console.log('No file context, using proxy via simpleChatWithAI...');
-      const response = await simpleChatWithAI({
-        message: params.message,
-        topic: params.topic,
-        grade: params.grade,
-        conversationHistory: params.conversationHistory
-      });
-      return { response, citations: [] };
     }
 
     const systemPrompt = `Jsi přátelský učitel. Piš VELMI KRÁTCE - max 2 věty!
@@ -421,7 +381,7 @@ STYL:
 
     console.log('Calling Gemini API with file context...');
 
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${getGeminiApiKey()}`, {
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -437,13 +397,8 @@ STYL:
 
     if (!response.ok) {
       const errorText = await response.text();
-      let errorMessage = '';
-      try {
-        const errorData = JSON.parse(errorText);
-        errorMessage = errorData.error?.message || errorData.error?.status || '';
-      } catch { errorMessage = errorText.substring(0, 200); }
-      console.error('Gemini API error:', response.status, errorMessage);
-      throw new Error(`Gemini API error: ${response.status} - ${errorMessage}`);
+      console.error('Gemini API error:', errorText);
+      throw new Error(`Gemini API error: ${response.status}`);
     }
 
     const data = await response.json();
@@ -478,7 +433,6 @@ export async function simpleChatWithAI(params: {
   grade?: string;
   topic?: string;
   conversationHistory?: Array<{ role: 'user' | 'assistant'; content: string }>;
-  history?: Array<{ role: 'user' | 'assistant'; content: string }>;
 }): Promise<string> {
 
   try {
@@ -486,21 +440,6 @@ export async function simpleChatWithAI(params: {
 
 ${params.topic ? `Aktuální téma: ${params.topic}` : ''}
 ${params.subject ? `Předmět: ${params.subject}` : ''}`;
-
-    // Use Supabase Edge Function proxy in production
-    if (shouldUseProxy()) {
-      const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
-        { role: 'system', content: systemPrompt }
-      ];
-      
-      const history = params.conversationHistory || params.history || [];
-      for (const msg of history) {
-        messages.push({ role: msg.role, content: msg.content });
-      }
-      messages.push({ role: 'user', content: params.message });
-      
-      return await chatWithAIProxy(messages, 'gemini-2.5-flash', { temperature: 0.8, max_tokens: 2048 });
-    }
 
     // Sestavit messages pro Gemini API
     const contents = [];
@@ -547,7 +486,7 @@ ${params.subject ? `Předmět: ${params.subject}` : ''}`;
     console.log('Gemini API request being sent...');
     
     // Používáme gemini-2.0-flash-exp - velmi chytrý a rychlý model
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${getGeminiApiKey()}`, {
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -559,13 +498,8 @@ ${params.subject ? `Předmět: ${params.subject}` : ''}`;
     console.log('Gemini Response status:', response.status);
 
     if (!response.ok) {
-      let errorMessage = '';
-      try {
-        const errorData = JSON.parse(responseText);
-        errorMessage = errorData.error?.message || errorData.error?.status || '';
-      } catch { errorMessage = responseText.substring(0, 200); }
-      console.error('Gemini API error:', response.status, errorMessage);
-      throw new Error(`Gemini API error: ${response.status} - ${errorMessage}`);
+      console.error('Gemini API error:', responseText);
+      throw new Error(`Gemini API error: ${response.status}`);
     }
 
     const data = JSON.parse(responseText);
@@ -578,18 +512,8 @@ ${params.subject ? `Předmět: ${params.subject}` : ''}`;
     
     console.log('Gemini chat response received successfully');
     return text;
-  } catch (error: any) {
+  } catch (error) {
     console.error('Simple chat error:', error);
-    
-    // Parse specific error types for better feedback
-    if (error?.message?.includes('429') || error?.message?.includes('RATE_LIMIT')) {
-      return '❌ Překročen limit Gemini API. Počkej chvíli a zkus to znovu.';
-    } else if (error?.message?.includes('403') || error?.message?.includes('PERMISSION_DENIED')) {
-      return '❌ Gemini API klíč nemá oprávnění.';
-    } else if (error?.message?.includes('quota') || error?.message?.includes('QUOTA')) {
-      return '❌ Vyčerpána kvóta Gemini API.';
-    }
-    
     return 'Omlouvám se, něco se pokazilo. Zkus to prosím znovu. 🙏';
   }
 }

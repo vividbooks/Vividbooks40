@@ -38,9 +38,7 @@ import { DOCUMENT_TYPES } from '../types/document-types';
 import { StoredFile, StoredLink } from '../types/file-storage';
 import { getWorksheetList, getWorksheet, getWorksheetsInFolder, WorksheetListItem } from '../utils/worksheet-storage';
 
-function getGeminiApiKey(): string {
-  return (typeof window !== 'undefined' ? localStorage.getItem('gemini_api_key') : null) || import.meta.env.VITE_GEMINI_API_KEY || '';
-}
+const GEMINI_API_KEY = 'AIzaSyDcPJrEcxThsVskj2LvYf6VB3mGTM45Ih0';
 
 // MenuItem structure from Vividbooks library
 interface MenuItem {
@@ -440,7 +438,7 @@ export function DocumentAIPanel({
       if (combinedContent && onApplyContent) {
         // Generate HTML from the content
         const response = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${getGeminiApiKey()}`,
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -761,7 +759,7 @@ DŮLEŽITÉ PRAVIDLA:
 7. Text musí být v normálním fontu, ne v code/monospace`;
 
       const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${getGeminiApiKey()}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },

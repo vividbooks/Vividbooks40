@@ -4593,7 +4593,7 @@ const NPSManualInput: React.FC<{ onSubmit: (score: number, feedback: string) => 
 // ============================================
 
 // Gemini API klíč
-const GEMINI_API_KEY = (typeof window !== 'undefined' ? localStorage.getItem('gemini_api_key') : null) || import.meta.env.VITE_GEMINI_API_KEY || '';
+const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || 'AIzaSyDcPJrEcxThsVskj2LvYf6VB3mGTM45Ih0';
 
 interface AlertsViewProps {
   alerts: typeof DEMO_ALERTS;

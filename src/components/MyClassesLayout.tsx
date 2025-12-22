@@ -15,10 +15,6 @@ import {
   Play,
   FileText,
   RefreshCw,
-  Database,
-  HardDrive,
-  Mail,
-  UserPlus,
 } from 'lucide-react';
 import VividLogo from '../imports/Group70';
 import { ToolsDropdown } from './ToolsDropdown';
@@ -26,8 +22,6 @@ import { ToolsMenu } from './ToolsMenu';
 import { StudentIndividualWork, ClassResultsGrid } from './classroom';
 import { 
   getClasses as getSupabaseClasses,
-  createClass as createSupabaseClass,
-  addStudent as addSupabaseStudent,
   ClassGroup as SupabaseClassGroup,
   setDataSource,
   isUsingSupabase,
@@ -78,22 +72,14 @@ export function MyClassesLayout({ theme, toggleTheme }: MyClassesLayoutProps) {
   const [hoveredRow, setHoveredRow] = useState<string | null>(null);
   const [hoveredColumn, setHoveredColumn] = useState<number | null>(null);
   
-  // Data source toggle - sync with localStorage
-  const [useSupabaseData, setUseSupabaseData] = useState(() => isUsingSupabase());
+  // Data source toggle
+  const [useSupabaseData, setUseSupabaseData] = useState(false);
   
   // Use new grid component for class detail
   const [useNewGrid, setUseNewGrid] = useState(true);
   
-  // New class modal
-  const [showNewClassModal, setShowNewClassModal] = useState(false);
-  const [newClassName, setNewClassName] = useState('');
-  const [newClassStudents, setNewClassStudents] = useState<Array<{ name: string; email: string }>>([
-    { name: '', email: '' }
-  ]);
-  const [isCreatingClass, setIsCreatingClass] = useState(false);
-  
-  // Demo data for classes (only used in demo mode)
-  const DEMO_CLASSES: ClassGroup[] = [
+  // Demo data for classes
+  const [classes, setClasses] = useState<ClassGroup[]>([
     { id: '1', name: '6.A', studentsCount: 28, createdAt: '2024-09-01' },
     { id: '2', name: '6.B', studentsCount: 26, createdAt: '2024-09-01' },
     { id: '3', name: '7.A', studentsCount: 24, createdAt: '2024-09-01' },
@@ -102,157 +88,7 @@ export function MyClassesLayout({ theme, toggleTheme }: MyClassesLayoutProps) {
     { id: '6', name: '8.B', studentsCount: 23, createdAt: '2024-09-01' },
     { id: '7', name: '9.A', studentsCount: 21, createdAt: '2024-09-01' },
     { id: '8', name: '9.B', studentsCount: 20, createdAt: '2024-09-01' },
-  ];
-  
-  const [classes, setClasses] = useState<ClassGroup[]>([]);
-  const [loadingClasses, setLoadingClasses] = useState(true); // Start as true
-  const [classesLoaded, setClassesLoaded] = useState(false);
-  
-  // Load classes based on data source - with retry logic
-  useEffect(() => {
-    let isMounted = true;
-    let retryCount = 0;
-    const maxRetries = 3;
-    
-    const loadClasses = async () => {
-      if (!useSupabaseData) {
-        // Use demo data immediately
-        if (isMounted) {
-          setClasses(DEMO_CLASSES);
-          setLoadingClasses(false);
-          setClassesLoaded(true);
-        }
-        return;
-      }
-      
-      // Load from Supabase with retry
-      if (isMounted) setLoadingClasses(true);
-      
-      try {
-        console.log('[MyClasses] Loading classes from Supabase...');
-        const supabaseClasses = await getSupabaseClasses();
-        
-        if (isMounted) {
-          console.log('[MyClasses] Loaded', supabaseClasses.length, 'classes');
-          setClasses(supabaseClasses.map(c => ({
-            id: c.id,
-            name: c.name,
-            studentsCount: c.students_count || 0,
-            createdAt: c.created_at,
-          })));
-          setLoadingClasses(false);
-          setClassesLoaded(true);
-        }
-      } catch (error) {
-        console.error('[MyClasses] Error loading classes:', error);
-        
-        // Retry logic
-        if (retryCount < maxRetries && isMounted) {
-          retryCount++;
-          console.log(`[MyClasses] Retrying... (${retryCount}/${maxRetries})`);
-          setTimeout(loadClasses, 1000 * retryCount); // Exponential backoff
-        } else if (isMounted) {
-          setClasses([]);
-          setLoadingClasses(false);
-          setClassesLoaded(true);
-        }
-      }
-    };
-    
-    // Load immediately
-    loadClasses();
-    
-    return () => {
-      isMounted = false;
-    };
-  }, [useSupabaseData]);
-  
-  // Toggle data source
-  const handleToggleDataSource = () => {
-    const newValue = !useSupabaseData;
-    setUseSupabaseData(newValue);
-    setDataSource(newValue);
-  };
-  
-  // Add student row
-  const addStudentRow = () => {
-    setNewClassStudents([...newClassStudents, { name: '', email: '' }]);
-  };
-  
-  // Remove student row
-  const removeStudentRow = (index: number) => {
-    if (newClassStudents.length > 1) {
-      setNewClassStudents(newClassStudents.filter((_, i) => i !== index));
-    }
-  };
-  
-  // Update student row
-  const updateStudentRow = (index: number, field: 'name' | 'email', value: string) => {
-    const updated = [...newClassStudents];
-    updated[index][field] = value;
-    setNewClassStudents(updated);
-  };
-  
-  // Create new class
-  const handleCreateClass = async () => {
-    if (!newClassName.trim()) return;
-    
-    setIsCreatingClass(true);
-    
-    // Filter out empty students
-    const validStudents = newClassStudents.filter(s => s.name.trim());
-    
-    try {
-      if (useSupabaseData) {
-        // IMPORTANT: Ensure localStorage is in sync with React state before calling Supabase functions
-        setDataSource(true);
-        
-        // Create in Supabase (teacher will be auto-created if needed)
-        const newClass = await createSupabaseClass(newClassName);
-        
-        if (newClass) {
-          // Add students
-          for (const student of validStudents) {
-            const colors = ['#EC4899', '#3B82F6', '#8B5CF6', '#10B981', '#F59E0B', '#EF4444'];
-            const initials = student.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
-            await addSupabaseStudent({
-              name: student.name,
-              email: student.email || undefined,
-              class_id: newClass.id,
-              initials,
-              color: colors[Math.floor(Math.random() * colors.length)],
-            });
-          }
-          
-          // Reload classes
-          const updatedClasses = await getSupabaseClasses();
-          setClasses(updatedClasses.map(c => ({
-            id: c.id,
-            name: c.name,
-            studentsCount: c.students_count || 0,
-            createdAt: c.created_at,
-          })));
-        }
-      } else {
-        // Demo mode - just add locally
-        const newClass: ClassGroup = {
-          id: `c_${Date.now()}`,
-          name: newClassName,
-          studentsCount: validStudents.length,
-          createdAt: new Date().toISOString().split('T')[0],
-        };
-        setClasses([...classes, newClass]);
-      }
-    } catch (error) {
-      console.error('Error creating class:', error);
-    }
-    
-    // Reset form
-    setNewClassName('');
-    setNewClassStudents([{ name: '', email: '' }]);
-    setShowNewClassModal(false);
-    setIsCreatingClass(false);
-  };
+  ]);
   
   // Historical sessions from Firebase
   const [historicalSessions, setHistoricalSessions] = useState<HistoricalSession[]>([]);
@@ -516,6 +352,17 @@ export function MyClassesLayout({ theme, toggleTheme }: MyClassesLayoutProps) {
                         <Users className="h-5 w-5" />
                         Moje třídy
                       </button>
+                      <button
+                        onClick={() => setActiveTab('individual')}
+                        className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-medium rounded-lg transition-all ${
+                          activeTab === 'individual' 
+                            ? 'bg-white text-green-700 shadow-sm' 
+                            : 'text-white/80 hover:text-white hover:bg-white/10'
+                        }`}
+                      >
+                        <ClipboardList className="h-5 w-5" />
+                        Individuální
+                      </button>
                     </div>
                   </div>
 
@@ -610,69 +457,46 @@ export function MyClassesLayout({ theme, toggleTheme }: MyClassesLayoutProps) {
                     {activeTab === 'classes' && (
                       // Classes List
                       <div className="space-y-2">
-                        {/* Data source toggle */}
-                        <div className="flex items-center justify-between mb-3 p-2 bg-white/5 rounded-lg">
-                          <span className="text-xs text-white/60">Zdroj dat:</span>
-                          <button
-                            onClick={handleToggleDataSource}
-                            className={`flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs font-medium transition-colors ${
-                              useSupabaseData 
-                                ? 'bg-emerald-500/20 text-emerald-300' 
-                                : 'bg-amber-500/20 text-amber-300'
-                            }`}
-                          >
-                            {useSupabaseData ? <Database className="w-3 h-3" /> : <HardDrive className="w-3 h-3" />}
-                            {useSupabaseData ? 'Supabase' : 'Demo'}
-                          </button>
-                        </div>
-                        
                         <div className="flex items-center justify-between mb-3">
                           <h3 className="text-xs font-bold text-white/60 uppercase tracking-wider px-1">
                             Moje třídy
                           </h3>
-                          <button 
-                            onClick={() => setShowNewClassModal(true)}
-                            className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-white/80 hover:text-white bg-white/10 hover:bg-white/20 rounded-lg transition-colors"
-                          >
+                          <button className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-white/80 hover:text-white bg-white/10 hover:bg-white/20 rounded-lg transition-colors">
                             <Plus className="h-3 w-3" />
-                            Nová třída
+                            Přidat
                           </button>
                         </div>
-                        {loadingClasses ? (
-                          <div className="flex items-center justify-center py-8">
-                            <RefreshCw className="h-5 w-5 text-white/50 animate-spin" />
+                        {classes.map(cls => (
+                          <button
+                            key={cls.id}
+                            className="w-full flex items-center gap-3 p-3 bg-white/10 hover:bg-white/20 rounded-xl transition-colors text-left group"
+                          >
+                            <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center">
+                              <Users className="h-5 w-5 text-white" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="font-medium text-white">{cls.name}</div>
+                              <div className="text-sm text-white/70">{cls.studentsCount} žáků</div>
+                            </div>
+                            <ChevronRight className="h-4 w-4 text-white/40 group-hover:text-white/70" />
+                          </button>
+                        ))}
+                        {classes.length === 0 && (
+                          <div className="text-center py-8 text-white/60">
+                            Zatím žádné třídy
                           </div>
-                        ) : classes.length === 0 ? (
-                          <div className="text-center py-8">
-                            <p className="text-white/60 text-sm mb-3">Zatím žádné třídy</p>
-                            <button
-                              onClick={() => setShowNewClassModal(true)}
-                              className="text-xs text-white/80 hover:text-white underline"
-                            >
-                              Vytvořit první třídu
-                            </button>
-                          </div>
-                        ) : (
-                          classes.map(cls => (
-                            <button
-                              key={cls.id}
-                              onClick={() => setSelectedClass(cls)}
-                              className="w-full flex items-center gap-3 p-3 bg-white/10 hover:bg-white/20 rounded-xl transition-colors text-left group"
-                            >
-                              <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center">
-                                <Users className="h-5 w-5 text-white" />
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <div className="font-medium text-white">{cls.name}</div>
-                                <div className="text-sm text-white/70">{cls.studentsCount} žáků</div>
-                              </div>
-                              <ChevronRight className="h-4 w-4 text-white/40 group-hover:text-white/70" />
-                            </button>
-                          ))
                         )}
                       </div>
                     )}
                     
+                    {activeTab === 'individual' && (
+                      // Individual Work Notice
+                      <div className="text-center py-8 text-white/80">
+                        <ClipboardList className="h-8 w-8 mx-auto mb-3 opacity-60" />
+                        <p className="text-sm">Individuální práce studentů</p>
+                        <p className="text-xs text-white/60 mt-1">Zobrazení v hlavním panelu →</p>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -705,12 +529,14 @@ export function MyClassesLayout({ theme, toggleTheme }: MyClassesLayoutProps) {
               {!selectedClass && (
                 <div className="mb-8">
                   <h1 className="text-3xl font-bold text-slate-800 mb-2" style={{ fontFamily: "'Fenomen Sans', sans-serif" }}>
-                    {activeTab === 'results' ? 'Výsledky testů' : 'Správa tříd'}
+                    {activeTab === 'results' ? 'Výsledky testů' : activeTab === 'classes' ? 'Správa tříd' : 'Individuální práce'}
                   </h1>
                   <p className="text-slate-600">
                     {activeTab === 'results' 
                       ? 'Přehled výsledků z testů a procvičování vašich žáků'
-                      : 'Vytvářejte skupiny žáků a sledujte jejich pokrok'
+                      : activeTab === 'classes'
+                      ? 'Vytvářejte skupiny žáků a sledujte jejich pokrok'
+                      : 'Výsledky studentů z jejich samostatného procvičování'
                     }
                   </p>
                 </div>
@@ -1023,44 +849,15 @@ export function MyClassesLayout({ theme, toggleTheme }: MyClassesLayoutProps) {
                 // Classes List
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {/* Add New Class Card */}
-                  <button 
-                    onClick={() => setShowNewClassModal(true)}
-                    className="flex flex-col items-center justify-center p-8 bg-white rounded-2xl border-2 border-dashed border-slate-300 hover:border-green-400 hover:bg-green-50 transition-colors group"
-                  >
+                  <button className="flex flex-col items-center justify-center p-8 bg-white rounded-2xl border-2 border-dashed border-slate-300 hover:border-green-400 hover:bg-green-50 transition-colors group">
                     <div className="w-12 h-12 bg-slate-100 group-hover:bg-green-100 rounded-xl flex items-center justify-center mb-3 transition-colors">
                       <Plus className="h-6 w-6 text-slate-400 group-hover:text-green-600" />
                     </div>
                     <span className="font-medium text-slate-600 group-hover:text-green-700">Přidat třídu</span>
                   </button>
                   
-                  {/* Loading state */}
-                  {loadingClasses && (
-                    <div className="flex flex-col items-center justify-center p-8 bg-white rounded-2xl border border-slate-200">
-                      <RefreshCw className="h-8 w-8 text-green-500 animate-spin mb-3" />
-                      <span className="text-slate-500">Načítám třídy...</span>
-                    </div>
-                  )}
-                  
-                  {/* Empty state for Supabase */}
-                  {!loadingClasses && classes.length === 0 && useSupabaseData && (
-                    <div className="col-span-full flex flex-col items-center justify-center p-12 bg-slate-50 rounded-2xl border-2 border-dashed border-slate-200">
-                      <Users className="h-12 w-12 text-slate-300 mb-4" />
-                      <h3 className="text-lg font-semibold text-slate-600 mb-2">Zatím nemáte žádné třídy</h3>
-                      <p className="text-slate-500 text-center mb-4">
-                        Vytvořte svou první třídu a přidejte žáky.
-                      </p>
-                      <button
-                        onClick={() => setShowNewClassModal(true)}
-                        className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
-                      >
-                        <Plus className="w-4 h-4" />
-                        Vytvořit třídu
-                      </button>
-                    </div>
-                  )}
-                  
                   {/* Class Cards */}
-                  {!loadingClasses && classes.map(cls => (
+                  {classes.map(cls => (
                     <div key={cls.id} className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 p-6 hover:shadow-lg transition-shadow">
                       <div className="flex items-start justify-between mb-4">
                         <div className="w-12 h-12 bg-green-100 dark:bg-green-900/50 rounded-xl flex items-center justify-center">
@@ -1118,127 +915,6 @@ export function MyClassesLayout({ theme, toggleTheme }: MyClassesLayoutProps) {
           className="fixed inset-0 bg-black/50 z-30 lg:hidden"
           onClick={() => setSidebarOpen(false)}
         />
-      )}
-      
-      {/* New Class Modal */}
-      {showNewClassModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setShowNewClassModal(false)}>
-          <div 
-            className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Header */}
-            <div className="p-6 border-b border-slate-200">
-              <div className="flex items-center justify-between">
-                <h2 className="text-xl font-bold text-slate-800">Nová třída</h2>
-                <button 
-                  onClick={() => setShowNewClassModal(false)} 
-                  className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-            </div>
-            
-            {/* Content */}
-            <div className="p-6 overflow-y-auto flex-1">
-              {/* Class name */}
-              <div className="mb-6">
-                <label className="block text-sm font-medium text-slate-700 mb-2">
-                  Název třídy
-                </label>
-                <input
-                  type="text"
-                  value={newClassName}
-                  onChange={(e) => setNewClassName(e.target.value)}
-                  placeholder="např. 6.A"
-                  className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-green-500 focus:ring-2 focus:ring-green-500/20 outline-none text-lg font-semibold"
-                />
-              </div>
-              
-              {/* Students list */}
-              <div>
-                <div className="flex items-center justify-between mb-3">
-                  <label className="block text-sm font-medium text-slate-700">
-                    Žáci ({newClassStudents.filter(s => s.name.trim()).length})
-                  </label>
-                  <button
-                    onClick={addStudentRow}
-                    className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-green-600 hover:text-green-700 bg-green-50 hover:bg-green-100 rounded-lg transition-colors"
-                  >
-                    <UserPlus className="w-3 h-3" />
-                    Přidat žáka
-                  </button>
-                </div>
-                
-                <div className="space-y-2 max-h-60 overflow-y-auto">
-                  {newClassStudents.map((student, index) => (
-                    <div key={index} className="flex gap-2">
-                      <input
-                        type="text"
-                        value={student.name}
-                        onChange={(e) => updateStudentRow(index, 'name', e.target.value)}
-                        placeholder="Jméno žáka"
-                        className="flex-1 px-3 py-2 rounded-lg border border-slate-200 focus:border-green-500 focus:ring-1 focus:ring-green-500/20 outline-none text-sm"
-                      />
-                      <div className="relative flex-1">
-                        <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                        <input
-                          type="email"
-                          value={student.email}
-                          onChange={(e) => updateStudentRow(index, 'email', e.target.value)}
-                          placeholder="email@skola.cz"
-                          className="w-full pl-9 pr-3 py-2 rounded-lg border border-slate-200 focus:border-green-500 focus:ring-1 focus:ring-green-500/20 outline-none text-sm"
-                        />
-                      </div>
-                      {newClassStudents.length > 1 && (
-                        <button
-                          onClick={() => removeStudentRow(index)}
-                          className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                        >
-                          <X className="w-4 h-4" />
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                </div>
-                
-                <p className="text-xs text-slate-500 mt-3">
-                  💡 Žáci obdrží pozvánku na zadaný email a budou moci sledovat své výsledky.
-                </p>
-              </div>
-            </div>
-            
-            {/* Footer */}
-            <div className="p-6 border-t border-slate-200 bg-slate-50">
-              <div className="flex gap-3">
-                <button
-                  onClick={() => setShowNewClassModal(false)}
-                  className="flex-1 py-3 rounded-xl border border-slate-200 text-slate-600 font-medium hover:bg-slate-100 transition-colors"
-                >
-                  Zrušit
-                </button>
-                <button
-                  onClick={handleCreateClass}
-                  disabled={!newClassName.trim() || isCreatingClass}
-                  className="flex-1 py-3 rounded-xl bg-green-600 text-white font-medium hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                >
-                  {isCreatingClass ? (
-                    <>
-                      <RefreshCw className="w-4 h-4 animate-spin" />
-                      Vytvářím...
-                    </>
-                  ) : (
-                    <>
-                      <Plus className="w-4 h-4" />
-                      Vytvořit třídu
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
       )}
     </div>
   );

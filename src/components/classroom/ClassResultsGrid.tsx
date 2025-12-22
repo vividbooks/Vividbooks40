@@ -32,7 +32,16 @@ import {
   Check,
   ShieldCheck,
   Radio,
+  Send,
+  FileText,
+  Presentation,
+  AlertTriangle,
+  Clock,
+  MessageSquare,
+  Loader2,
+  Hash,
 } from 'lucide-react';
+import { sendClassMessage, getClassMessages, ClassMessage } from '../../utils/class-messages';
 import {
   ClassGroup,
   Student,
@@ -47,6 +56,17 @@ import {
   generatePasswordSetupToken,
   getStudentAuthStatus,
 } from '../../utils/supabase/classes';
+import {
+  getAssignmentsForClass,
+} from '../../utils/student-assignments';
+import {
+  StudentAssignment,
+  StudentSubmission,
+  ASSIGNMENT_TYPE_LABELS,
+  SUBMISSION_STATUS_LABELS,
+} from '../../types/student-assignment';
+import { EvaluationModal } from './EvaluationModal';
+import { getClassEvaluations, getEvaluationWithStudents, ClassEvaluation } from '../../utils/class-evaluations';
 
 interface ClassResultsGridProps {
   classId: string;
@@ -60,6 +80,10 @@ export function ClassResultsGrid({ classId, className, onBack }: ClassResultsGri
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [results, setResults] = useState<{ [studentId: string]: { [assignmentId: string]: StudentResult } }>({});
   const [loading, setLoading] = useState(true);
+  
+  // Student task assignments (úkoly)
+  const [studentTasks, setStudentTasks] = useState<StudentAssignment[]>([]);
+  const [taskSubmissions, setTaskSubmissions] = useState<{ [assignmentId: string]: { [studentId: string]: StudentSubmission } }>({});
   
   // Toggle states
   const [showIndividual, setShowIndividual] = useState(true);
@@ -99,6 +123,19 @@ export function ClassResultsGrid({ classId, className, onBack }: ClassResultsGri
   const [showSubjectDropdown, setShowSubjectDropdown] = useState(false);
   const [showAddColleagueModal, setShowAddColleagueModal] = useState(false);
   const [colleagueEmail, setColleagueEmail] = useState('');
+  
+  // Evaluation modal state
+  const [showEvaluationModal, setShowEvaluationModal] = useState(false);
+  const [evaluations, setEvaluations] = useState<ClassEvaluation[]>([]);
+  
+  // Message modal state
+  const [showMessageModal, setShowMessageModal] = useState(false);
+  const [messageTitle, setMessageTitle] = useState('');
+  const [messageContent, setMessageContent] = useState('');
+  const [messagePriority, setMessagePriority] = useState<'normal' | 'important' | 'urgent'>('normal');
+  const [sendingMessage, setSendingMessage] = useState(false);
+  const [classMessages, setClassMessages] = useState<ClassMessage[]>([]);
+  const [studentEvaluationsMap, setStudentEvaluationsMap] = useState<Map<string, Map<string, string>>>(new Map()); // evaluationId -> studentId -> text
   const [colleagues, setColleagues] = useState<{ id: string; name: string; email: string; subject: string }[]>(() => {
     const saved = localStorage.getItem(`class_${classId}_colleagues`);
     return saved ? JSON.parse(saved) : [
@@ -138,18 +175,85 @@ export function ClassResultsGrid({ classId, className, onBack }: ClassResultsGri
   // Load data
   useEffect(() => {
     loadData();
+    // Also load evaluations
+    loadEvaluations();
   }, [classId, showIndividual, useSupabase]);
+  
+  async function loadEvaluations() {
+    try {
+      const evals = await getClassEvaluations(classId);
+      setEvaluations(evals);
+      
+      // Load student evaluations for sent evaluations
+      const sentEvals = evals.filter(e => e.status === 'sent');
+      const newMap = new Map<string, Map<string, string>>();
+      
+      for (const eval_ of sentEvals) {
+        const { studentEvaluations } = await getEvaluationWithStudents(eval_.id);
+        const studentMap = new Map<string, string>();
+        studentEvaluations.forEach(se => {
+          if (se.final_text) {
+            studentMap.set(se.student_id, se.final_text);
+          }
+        });
+        newMap.set(eval_.id, studentMap);
+      }
+      
+      setStudentEvaluationsMap(newMap);
+    } catch (error) {
+      console.error('[ClassResultsGrid] Error loading evaluations:', error);
+    }
+  }
   
   const loadData = async () => {
     setLoading(true);
     setDataSource(useSupabase);
     
-    const data = await getClassWithData(classId, showIndividual);
-    
-    if (data) {
-      setStudents(data.students);
-      setAssignments(data.assignments);
-      setResults(data.results);
+    try {
+      // Add timeout to prevent infinite loading (15s to allow multiple API calls)
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Timeout')), 15000)
+      );
+      
+      const dataPromise = Promise.all([
+        getClassWithData(classId, showIndividual),
+        getAssignmentsForClass(classId),
+      ]);
+      
+      const [data, tasks] = await Promise.race([dataPromise, timeoutPromise]) as [any, any];
+      
+      if (data) {
+        setStudents(data.students);
+        setAssignments(data.assignments);
+        setResults(data.results);
+      }
+      
+      // Store student tasks (úkoly)
+      setStudentTasks(tasks || []);
+      
+      // Load task submissions from localStorage
+      try {
+        const allSubmissions = JSON.parse(localStorage.getItem('vivid-student-submissions') || '[]') as StudentSubmission[];
+        const submissionsByTask: { [assignmentId: string]: { [studentId: string]: StudentSubmission } } = {};
+        
+        for (const sub of allSubmissions) {
+          if (!submissionsByTask[sub.assignment_id]) {
+            submissionsByTask[sub.assignment_id] = {};
+          }
+          submissionsByTask[sub.assignment_id][sub.student_id] = sub;
+        }
+        
+        setTaskSubmissions(submissionsByTask);
+      } catch (e) {
+        console.log('[ClassResultsGrid] Error loading submissions:', e);
+      }
+    } catch (error) {
+      console.error('[ClassResultsGrid] Error loading data:', error);
+      // Set empty data on error so UI doesn't hang
+      setStudents([]);
+      setAssignments([]);
+      setResults({});
+      setStudentTasks([]);
     }
     
     setLoading(false);
@@ -324,6 +428,12 @@ export function ClassResultsGrid({ classId, className, onBack }: ClassResultsGri
             <Radio className="w-3 h-3" style={{ color: '#D97706' }} />
           </div>
         );
+      case 'task':
+        return (
+          <div className="w-5 h-5 rounded flex items-center justify-center" style={{ backgroundColor: '#DBEAFE' }}>
+            <Send className="w-3 h-3" style={{ color: '#2563EB' }} />
+          </div>
+        );
       default:
         return null;
     }
@@ -351,10 +461,28 @@ export function ClassResultsGrid({ classId, className, onBack }: ClassResultsGri
     return Math.round(percentages.reduce((a, b) => a + b, 0) / percentages.length);
   };
   
+  // Convert student tasks to Assignment format for unified display
+  const taskAssignments: Assignment[] = studentTasks.map(task => ({
+    id: task.id,
+    title: task.title,
+    type: 'task' as any, // Special type for student tasks
+    class_id: task.class_id,
+    subject: task.subject || selectedSubject,
+    created_at: task.created_at,
+    due_date: task.due_date,
+    // Store extra info
+    _taskType: task.type, // 'document' | 'presentation' | 'test'
+    _allowAi: task.allow_ai,
+    _description: task.description,
+  } as Assignment & { _taskType?: string; _allowAi?: boolean; _description?: string }));
+  
+  // Merge regular assignments with student tasks
+  const allAssignments = [...assignments, ...taskAssignments];
+  
   // Filter assignments by type AND subject
-  const filteredAssignments = assignments.filter(a => {
-    // Filter by subject - but always show 'live' type assignments (quiz results)
-    const subjectMatch = !a.subject || a.subject === selectedSubject || a.type === 'live';
+  const filteredAssignments = allAssignments.filter(a => {
+    // Filter by subject - but always show 'live', 'task' and 'individual' type assignments (regardless of subject)
+    const subjectMatch = !a.subject || a.subject === selectedSubject || a.type === 'live' || a.type === 'task' || a.type === 'individual';
     // Filter by individual work visibility
     const typeMatch = showIndividual || a.type !== 'individual';
     return subjectMatch && typeMatch;
@@ -442,6 +570,27 @@ export function ClassResultsGrid({ classId, className, onBack }: ClassResultsGri
           >
             <UserPlus className="w-4 h-4" />
             Přidat kolegu
+          </button>
+          <button
+            onClick={() => setShowEvaluationModal(true)}
+            className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium bg-indigo-50 text-indigo-700 hover:bg-indigo-100 transition-colors"
+          >
+            <FileText className="w-4 h-4" />
+            Přidat hodnocení
+          </button>
+          <button
+            onClick={() => setShowMessageModal(true)}
+            className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors"
+          >
+            <MessageSquare className="w-4 h-4" />
+            Poslat zprávu
+          </button>
+          <button
+            onClick={() => navigate(`/class-chat/${classId}`)}
+            className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium bg-slate-700 text-white hover:bg-slate-800 transition-colors"
+          >
+            <Hash className="w-4 h-4" />
+            Třídní chat
           </button>
         </div>
       </div>
@@ -534,6 +683,16 @@ export function ClassResultsGrid({ classId, className, onBack }: ClassResultsGri
                     </th>
                   );
                 })}
+                {/* Evaluation columns */}
+                {evaluations.filter(e => e.status === 'sent').map(eval_ => (
+                  <th 
+                    key={`date-eval-${eval_.id}`}
+                    className="py-2 text-xs font-normal text-slate-400 text-center"
+                    style={{ width: '100px', minWidth: '100px' }}
+                  >
+                    {eval_.sent_at ? new Date(eval_.sent_at).toLocaleDateString('cs-CZ') : ''}
+                  </th>
+                ))}
                 <th className="px-4 py-2 text-xs font-normal text-slate-400 text-center" style={{ minWidth: '80px' }}>
                   Ø
                 </th>
@@ -601,6 +760,21 @@ export function ClassResultsGrid({ classId, className, onBack }: ClassResultsGri
                     </th>
                   );
                 })}
+                {/* Evaluation column headers */}
+                {evaluations.filter(e => e.status === 'sent').map(eval_ => (
+                  <th 
+                    key={`name-eval-${eval_.id}`}
+                    className="px-2 py-2 text-center text-xs font-medium text-slate-700 border-b border-slate-200 bg-purple-50"
+                    style={{ width: '100px', minWidth: '100px' }}
+                  >
+                    <div className="flex flex-col items-center gap-1">
+                      <FileText className="w-4 h-4 text-purple-600" />
+                      <span className="text-xs text-purple-700 truncate" style={{ maxWidth: '90px' }} title={eval_.title}>
+                        {eval_.title.length > 12 ? `${eval_.title.slice(0, 12)}...` : eval_.title}
+                      </span>
+                    </div>
+                  </th>
+                ))}
                 <th className="px-4 py-2 text-center text-xs font-medium text-slate-700 border-b border-slate-200">
                   Průměr
                 </th>
@@ -612,7 +786,7 @@ export function ClassResultsGrid({ classId, className, onBack }: ClassResultsGri
               {/* Add student row */}
               <tr>
                 <td 
-                  colSpan={filteredAssignments.length + 2}
+                  colSpan={filteredAssignments.length + evaluations.filter(e => e.status === 'sent').length + 2}
                   className="sticky left-0 z-10 bg-white"
                   style={{ padding: '1px 16px' }}
                 >
@@ -748,6 +922,9 @@ export function ClassResultsGrid({ classId, className, onBack }: ClassResultsGri
                     
                     {/* Results */}
                     {filteredAssignments.map((assignment) => {
+                      const isTask = assignment.type === 'task';
+                      const taskSubmission = isTask ? taskSubmissions[assignment.id]?.[student.id] : null;
+                      
                       const result = results[student.id]?.[assignment.id];
                       const score = result?.score ?? null;
                       // Use percentage for color if available, otherwise calculate from score/max_score
@@ -757,7 +934,7 @@ export function ClassResultsGrid({ classId, className, onBack }: ClassResultsGri
                       const bgColor = getScoreColor(colorScore);
                       const textColor = getTextColor(colorScore);
                       const isIndividual = assignment.type === 'individual';
-                      const hasData = score !== null && score !== -1;
+                      const hasData = isTask ? !!taskSubmission : (score !== null && score !== -1);
                       
                       // Determine if this cell should be highlighted
                       const isCellHovered = hoveredCell?.studentId === student.id && hoveredCell?.assignmentId === assignment.id;
@@ -775,12 +952,21 @@ export function ClassResultsGrid({ classId, className, onBack }: ClassResultsGri
                       
                       // Check if this is a live quiz assignment that can be clicked
                       const isLiveQuiz = assignment.session_id && (assignment.session_type === 'live' || assignment.type === 'live');
-                      const canClick = isLiveQuiz && hasData;
+                      const canClickLive = isLiveQuiz && hasData;
+                      const canClickIndividual = isIndividual && hasData;
+                      const canClick = canClickLive || canClickIndividual;
                       
                       const handleCellClick = () => {
-                        if (canClick) {
+                        if (canClickLive) {
                           // Navigate to quiz results filtered by this student
                           navigate(`/quiz/results/${assignment.session_id}?type=${assignment.session_type || 'live'}&studentFilter=${student.id}`);
+                        } else if (canClickIndividual) {
+                          // For individual work, find the Firebase share session
+                          // Assignment title format: "Board Title - ind."
+                          // Share session ID format: shared_{boardId}_{classId}
+                          const boardTitle = assignment.title.replace(' - ind.', '');
+                          // Navigate to results with classId so we can find Firebase session
+                          navigate(`/quiz/results/${assignment.id}?type=shared&studentFilter=${student.id}&title=${encodeURIComponent(boardTitle)}&individual=true&classId=${classId}`);
                         }
                       };
                       
@@ -801,6 +987,10 @@ export function ClassResultsGrid({ classId, className, onBack }: ClassResultsGri
                              // Narrow bar for individual work - ONLY show if there's data
                              hasData ? (
                                <div 
+                                 className={`
+                                   ${shouldShowRing ? 'ring-2 ring-indigo-400' : ''}
+                                   cursor-pointer hover:scale-105 transition-transform
+                                 `}
                                  style={{ 
                                    width: '15px', 
                                    height: '45px', 
@@ -808,9 +998,73 @@ export function ClassResultsGrid({ classId, className, onBack }: ClassResultsGri
                                    borderRadius: '8px',
                                    margin: '0 auto',
                                  }}
-                                 title={`${score}/10`}
+                                 title={`${assignment.title}\n${student.name}: ${score}/${result?.max_score || '?'}\nKlikni pro detail`}
+                                 onClick={handleCellClick}
                                />
                              ) : null // Empty individual cells are completely invisible
+                          ) : isTask ? (
+                            // Task submission cell - shows status, clickable to view student's work
+                            <div 
+                              className={`
+                                flex flex-col items-center justify-center text-xs font-medium
+                                ${shouldShowRing ? 'ring-2 ring-indigo-400 ring-offset-1' : ''}
+                                ${taskSubmission?.content_id ? 'cursor-pointer hover:scale-105 transition-transform' : ''}
+                              `}
+                              style={{ 
+                                width: '120px', 
+                                height: '45px', 
+                                backgroundColor: taskSubmission 
+                                  ? taskSubmission.status === 'submitted' || taskSubmission.status === 'graded'
+                                    ? taskSubmission.ai_flags?.length > 0 ? '#FEF3C7' : '#DBEAFE'  // Amber if AI flags, blue if submitted
+                                    : '#FEF9C3' // Yellow for draft
+                                  : '#F3F4F6', // Gray for not started
+                                borderRadius: '8px',
+                                border: '1px solid',
+                                borderColor: taskSubmission 
+                                  ? taskSubmission.status === 'submitted' || taskSubmission.status === 'graded'
+                                    ? taskSubmission.ai_flags?.length > 0 ? '#F59E0B' : '#3B82F6'
+                                    : '#EAB308'
+                                  : '#E5E7EB',
+                              }}
+                              title={taskSubmission?.content_id 
+                                ? 'Klikni pro zobrazení práce studenta' 
+                                : taskSubmission?.ai_flags?.length 
+                                  ? `⚠️ ${taskSubmission.ai_flags.length}× AI podezření` 
+                                  : undefined}
+                              onClick={() => {
+                                if (taskSubmission?.content_id) {
+                                  // Open the student's document in read-only view mode
+                                  navigate(`/library/my-content/view/${taskSubmission.content_id}?teacherView=true&studentId=${student.id}`);
+                                }
+                              }}
+                            >
+                              {!taskSubmission ? (
+                                <span className="text-slate-400">-</span>
+                              ) : taskSubmission.status === 'draft' ? (
+                                <>
+                                  <Clock className="w-3.5 h-3.5 text-amber-600 mb-0.5" />
+                                  <span className="text-amber-700">Píše</span>
+                                </>
+                              ) : taskSubmission.status === 'submitted' ? (
+                                <>
+                                  {taskSubmission.ai_flags?.length > 0 ? (
+                                    <AlertTriangle className="w-3.5 h-3.5 text-amber-600 mb-0.5" />
+                                  ) : (
+                                    <Send className="w-3.5 h-3.5 text-blue-600 mb-0.5" />
+                                  )}
+                                  <span className={taskSubmission.ai_flags?.length > 0 ? 'text-amber-700' : 'text-blue-700'}>
+                                    {taskSubmission.ai_flags?.length > 0 ? `AI! ⚠️` : 'Odevzdal'}
+                                  </span>
+                                </>
+                              ) : taskSubmission.status === 'graded' ? (
+                                <>
+                                  <CheckCircle className="w-3.5 h-3.5 text-green-600 mb-0.5" />
+                                  <span className="text-green-700">{taskSubmission.score ?? 'Hotovo'}</span>
+                                </>
+                              ) : (
+                                <span className="text-slate-400">-</span>
+                              )}
+                            </div>
                           ) : (
                             // Wide cell for tests/practice/live - clickable for live quizzes
                             <div 
@@ -833,6 +1087,52 @@ export function ClassResultsGrid({ classId, className, onBack }: ClassResultsGri
                               {!hasData ? '-' : `${score} / ${result?.max_score || 10}`}
                             </div>
                           )}
+                        </td>
+                      );
+                    })}
+                    
+                    {/* Evaluation cells */}
+                    {evaluations.filter(e => e.status === 'sent').map(eval_ => {
+                      const evalText = studentEvaluationsMap.get(eval_.id)?.get(student.id);
+                      const hasEval = !!evalText;
+                      
+                      return (
+                        <td 
+                          key={`eval-${eval_.id}-${student.id}`}
+                          className="text-center bg-purple-50/50"
+                          style={{ padding: '1px' }}
+                          onMouseEnter={() => setHoveredRow(student.id)}
+                          onMouseLeave={() => setHoveredRow(null)}
+                        >
+                          <div 
+                            className={`
+                              flex items-center justify-center text-xs
+                              ${hasEval ? 'cursor-pointer hover:scale-105 transition-transform' : ''}
+                            `}
+                            style={{ 
+                              width: '90px', 
+                              height: '45px', 
+                              backgroundColor: hasEval ? '#E9D5FF' : '#F3F4F6',
+                              borderRadius: '8px',
+                              margin: '0 auto',
+                              padding: '4px',
+                            }}
+                            title={evalText || 'Hodnocení není k dispozici'}
+                            onClick={() => {
+                              if (hasEval) {
+                                // Show evaluation in a modal or navigate to detail
+                                navigate(`/library/student/${student.id}`);
+                              }
+                            }}
+                          >
+                            {hasEval ? (
+                              <span className="text-purple-700 line-clamp-2 text-center" style={{ fontSize: '10px' }}>
+                                {evalText.length > 40 ? `${evalText.slice(0, 40)}...` : evalText}
+                              </span>
+                            ) : (
+                              <span className="text-slate-400">-</span>
+                            )}
+                          </div>
                         </td>
                       );
                     })}
@@ -1291,6 +1591,204 @@ export function ClassResultsGrid({ classId, className, onBack }: ClassResultsGri
             </div>
           </div>
         </div>
+      )}
+      
+      {/* Evaluation Modal */}
+      <EvaluationModal
+        isOpen={showEvaluationModal}
+        onClose={() => setShowEvaluationModal(false)}
+        classId={classId}
+        className={className || 'Třída'}
+        students={students.map(s => {
+          // results is { studentId: { assignmentId: result } }
+          const studentResultsObj = results[s.id] || {};
+          const studentResultsArray = Object.values(studentResultsObj);
+          
+          // Calculate percentage for each result
+          const resultsWithPct = studentResultsArray.map(r => {
+            const assignment = allAssignments.find(a => a.id === r.assignment_id);
+            const pct = r.percentage !== undefined && r.percentage !== null 
+              ? r.percentage 
+              : (r.max_score > 0 ? Math.round((r.score / r.max_score) * 100) : 0);
+            return {
+              title: assignment?.title || 'Aktivita',
+              score: r.score,
+              maxScore: r.max_score,
+              percentage: pct,
+              date: r.completed_at || r.created_at || '',
+              type: assignment?.type || 'test',
+            };
+          });
+          
+          let averageScore = 0;
+          if (resultsWithPct.length > 0) {
+            const total = resultsWithPct.reduce((sum, r) => sum + r.percentage, 0);
+            averageScore = Math.round(total / resultsWithPct.length);
+          }
+          
+          // Find best and worst results
+          const sortedByScore = [...resultsWithPct].sort((a, b) => b.percentage - a.percentage);
+          const bestResult = sortedByScore[0];
+          const worstResult = sortedByScore[sortedByScore.length - 1];
+          
+          // Calculate trend from recent vs older results
+          const sortedByDate = [...resultsWithPct].sort((a, b) => 
+            new Date(b.date).getTime() - new Date(a.date).getTime()
+          );
+          const recentResults = sortedByDate.slice(0, Math.ceil(sortedByDate.length / 2));
+          const olderResults = sortedByDate.slice(Math.ceil(sortedByDate.length / 2));
+          
+          let trend: 'improving' | 'declining' | 'stable' = 'stable';
+          if (recentResults.length >= 1 && olderResults.length >= 1) {
+            const recentAvg = recentResults.reduce((sum, r) => sum + r.percentage, 0) / recentResults.length;
+            const olderAvg = olderResults.reduce((sum, r) => sum + r.percentage, 0) / olderResults.length;
+            if (recentAvg > olderAvg + 5) trend = 'improving';
+            else if (recentAvg < olderAvg - 5) trend = 'declining';
+          }
+          
+          return {
+            id: s.id,
+            name: s.name,
+            initials: s.initials,
+            color: s.color,
+            averageScore,
+            resultsCount: resultsWithPct.length,
+            bestResult,
+            worstResult,
+            recentResults: sortedByDate.slice(0, 5),
+            trend,
+          };
+        })}
+        onEvaluationSent={() => {
+          // Reload evaluations
+          getClassEvaluations(classId).then(setEvaluations);
+        }}
+      />
+      
+      {/* Message Modal */}
+      {showMessageModal && createPortal(
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div 
+            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+            onClick={() => setShowMessageModal(false)}
+          />
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden">
+            {/* Header */}
+            <div className="flex items-center justify-between p-6 border-b bg-gradient-to-r from-blue-500 to-indigo-500">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center">
+                  <MessageSquare className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-white">Poslat zprávu třídě</h2>
+                  <p className="text-blue-100 text-sm">{className}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowMessageModal(false)}
+                className="p-2 hover:bg-white/20 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5 text-white" />
+              </button>
+            </div>
+            
+            {/* Content */}
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  Předmět zprávy
+                </label>
+                <input
+                  type="text"
+                  value={messageTitle}
+                  onChange={(e) => setMessageTitle(e.target.value)}
+                  placeholder="např. Důležité oznámení, Připomínka..."
+                  className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  Obsah zprávy
+                </label>
+                <textarea
+                  value={messageContent}
+                  onChange={(e) => setMessageContent(e.target.value)}
+                  placeholder="Napište zprávu pro studenty..."
+                  rows={4}
+                  className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  Priorita
+                </label>
+                <div className="flex gap-2">
+                  {[
+                    { key: 'normal', label: 'Běžná', color: 'bg-slate-100 text-slate-700 border-slate-200' },
+                    { key: 'important', label: 'Důležitá', color: 'bg-amber-100 text-amber-700 border-amber-300' },
+                    { key: 'urgent', label: 'Urgentní', color: 'bg-red-100 text-red-700 border-red-300' },
+                  ].map(p => (
+                    <button
+                      key={p.key}
+                      onClick={() => setMessagePriority(p.key as any)}
+                      className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium border-2 transition-all ${
+                        messagePriority === p.key 
+                          ? p.color + ' ring-2 ring-offset-1 ring-blue-400'
+                          : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'
+                      }`}
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+            
+            {/* Footer */}
+            <div className="flex justify-end gap-3 p-6 border-t bg-slate-50">
+              <button
+                onClick={() => {
+                  setShowMessageModal(false);
+                  setMessageTitle('');
+                  setMessageContent('');
+                  setMessagePriority('normal');
+                }}
+                className="px-5 py-2.5 text-slate-600 hover:bg-slate-100 rounded-xl transition-colors font-medium"
+              >
+                Zrušit
+              </button>
+              <button
+                onClick={async () => {
+                  if (!messageTitle.trim() || !messageContent.trim()) return;
+                  setSendingMessage(true);
+                  const result = await sendClassMessage(classId, messageTitle, messageContent, messagePriority);
+                  setSendingMessage(false);
+                  if (result) {
+                    setShowMessageModal(false);
+                    setMessageTitle('');
+                    setMessageContent('');
+                    setMessagePriority('normal');
+                    // Show success toast or notification
+                    console.log('[ClassResultsGrid] Message sent successfully');
+                  }
+                }}
+                disabled={!messageTitle.trim() || !messageContent.trim() || sendingMessage}
+                style={{ backgroundColor: '#2563EB', color: 'white' }}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-xl hover:opacity-90 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {sendingMessage ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Send className="w-4 h-4" />
+                )}
+                {sendingMessage ? 'Odesílám...' : 'Odeslat zprávu'}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
     </div>
   );
