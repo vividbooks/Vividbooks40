@@ -98,11 +98,11 @@ export function PasteWarningDialog({
           
           <button
             onClick={handleConfirmWithSource}
-            className={`flex-1 px-4 py-2.5 rounded-xl transition-colors font-medium text-sm flex items-center justify-center gap-2 ${
-              sourceUrl.trim() 
-                ? 'bg-green-600 text-white hover:bg-green-700' 
-                : 'bg-amber-500 text-white hover:bg-amber-600'
-            }`}
+            className="flex-1 px-4 py-2.5 rounded-xl transition-colors font-medium text-sm flex items-center justify-center gap-2"
+            style={{
+              backgroundColor: sourceUrl.trim() ? '#16a34a' : '#f59e0b',
+              color: 'white',
+            }}
           >
             <Check className="h-4 w-4" />
             <span>{sourceUrl.trim() ? 'Potvrdit se zdrojem' : 'Pokračovat bez zdroje'}</span>
