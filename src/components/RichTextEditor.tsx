@@ -751,7 +751,7 @@ export function RichTextEditor({ content, onChange }: RichTextEditorProps) {
       
       {/* Single Row Toolbar - Sticky when scrolling, fixed sizing */}
       <div 
-        className="sticky top-0 z-50 flex items-center rounded-t-[11px] shadow-[0_2px_8px_rgba(0,0,0,0.06)] flex-wrap"
+        className="sticky top-0 z-10 flex items-center rounded-t-[11px] shadow-[0_2px_8px_rgba(0,0,0,0.06)] flex-wrap"
         style={{ 
           backgroundColor: '#EFF1F8',
           padding: '10px 12px',

@@ -38,65 +38,108 @@ export function PasteWarningDialog({
 
   const hasSource = sourceUrl.trim().length > 0;
 
+  // Inline styles - GUARANTEED to work
+  const overlayStyle: React.CSSProperties = {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 2147483647, // Maximum possible z-index
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backdropFilter: 'blur(4px)',
+  };
+
+  const dialogStyle: React.CSSProperties = {
+    backgroundColor: '#ffffff',
+    borderRadius: '16px',
+    boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+    maxWidth: '500px',
+    width: 'calc(100% - 32px)',
+    margin: '16px',
+    overflow: 'hidden',
+    position: 'relative',
+    zIndex: 2147483647,
+  };
+
+  const headerStyle: React.CSSProperties = {
+    backgroundColor: '#fef3c7',
+    borderBottom: '1px solid #fcd34d',
+    padding: '12px 20px',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+  };
+
+  const contentStyle: React.CSSProperties = {
+    padding: '20px',
+  };
+
+  const actionsStyle: React.CSSProperties = {
+    padding: '0 20px 20px 20px',
+    display: 'flex',
+    gap: '12px',
+  };
+
+  const cancelBtnStyle: React.CSSProperties = {
+    flex: 1,
+    padding: '12px 16px',
+    border: '1px solid #cbd5e1',
+    backgroundColor: '#ffffff',
+    color: '#475569',
+    borderRadius: '12px',
+    fontSize: '14px',
+    fontWeight: 500,
+    cursor: 'pointer',
+  };
+
+  const confirmBtnStyle: React.CSSProperties = {
+    flex: 1,
+    padding: '12px 16px',
+    border: 'none',
+    backgroundColor: hasSource ? '#16a34a' : '#f59e0b',
+    color: '#ffffff',
+    borderRadius: '12px',
+    fontSize: '14px',
+    fontWeight: 500,
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '8px',
+  };
+
+  const inputStyle: React.CSSProperties = {
+    width: '100%',
+    padding: '12px 16px',
+    border: '1px solid #cbd5e1',
+    borderRadius: '12px',
+    fontSize: '14px',
+    outline: 'none',
+    boxSizing: 'border-box',
+  };
+
   return (
-    <div 
-      style={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        zIndex: 999999,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        backgroundColor: 'rgba(0, 0, 0, 0.5)',
-        backdropFilter: 'blur(4px)',
-      }}
-    >
-      <div 
-        style={{
-          backgroundColor: '#ffffff',
-          borderRadius: '16px',
-          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
-          maxWidth: '500px',
-          width: 'calc(100% - 32px)',
-          margin: '16px',
-          overflow: 'hidden',
-          position: 'relative',
-          zIndex: 999999,
-        }}
-      >
+    <div style={overlayStyle}>
+      <div style={dialogStyle}>
         {/* Header */}
-        <div style={{
-          backgroundColor: '#fef3c7',
-          borderBottom: '1px solid #fcd34d',
-          padding: '12px 20px',
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <AlertTriangle style={{ width: '20px', height: '20px', color: '#d97706', flexShrink: 0 }} />
-            <div style={{ flex: 1 }}>
-              <h2 style={{ 
-                fontSize: '16px', 
-                fontWeight: 600, 
-                color: '#92400e',
-                margin: 0,
-              }}>
-                Vkládáte větší množství textu
-              </h2>
-              <p style={{ 
-                fontSize: '14px', 
-                color: '#d97706',
-                margin: '4px 0 0 0',
-              }}>
-                Detekováno {wordCount} slov
-              </p>
-            </div>
+        <div style={headerStyle}>
+          <AlertTriangle style={{ width: '20px', height: '20px', color: '#d97706', flexShrink: 0 }} />
+          <div style={{ flex: 1 }}>
+            <h2 style={{ fontSize: '16px', fontWeight: 600, color: '#92400e', margin: 0 }}>
+              Vkládáte větší množství textu
+            </h2>
+            <p style={{ fontSize: '14px', color: '#d97706', margin: '4px 0 0 0' }}>
+              Detekováno {wordCount} slov
+            </p>
           </div>
         </div>
 
         {/* Content */}
-        <div style={{ padding: '20px' }}>
+        <div style={contentStyle}>
           {/* Preview of pasted text */}
           <div style={{ marginBottom: '12px' }}>
             <p style={{ fontSize: '12px', color: '#64748b', marginBottom: '4px' }}>
@@ -125,13 +168,7 @@ export function PasteWarningDialog({
 
           {/* URL Input */}
           <div style={{ marginBottom: '16px' }}>
-            <label style={{ 
-              display: 'block', 
-              fontSize: '14px', 
-              fontWeight: 500, 
-              color: '#334155', 
-              marginBottom: '6px' 
-            }}>
+            <label style={{ display: 'block', fontSize: '14px', fontWeight: 500, color: '#334155', marginBottom: '6px' }}>
               Zdroj textu (URL nebo popis)
             </label>
             <input
@@ -140,70 +177,21 @@ export function PasteWarningDialog({
               onChange={(e) => setSourceUrl(e.target.value)}
               placeholder="např. https://wikipedia.org/... nebo 'vlastní poznámky'"
               autoFocus
-              style={{
-                width: '100%',
-                padding: '10px 16px',
-                border: '1px solid #cbd5e1',
-                borderRadius: '12px',
-                fontSize: '14px',
-                outline: 'none',
-                boxSizing: 'border-box',
-              }}
+              style={inputStyle}
             />
-            <p style={{ 
-              marginTop: '6px', 
-              fontSize: '12px', 
-              color: '#64748b', 
-              display: 'flex', 
-              alignItems: 'center', 
-              gap: '4px' 
-            }}>
+            <p style={{ marginTop: '6px', fontSize: '12px', color: '#64748b', display: 'flex', alignItems: 'center', gap: '4px' }}>
               💡 Učitel uvidí, zda jste uvedli zdroj u vloženého textu.
             </p>
           </div>
         </div>
 
         {/* Actions */}
-        <div style={{ 
-          padding: '0 20px 20px 20px', 
-          display: 'flex', 
-          gap: '12px' 
-        }}>
-          <button
-            onClick={onCancel}
-            style={{
-              flex: 1,
-              padding: '10px 16px',
-              border: '1px solid #cbd5e1',
-              backgroundColor: '#ffffff',
-              color: '#475569',
-              borderRadius: '12px',
-              fontSize: '14px',
-              fontWeight: 500,
-              cursor: 'pointer',
-            }}
-          >
+        <div style={actionsStyle}>
+          <button onClick={onCancel} style={cancelBtnStyle}>
             Zrušit vložení
           </button>
           
-          <button
-            onClick={handleConfirmWithSource}
-            style={{
-              flex: 1,
-              padding: '10px 16px',
-              border: 'none',
-              backgroundColor: hasSource ? '#16a34a' : '#f59e0b',
-              color: '#ffffff',
-              borderRadius: '12px',
-              fontSize: '14px',
-              fontWeight: 500,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '8px',
-            }}
-          >
+          <button onClick={handleConfirmWithSource} style={confirmBtnStyle}>
             <Check style={{ width: '16px', height: '16px', color: '#ffffff' }} />
             <span>{hasSource ? 'Potvrdit se zdrojem' : 'Pokračovat bez zdroje'}</span>
           </button>
