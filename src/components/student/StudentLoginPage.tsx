@@ -33,7 +33,7 @@ export function StudentLoginPage() {
   // Redirect if already logged in
   useEffect(() => {
     if (!authLoading && student) {
-      navigate('/student/dashboard');
+      navigate('/library/student-wall');
     }
   }, [student, authLoading, navigate]);
 
@@ -54,8 +54,8 @@ export function StudentLoginPage() {
       setError(result.error);
       setLoading(false);
     } else {
-      // Redirect to student dashboard
-      navigate('/student/dashboard');
+      // Redirect to student wall
+      navigate('/library/student-wall');
     }
   };
 
