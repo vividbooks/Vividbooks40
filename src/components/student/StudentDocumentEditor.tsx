@@ -21,7 +21,10 @@ import {
   Sparkles,
   Clock,
   CheckCircle2,
-  AlertTriangle
+  AlertTriangle,
+  Undo,
+  Redo,
+  History
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { PasteWarningDialog, usePasteDetection } from './PasteWarningDialog';
@@ -43,6 +46,14 @@ interface StudentDocumentEditorProps {
   onBack: () => void;
   /** Children - the actual editor content */
   children: React.ReactNode;
+  /** Save status */
+  saveStatus?: 'saved' | 'saving' | 'unsaved';
+  /** Undo callback */
+  onUndo?: () => void;
+  /** Redo callback */
+  onRedo?: () => void;
+  /** Show version history */
+  onShowHistory?: () => void;
 }
 
 export function StudentDocumentEditor({
@@ -51,6 +62,10 @@ export function StudentDocumentEditor({
   onSubmit,
   onBack,
   children,
+  saveStatus = 'saved',
+  onUndo,
+  onRedo,
+  onShowHistory,
 }: StudentDocumentEditorProps) {
   const [isAssignmentOpen, setIsAssignmentOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -162,7 +177,7 @@ export function StudentDocumentEditor({
           </h1>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           {/* AI Assistant Button (if enabled) */}
           {settings.aiAssistantEnabled && !isSubmitted && (
             <button
@@ -180,6 +195,48 @@ export function StudentDocumentEditor({
               <span>Do: {new Date(settings.dueDate).toLocaleDateString('cs-CZ')}</span>
             </div>
           )}
+
+          {/* Divider */}
+          <div className="w-px h-6 bg-slate-200 mx-1" />
+
+          {/* Version History Button */}
+          {onShowHistory && (
+            <button
+              onClick={onShowHistory}
+              className="p-2 rounded-lg bg-slate-100 hover:bg-slate-200 transition-colors text-slate-600"
+              title="Historie verzí"
+            >
+              <History className="h-4 w-4" />
+            </button>
+          )}
+
+          {/* Save Status */}
+          <div className="text-sm text-slate-400 font-medium px-2">
+            {saveStatus === 'saving' ? 'Ukládání...' : saveStatus === 'unsaved' ? 'Neuloženo' : 'Uloženo'}
+          </div>
+
+          {/* Undo/Redo */}
+          <div className="flex items-center gap-1">
+            <button
+              onClick={onUndo}
+              disabled={!onUndo}
+              className="p-2 rounded-lg bg-slate-100 hover:bg-slate-200 transition-colors text-slate-600 disabled:opacity-50"
+              title="Zpět (Ctrl+Z)"
+            >
+              <Undo className="h-4 w-4" />
+            </button>
+            <button
+              onClick={onRedo}
+              disabled={!onRedo}
+              className="p-2 rounded-lg bg-slate-100 hover:bg-slate-200 transition-colors text-slate-600 disabled:opacity-50"
+              title="Vpřed (Ctrl+Y)"
+            >
+              <Redo className="h-4 w-4" />
+            </button>
+          </div>
+
+          {/* Divider before submit */}
+          <div className="w-px h-6 bg-slate-200 mx-1" />
 
           {/* Submit Button */}
           {!isSubmitted ? (
