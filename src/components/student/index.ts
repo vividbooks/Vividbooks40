@@ -1,8 +1,7 @@
-/**
- * Student Components Export
- */
+export { StudentLoginPage } from './StudentLoginPage';
+export { StudentSetupPassword } from './StudentSetupPassword';
+export { StudentDashboard } from './StudentDashboard';
 
-export { PasteWarningDialog, usePasteDetection } from './PasteWarningDialog';
-export { StudentDocumentEditor } from './StudentDocumentEditor';
-export { GradedWorkCard } from './GradedWorkCard';
+
+export { LiveSessionNotification } from './LiveSessionNotification';
 

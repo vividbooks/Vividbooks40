@@ -34,8 +34,13 @@ import { ShareInClassButton, StudentShareHeaderIndicator, FirebaseTeacherPanel }
 import { QRCodeSVG } from 'qrcode.react';
 import { useClassroomShare } from '../contexts/ClassroomShareContext';
 import { WorksheetTypeSelector, WorksheetType, getPromptModifier } from './worksheet/WorksheetTypeSelector';
+import { QuizTypeSelector, QuizType } from './quiz/QuizTypeSelector';
 import { ImageSelectionStep, ImageOption } from './worksheet-editor/ImageSelectionStep';
 import { extractImagesFromHtml, ExtractedImage } from '../utils/extract-images';
+import { generateQuizFromDocument } from '../utils/ai-quiz-generator';
+import { saveQuiz } from '../utils/quiz-storage';
+import { generateLoadingMessages } from '../utils/loading-messages';
+import { GeneratingLoader } from './ui/GeneratingLoader';
 import { useLicenseAccess } from '../hooks/useLicenseAccess';
 import { useEcosystemAccess } from '../hooks/useEcosystemAccess';
 import { SubjectPromo } from './SubjectPromo';
@@ -363,6 +368,10 @@ export function DocumentationLayout({ theme, toggleTheme }: DocumentationLayoutP
   const [videoExpanded, setVideoExpanded] = useState(false);
   const [isGeneratingWorksheet, setIsGeneratingWorksheet] = useState(false);
   const [showWorksheetTypeSelector, setShowWorksheetTypeSelector] = useState(false);
+  const [showQuizTypeSelector, setShowQuizTypeSelector] = useState(false);
+  const [isGeneratingQuiz, setIsGeneratingQuiz] = useState(false);
+  const [generatingMessages, setGeneratingMessages] = useState<string[]>([]);
+  const [generatingTitle, setGeneratingTitle] = useState('');
   const [showImageSelection, setShowImageSelection] = useState(false);
   const [pendingWorksheetType, setPendingWorksheetType] = useState<WorksheetType | null>(null);
   const [extractedLessonImages, setExtractedLessonImages] = useState<ExtractedImage[]>([]);
@@ -1076,6 +1085,82 @@ export function DocumentationLayout({ theme, toggleTheme }: DocumentationLayoutP
     setShowWorksheetTypeSelector(true);
   };
 
+  // Open quiz type selector popup
+  const handleOpenQuizSelector = () => {
+    setShowQuizTypeSelector(true);
+  };
+
+  // Handle quiz type selection and generate quiz
+  const handleQuizTypeSelected = async (quizType: QuizType) => {
+    console.log('[Quiz] Type selected:', quizType, 'Page:', page?.title);
+    if (!page) return;
+    
+    // Close the type selector
+    setShowQuizTypeSelector(false);
+    
+    // Get type-specific labels
+    const typeLabels: Record<QuizType, string> = {
+      'prezentace': 'Aktivitu',
+      'test': 'Test',
+      'pisemka': 'Písemku',
+    };
+    
+    // Detect subject
+    const categorySlug = category?.toLowerCase() || '';
+    let subject = 'Obecné';
+    if (categorySlug.includes('fyzik')) subject = 'Fyzika';
+    else if (categorySlug.includes('mat')) subject = 'Matematika';
+    else if (categorySlug.includes('chem')) subject = 'Chemie';
+    else if (categorySlug.includes('bio')) subject = 'Biologie';
+    
+    // Generate loading messages from content
+    const messages = generateLoadingMessages(page.content || '', page.title, subject);
+    setGeneratingMessages(messages);
+    setGeneratingTitle(`Vytvářím ${typeLabels[quizType].toLowerCase()}`);
+    setIsGeneratingQuiz(true);
+    
+    try {
+      // Get text content from HTML
+      const tempDiv = document.createElement('div');
+      tempDiv.innerHTML = page.content || '';
+      const textContent = tempDiv.textContent || tempDiv.innerText || '';
+      
+      // Generate the quiz
+      const result = await generateQuizFromDocument({
+        documentContent: textContent,
+        documentTitle: page.title,
+        quizType,
+        subject,
+      });
+      
+      if (result.error || !result.quiz) {
+        toast.error('Chyba při vytváření kvízu', {
+          description: result.error || 'Neznámá chyba'
+        });
+        return;
+      }
+      
+      // Save the quiz
+      saveQuiz(result.quiz);
+      
+      toast.success(`${typeLabels[quizType]} vytvořen!`, {
+        description: `Vygenerováno ${result.quiz.slides.length} slidů z dokumentu "${page.title}"`
+      });
+      
+      // Navigate to board/quiz editor
+      navigate(`/quiz/edit/${result.quiz.id}`);
+      
+    } catch (e) {
+      console.error("Failed to create quiz", e);
+      toast.error("Chyba při vytváření kvízu", {
+        description: e instanceof Error ? e.message : 'Neznámá chyba'
+      });
+    } finally {
+      setIsGeneratingQuiz(false);
+      setGeneratingMessages([]);
+    }
+  };
+
   // After user selects worksheet type, extract images and show image selection
   const handleWorksheetTypeSelected = (worksheetType: WorksheetType) => {
     console.log('[Worksheet] Type selected:', worksheetType, 'Page:', page?.title);
@@ -1123,9 +1208,6 @@ export function DocumentationLayout({ theme, toggleTheme }: DocumentationLayoutP
     setPendingWorksheetType(null);
 
     try {
-      // Show loading state
-      setIsGeneratingWorksheet(true);
-      
       // Get type-specific labels
       const typeLabels: Record<WorksheetType, string> = {
         'test': 'Test',
@@ -1133,10 +1215,21 @@ export function DocumentationLayout({ theme, toggleTheme }: DocumentationLayoutP
         'pracovni-list': 'Pracovní list',
       };
       
-      // Show loading toast
-      const loadingToast = toast.loading(`Vytvářím ${typeLabels[worksheetType].toLowerCase()} z dokumentu...`, {
-        description: 'AI generuje obsah na základě dokumentu'
-      });
+      // Detect subject for loading messages
+      const categorySlug = category?.toLowerCase() || '';
+      let subjectForMessages = 'Obecné';
+      if (categorySlug.includes('fyzik')) subjectForMessages = 'Fyzika';
+      else if (categorySlug.includes('mat')) subjectForMessages = 'Matematika';
+      else if (categorySlug.includes('chem')) subjectForMessages = 'Chemie';
+      else if (categorySlug.includes('bio')) subjectForMessages = 'Biologie';
+      
+      // Generate loading messages from content
+      const messages = generateLoadingMessages(page.content || '', page.title, subjectForMessages);
+      setGeneratingMessages(messages);
+      setGeneratingTitle(`Vytvářím ${typeLabels[worksheetType].toLowerCase()}`);
+      
+      // Show loading state
+      setIsGeneratingWorksheet(true);
 
       // Map category to subject
       const categoryToSubject: Record<string, Subject> = {
@@ -1294,9 +1387,9 @@ Ujisti se, že všechny otázky a úlohy vycházejí přímo z obsahu dokumentu 
       // Save worksheet
       saveWorksheet(worksheet);
 
-      // Dismiss loading toast and show success
-      toast.dismiss(loadingToast);
+      // Hide loader and show success
       setIsGeneratingWorksheet(false);
+      setGeneratingMessages([]);
       toast.success(`${typeLabels[worksheetType]} vytvořen!`, {
         description: `Vygenerováno ${blocks.length} bloků z dokumentu "${page.title}"`
       });
@@ -1307,6 +1400,7 @@ Ujisti se, že všechny otázky a úlohy vycházejí přímo z obsahu dokumentu 
     } catch (e) {
       console.error("Failed to create worksheet", e);
       setIsGeneratingWorksheet(false);
+      setGeneratingMessages([]);
       toast.error("Chyba při vytváření materiálu", {
         description: e instanceof Error ? e.message : 'Neznámá chyba'
       });
@@ -1325,27 +1419,6 @@ Ujisti se, že všechny otázky a úlohy vycházejí přímo z obsahu dokumentu 
       className="min-h-screen bg-background transition-colors duration-300"
       style={{ paddingTop: classroomShare.state.isSharing ? '40px' : undefined }}
     >
-      {/* Loading Overlay for Worksheet Generation */}
-      {isGeneratingWorksheet && (
-        <div className="fixed inset-0 z-[9999] bg-black/50 backdrop-blur-sm flex items-start justify-center" style={{ paddingTop: '20px' }}>
-          <div className="bg-white rounded-2xl p-8 shadow-2xl max-w-md mx-4 text-center">
-            <div className="mb-4">
-              <img 
-                src="https://app.vividbooks.com/assets/img/loading-new.gif" 
-                alt="Loading" 
-                className="h-24 mx-auto object-contain"
-              />
-            </div>
-            <h3 className="text-xl font-semibold text-slate-800 mb-2">
-              Vytvářím materiál
-            </h3>
-            <p className="text-slate-500">
-              AI generuje obsah z dokumentu...
-            </p>
-          </div>
-        </div>
-      )}
-      
       {/* Worksheet Type Selector Popup */}
       <WorksheetTypeSelector
         isOpen={showWorksheetTypeSelector}
@@ -1353,6 +1426,28 @@ Ujisti se, že všechny otázky a úlohy vycházejí přímo z obsahu dokumentu 
         onSelect={handleWorksheetTypeSelected}
         documentTitle={page?.title || 'Dokument'}
       />
+      
+      {/* Quiz Type Selector Popup */}
+      <QuizTypeSelector
+        isOpen={showQuizTypeSelector}
+        onClose={() => setShowQuizTypeSelector(false)}
+        onSelect={handleQuizTypeSelected}
+        documentTitle={page?.title || 'Dokument'}
+      />
+      
+      {/* Generating Loader with contextual messages */}
+      {(isGeneratingQuiz || isGeneratingWorksheet) && generatingMessages.length > 0 && (
+        <GeneratingLoader 
+          messages={generatingMessages}
+          title={generatingTitle}
+          onCancel={() => {
+            setIsGeneratingQuiz(false);
+            setIsGeneratingWorksheet(false);
+            setGeneratingMessages([]);
+            toast.info('Generování zrušeno');
+          }}
+        />
+      )}
       
       {/* Image Selection Popup */}
       {showImageSelection && (
@@ -1880,7 +1975,7 @@ Ujisti se, že všechny otázky a úlohy vycházejí přímo z obsahu dokumentu 
                                 <span>Pracovní list</span>
                               </DropdownMenuItem>
                               <DropdownMenuItem 
-                                onClick={() => console.log('Vytvořit kvíz')}
+                                onClick={handleOpenQuizSelector}
                                 className="py-3 px-3 cursor-pointer"
                               >
                                 <MessageSquareText className="h-5 w-5 mr-3" />

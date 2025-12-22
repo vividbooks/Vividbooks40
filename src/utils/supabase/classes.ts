@@ -1,11 +1,15 @@
 /**
  * Supabase Classes & Results Management
  * 
- * Tables needed in Supabase:
- * - classes: id, name, teacher_id, created_at
- * - students: id, name, class_id, email, created_at
- * - assignments: id, title, type (test/practice/individual), class_id, board_id, due_date, created_at
- * - results: id, student_id, assignment_id, score, max_score, completed_at, time_spent_ms
+ * Tables in Supabase (see docs/DATABASE_STRUCTURE.md):
+ * - schools: id, name, address, city
+ * - teachers: id, email, name, school_id, avatar_url
+ * - classes: id, name, teacher_id, school_id, grade, students_count
+ * - class_subjects: id, class_id, subject_name, teacher_id, is_owner
+ * - class_collaborators: id, class_id, teacher_id, subject_name, status, invited_by
+ * - students: id, name, class_id, email, initials, color
+ * - assignments: id, title, type, class_id, board_id, subject, due_date, session_id, session_type
+ * - results: id, student_id, assignment_id, score, max_score, percentage, correct_count, total_questions, time_spent_ms, teacher_comment
  */
 
 import { supabase } from './client';
@@ -14,12 +18,56 @@ import { supabase } from './client';
 // TYPES
 // =============================================
 
+export interface School {
+  id: string;
+  name: string;
+  address?: string;
+  city?: string;
+  created_at: string;
+}
+
+export interface Teacher {
+  id: string;
+  email: string;
+  name: string;
+  school_id?: string;
+  avatar_url?: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface ClassGroup {
   id: string;
   name: string;
   teacher_id: string;
+  school_id?: string;
+  grade?: number;
   students_count?: number;
   created_at: string;
+  updated_at?: string;
+}
+
+export interface ClassSubject {
+  id: string;
+  class_id: string;
+  subject_name: string;
+  teacher_id: string;
+  is_owner: boolean;
+  created_at: string;
+}
+
+export interface ClassCollaborator {
+  id: string;
+  class_id: string;
+  teacher_id: string;
+  subject_name: string;
+  status: 'pending' | 'accepted' | 'rejected';
+  invited_at: string;
+  accepted_at?: string;
+  invited_by: string;
+  // Joined fields
+  teacher_name?: string;
+  teacher_email?: string;
 }
 
 export interface Student {
@@ -30,16 +78,21 @@ export interface Student {
   initials: string;
   color: string;
   created_at: string;
+  updated_at?: string;
 }
 
 export interface Assignment {
   id: string;
   title: string;
-  type: 'test' | 'practice' | 'individual';
+  type: 'test' | 'practice' | 'individual' | 'live';
   class_id: string;
   board_id?: string;
-  due_date: string;
+  subject: string;
+  due_date?: string;
+  session_id?: string;
+  session_type?: 'live' | 'shared' | 'individual';
   created_at: string;
+  created_by?: string;
 }
 
 export interface StudentResult {
@@ -48,8 +101,18 @@ export interface StudentResult {
   assignment_id: string;
   score: number | null; // null = not done, -1 = pending
   max_score: number;
+  percentage?: number;
+  correct_count?: number;
+  total_questions?: number;
   completed_at?: string;
   time_spent_ms?: number;
+  teacher_comment?: string;
+  created_at?: string;
+  // Formative assessment fields
+  formative_assessment?: string;
+  teacher_notes?: string;
+  shared_with_student?: boolean;
+  shared_at?: string;
 }
 
 export interface ClassWithStudentsAndResults {
@@ -57,6 +120,8 @@ export interface ClassWithStudentsAndResults {
   students: Student[];
   assignments: Assignment[];
   results: { [studentId: string]: { [assignmentId: string]: StudentResult } };
+  subjects?: string[];
+  collaborators?: ClassCollaborator[];
 }
 
 // =============================================
@@ -98,61 +163,90 @@ function generateAssignmentsForClass(classId: string): Assignment[] {
   // Only generate full data for class 1 (6.A), simpler for others
   if (classId !== '1') {
     return [
-      { id: `a_${classId}_1`, title: 'Úvodní test', type: 'test', class_id: classId, board_id: 'board_intro', due_date: '2024-09-15', created_at: '2024-09-01' },
-      { id: `a_${classId}_2`, title: 'Procvičování', type: 'practice', class_id: classId, board_id: 'board_practice1', due_date: '2024-10-01', created_at: '2024-09-20' },
-      { id: `a_${classId}_3`, title: 'Pololetní test', type: 'test', class_id: classId, board_id: 'board_mid', due_date: '2024-12-15', created_at: '2024-12-01' },
+      { id: `a_${classId}_1`, title: 'Úvodní test', type: 'test', class_id: classId, board_id: 'board_intro', due_date: '2024-09-15', created_at: '2024-09-01', subject: 'Fyzika' },
+      { id: `a_${classId}_2`, title: 'Procvičování', type: 'practice', class_id: classId, board_id: 'board_practice1', due_date: '2024-10-01', created_at: '2024-09-20', subject: 'Fyzika' },
+      { id: `a_${classId}_3`, title: 'Pololetní test', type: 'test', class_id: classId, board_id: 'board_mid', due_date: '2024-12-15', created_at: '2024-12-01', subject: 'Fyzika' },
     ];
   }
   
-  // Full demo data for class 6.A
-  const assignments: Assignment[] = [
+  // Full demo data for class 6.A - FYZIKA
+  const fyzikaAssignments: Assignment[] = [
     // Board 1: Hmota - živá relace (test)
-    { id: `a_1_1`, title: 'Hmota a její vlastnosti', type: 'test', class_id: '1', board_id: 'board_hmota', due_date: '2024-09-08', created_at: '2024-09-01' },
+    { id: `a_1_1`, title: 'Hmota a její vlastnosti', type: 'test', class_id: '1', board_id: 'board_hmota', due_date: '2024-09-08', created_at: '2024-09-01', subject: 'Fyzika' },
     // Individual work on Hmota board
-    { id: `i_1_1`, title: 'Hmota', type: 'individual', class_id: '1', board_id: 'board_hmota', due_date: '2024-09-10', created_at: '2024-09-09' },
-    { id: `i_1_2`, title: 'Hmota', type: 'individual', class_id: '1', board_id: 'board_hmota', due_date: '2024-09-12', created_at: '2024-09-11' },
+    { id: `i_1_1`, title: 'Hmota', type: 'individual', class_id: '1', board_id: 'board_hmota', due_date: '2024-09-10', created_at: '2024-09-09', subject: 'Fyzika' },
+    { id: `i_1_2`, title: 'Hmota', type: 'individual', class_id: '1', board_id: 'board_hmota', due_date: '2024-09-12', created_at: '2024-09-11', subject: 'Fyzika' },
     
     // Board 2: Síla a pohyb - procvičování
-    { id: `a_1_2`, title: 'Síla a pohyb', type: 'practice', class_id: '1', board_id: 'board_sila', due_date: '2024-09-21', created_at: '2024-09-15' },
+    { id: `a_1_2`, title: 'Síla a pohyb', type: 'practice', class_id: '1', board_id: 'board_sila', due_date: '2024-09-21', created_at: '2024-09-15', subject: 'Fyzika' },
     // Individual work
-    { id: `i_1_3`, title: 'Síla', type: 'individual', class_id: '1', board_id: 'board_sila', due_date: '2024-09-23', created_at: '2024-09-22' },
-    { id: `i_1_4`, title: 'Pohyb', type: 'individual', class_id: '1', board_id: 'board_pohyb', due_date: '2024-09-25', created_at: '2024-09-24' },
-    { id: `i_1_5`, title: 'Síla', type: 'individual', class_id: '1', board_id: 'board_sila', due_date: '2024-09-27', created_at: '2024-09-26' },
+    { id: `i_1_3`, title: 'Síla', type: 'individual', class_id: '1', board_id: 'board_sila', due_date: '2024-09-23', created_at: '2024-09-22', subject: 'Fyzika' },
+    { id: `i_1_4`, title: 'Pohyb', type: 'individual', class_id: '1', board_id: 'board_pohyb', due_date: '2024-09-25', created_at: '2024-09-24', subject: 'Fyzika' },
+    { id: `i_1_5`, title: 'Síla', type: 'individual', class_id: '1', board_id: 'board_sila', due_date: '2024-09-27', created_at: '2024-09-26', subject: 'Fyzika' },
     
     // Board 3: Newtonovy zákony - test
-    { id: `a_1_3`, title: 'Newtonovy zákony', type: 'test', class_id: '1', board_id: 'board_newton', due_date: '2024-10-05', created_at: '2024-09-28' },
+    { id: `a_1_3`, title: 'Newtonovy zákony', type: 'test', class_id: '1', board_id: 'board_newton', due_date: '2024-10-05', created_at: '2024-09-28', subject: 'Fyzika' },
     // Individual work
-    { id: `i_1_6`, title: 'Newton', type: 'individual', class_id: '1', board_id: 'board_newton', due_date: '2024-10-08', created_at: '2024-10-06' },
-    { id: `i_1_7`, title: 'Newton', type: 'individual', class_id: '1', board_id: 'board_newton', due_date: '2024-10-10', created_at: '2024-10-09' },
+    { id: `i_1_6`, title: 'Newton', type: 'individual', class_id: '1', board_id: 'board_newton', due_date: '2024-10-08', created_at: '2024-10-06', subject: 'Fyzika' },
+    { id: `i_1_7`, title: 'Newton', type: 'individual', class_id: '1', board_id: 'board_newton', due_date: '2024-10-10', created_at: '2024-10-09', subject: 'Fyzika' },
     
     // Board 4: Práce a energie - test
-    { id: `a_1_4`, title: 'Práce a energie', type: 'test', class_id: '1', board_id: 'board_prace', due_date: '2024-10-20', created_at: '2024-10-12' },
+    { id: `a_1_4`, title: 'Práce a energie', type: 'test', class_id: '1', board_id: 'board_prace', due_date: '2024-10-20', created_at: '2024-10-12', subject: 'Fyzika' },
     // Individual work
-    { id: `i_1_8`, title: 'Práce', type: 'individual', class_id: '1', board_id: 'board_prace', due_date: '2024-10-22', created_at: '2024-10-21' },
+    { id: `i_1_8`, title: 'Práce', type: 'individual', class_id: '1', board_id: 'board_prace', due_date: '2024-10-22', created_at: '2024-10-21', subject: 'Fyzika' },
     
     // Board 5: Energie - procvičování
-    { id: `a_1_5`, title: 'Procvičování Energie', type: 'practice', class_id: '1', board_id: 'board_energie', due_date: '2024-11-02', created_at: '2024-10-26' },
+    { id: `a_1_5`, title: 'Procvičování Energie', type: 'practice', class_id: '1', board_id: 'board_energie', due_date: '2024-11-02', created_at: '2024-10-26', subject: 'Fyzika' },
     // Individual work
-    { id: `i_1_9`, title: 'Energie', type: 'individual', class_id: '1', board_id: 'board_energie', due_date: '2024-11-05', created_at: '2024-11-03' },
-    { id: `i_1_10`, title: 'Energie', type: 'individual', class_id: '1', board_id: 'board_energie', due_date: '2024-11-07', created_at: '2024-11-06' },
-    { id: `i_1_11`, title: 'Opak.', type: 'individual', class_id: '1', board_id: 'board_energie', due_date: '2024-11-09', created_at: '2024-11-08' },
+    { id: `i_1_9`, title: 'Energie', type: 'individual', class_id: '1', board_id: 'board_energie', due_date: '2024-11-05', created_at: '2024-11-03', subject: 'Fyzika' },
+    { id: `i_1_10`, title: 'Energie', type: 'individual', class_id: '1', board_id: 'board_energie', due_date: '2024-11-07', created_at: '2024-11-06', subject: 'Fyzika' },
+    { id: `i_1_11`, title: 'Opak.', type: 'individual', class_id: '1', board_id: 'board_energie', due_date: '2024-11-09', created_at: '2024-11-08', subject: 'Fyzika' },
     
     // Board 6: Teplo a teplota - test
-    { id: `a_1_6`, title: 'Teplo a teplota', type: 'test', class_id: '1', board_id: 'board_teplo', due_date: '2024-11-18', created_at: '2024-11-10' },
+    { id: `a_1_6`, title: 'Teplo a teplota', type: 'test', class_id: '1', board_id: 'board_teplo', due_date: '2024-11-18', created_at: '2024-11-10', subject: 'Fyzika' },
     // Individual work
-    { id: `i_1_12`, title: 'Teplo', type: 'individual', class_id: '1', board_id: 'board_teplo', due_date: '2024-11-20', created_at: '2024-11-19' },
-    { id: `i_1_13`, title: 'Teplo', type: 'individual', class_id: '1', board_id: 'board_teplo', due_date: '2024-11-22', created_at: '2024-11-21' },
+    { id: `i_1_12`, title: 'Teplo', type: 'individual', class_id: '1', board_id: 'board_teplo', due_date: '2024-11-20', created_at: '2024-11-19', subject: 'Fyzika' },
+    { id: `i_1_13`, title: 'Teplo', type: 'individual', class_id: '1', board_id: 'board_teplo', due_date: '2024-11-22', created_at: '2024-11-21', subject: 'Fyzika' },
     
     // Board 7: Teplo - procvičování
-    { id: `a_1_7`, title: 'Procvič. Teplo', type: 'practice', class_id: '1', board_id: 'board_teplo2', due_date: '2024-11-28', created_at: '2024-11-22' },
+    { id: `a_1_7`, title: 'Procvič. Teplo', type: 'practice', class_id: '1', board_id: 'board_teplo2', due_date: '2024-11-28', created_at: '2024-11-22', subject: 'Fyzika' },
     // Individual work
-    { id: `i_1_14`, title: 'Test', type: 'individual', class_id: '1', board_id: 'board_teplo2', due_date: '2024-12-01', created_at: '2024-11-29' },
+    { id: `i_1_14`, title: 'Test', type: 'individual', class_id: '1', board_id: 'board_teplo2', due_date: '2024-12-01', created_at: '2024-11-29', subject: 'Fyzika' },
     
     // Board 8: Závěrečný test
-    { id: `a_1_8`, title: 'Závěrečný test', type: 'test', class_id: '1', board_id: 'board_final', due_date: '2024-12-10', created_at: '2024-12-02' },
+    { id: `a_1_8`, title: 'Závěrečný test', type: 'test', class_id: '1', board_id: 'board_final', due_date: '2024-12-10', created_at: '2024-12-02', subject: 'Fyzika' },
   ];
   
-  return assignments;
+  // MATEMATIKA assignments for class 6.A
+  const matematikaAssignments: Assignment[] = [
+    // Board 1: Zlomky
+    { id: `m_1_1`, title: 'Zlomky - úvod', type: 'test', class_id: '1', board_id: 'board_zlomky', due_date: '2024-09-12', created_at: '2024-09-05', subject: 'Matematika' },
+    { id: `mi_1_1`, title: 'Zlomky', type: 'individual', class_id: '1', board_id: 'board_zlomky', due_date: '2024-09-15', created_at: '2024-09-13', subject: 'Matematika' },
+    { id: `mi_1_2`, title: 'Zlomky', type: 'individual', class_id: '1', board_id: 'board_zlomky', due_date: '2024-09-18', created_at: '2024-09-16', subject: 'Matematika' },
+    
+    // Board 2: Desetinná čísla
+    { id: `m_1_2`, title: 'Desetinná čísla', type: 'practice', class_id: '1', board_id: 'board_desetinna', due_date: '2024-09-28', created_at: '2024-09-20', subject: 'Matematika' },
+    { id: `mi_1_3`, title: 'Desítky', type: 'individual', class_id: '1', board_id: 'board_desetinna', due_date: '2024-10-01', created_at: '2024-09-29', subject: 'Matematika' },
+    
+    // Board 3: Procenta
+    { id: `m_1_3`, title: 'Procenta', type: 'test', class_id: '1', board_id: 'board_procenta', due_date: '2024-10-15', created_at: '2024-10-08', subject: 'Matematika' },
+    { id: `mi_1_4`, title: '%', type: 'individual', class_id: '1', board_id: 'board_procenta', due_date: '2024-10-18', created_at: '2024-10-16', subject: 'Matematika' },
+    { id: `mi_1_5`, title: '%', type: 'individual', class_id: '1', board_id: 'board_procenta', due_date: '2024-10-20', created_at: '2024-10-19', subject: 'Matematika' },
+    
+    // Board 4: Rovnice
+    { id: `m_1_4`, title: 'Rovnice', type: 'practice', class_id: '1', board_id: 'board_rovnice', due_date: '2024-11-05', created_at: '2024-10-28', subject: 'Matematika' },
+    { id: `mi_1_6`, title: 'Rovn.', type: 'individual', class_id: '1', board_id: 'board_rovnice', due_date: '2024-11-08', created_at: '2024-11-06', subject: 'Matematika' },
+    
+    // Board 5: Geometrie
+    { id: `m_1_5`, title: 'Geometrie - úhly', type: 'test', class_id: '1', board_id: 'board_geometrie', due_date: '2024-11-22', created_at: '2024-11-15', subject: 'Matematika' },
+    { id: `mi_1_7`, title: 'Úhly', type: 'individual', class_id: '1', board_id: 'board_geometrie', due_date: '2024-11-25', created_at: '2024-11-23', subject: 'Matematika' },
+    { id: `mi_1_8`, title: 'Geom.', type: 'individual', class_id: '1', board_id: 'board_geometrie', due_date: '2024-11-28', created_at: '2024-11-26', subject: 'Matematika' },
+    
+    // Board 6: Pololetní test
+    { id: `m_1_6`, title: 'Pololetní test Mat', type: 'test', class_id: '1', board_id: 'board_mat_final', due_date: '2024-12-12', created_at: '2024-12-05', subject: 'Matematika' },
+  ];
+  
+  return [...fyzikaAssignments, ...matematikaAssignments];
 }
 
 const DEMO_CLASSES: ClassGroup[] = [
@@ -224,46 +318,85 @@ function getDemoResults(): { [studentId: string]: { [assignmentId: string]: Stud
 // DATA SOURCE TOGGLE
 // =============================================
 
-let useSupabaseData = false;
+// Always read from localStorage to avoid HMR issues
+function getUseSupabaseData(): boolean {
+  if (typeof window !== 'undefined') {
+    const saved = localStorage.getItem('use_supabase_data');
+    const result = saved === 'true';
+    
+    return result;
+  }
+  
+  return false;
+}
 
 export function setDataSource(useSupabase: boolean): void {
-  useSupabaseData = useSupabase;
+  if (typeof window !== 'undefined') {
+    localStorage.setItem('use_supabase_data', useSupabase ? 'true' : 'false');
+  }
 }
 
 export function isUsingSupabase(): boolean {
-  return useSupabaseData;
+  return getUseSupabaseData();
 }
 
 // =============================================
 // CLASS FUNCTIONS
 // =============================================
 
-export async function getClasses(teacherId: string): Promise<ClassGroup[]> {
-  if (!useSupabaseData) {
+export async function getClasses(teacherId?: string): Promise<ClassGroup[]> {
+  const startTime = Date.now();
+  console.log('[getClasses] Starting...');
+  
+  if (!getUseSupabaseData()) {
+    console.log('[getClasses] Using demo data');
     return DEMO_CLASSES;
   }
   
   try {
-    const { data, error } = await supabase
-      .from('classes')
-      .select('*')
-      .eq('teacher_id', teacherId)
-      .order('name');
+    // Use direct fetch instead of Supabase client (more reliable)
+    const projectId = 'njbtqmsxbyvpwigfceke';
+    const apiKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5qYnRxbXN4Ynl2cHdpZ2ZjZWtlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI4MzczODksImV4cCI6MjA3ODQxMzM4OX0.nY0THq2YU9wrjYsPoxYwXRXczE3Vh7cB1opzAV8c50g';
     
-    if (error) throw error;
+    let url = `https://${projectId}.supabase.co/rest/v1/classes?select=*&order=name`;
+    
+    // Only filter by teacher_id if it's a valid UUID
+    if (teacherId && teacherId.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
+      url += `&teacher_id=eq.${teacherId}`;
+    }
+    
+    const response = await fetch(url, {
+      headers: {
+        'apikey': apiKey,
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      }
+    });
+    
+    const duration = Date.now() - startTime;
+    
+    if (!response.ok) {
+      console.error(`[getClasses] HTTP error ${response.status} after ${duration}ms`);
+      return [];
+    }
+    
+    const data = await response.json();
+    console.log(`[getClasses] Completed in ${duration}ms, found ${data?.length || 0} classes`);
+    
     return data || [];
-  } catch (error) {
-    console.error('Error fetching classes:', error);
-    return DEMO_CLASSES; // Fallback to demo
+  } catch (error: any) {
+    const duration = Date.now() - startTime;
+    console.error(`[getClasses] Error after ${duration}ms:`, error);
+    return [];
   }
 }
 
-export async function createClass(name: string, teacherId: string): Promise<ClassGroup | null> {
-  if (!useSupabaseData) {
+export async function createClass(name: string, teacherId?: string): Promise<ClassGroup | null> {
+  if (!getUseSupabaseData()) {
     const newClass: ClassGroup = {
       id: `c_${Date.now()}`,
       name,
-      teacher_id: teacherId,
+      teacher_id: teacherId || 'demo',
       students_count: 0,
       created_at: new Date().toISOString(),
     };
@@ -272,13 +405,51 @@ export async function createClass(name: string, teacherId: string): Promise<Clas
   }
   
   try {
+    // Ensure we have a teacher - create default one if needed
+    let actualTeacherId = teacherId;
+    
+    if (!actualTeacherId) {
+      // Check if default teacher exists
+      const { data: existingTeacher } = await supabase
+        .from('teachers')
+        .select('id')
+        .limit(1)
+        .single();
+      
+      if (existingTeacher) {
+        actualTeacherId = existingTeacher.id;
+      } else {
+        // Create default teacher
+        const { data: newTeacher, error: teacherError } = await supabase
+          .from('teachers')
+          .insert({
+            email: 'demo@vividbooks.cz',
+            name: 'Demo Učitel',
+          })
+          .select()
+          .single();
+        
+        if (teacherError) {
+          console.error('Error creating teacher:', teacherError);
+          return null;
+        }
+        actualTeacherId = newTeacher.id;
+      }
+    }
+    
+    // Create the class
     const { data, error } = await supabase
       .from('classes')
-      .insert({ name, teacher_id: teacherId })
+      .insert({ name, teacher_id: actualTeacherId })
       .select()
       .single();
     
-    if (error) throw error;
+    if (error) {
+      console.error('Error creating class:', error);
+      throw error;
+    }
+    
+    console.log('Class created successfully:', data);
     return data;
   } catch (error) {
     console.error('Error creating class:', error);
@@ -287,7 +458,7 @@ export async function createClass(name: string, teacherId: string): Promise<Clas
 }
 
 export async function deleteClass(classId: string): Promise<boolean> {
-  if (!useSupabaseData) {
+  if (!getUseSupabaseData()) {
     const index = DEMO_CLASSES.findIndex(c => c.id === classId);
     if (index !== -1) {
       DEMO_CLASSES.splice(index, 1);
@@ -315,27 +486,52 @@ export async function deleteClass(classId: string): Promise<boolean> {
 // =============================================
 
 export async function getStudents(classId: string): Promise<Student[]> {
-  if (!useSupabaseData) {
+  const startTime = Date.now();
+  console.log('[getStudents] Starting for class:', classId);
+  
+  if (!getUseSupabaseData()) {
     return DEMO_STUDENTS.filter(s => s.class_id === classId);
   }
   
   try {
-    const { data, error } = await supabase
-      .from('students')
-      .select('*')
-      .eq('class_id', classId)
-      .order('name');
+    // Use direct fetch instead of Supabase client (more reliable)
+    const projectId = 'njbtqmsxbyvpwigfceke';
+    const apiKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5qYnRxbXN4Ynl2cHdpZ2ZjZWtlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI4MzczODksImV4cCI6MjA3ODQxMzM4OX0.nY0THq2YU9wrjYsPoxYwXRXczE3Vh7cB1opzAV8c50g';
     
-    if (error) throw error;
+    const url = `https://${projectId}.supabase.co/rest/v1/students?select=*&class_id=eq.${classId}&order=name`;
+    
+    const response = await fetch(url, {
+      headers: {
+        'apikey': apiKey,
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      }
+    });
+    
+    const duration = Date.now() - startTime;
+    
+    if (!response.ok) {
+      console.error(`[getStudents] HTTP error ${response.status} after ${duration}ms`);
+      return [];
+    }
+    
+    const data = await response.json();
+    console.log(`[getStudents] Completed in ${duration}ms, found ${data?.length || 0} students`);
+    
     return data || [];
   } catch (error) {
-    console.error('Error fetching students:', error);
-    return DEMO_STUDENTS.filter(s => s.class_id === classId);
+    const duration = Date.now() - startTime;
+    console.error(`[getStudents] Error after ${duration}ms:`, error);
+    return [];
   }
 }
 
 export async function addStudent(student: Omit<Student, 'id' | 'created_at'>): Promise<Student | null> {
-  if (!useSupabaseData) {
+  const isSupabase = getUseSupabaseData();
+  console.log('addStudent called with:', student, 'useSupabaseData:', isSupabase);
+  
+  if (!isSupabase) {
+    console.log('Adding student to DEMO_STUDENTS (demo mode)');
     const newStudent: Student = {
       ...student,
       id: `s_${Date.now()}`,
@@ -345,6 +541,7 @@ export async function addStudent(student: Omit<Student, 'id' | 'created_at'>): P
     return newStudent;
   }
   
+  console.log('Adding student to Supabase...');
   try {
     const { data, error } = await supabase
       .from('students')
@@ -352,11 +549,157 @@ export async function addStudent(student: Omit<Student, 'id' | 'created_at'>): P
       .select()
       .single();
     
-    if (error) throw error;
+    if (error) {
+      console.error('Supabase error adding student:', error);
+      throw error;
+    }
+    console.log('Student added successfully:', data);
     return data;
   } catch (error) {
     console.error('Error adding student:', error);
     return null;
+  }
+}
+
+export async function updateStudent(studentId: string, updates: Partial<Pick<Student, 'name' | 'email' | 'initials' | 'color'>>): Promise<Student | null> {
+  if (!getUseSupabaseData()) {
+    const index = DEMO_STUDENTS.findIndex(s => s.id === studentId);
+    if (index !== -1) {
+      DEMO_STUDENTS[index] = { ...DEMO_STUDENTS[index], ...updates, updated_at: new Date().toISOString() };
+      return DEMO_STUDENTS[index];
+    }
+    return null;
+  }
+  
+  try {
+    const { data, error } = await supabase
+      .from('students')
+      .update(updates)
+      .eq('id', studentId)
+      .select()
+      .single();
+    
+    if (error) throw error;
+    return data;
+  } catch (error) {
+    console.error('Error updating student:', error);
+    return null;
+  }
+}
+
+export async function deleteStudent(studentId: string): Promise<boolean> {
+  if (!getUseSupabaseData()) {
+    const index = DEMO_STUDENTS.findIndex(s => s.id === studentId);
+    if (index !== -1) {
+      DEMO_STUDENTS.splice(index, 1);
+      return true;
+    }
+    return false;
+  }
+  
+  try {
+    const { error } = await supabase
+      .from('students')
+      .delete()
+      .eq('id', studentId);
+    
+    if (error) throw error;
+    return true;
+  } catch (error) {
+    console.error('Error deleting student:', error);
+    return false;
+  }
+}
+
+/**
+ * Generate a password setup token for a student
+ * Returns the setup URL that can be shared with the student
+ */
+export async function generatePasswordSetupToken(studentId: string): Promise<{ token?: string; url?: string; error?: string }> {
+  if (!getUseSupabaseData()) {
+    // Demo mode - generate a fake token
+    const token = `demo_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+    const baseUrl = window.location.origin;
+    const url = `${baseUrl}/student/setup/${token}`;
+    return { token, url };
+  }
+  
+  try {
+    // Generate a secure random token
+    const token = crypto.randomUUID() + '-' + Date.now().toString(36);
+    
+    // Set expiration to 7 days from now
+    const expires = new Date();
+    expires.setDate(expires.getDate() + 7);
+    
+    // Update student with token
+    const { data, error } = await supabase
+      .from('students')
+      .update({
+        password_setup_token: token,
+        password_setup_expires: expires.toISOString(),
+      })
+      .eq('id', studentId)
+      .select()
+      .single();
+    
+    if (error) {
+      console.error('Error generating token:', error);
+      return { error: 'Nepodařilo se vygenerovat odkaz.' };
+    }
+    
+    if (!data.email) {
+      return { error: 'Student nemá nastavený email.' };
+    }
+    
+    const baseUrl = window.location.origin;
+    const url = `${baseUrl}/student/setup/${token}`;
+    
+    return { token, url };
+  } catch (error: any) {
+    console.error('Error generating password setup token:', error);
+    return { error: error.message || 'Chyba při generování odkazu.' };
+  }
+}
+
+/**
+ * Get student's password setup status
+ */
+export async function getStudentAuthStatus(studentId: string): Promise<{ 
+  hasAuth: boolean; 
+  hasToken: boolean; 
+  tokenExpired: boolean;
+  setupUrl?: string;
+}> {
+  if (!getUseSupabaseData()) {
+    return { hasAuth: false, hasToken: false, tokenExpired: false };
+  }
+  
+  try {
+    const { data, error } = await supabase
+      .from('students')
+      .select('auth_id, password_setup_token, password_setup_expires')
+      .eq('id', studentId)
+      .single();
+    
+    if (error || !data) {
+      return { hasAuth: false, hasToken: false, tokenExpired: false };
+    }
+    
+    const hasAuth = !!data.auth_id;
+    const hasToken = !!data.password_setup_token;
+    const tokenExpired = data.password_setup_expires ? new Date(data.password_setup_expires) < new Date() : false;
+    
+    let setupUrl: string | undefined;
+    if (hasToken && !tokenExpired) {
+      const baseUrl = window.location.origin;
+      setupUrl = `${baseUrl}/student/setup/${data.password_setup_token}`;
+    }
+    
+    return { hasAuth, hasToken, tokenExpired, setupUrl };
+  } catch (error) {
+    console.error('Error getting student auth status:', error);
+    return { hasAuth: false, hasToken: false, tokenExpired: false };
   }
 }
 
@@ -365,7 +708,7 @@ export async function addStudent(student: Omit<Student, 'id' | 'created_at'>): P
 // =============================================
 
 export async function getAssignments(classId: string, includeIndividual: boolean = true): Promise<Assignment[]> {
-  if (!useSupabaseData) {
+  if (!getUseSupabaseData()) {
     let assignments = DEMO_ASSIGNMENTS.filter(a => a.class_id === classId);
     if (!includeIndividual) {
       assignments = assignments.filter(a => a.type !== 'individual');
@@ -374,28 +717,38 @@ export async function getAssignments(classId: string, includeIndividual: boolean
   }
   
   try {
-    let query = supabase
-      .from('assignments')
-      .select('*')
-      .eq('class_id', classId)
-      .order('due_date');
+    // Use direct fetch instead of Supabase client
+    const projectId = 'njbtqmsxbyvpwigfceke';
+    const apiKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5qYnRxbXN4Ynl2cHdpZ2ZjZWtlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI4MzczODksImV4cCI6MjA3ODQxMzM4OX0.nY0THq2YU9wrjYsPoxYwXRXczE3Vh7cB1opzAV8c50g';
     
+    let url = `https://${projectId}.supabase.co/rest/v1/assignments?select=*&class_id=eq.${classId}&order=due_date`;
     if (!includeIndividual) {
-      query = query.neq('type', 'individual');
+      url += '&type=neq.individual';
     }
     
-    const { data, error } = await query;
+    const response = await fetch(url, {
+      headers: {
+        'apikey': apiKey,
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      }
+    });
     
-    if (error) throw error;
+    if (!response.ok) {
+      console.error('[getAssignments] HTTP error', response.status);
+      return [];
+    }
+    
+    const data = await response.json();
     return data || [];
   } catch (error) {
     console.error('Error fetching assignments:', error);
-    return DEMO_ASSIGNMENTS.filter(a => a.class_id === classId);
+    return [];
   }
 }
 
 export async function createAssignment(assignment: Omit<Assignment, 'id' | 'created_at'>): Promise<Assignment | null> {
-  if (!useSupabaseData) {
+  if (!getUseSupabaseData()) {
     const newAssignment: Assignment = {
       ...assignment,
       id: `a_${Date.now()}`,
@@ -425,7 +778,7 @@ export async function createAssignment(assignment: Omit<Assignment, 'id' | 'crea
 // =============================================
 
 export async function getResults(classId: string): Promise<{ [studentId: string]: { [assignmentId: string]: StudentResult } }> {
-  if (!useSupabaseData) {
+  if (!getUseSupabaseData()) {
     // Filter results for students in this class
     const allResults = getDemoResults();
     const classStudents = DEMO_STUDENTS.filter(s => s.class_id === classId);
@@ -448,13 +801,30 @@ export async function getResults(classId: string): Promise<{ [studentId: string]
     const studentIds = students.map(s => s.id);
     const assignmentIds = assignments.map(a => a.id);
     
-    const { data, error } = await supabase
-      .from('results')
-      .select('*')
-      .in('student_id', studentIds)
-      .in('assignment_id', assignmentIds);
+    // Use direct fetch instead of Supabase client
+    const projectId = 'njbtqmsxbyvpwigfceke';
+    const apiKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5qYnRxbXN4Ynl2cHdpZ2ZjZWtlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI4MzczODksImV4cCI6MjA3ODQxMzM4OX0.nY0THq2YU9wrjYsPoxYwXRXczE3Vh7cB1opzAV8c50g';
     
-    if (error) throw error;
+    // Build URL with IN filters
+    const studentIdsParam = studentIds.length > 0 ? `student_id=in.(${studentIds.join(',')})` : '';
+    const assignmentIdsParam = assignmentIds.length > 0 ? `assignment_id=in.(${assignmentIds.join(',')})` : '';
+    
+    let url = `https://${projectId}.supabase.co/rest/v1/results?select=*`;
+    if (studentIdsParam) url += `&${studentIdsParam}`;
+    if (assignmentIdsParam) url += `&${assignmentIdsParam}`;
+    
+    const response = await fetch(url, {
+      headers: {
+        'apikey': apiKey,
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      }
+    });
+    
+    let data: StudentResult[] = [];
+    if (response.ok) {
+      data = await response.json();
+    }
     
     // Transform to nested object
     const results: { [studentId: string]: { [assignmentId: string]: StudentResult } } = {};
@@ -473,12 +843,12 @@ export async function getResults(classId: string): Promise<{ [studentId: string]
     return results;
   } catch (error) {
     console.error('Error fetching results:', error);
-    return generateDemoResults();
+    return {};
   }
 }
 
 export async function saveResult(result: Omit<StudentResult, 'id'>): Promise<StudentResult | null> {
-  if (!useSupabaseData) {
+  if (!getUseSupabaseData()) {
     // Update demo data
     return { ...result, id: `r_${Date.now()}` };
   }
@@ -503,7 +873,7 @@ export async function saveResult(result: Omit<StudentResult, 'id'>): Promise<Stu
 // =============================================
 
 export async function getClassWithData(classId: string, includeIndividual: boolean = true): Promise<ClassWithStudentsAndResults | null> {
-  const classes = await getClasses('demo');
+  const classes = await getClasses();
   const classGroup = classes.find(c => c.id === classId);
   
   if (!classGroup) return null;
@@ -534,7 +904,7 @@ export async function syncIndividualWorkToClass(
   const assignmentTitle = `${boardTitle} - ind.`;
   
   // In demo mode, just add to the arrays
-  if (!useSupabaseData) {
+  if (!getUseSupabaseData()) {
     const existingAssignment = DEMO_ASSIGNMENTS.find(
       a => a.type === 'individual' && a.title === assignmentTitle && a.class_id === classId
     );
@@ -638,7 +1008,7 @@ export async function syncResultsToSupabase(
   classId: string | undefined,
   results: LiveSessionResult[]
 ): Promise<void> {
-  if (!useSupabaseData) {
+  if (!getUseSupabaseData()) {
     console.log('Supabase sync skipped - using demo data');
     return;
   }
@@ -741,5 +1111,722 @@ export async function syncResultsToSupabase(
     console.log(`Synced ${results.length} results to Supabase for session ${sessionId}`);
   } catch (error) {
     console.error('Error syncing results to Supabase:', error);
+  }
+}
+
+// =============================================
+// SUBJECT MANAGEMENT
+// =============================================
+
+/**
+ * Get subjects for a class
+ */
+export async function getClassSubjects(classId: string): Promise<ClassSubject[]> {
+  if (!getUseSupabaseData()) {
+    // Return from localStorage for demo
+    const saved = localStorage.getItem(`class_${classId}_subjects`);
+    if (saved) {
+      const subjectNames = JSON.parse(saved) as string[];
+      return subjectNames.map((name, i) => ({
+        id: `subj_${i}`,
+        class_id: classId,
+        subject_name: name,
+        teacher_id: 'demo',
+        is_owner: i === 0,
+        created_at: new Date().toISOString(),
+      }));
+    }
+    return [
+      { id: 'subj_1', class_id: classId, subject_name: 'Fyzika', teacher_id: 'demo', is_owner: true, created_at: new Date().toISOString() },
+    ];
+  }
+  
+  const { data, error } = await supabase
+    .from('class_subjects')
+    .select('*')
+    .eq('class_id', classId)
+    .order('created_at', { ascending: true });
+  
+  if (error) {
+    console.error('Error fetching class subjects:', error);
+    return [];
+  }
+  
+  return data || [];
+}
+
+/**
+ * Add a subject to a class
+ */
+export async function addClassSubject(classId: string, subjectName: string, teacherId: string): Promise<ClassSubject | null> {
+  if (!getUseSupabaseData()) {
+    // Save to localStorage for demo
+    const saved = localStorage.getItem(`class_${classId}_subjects`);
+    const subjects = saved ? JSON.parse(saved) as string[] : ['Fyzika'];
+    if (!subjects.includes(subjectName)) {
+      subjects.push(subjectName);
+      localStorage.setItem(`class_${classId}_subjects`, JSON.stringify(subjects));
+    }
+    return {
+      id: `subj_${Date.now()}`,
+      class_id: classId,
+      subject_name: subjectName,
+      teacher_id: teacherId,
+      is_owner: false,
+      created_at: new Date().toISOString(),
+    };
+  }
+  
+  const { data, error } = await supabase
+    .from('class_subjects')
+    .insert({
+      class_id: classId,
+      subject_name: subjectName,
+      teacher_id: teacherId,
+      is_owner: false,
+    })
+    .select()
+    .single();
+  
+  if (error) {
+    console.error('Error adding class subject:', error);
+    return null;
+  }
+  
+  return data;
+}
+
+/**
+ * Remove a subject from a class
+ */
+export async function removeClassSubject(classId: string, subjectName: string): Promise<boolean> {
+  if (!getUseSupabaseData()) {
+    const saved = localStorage.getItem(`class_${classId}_subjects`);
+    if (saved) {
+      const subjects = JSON.parse(saved) as string[];
+      const filtered = subjects.filter(s => s !== subjectName);
+      localStorage.setItem(`class_${classId}_subjects`, JSON.stringify(filtered));
+    }
+    return true;
+  }
+  
+  const { error } = await supabase
+    .from('class_subjects')
+    .delete()
+    .eq('class_id', classId)
+    .eq('subject_name', subjectName);
+  
+  if (error) {
+    console.error('Error removing class subject:', error);
+    return false;
+  }
+  
+  return true;
+}
+
+// =============================================
+// COLLABORATOR MANAGEMENT
+// =============================================
+
+/**
+ * Get collaborators for a class
+ */
+export async function getClassCollaborators(classId: string): Promise<ClassCollaborator[]> {
+  if (!getUseSupabaseData()) {
+    // Return from localStorage for demo
+    const saved = localStorage.getItem(`class_${classId}_colleagues`);
+    if (saved) {
+      const colleagues = JSON.parse(saved) as Array<{ id: string; name: string; email: string; subject: string }>;
+      return colleagues.map(c => ({
+        id: c.id,
+        class_id: classId,
+        teacher_id: c.id,
+        subject_name: c.subject,
+        status: 'accepted' as const,
+        invited_at: new Date().toISOString(),
+        invited_by: 'demo',
+        teacher_name: c.name,
+        teacher_email: c.email,
+      }));
+    }
+    return [];
+  }
+  
+  const { data, error } = await supabase
+    .from('class_collaborators')
+    .select(`
+      *,
+      teachers:teacher_id (name, email)
+    `)
+    .eq('class_id', classId);
+  
+  if (error) {
+    console.error('Error fetching collaborators:', error);
+    return [];
+  }
+  
+  return (data || []).map(d => ({
+    ...d,
+    teacher_name: (d.teachers as any)?.name,
+    teacher_email: (d.teachers as any)?.email,
+  }));
+}
+
+/**
+ * Invite a collaborator to a class
+ */
+export async function inviteCollaborator(
+  classId: string, 
+  email: string, 
+  subjectName: string, 
+  invitedBy: string
+): Promise<ClassCollaborator | null> {
+  if (!getUseSupabaseData()) {
+    // Save to localStorage for demo
+    const saved = localStorage.getItem(`class_${classId}_colleagues`);
+    const colleagues = saved ? JSON.parse(saved) as Array<{ id: string; name: string; email: string; subject: string }> : [];
+    const newColleague = {
+      id: `c_${Date.now()}`,
+      name: email.split('@')[0],
+      email: email,
+      subject: subjectName || 'Čeká na potvrzení',
+    };
+    colleagues.push(newColleague);
+    localStorage.setItem(`class_${classId}_colleagues`, JSON.stringify(colleagues));
+    
+    return {
+      id: newColleague.id,
+      class_id: classId,
+      teacher_id: newColleague.id,
+      subject_name: newColleague.subject,
+      status: 'pending',
+      invited_at: new Date().toISOString(),
+      invited_by: invitedBy,
+      teacher_name: newColleague.name,
+      teacher_email: newColleague.email,
+    };
+  }
+  
+  // Find teacher by email
+  const { data: teacher } = await supabase
+    .from('teachers')
+    .select('id')
+    .eq('email', email)
+    .single();
+  
+  if (!teacher) {
+    // Create invitation for non-existing teacher (they'll see it when they sign up)
+    console.log('Teacher not found, creating pending invitation');
+  }
+  
+  const { data, error } = await supabase
+    .from('class_collaborators')
+    .insert({
+      class_id: classId,
+      teacher_id: teacher?.id || email, // Use email as placeholder if teacher doesn't exist
+      subject_name: subjectName,
+      status: 'pending',
+      invited_by: invitedBy,
+    })
+    .select()
+    .single();
+  
+  if (error) {
+    console.error('Error inviting collaborator:', error);
+    return null;
+  }
+  
+  return data;
+}
+
+/**
+ * Remove a collaborator from a class
+ */
+export async function removeCollaborator(classId: string, collaboratorId: string): Promise<boolean> {
+  if (!getUseSupabaseData()) {
+    const saved = localStorage.getItem(`class_${classId}_colleagues`);
+    if (saved) {
+      const colleagues = JSON.parse(saved) as Array<{ id: string; name: string; email: string; subject: string }>;
+      const filtered = colleagues.filter(c => c.id !== collaboratorId);
+      localStorage.setItem(`class_${classId}_colleagues`, JSON.stringify(filtered));
+    }
+    return true;
+  }
+  
+  const { error } = await supabase
+    .from('class_collaborators')
+    .delete()
+    .eq('id', collaboratorId);
+  
+  if (error) {
+    console.error('Error removing collaborator:', error);
+    return false;
+  }
+  
+  return true;
+}
+
+/**
+ * Accept/reject a collaboration invitation
+ */
+export async function respondToInvitation(
+  collaboratorId: string, 
+  accept: boolean
+): Promise<boolean> {
+  if (!getUseSupabaseData()) {
+    return true; // Demo mode - always succeed
+  }
+  
+  const { error } = await supabase
+    .from('class_collaborators')
+    .update({
+      status: accept ? 'accepted' : 'rejected',
+      accepted_at: accept ? new Date().toISOString() : null,
+    })
+    .eq('id', collaboratorId);
+  
+  if (error) {
+    console.error('Error responding to invitation:', error);
+    return false;
+  }
+  
+  return true;
+}
+
+// ============================================
+// Live Session Notifications for Students
+// ============================================
+
+/**
+ * Notify all online students in a class about a live session
+ * Uses Firebase Realtime Database for reliable notifications
+ */
+export async function notifyClassOfLiveSession(
+  classId: string,
+  sessionId: string,
+  documentPath: string,
+  documentTitle: string
+): Promise<void> {
+  console.log('[NotifyClass] Sending notification to class via Firebase:', classId);
+  
+  // Import Firebase dynamically
+  const { database } = await import('../firebase-config');
+  const { ref, set } = await import('firebase/database');
+  
+  try {
+    // Write notification to Firebase
+    const notificationRef = ref(database, `class-notifications/${classId}`);
+    await set(notificationRef, {
+      sessionId,
+      documentPath,
+      documentTitle,
+      timestamp: new Date().toISOString(),
+      active: true,
+    });
+    
+    console.log('[NotifyClass] Notification sent via Firebase successfully');
+    
+    // Also update class record in Supabase
+    await supabase
+      .from('classes')
+      .update({
+        active_session_id: sessionId,
+        active_session_path: documentPath,
+        active_session_title: documentTitle,
+      })
+      .eq('id', classId);
+      
+  } catch (error) {
+    console.error('[NotifyClass] Error sending notification:', error);
+    throw error;
+  }
+}
+
+/**
+ * End the live session notification for a class
+ */
+export async function endClassLiveSession(classId: string): Promise<void> {
+  console.log('[EndSession] Ending session for class:', classId);
+  
+  // Import Firebase dynamically
+  const { database } = await import('../firebase-config');
+  const { ref, set } = await import('firebase/database');
+  
+  try {
+    // Clear notification in Firebase
+    const notificationRef = ref(database, `class-notifications/${classId}`);
+    await set(notificationRef, {
+      active: false,
+      timestamp: new Date().toISOString(),
+    });
+    
+    console.log('[EndSession] Session ended via Firebase');
+  } catch (error) {
+    console.error('[EndSession] Error ending session:', error);
+  }
+  
+  // Clear the active session from the class record
+  await supabase
+    .from('classes')
+    .update({
+      active_session_id: null,
+      active_session_path: null,
+      active_session_title: null,
+    })
+    .eq('id', classId);
+}
+
+/**
+ * Get count of online students in a class
+ */
+export async function getOnlineStudentsCount(classId: string): Promise<number> {
+  if (!getUseSupabaseData()) {
+    return 0; // Demo mode - no real online tracking
+  }
+  
+  try {
+    const { count, error } = await supabase
+      .from('students')
+      .select('*', { count: 'exact', head: true })
+      .eq('class_id', classId)
+      .eq('is_online', true);
+    
+    if (error) throw error;
+    return count || 0;
+  } catch (error) {
+    console.error('Error getting online students count:', error);
+    return 0;
+  }
+}
+
+// =============================================
+// SYNC QUIZ RESULTS TO CLASS
+// =============================================
+
+export interface QuizSessionResult {
+  studentName: string;
+  studentId?: string; // If student is logged in
+  responses: Array<{
+    slideId: string;
+    answer: string | string[];
+    isCorrect?: boolean;
+    timeSpentMs?: number;
+  }>;
+  totalCorrect: number;
+  totalQuestions: number;
+  timeSpentMs: number;
+}
+
+/**
+ * Sync quiz session results to a class
+ * Creates an assignment and saves results for each student
+ */
+export async function syncQuizResultsToClass(
+  classId: string,
+  quizId: string,
+  quizTitle: string,
+  sessionId: string,
+  studentResults: QuizSessionResult[],
+  subject?: string
+): Promise<{ success: boolean; assignmentId?: string; error?: string }> {
+  console.log('[syncQuizResults] Starting sync to class:', classId, 'subject:', subject);
+  console.log('[syncQuizResults] Students:', studentResults.length);
+  
+  if (!getUseSupabaseData()) {
+    console.log('[syncQuizResults] Demo mode - skipping');
+    return { success: true };
+  }
+  
+  const projectId = 'njbtqmsxbyvpwigfceke';
+  const apiKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5qYnRxbXN4Ynl2cHdpZ2ZjZWtlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI4MzczODksImV4cCI6MjA3ODQxMzM4OX0.nY0THq2YU9wrjYsPoxYwXRXczE3Vh7cB1opzAV8c50g';
+  
+  try {
+    // 1. Get students from the class to match by name
+    const classStudents = await getStudents(classId);
+    console.log('[syncQuizResults] Class students:', classStudents.length);
+    
+    // 2. Create assignment for this quiz session
+    // Note: board_id expects UUID, so we only set it if quizId is a valid UUID
+    const isValidUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(quizId);
+    
+    const assignmentData: Record<string, any> = {
+      title: quizTitle,
+      type: 'live',
+      class_id: classId,
+      subject: subject || 'Kvíz', // Use provided subject or default
+      session_id: sessionId,
+      session_type: 'live',
+      due_date: new Date().toISOString().split('T')[0],
+      created_at: new Date().toISOString(),
+    };
+    
+    // Only add board_id if it's a valid UUID
+    if (isValidUuid) {
+      assignmentData.board_id = quizId;
+    }
+    
+    const assignmentResponse = await fetch(`https://${projectId}.supabase.co/rest/v1/assignments`, {
+      method: 'POST',
+      headers: {
+        'apikey': apiKey,
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+        'Prefer': 'return=representation'
+      },
+      body: JSON.stringify(assignmentData)
+    });
+    
+    if (!assignmentResponse.ok) {
+      const errorText = await assignmentResponse.text();
+      console.error('[syncQuizResults] Failed to create assignment:', errorText);
+      return { success: false, error: 'Failed to create assignment' };
+    }
+    
+    const [assignment] = await assignmentResponse.json();
+    console.log('[syncQuizResults] Created assignment:', assignment.id);
+    
+    // 3. Match students by ID first, then by name
+    const resultsToSave: any[] = [];
+    
+    for (const result of studentResults) {
+      let matchedStudentId: string | null = null;
+      
+      // First try to match by database ID (if student was logged in)
+      if (result.studentId) {
+        const studentExists = classStudents.find(s => s.id === result.studentId);
+        if (studentExists) {
+          matchedStudentId = result.studentId;
+          console.log(`[syncQuizResults] Matched by ID: ${result.studentName} -> ${studentExists.name}`);
+        }
+      }
+      
+      // Fallback: match by name (case insensitive)
+      if (!matchedStudentId) {
+        const matchedStudent = classStudents.find(
+          s => s.name.toLowerCase().trim() === result.studentName.toLowerCase().trim()
+        );
+        if (matchedStudent) {
+          matchedStudentId = matchedStudent.id;
+          console.log(`[syncQuizResults] Matched by name: ${result.studentName} -> ${matchedStudent.name}`);
+        }
+      }
+      
+      if (matchedStudentId) {
+        const percentage = result.totalQuestions > 0 
+          ? Math.round((result.totalCorrect / result.totalQuestions) * 100) 
+          : 0;
+        
+        resultsToSave.push({
+          student_id: matchedStudentId,
+          assignment_id: assignment.id,
+          score: result.totalCorrect,
+          max_score: result.totalQuestions,
+          percentage,
+          correct_count: result.totalCorrect,
+          total_questions: result.totalQuestions,
+          time_spent_ms: result.timeSpentMs,
+          completed_at: new Date().toISOString(),
+          created_at: new Date().toISOString(),
+        });
+        
+        console.log(`[syncQuizResults] Saving result for ${result.studentName}: ${percentage}%`);
+      } else {
+        console.log(`[syncQuizResults] No match for: ${result.studentName}`);
+      }
+    }
+    
+    // 4. Save results
+    if (resultsToSave.length > 0) {
+      const resultsResponse = await fetch(`https://${projectId}.supabase.co/rest/v1/results`, {
+        method: 'POST',
+        headers: {
+          'apikey': apiKey,
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(resultsToSave)
+      });
+      
+      if (!resultsResponse.ok) {
+        const errorText = await resultsResponse.text();
+        console.error('[syncQuizResults] Failed to save results:', errorText);
+        return { success: false, error: 'Failed to save results', assignmentId: assignment.id };
+      }
+      
+      console.log(`[syncQuizResults] Saved ${resultsToSave.length} results`);
+    }
+    
+    return { success: true, assignmentId: assignment.id };
+  } catch (error) {
+    console.error('[syncQuizResults] Error:', error);
+    return { success: false, error: String(error) };
+  }
+}
+
+// =============================================
+// FORMATIVE ASSESSMENT FUNCTIONS
+// =============================================
+
+/**
+ * Save or update formative assessment on a result
+ */
+export async function saveFormativeAssessment(
+  resultId: string,
+  assessment: string,
+  teacherNotes?: string
+): Promise<{ success: boolean; error?: string }> {
+  const projectId = 'njbtqmsxbyvpwigfceke';
+  const apiKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5qYnRxbXN4Ynl2cHdpZ2ZjZWtlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI4MzczODksImV4cCI6MjA3ODQxMzM4OX0.nY0THq2YU9wrjYsPoxYwXRXczE3Vh7cB1opzAV8c50g';
+  
+  try {
+    const response = await fetch(`https://${projectId}.supabase.co/rest/v1/results?id=eq.${resultId}`, {
+      method: 'PATCH',
+      headers: {
+        'apikey': apiKey,
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        formative_assessment: assessment,
+        teacher_notes: teacherNotes || null,
+      })
+    });
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[saveFormativeAssessment] Failed:', errorText);
+      return { success: false, error: errorText };
+    }
+    
+    console.log('[saveFormativeAssessment] Saved assessment for result:', resultId);
+    return { success: true };
+  } catch (error) {
+    console.error('[saveFormativeAssessment] Error:', error);
+    return { success: false, error: String(error) };
+  }
+}
+
+/**
+ * Share formative assessment with student
+ */
+export async function shareFormativeAssessment(
+  resultId: string
+): Promise<{ success: boolean; error?: string }> {
+  const projectId = 'njbtqmsxbyvpwigfceke';
+  const apiKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5qYnRxbXN4Ynl2cHdpZ2ZjZWtlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI4MzczODksImV4cCI6MjA3ODQxMzM4OX0.nY0THq2YU9wrjYsPoxYwXRXczE3Vh7cB1opzAV8c50g';
+  
+  try {
+    const response = await fetch(`https://${projectId}.supabase.co/rest/v1/results?id=eq.${resultId}`, {
+      method: 'PATCH',
+      headers: {
+        'apikey': apiKey,
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        shared_with_student: true,
+        shared_at: new Date().toISOString(),
+      })
+    });
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[shareFormativeAssessment] Failed:', errorText);
+      return { success: false, error: errorText };
+    }
+    
+    console.log('[shareFormativeAssessment] Shared assessment for result:', resultId);
+    return { success: true };
+  } catch (error) {
+    console.error('[shareFormativeAssessment] Error:', error);
+    return { success: false, error: String(error) };
+  }
+}
+
+/**
+ * Get result by student ID/name and session ID (for matching with quiz session)
+ * Falls back to matching by student name if ID doesn't work
+ */
+export async function getResultByStudentAndSession(
+  studentId: string | null,
+  sessionId: string,
+  studentName?: string
+): Promise<StudentResult | null> {
+  const projectId = 'njbtqmsxbyvpwigfceke';
+  const apiKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5qYnRxbXN4Ynl2cHdpZ2ZjZWtlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI4MzczODksImV4cCI6MjA3ODQxMzM4OX0.nY0THq2YU9wrjYsPoxYwXRXczE3Vh7cB1opzAV8c50g';
+  
+  console.log('[getResultByStudentAndSession] Looking for studentId:', studentId, 'studentName:', studentName, 'sessionId:', sessionId);
+  
+  try {
+    // First get assignment by session_id
+    const assignmentRes = await fetch(`https://${projectId}.supabase.co/rest/v1/assignments?session_id=eq.${sessionId}&select=id,class_id`, {
+      headers: { 'apikey': apiKey, 'Authorization': `Bearer ${apiKey}` }
+    });
+    
+    if (!assignmentRes.ok) {
+      console.log('[getResultByStudentAndSession] Assignment fetch failed');
+      return null;
+    }
+    
+    const assignments = await assignmentRes.json();
+    console.log('[getResultByStudentAndSession] Found assignments:', assignments.length);
+    
+    if (assignments.length === 0) {
+      console.log('[getResultByStudentAndSession] No assignment found with session_id:', sessionId);
+      return null;
+    }
+    
+    const assignmentId = assignments[0].id;
+    const classId = assignments[0].class_id;
+    console.log('[getResultByStudentAndSession] Using assignmentId:', assignmentId, 'classId:', classId);
+    
+    // Try to find result by student ID first
+    if (studentId) {
+      const resultRes = await fetch(`https://${projectId}.supabase.co/rest/v1/results?student_id=eq.${studentId}&assignment_id=eq.${assignmentId}&select=*`, {
+        headers: { 'apikey': apiKey, 'Authorization': `Bearer ${apiKey}` }
+      });
+      
+      if (resultRes.ok) {
+        const results = await resultRes.json();
+        console.log('[getResultByStudentAndSession] Found results by ID:', results.length);
+        if (results.length > 0) return results[0];
+      }
+    }
+    
+    // Fallback: find by student name in the class
+    if (studentName && classId) {
+      console.log('[getResultByStudentAndSession] Trying fallback by student name:', studentName);
+      
+      // Get student by name in this class
+      const studentRes = await fetch(`https://${projectId}.supabase.co/rest/v1/students?class_id=eq.${classId}&name=ilike.${encodeURIComponent(studentName)}&select=id`, {
+        headers: { 'apikey': apiKey, 'Authorization': `Bearer ${apiKey}` }
+      });
+      
+      if (studentRes.ok) {
+        const students = await studentRes.json();
+        console.log('[getResultByStudentAndSession] Found students by name:', students.length);
+        
+        if (students.length > 0) {
+          const matchedStudentId = students[0].id;
+          
+          // Now get result for this student
+          const resultRes = await fetch(`https://${projectId}.supabase.co/rest/v1/results?student_id=eq.${matchedStudentId}&assignment_id=eq.${assignmentId}&select=*`, {
+            headers: { 'apikey': apiKey, 'Authorization': `Bearer ${apiKey}` }
+          });
+          
+          if (resultRes.ok) {
+            const results = await resultRes.json();
+            console.log('[getResultByStudentAndSession] Found results by name fallback:', results.length);
+            if (results.length > 0) return results[0];
+          }
+        }
+      }
+    }
+    
+    console.log('[getResultByStudentAndSession] No result found');
+    return null;
+  } catch (error) {
+    console.error('[getResultByStudentAndSession] Error:', error);
+    return null;
   }
 }

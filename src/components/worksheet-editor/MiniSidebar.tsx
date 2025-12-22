@@ -10,10 +10,11 @@ import {
   SlidersHorizontal, 
   Printer,
   Loader2,
-  ArrowLeft
+  ArrowLeft,
+  History
 } from 'lucide-react';
 
-export type ActivePanel = 'structure' | 'add' | 'ai' | 'settings';
+export type ActivePanel = 'structure' | 'add' | 'ai' | 'settings' | 'history';
 type SaveStatus = 'saved' | 'saving' | 'unsaved';
 
 interface MiniSidebarProps {
@@ -22,6 +23,9 @@ interface MiniSidebarProps {
   onExport: () => void;
   saveStatus: SaveStatus;
   isExporting?: boolean;
+  hideAI?: boolean; // Hide AI button (for student mode when AI not allowed)
+  onOpenHistory?: () => void; // Open version history modal
+  hasUnsavedVersions?: boolean; // Show indicator for unsaved versions
 }
 
 // Reusable button component
@@ -175,6 +179,9 @@ export function MiniSidebar({
   onExport, 
   saveStatus,
   isExporting = false,
+  hideAI = false,
+  onOpenHistory,
+  hasUnsavedVersions = false,
 }: MiniSidebarProps) {
   const navigate = useNavigate();
 
@@ -249,13 +256,15 @@ export function MiniSidebar({
         isActive={activePanel === 'add'}
       />
       
-      {/* AI */}
-      <SidebarButton
-        onClick={() => onPanelChange('ai')}
-        isActive={activePanel === 'ai'}
-        icon={Sparkles}
-        label="AI"
-      />
+      {/* AI - hidden when hideAI is true (student mode with AI not allowed) */}
+      {!hideAI && (
+        <SidebarButton
+          onClick={() => onPanelChange('ai')}
+          isActive={activePanel === 'ai'}
+          icon={Sparkles}
+          label="AI"
+        />
+      )}
       
       {/* Separator */}
       <div style={{ width: '48px', height: '1px', backgroundColor: '#C5CCD9', margin: '12px 0' }} />
@@ -272,6 +281,30 @@ export function MiniSidebar({
       <div style={{ flex: 1 }} />
       
       {/* Separator */}
+      {/* Historie verzí */}
+      {onOpenHistory && (
+        <div style={{ position: 'relative' }}>
+          <SidebarButton
+            onClick={onOpenHistory}
+            icon={History}
+            label="Historie"
+          />
+          {hasUnsavedVersions && (
+            <span 
+              style={{
+                position: 'absolute',
+                top: '4px',
+                right: '12px',
+                width: '8px',
+                height: '8px',
+                backgroundColor: '#f59e0b',
+                borderRadius: '50%',
+              }}
+            />
+          )}
+        </div>
+      )}
+
       <div style={{ width: '48px', height: '1px', backgroundColor: '#C5CCD9', margin: '12px 0' }} />
       
       {/* Tisk / Export */}

@@ -13,17 +13,6 @@ import { supabase } from '../utils/supabase/client';
 // Instead, we'll export a function that ViewModeContext can use to get the real student
 import { User, Session } from '@supabase/supabase-js';
 
-// Avatar configuration type
-export interface AvatarConfig {
-  backgroundColor: string;
-  skinTone: string;
-  faceShape: string;
-  eyeStyle: string;
-  mouthStyle: string;
-  hairStyle: string;
-  hairColor: string;
-}
-
 // Student profile from our database
 export interface StudentProfile {
   id: string;
@@ -33,12 +22,9 @@ export interface StudentProfile {
   color: string;
   class_id: string;
   class_name?: string;
-  school_id?: string;
-  school_name?: string;
   auth_id?: string;
   is_online?: boolean;
   last_seen?: string;
-  avatar?: AvatarConfig;
 }
 
 interface StudentAuthContextType {
@@ -53,7 +39,6 @@ interface StudentAuthContextType {
   logout: () => Promise<void>;
   setupPassword: (token: string, password: string) => Promise<{ error?: string; success?: boolean }>;
   refreshStudent: () => Promise<void>;
-  updateAvatar: (avatar: AvatarConfig) => Promise<{ error?: string; success?: boolean }>;
 }
 
 const StudentAuthContext = createContext<StudentAuthContextType | undefined>(undefined);
@@ -90,11 +75,7 @@ export function StudentAuthProvider({ children }: { children: ReactNode }) {
         .from('students')
         .select(`
           *,
-          classes:class_id (
-            name, 
-            school_id,
-            schools:school_id (name)
-          )
+          classes:class_id (name)
         `)
         .eq('auth_id', authId)
         .maybeSingle()
@@ -112,7 +93,7 @@ export function StudentAuthProvider({ children }: { children: ReactNode }) {
       }
       
       if (data) {
-        console.log('[StudentAuth] Found student profile:', data.name, 'class_id:', data.class_id, 'school_id:', data.classes?.school_id, 'has_avatar:', !!data.avatar);
+        console.log('[StudentAuth] Found student profile:', data.name, 'class_id:', data.class_id);
         const profile: StudentProfile = {
           id: data.id,
           name: data.name,
@@ -121,12 +102,9 @@ export function StudentAuthProvider({ children }: { children: ReactNode }) {
           color: data.color,
           class_id: data.class_id,
           class_name: data.classes?.name,
-          school_id: data.classes?.school_id,
-          school_name: data.classes?.schools?.name,
           auth_id: data.auth_id,
           is_online: data.is_online,
           last_seen: data.last_seen,
-          avatar: data.avatar,
         };
         return profile;
       }
@@ -209,27 +187,9 @@ export function StudentAuthProvider({ children }: { children: ReactNode }) {
         const profile = await loadStudentProfile(session.user.id);
         console.log('[StudentAuth] Profile loaded:', profile?.name || 'null');
           
-          // Set online status and save to localStorage for license access
+          // Set online status
           if (profile) {
             updateOnlineStatus(profile.id, true);
-            
-            // Save student profile to localStorage for license access hooks
-            if (profile.school_id) {
-              const userProfile = {
-                id: profile.id,
-                userId: profile.id,
-                name: profile.name,
-                email: profile.email,
-                role: 'student' as const,
-                schoolId: profile.school_id,
-                classId: profile.class_id,
-                className: profile.class_name,
-                createdAt: new Date().toISOString(),
-                lastActiveAt: new Date().toISOString(),
-              };
-              localStorage.setItem('vividbooks_current_user_profile', JSON.stringify(userProfile));
-              console.log('[StudentAuth] Saved student profile to localStorage with school_id:', profile.school_id);
-            }
           }
         }
       } catch (error) {
@@ -261,16 +221,6 @@ export function StudentAuthProvider({ children }: { children: ReactNode }) {
         
         if (profile) {
           updateOnlineStatus(profile.id, true);
-          
-          // Save student identity for self-study/quiz modes
-          // This allows QuizSelfStudyPage and QuizStudentView to auto-identify the student
-          localStorage.setItem('vividbooks_student_identity', JSON.stringify({
-            id: profile.id,
-            name: profile.name,
-            email: profile.email || '',
-            schoolName: profile.class_name || '',
-            class_id: profile.class_id, // Important for syncing results to class
-          }));
         }
       } else {
         // User logged out - update offline status
@@ -437,34 +387,6 @@ export function StudentAuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  // Update avatar
-  const updateAvatar = async (avatar: AvatarConfig): Promise<{ error?: string; success?: boolean }> => {
-    if (!student) {
-      return { error: 'Nejste přihlášen/a.' };
-    }
-
-    try {
-      console.log('[StudentAuth] Updating avatar for student:', student.id);
-      const { error } = await supabase
-        .from('students')
-        .update({ avatar })
-        .eq('id', student.id);
-
-      if (error) {
-        console.error('[StudentAuth] Error updating avatar:', error);
-        return { error: error.message };
-      }
-
-      // Update local state
-      setStudent(prev => prev ? { ...prev, avatar } : null);
-      console.log('[StudentAuth] Avatar updated successfully');
-      return { success: true };
-    } catch (error: any) {
-      console.error('[StudentAuth] Error updating avatar:', error);
-      return { error: error.message || 'Chyba při ukládání avataru.' };
-    }
-  };
-
   const value: StudentAuthContextType = {
     user,
     session,
@@ -474,7 +396,6 @@ export function StudentAuthProvider({ children }: { children: ReactNode }) {
     logout,
     setupPassword,
     refreshStudent,
-    updateAvatar,
   };
 
   return (

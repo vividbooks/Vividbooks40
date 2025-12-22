@@ -291,6 +291,10 @@ const ResizableImage = ImageExtension.extend({
 interface RichTextEditorProps {
   content: string;
   onChange: (content: string) => void;
+  readOnly?: boolean;
+  // Paste detection for student assignments
+  enablePasteDetection?: boolean;
+  onPasteDetected?: (pastedText: string, wordCount: number) => void;
 }
 
 interface Page {
@@ -305,8 +309,17 @@ interface Category {
   label: string;
 }
 
-export function RichTextEditor({ content, onChange }: RichTextEditorProps) {
+export function RichTextEditor({ 
+  content, 
+  onChange, 
+  readOnly = false,
+  enablePasteDetection = false,
+  onPasteDetected,
+}: RichTextEditorProps) {
   const [showImageDialog, setShowImageDialog] = useState(false);
+  const [showPasteSourceDialog, setShowPasteSourceDialog] = useState(false);
+  const [pendingPasteText, setPendingPasteText] = useState('');
+  const [pasteSource, setPasteSource] = useState('');
   const [showVideoDialog, setShowVideoDialog] = useState(false);
   const [showEmbedDialog, setShowEmbedDialog] = useState(false);
   const [showLinkDialog, setShowLinkDialog] = useState(false);
@@ -388,6 +401,19 @@ export function RichTextEditor({ content, onChange }: RichTextEditorProps) {
       attributes: {
           class: 'prose prose-slate dark:prose-invert max-w-none focus:outline-none min-h-[500px] tiptap-editor [&_p]:min-h-[1.5em] [&_ol]:list-decimal [&_ol]:pl-6 [&_ul]:list-disc [&_ul]:pl-6 [&_li]:pl-1',
       },
+      handlePaste: enablePasteDetection ? (view, event, slice) => {
+        const pastedText = event.clipboardData?.getData('text/plain') || '';
+        const wordCount = pastedText.trim().split(/\s+/).filter(w => w.length > 0).length;
+        
+        // If more than 2 words pasted, show source dialog
+        if (wordCount > 2) {
+          setPendingPasteText(pastedText);
+          setShowPasteSourceDialog(true);
+          onPasteDetected?.(pastedText, wordCount);
+          // Don't prevent paste, just show dialog
+        }
+        return false; // Let TipTap handle the paste normally
+      } : undefined,
     },
     onUpdate: ({ editor }) => {
       onChange(editor.getHTML());
@@ -751,7 +777,7 @@ export function RichTextEditor({ content, onChange }: RichTextEditorProps) {
       
       {/* Single Row Toolbar - Sticky when scrolling, fixed sizing */}
       <div 
-        className="sticky top-0 z-10 flex items-center rounded-t-[11px] shadow-[0_2px_8px_rgba(0,0,0,0.06)] flex-wrap"
+        className="sticky top-0 z-50 flex items-center rounded-t-[11px] shadow-[0_2px_8px_rgba(0,0,0,0.06)] flex-wrap"
         style={{ 
           backgroundColor: '#EFF1F8',
           padding: '10px 12px',
@@ -2041,6 +2067,72 @@ export function RichTextEditor({ content, onChange }: RichTextEditorProps) {
                 className="flex-1 px-4 py-2 border border-border rounded hover:bg-accent"
               >
                 Zrušit
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Paste Source Dialog - For AI Detection */}
+      {showPasteSourceDialog && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100]" onClick={() => {}}>
+          <div className="bg-white rounded-2xl shadow-2xl w-[480px] max-w-[90vw] overflow-hidden" onClick={(e) => e.stopPropagation()}>
+            {/* Header with warning icon */}
+            <div className="bg-amber-50 border-b border-amber-200 px-6 py-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center">
+                  <AlertTriangle className="w-5 h-5 text-amber-600" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-amber-900">Vkládáte větší množství textu</h3>
+                  <p className="text-sm text-amber-700">Detekováno {pendingPasteText.trim().split(/\s+/).length} slov</p>
+                </div>
+              </div>
+            </div>
+            
+            <div className="p-6 space-y-4">
+              <p className="text-slate-600">
+                Uvěďte prosím odkaz, odkud text kopírujete. Jinak máme podezření na kopírování textu nebo použití umělé inteligence.
+              </p>
+              
+              {/* Preview of pasted text */}
+              <div className="bg-slate-50 rounded-lg p-3 max-h-24 overflow-y-auto">
+                <p className="text-sm text-slate-500 mb-1 font-medium">Náhled vloženého textu:</p>
+                <p className="text-sm text-slate-700 line-clamp-3">{pendingPasteText}</p>
+              </div>
+              
+              {/* Source input */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  Zdroj textu (URL nebo popis)
+                </label>
+                <input
+                  type="text"
+                  value={pasteSource}
+                  onChange={(e) => setPasteSource(e.target.value)}
+                  placeholder="např. https://wikipedia.org/... nebo 'vlastní poznámky'"
+                  className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+                  autoFocus
+                />
+              </div>
+              
+              <div className="text-xs text-slate-500">
+                💡 Učitel uvidí, zda jste uvedli zdroj u vloženého textu.
+              </div>
+            </div>
+            
+            <div className="flex gap-3 p-6 pt-0">
+              <button
+                onClick={() => {
+                  // Log the source (can be sent to backend later)
+                  console.log('[Paste Detection] Source provided:', pasteSource, 'for text:', pendingPasteText.substring(0, 100));
+                  setShowPasteSourceDialog(false);
+                  setPendingPasteText('');
+                  setPasteSource('');
+                }}
+                className="flex-1 px-4 py-3 bg-amber-600 hover:bg-amber-700 text-white font-medium rounded-lg transition-colors"
+              >
+                {pasteSource ? 'Potvrdit se zdrojem' : 'Pokračovat bez zdroje'}
               </button>
             </div>
           </div>

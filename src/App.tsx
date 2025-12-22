@@ -21,11 +21,13 @@ import { SharedFolderView } from './components/SharedFolderView';
 import { PracticeLayout } from './components/PracticeLayout';
 import { ViewModeProvider } from './contexts/ViewModeContext';
 import { ClassroomShareProvider } from './contexts/ClassroomShareContext';
+import { StudentAuthProvider } from './contexts/StudentAuthContext';
 import { FirebaseStudentView } from './components/classroom';
 import { JoinSession } from './components/classroom/JoinSession';
 import { CustomerSuccess } from './components/admin/CustomerSuccess';
 import { StudentProfilePage } from './components/classroom/StudentProfilePage';
-import { TestStudentEditor } from './components/student/TestStudentEditor';
+import { StudentLoginPage, StudentSetupPassword, StudentDashboard, LiveSessionNotification } from './components/student';
+import { TeacherLoginPage } from './components/teacher/TeacherLoginPage';
 import { supabase } from './utils/supabase/client';
 import { projectId, publicAnonKey } from './utils/supabase/info.tsx';
 
@@ -47,6 +49,12 @@ export default function App() {
   }, []);
 
   const checkAuth = async () => {
+    // Add timeout to prevent infinite loading
+    const timeout = setTimeout(() => {
+      console.log('[App] Auth check timeout, continuing...');
+      setIsCheckingAuth(false);
+    }, 2000);
+    
     try {
       const { data: { session } } = await supabase.auth.getSession();
       setIsAuthenticated(!!session?.access_token);
@@ -54,6 +62,7 @@ export default function App() {
       console.error('Auth check error:', error);
       setIsAuthenticated(false);
     } finally {
+      clearTimeout(timeout);
       setIsCheckingAuth(false);
     }
   };
@@ -76,13 +85,25 @@ export default function App() {
   return (
     <ViewModeProvider>
     <ClassroomShareProvider>
+    <StudentAuthProvider>
     <Router basename={import.meta.env.PROD ? "/Vividbooks40" : ""}>
       {/* Toast notifications */}
       <Toaster position="top-center" richColors />
       
       {/* Firebase-based student view - for students when teacher is sharing */}
       <FirebaseStudentView />
+      
+      {/* Live session notification for logged-in students */}
+      <LiveSessionNotification />
+      
       <Routes>
+        {/* Student routes */}
+        <Route path="/student/login" element={<StudentLoginPage />} />
+        <Route path="/student/setup/:token" element={<StudentSetupPassword />} />
+        <Route path="/student/dashboard" element={<StudentDashboard />} />
+        
+        {/* Teacher routes */}
+        <Route path="/teacher/login" element={<TeacherLoginPage />} />
         <Route 
           path="/" 
           element={<WelcomePage theme={theme} toggleTheme={toggleTheme} />} 
@@ -91,12 +112,6 @@ export default function App() {
         <Route 
           path="/join/:sessionId" 
           element={<JoinSession />} 
-        />
-        
-        {/* Test route for student document editor */}
-        <Route 
-          path="/test-student-editor" 
-          element={<TestStudentEditor />} 
         />
         
         <Route 
@@ -277,6 +292,7 @@ export default function App() {
         />
       </Routes>
     </Router>
+    </StudentAuthProvider>
     </ClassroomShareProvider>
     </ViewModeProvider>
   );

@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Save, Settings, ChevronDown, X, Undo, Redo, Eye, Plus, Trash2, Play, Image as ImageIcon, PanelRight, Sparkles } from 'lucide-react';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { ArrowLeft, Save, Settings, ChevronDown, X, Undo, Redo, Eye, Plus, Trash2, Play, Image as ImageIcon, PanelRight, Sparkles, History } from 'lucide-react';
 import { HtmlRenderer } from './HtmlRenderer';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -13,6 +13,8 @@ import { SectionMediaManager } from './admin/SectionMediaManager';
 import { LottieSequencePlayer } from './media/LottieSequencePlayer';
 import { DOCUMENT_TYPES } from '../types/document-types';
 import { DocumentAIPanel } from './DocumentAIPanel';
+import { useVersionHistory } from '../hooks/useVersionHistory';
+import { VersionHistoryPanel } from './shared/VersionHistoryPanel';
 import {
   Dialog,
   DialogContent,
@@ -48,6 +50,11 @@ interface MyContentEditorProps {
 
 export function MyContentEditor({ theme, toggleTheme }: MyContentEditorProps) {
   const { id } = useParams<{ id: string }>();
+  const [searchParams] = useSearchParams();
+  const isStudentMode = searchParams.get('studentMode') === 'true' || searchParams.get('studentAssignmentId') !== null;
+  const isTeacherView = searchParams.get('teacherView') === 'true';
+  const viewingStudentId = searchParams.get('studentId');
+  const isReadOnly = searchParams.get('readOnly') === 'true';
   const navigate = useNavigate();
   const [item, setItem] = useState<ContentItem | null>(null);
   const [isTitleHovered, setIsTitleHovered] = useState(false);
@@ -72,6 +79,9 @@ export function MyContentEditor({ theme, toggleTheme }: MyContentEditorProps) {
   // Preview state
   const [previewOpen, setPreviewOpen] = useState(false);
   
+  // Version history state
+  const [versionHistoryOpen, setVersionHistoryOpen] = useState(false);
+  
   // Right column settings
   const [showTOC, setShowTOC] = useState(true);
   const [showFeaturedMediaDialog, setShowFeaturedMediaDialog] = useState(false);
@@ -90,6 +100,23 @@ export function MyContentEditor({ theme, toggleTheme }: MyContentEditorProps) {
   // Get current document type config
   const currentDocType = DOCUMENT_TYPES.find(t => t.id === documentType) || DOCUMENT_TYPES[0];
   const DocIcon = currentDocType.icon;
+  
+  // Version history hook
+  const versionHistory = useVersionHistory({
+    documentId: id || 'new',
+    documentType: 'my_content',
+    content: content,
+    title: title,
+    userType: isStudentMode ? 'student' : 'teacher',
+    autoSave: true,
+    autoSaveDelay: 3000,
+    readOnly: isReadOnly || !item,
+    onVersionRestored: (version) => {
+      setContent(version.content);
+      setTitle(version.title);
+      toast.success(`Obnovena verze ${version.version_number}`);
+    },
+  });
   
   // Extract H2 headings from content for SectionMediaManager
   const availableHeadings = useMemo(() => {
@@ -162,7 +189,7 @@ export function MyContentEditor({ theme, toggleTheme }: MyContentEditorProps) {
 
         // Not found anywhere
         toast.error("Položka nenalezena");
-        navigate('/library/my-content');
+        navigate(isStudentMode ? '/student/my-content' : '/library/my-content');
       } catch (e) {
         console.error("Error loading item", e);
         toast.error("Chyba při načítání");
@@ -315,8 +342,15 @@ export function MyContentEditor({ theme, toggleTheme }: MyContentEditorProps) {
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: '#EFF1F8' }}>
+      {/* Read-only banner for shared content */}
+      {isReadOnly && (
+        <div className="bg-purple-600 text-white px-4 py-2 text-center text-sm font-medium">
+          <span>📖 Prohlížíte sdílený dokument od učitele (pouze pro čtení)</span>
+        </div>
+      )}
+      
       {/* AI Panel - Fixed left side */}
-      {isAIPanelOpen && (
+      {isAIPanelOpen && !isReadOnly && (
         <div className="fixed left-0 top-0 h-screen z-50" style={{ width: '400px' }}>
           <DocumentAIPanel
             isOpen={isAIPanelOpen}
@@ -366,13 +400,33 @@ export function MyContentEditor({ theme, toggleTheme }: MyContentEditorProps) {
       
       {/* Fixed Back Button - OUTSIDE shifting div, always visible */}
       <button
-        onClick={() => navigate(`/library/my-content/view/${id}`)}
+        onClick={() => {
+          if (isTeacherView) {
+            // Go back to previous page (class results)
+            window.history.back();
+          } else if (isStudentMode) {
+            navigate('/student/my-content');
+          } else {
+            navigate(`/library/my-content/view/${id}`);
+          }
+        }}
         className="fixed z-50 p-2 rounded-lg hover:bg-black/5 transition-all text-[#4E5871]"
-        title="Zpět na dokument"
+        title={isTeacherView ? 'Zpět do třídy' : 'Zpět'}
         style={{ left: isAIPanelOpen ? '416px' : '16px', top: '17px' }}
       >
         <ArrowLeft className="h-5 w-5" />
       </button>
+      
+      {/* Teacher viewing student work indicator */}
+      {isTeacherView && (
+        <div 
+          className="fixed z-50 px-3 py-1.5 rounded-full bg-indigo-100 text-indigo-700 text-xs font-medium flex items-center gap-2"
+          style={{ left: isAIPanelOpen ? '456px' : '56px', top: '20px' }}
+        >
+          <Eye className="w-3.5 h-3.5" />
+          Prohlížíte práci studenta
+        </div>
+      )}
 
       {/* Fixed AI Button - next to back button */}
       <button
@@ -469,6 +523,24 @@ export function MyContentEditor({ theme, toggleTheme }: MyContentEditorProps) {
                 {autoSaveStatus === 'saving' || saving ? 'Ukládání...' : autoSaveStatus === 'unsaved' ? 'Neulož.' : 'Uloženo'}
               </div>
 
+              {/* Version History Button */}
+              {!isReadOnly && (
+                <button
+                  onClick={() => setVersionHistoryOpen(true)}
+                  className={`relative p-2.5 rounded-[6px] transition-all ${
+                    versionHistory.hasUnsavedChanges 
+                      ? 'bg-amber-100 hover:bg-amber-200 text-amber-700' 
+                      : 'bg-[#D1D9E6] hover:bg-[#c0cce6] text-[#4E5871]'
+                  }`}
+                  title={`Historie verzí${versionHistory.totalVersions > 0 ? ` (${versionHistory.totalVersions})` : ''}`}
+                >
+                  <History className="h-4 w-4" />
+                  {versionHistory.autoSavePending && (
+                    <span className="absolute -top-1 -right-1 w-2 h-2 bg-amber-500 rounded-full animate-pulse" />
+                  )}
+                </button>
+              )}
+
               {/* Undo/Redo */}
               <div className="flex items-center gap-1">
                 <button
@@ -522,21 +594,22 @@ export function MyContentEditor({ theme, toggleTheme }: MyContentEditorProps) {
             <input
               type="text"
               value={title} 
-              onChange={(e) => setTitle(e.target.value)} 
+              onChange={(e) => !isReadOnly && setTitle(e.target.value)} 
               placeholder="Nový dokument"
-              className="text-[#1e1b4b] text-4xl lg:text-5xl placeholder:text-[#4E5871]/40 focus:outline-none transition-all duration-200 text-center rounded-xl px-6 py-3"
+              disabled={isReadOnly}
+              className={`text-[#1e1b4b] text-4xl lg:text-5xl placeholder:text-[#4E5871]/40 focus:outline-none transition-all duration-200 text-center rounded-xl px-6 py-3 ${isReadOnly ? 'cursor-default' : ''}`}
               style={{ 
                 fontFamily: '"Cooper Light", "Cooper Black", serif', 
                 fontWeight: 300,
-                backgroundColor: isTitleHovered || isTitleFocused ? '#EFF1F8' : 'transparent',
-                border: isTitleFocused ? '2px solid #A0B0C8' : (isTitleHovered ? '2px solid #D1D9E6' : '2px solid transparent'),
+                backgroundColor: isReadOnly ? 'transparent' : (isTitleHovered || isTitleFocused ? '#EFF1F8' : 'transparent'),
+                border: isReadOnly ? '2px solid transparent' : (isTitleFocused ? '2px solid #A0B0C8' : (isTitleHovered ? '2px solid #D1D9E6' : '2px solid transparent')),
                 width: '60%',
                 minWidth: '300px',
               }}
-              onMouseEnter={() => setIsTitleHovered(true)}
-              onMouseLeave={() => setIsTitleHovered(false)}
-              onFocus={() => setIsTitleFocused(true)}
-              onBlur={() => setIsTitleFocused(false)}
+              onMouseEnter={() => !isReadOnly && setIsTitleHovered(true)}
+              onMouseLeave={() => !isReadOnly && setIsTitleHovered(false)}
+              onFocus={() => !isReadOnly && setIsTitleFocused(true)}
+              onBlur={() => !isReadOnly && setIsTitleFocused(false)}
             />
           </div>
         </div>
@@ -562,7 +635,8 @@ export function MyContentEditor({ theme, toggleTheme }: MyContentEditorProps) {
           >
             <RichTextEditor 
               content={content} 
-              onChange={setContent} 
+              onChange={isReadOnly ? () => {} : setContent}
+              readOnly={isReadOnly}
             />
           </div>
 
@@ -776,18 +850,20 @@ export function MyContentEditor({ theme, toggleTheme }: MyContentEditorProps) {
         </div>
                  </div>
 
-      {/* Save Button - Fixed Bottom */}
-      <div className="fixed bottom-6 right-6 z-40">
-                   <Button 
-                     onClick={handleSave} 
-          disabled={saving}
-          size="lg"
-          className="gap-2 bg-[#4E5871] hover:bg-[#3d455a] shadow-lg hover:shadow-xl transition-all px-6"
-                   >
-                     <Save className="h-4 w-4" />
-          {saving ? 'Ukládání...' : 'Uložit'}
-                   </Button>
-                     </div>
+      {/* Save Button - Fixed Bottom (hidden in read-only mode) */}
+      {!isReadOnly && (
+        <div className="fixed bottom-6 right-6 z-40">
+          <Button 
+            onClick={handleSave} 
+            disabled={saving}
+            size="lg"
+            className="gap-2 bg-[#4E5871] hover:bg-[#3d455a] shadow-lg hover:shadow-xl transition-all px-6"
+          >
+            <Save className="h-4 w-4" />
+            {saving ? 'Ukládání...' : 'Uložit'}
+          </Button>
+        </div>
+      )}
 
       {/* Featured Media Dialog */}
       <Dialog open={showFeaturedMediaDialog} onOpenChange={setShowFeaturedMediaDialog}>
@@ -876,6 +952,28 @@ export function MyContentEditor({ theme, toggleTheme }: MyContentEditorProps) {
       </div>
         </DialogContent>
       </Dialog>
+
+      {/* Version History Modal */}
+      {versionHistoryOpen && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[80vh] overflow-hidden">
+            <VersionHistoryPanel
+              versions={versionHistory.versions}
+              loading={versionHistory.loading}
+              error={versionHistory.error}
+              totalVersions={versionHistory.totalVersions}
+              hasMoreVersions={versionHistory.hasMoreVersions}
+              hasUnsavedChanges={versionHistory.hasUnsavedChanges}
+              autoSavePending={versionHistory.autoSavePending}
+              currentVersion={versionHistory.lastSavedVersion}
+              onSaveManual={versionHistory.saveManualVersion}
+              onRestore={versionHistory.restoreVersion}
+              onLoadMore={versionHistory.loadMoreVersions}
+              onClose={() => setVersionHistoryOpen(false)}
+            />
+          </div>
+        </div>
+      )}
 
       </div>
     </div>

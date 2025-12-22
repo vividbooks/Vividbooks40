@@ -3393,20 +3393,6 @@ export function MyContentLayout({ theme, toggleTheme }: MyContentLayoutProps) {
                         onAction: handleCreateWorksheet
                       },
                       { 
-                        id: 'quiz', 
-                        name: 'Board', 
-                        desc: 'Interaktivní prezentace a kvízy',
-                        meta: 'Slidy, kvízy, procvičování',
-                        bgColor: '#e0e7ff',
-                        iconBg: '#6366f1',
-                        textColor: '#4338ca',
-                        borderColor: '#818cf8',
-                        icon: <Play className="h-7 w-7" />,
-                        enabled: ecosystemAccess.canCreateContent,
-                        badge: 'Nové',
-                        onAction: handleCreateQuiz
-                      },
-                      { 
                         id: 'canvas', 
                         name: 'Nekonečná nástěnka', 
                         shortName: 'Nástěnka',

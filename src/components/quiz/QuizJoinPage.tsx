@@ -30,6 +30,7 @@ import {
 } from 'lucide-react';
 import { MathInputModal, MathDisplay } from '../math/MathKeyboard';
 import { MathText } from '../math/MathText';
+import { useStudentAuth } from '../../contexts/StudentAuthContext';
 import {
   Quiz,
   QuizSlide,
@@ -161,6 +162,7 @@ async function retryOperation<T>(
 // ============================================
 
 export function QuizJoinPage() {
+  const { student, loading: authLoading } = useStudentAuth();
   const [searchParams] = useSearchParams();
   const { code: urlCode } = useParams<{ code?: string }>();
   const initialCode = urlCode || searchParams.get('code') || '';
@@ -176,6 +178,7 @@ export function QuizJoinPage() {
   const [school, setSchool] = useState('');
   const [error, setError] = useState('');
   const [isJoining, setIsJoining] = useState(false);
+  const [sessionEnded, setSessionEnded] = useState(false);
   
   // Session state
   const [isJoined, setIsJoined] = useState(false);
@@ -394,6 +397,18 @@ export function QuizJoinPage() {
         setSession(data as LiveQuizSession);
         setConnectionError(null);
         
+        // Check if session was ended by teacher - redirect student to library
+        if (!data.isActive) {
+          console.log('Session ended by teacher, redirecting to library...');
+          clearSavedSession();
+          setSessionEnded(true);
+          // Show a brief message before redirect
+          setTimeout(() => {
+            window.location.href = '/';
+          }, 3000);
+          return;
+        }
+        
         // Load quiz from Firebase session data
         if (data.quizData && !quiz) {
           console.log('Loading quiz from Firebase:', data.quizData);
@@ -471,7 +486,9 @@ export function QuizJoinPage() {
     
     const handleBeforeUnload = () => {
       // Use sendBeacon for reliable offline update (if supported)
-      const url = 'https://' + (process.env.REACT_APP_FIREBASE_PROJECT_ID || 'your-project') + '.firebaseio.com/' + QUIZ_SESSIONS_PATH + '/' + sessionId + '/students/' + studentId + '.json';
+      // Firebase Realtime Database URL from config
+      const firebaseDbUrl = 'https://vividbooks-3-default-rtdb.europe-west1.firebasedatabase.app';
+      const url = `${firebaseDbUrl}/${QUIZ_SESSIONS_PATH}/${sessionId}/students/${studentId}.json`;
       if (navigator.sendBeacon) {
         navigator.sendBeacon(url, JSON.stringify({ isOnline: false }));
       }
@@ -552,6 +569,126 @@ export function QuizJoinPage() {
   // JOIN SESSION
   // ============================================
   
+  // Pre-fill name when student is available (even if still loading)
+  useEffect(() => {
+    if (student?.name && !name) {
+      console.log('[QuizJoin] Pre-filling name from student profile:', student.name);
+      setName(student.name);
+    }
+  }, [student?.name]);
+  
+  // Auto-join for logged-in students
+  useEffect(() => {
+    if (!authLoading && student && code && !isJoined && !isJoining) {
+      console.log('[QuizJoin] Logged-in student detected, auto-joining:', student.name);
+      // Set the name from student profile
+      setName(student.name);
+      // Auto-join after state updates
+      const timer = setTimeout(() => {
+        if (!isJoined && !isJoining) {
+          console.log('[QuizJoin] Triggering auto-join...');
+          // Directly call join logic
+          joinSessionForStudent();
+        }
+      }, 300);
+      return () => clearTimeout(timer);
+    }
+  }, [authLoading, student, code, isJoined, isJoining]);
+
+  // Join session for logged-in student (auto-join)
+  const joinSessionForStudent = async () => {
+    if (!student || !code || isJoining || isJoined) return;
+    
+    setIsJoining(true);
+    setError('');
+    
+    try {
+      // Find session by code
+      const sessionsRef = ref(database, QUIZ_SESSIONS_PATH);
+      const snapshot = await get(sessionsRef);
+      
+      if (!snapshot.exists()) {
+        setError('Relace nebyla nalezena');
+        setIsJoining(false);
+        return;
+      }
+      
+      let foundSessionId: string | null = null;
+      let foundSession: LiveQuizSession | null = null;
+      
+      snapshot.forEach((child) => {
+        const session = child.val() as LiveQuizSession;
+        if (session.code === code.toUpperCase()) {
+          foundSessionId = child.key;
+          foundSession = session;
+        }
+      });
+      
+      if (!foundSessionId || !foundSession) {
+        setError('Relace s tímto kódem neexistuje');
+        setIsJoining(false);
+        return;
+      }
+      
+      if (!foundSession.isActive) {
+        setError('Tato relace již skončila');
+        setIsJoining(false);
+        return;
+      }
+      
+      // Create student entry with profile data
+      const studentIdNew = `student-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      const deviceId = localStorage.getItem('vivid-device-id') || `device-${Date.now()}`;
+      localStorage.setItem('vivid-device-id', deviceId);
+      
+      const studentData = {
+        name: student.name,
+        schoolName: '',
+        joinedAt: new Date().toISOString(),
+        currentSlide: foundSession.currentSlide || 0,
+        responses: [],
+        isOnline: true,
+        isFocused: true,
+        lastSeen: new Date().toISOString(),
+        deviceId,
+        startTime: new Date().toISOString(),
+        // Add class info for automatic result sync
+        classId: student.class_id || null,
+        studentDbId: student.id || null, // Database ID for result matching
+      };
+      
+      const studentRef = ref(database, `${QUIZ_SESSIONS_PATH}/${foundSessionId}/students/${studentIdNew}`);
+      await set(studentRef, studentData);
+      
+      // Save session for reconnect
+      const savedSession = {
+        sessionId: foundSessionId,
+        sessionCode: code,
+        studentId: studentIdNew,
+        studentName: student.name,
+        joinedAt: new Date().toISOString(),
+      };
+      localStorage.setItem(STUDENT_SESSION_KEY, JSON.stringify(savedSession));
+      
+      // Set state
+      setSessionId(foundSessionId);
+      setStudentId(studentIdNew);
+      setSession(foundSession);
+      if (foundSession.quizData) {
+        setQuiz(foundSession.quizData as Quiz);
+      }
+      setLocalSlideIndex(foundSession.currentSlide || 0);
+      setIsJoined(true);
+      console.log('[QuizJoin] Auto-joined successfully!');
+      
+    } catch (error) {
+      console.error('[QuizJoin] Auto-join error:', error);
+      setError('Chyba při připojení');
+    }
+    
+    setIsJoining(false);
+  };
+
   const joinSession = async () => {
     if (!code || !name) {
       setError('Vyplň kód a jméno');
@@ -885,6 +1022,28 @@ export function QuizJoinPage() {
   };
 
   // ============================================
+  // RENDER: SESSION ENDED BY TEACHER
+  // ============================================
+  
+  if (sessionEnded) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-green-500 via-emerald-600 to-teal-700 flex items-center justify-center p-4">
+        <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl text-center">
+          <div className="w-20 h-20 rounded-full bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center mx-auto mb-6">
+            <CheckCircle className="w-10 h-10 text-white" />
+          </div>
+          <h2 className="text-2xl font-bold text-slate-800 mb-2">Relace ukončena</h2>
+          <p className="text-slate-600 mb-6">Učitel ukončil tuto relaci. Díky za účast!</p>
+          <div className="flex items-center justify-center gap-2 text-emerald-600">
+            <RefreshCw className="w-5 h-5 animate-spin" />
+            <span className="font-medium">Přesměrování do knihovny...</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ============================================
   // RENDER: RECONNECTING
   // ============================================
   
@@ -914,7 +1073,7 @@ export function QuizJoinPage() {
               <Users className="w-8 h-8 text-white" />
             </div>
             <h1 className="text-2xl font-bold text-slate-800">
-              Připojte se do soutěže!
+              {student ? 'Připojuji...' : 'Připojte se do soutěže!'}
             </h1>
             <p className="text-slate-500 mt-1">Zadej kód od učitele</p>
           </div>

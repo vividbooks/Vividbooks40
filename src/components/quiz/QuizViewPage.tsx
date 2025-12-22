@@ -36,6 +36,8 @@ import {
   RefreshCw,
   Lock,
   Unlock,
+  Bell,
+  Send,
   AlertTriangle,
 } from 'lucide-react';
 import { Quiz, QuizSlide, ABCActivitySlide, OpenActivitySlide, ExampleActivitySlide, InfoSlide, LiveQuizSession, SlideResponse } from '../../types/quiz';
@@ -47,6 +49,7 @@ import { boardToWorksheet, getConversionSummary } from '../../utils/content-conv
 import { saveWorksheet } from '../../utils/worksheet-storage';
 import { MathText } from '../math/MathText';
 import { QRCodeSVG } from 'qrcode.react';
+import { getClasses, ClassGroup, notifyClassOfLiveSession, getOnlineStudentsCount, syncQuizResultsToClass, QuizSessionResult } from '../../utils/supabase/classes';
 
 // Toggle switch component - simple working version
 const ToggleSwitch = ({ enabled, onChange, label }: { enabled: boolean; onChange: (v: boolean) => void; label: string }) => {
@@ -326,8 +329,76 @@ export function QuizViewPage() {
   const [session, setSession] = useState<LiveQuizSession | null>(null);
   const [isStartingSession, setIsStartingSession] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [realClasses, setRealClasses] = useState<ClassGroup[]>([]);
+  const [loadingClasses, setLoadingClasses] = useState(true);
+  const [notifyingClass, setNotifyingClass] = useState<string | null>(null);
+  const [onlineCounts, setOnlineCounts] = useState<Record<string, number>>({});
+
+  // Load classes for notification dropdown
+  useEffect(() => {
+    async function loadClasses() {
+      console.log('[QuizView] Loading classes...');
+      try {
+        const classes = await getClasses();
+        console.log('[QuizView] Loaded classes:', classes.length);
+        setRealClasses(classes);
+        setLoadingClasses(false); // Set loading to false immediately after classes load
+        
+        // Get online counts in background (don't block UI)
+        const counts: Record<string, number> = {};
+        for (const cls of classes) {
+          counts[cls.id] = 0; // Default to 0
+        }
+        setOnlineCounts(counts);
+        
+        // Load actual counts in background
+        const loadOnlineCounts = async () => {
+          for (const cls of classes) {
+            try {
+              const count = await getOnlineStudentsCount(cls.id);
+              console.log('[QuizView] Online count for', cls.name, ':', count);
+              setOnlineCounts(prev => ({ ...prev, [cls.id]: count }));
+            } catch {
+              // Ignore errors
+            }
+          }
+        };
+        
+        // Initial load
+        setTimeout(loadOnlineCounts, 100);
+        
+        // Refresh every 10 seconds
+        const intervalId = setInterval(loadOnlineCounts, 10000);
+        
+        // Store interval ID for cleanup
+        (window as any).__onlineCountInterval = intervalId;
+      } catch (error) {
+        console.error('[QuizView] Failed to load classes:', error);
+        setRealClasses([]);
+        setLoadingClasses(false);
+      }
+    }
+    loadClasses();
+  }, []);
+
+  // Notify class students about quiz session
+  const notifyClassStudents = async (classId: string) => {
+    if (!sessionCode) return;
+    setNotifyingClass(classId);
+    try {
+      const quizPath = `${window.location.origin}${import.meta.env.BASE_URL || '/'}quiz/join/${sessionCode}`;
+      await notifyClassOfLiveSession(classId, sessionCode, quizPath, quiz?.title || 'Quiz');
+      console.log('Notified class:', classId);
+    } catch (error) {
+      console.error('Failed to notify class:', error);
+    } finally {
+      setNotifyingClass(null);
+    }
+  };
   const [showEndDialog, setShowEndDialog] = useState(false);
   const [showLiveSettings, setShowLiveSettings] = useState(false);
+  const [syncToClassId, setSyncToClassId] = useState<string>('');
+  const [isSyncingResults, setIsSyncingResults] = useState(false);
   
   // Live session settings
   const [liveShowSolutionHints, setLiveShowSolutionHints] = useState(true);
@@ -411,6 +482,7 @@ export function QuizViewPage() {
     const sessionData: LiveQuizSession = {
       id: newSessionId,
       quizId: quiz.id,
+      code: code, // IMPORTANT: Store code so students can find the session!
       teacherId: profile?.userId || 'anonymous',
       teacherName: (profile as any)?.firstName || profile?.name || 'Učitel',
       isActive: true,
@@ -470,8 +542,63 @@ export function QuizViewPage() {
   }, [sessionId, currentSlideIndex, session?.isActive]);
   
   // End session
-  const endLiveSession = async (viewResults: boolean = false) => {
-    if (sessionId) {
+  const endLiveSession = async (viewResults: boolean = false, syncClassId?: string) => {
+    if (sessionId && session?.students && quiz) {
+      setIsSyncingResults(true);
+      
+      // Group students by their classId for automatic sync
+      const studentsByClass: Record<string, QuizSessionResult[]> = {};
+      
+      Object.entries(session.students).forEach(([_, student]) => {
+        const responses = student.responses || [];
+        const totalCorrect = responses.filter(r => r.isCorrect === true).length;
+        const totalQuestions = responses.length;
+        const timeSpentMs = responses.reduce((sum, r) => sum + (r.timeSpentMs || 0), 0);
+        
+        const result: QuizSessionResult = {
+          studentName: student.name,
+          studentId: (student as any).studentDbId, // Database ID if logged in
+          responses: responses.map(r => ({
+            slideId: r.slideId,
+            answer: r.answer,
+            isCorrect: r.isCorrect,
+            timeSpentMs: r.timeSpentMs,
+          })),
+          totalCorrect,
+          totalQuestions,
+          timeSpentMs,
+        };
+        
+        // Use student's classId if available, otherwise use manually selected class
+        const classId = (student as any).classId || syncClassId;
+        if (classId) {
+          if (!studentsByClass[classId]) {
+            studentsByClass[classId] = [];
+          }
+          studentsByClass[classId].push(result);
+        }
+      });
+      
+      // Sync results to each class
+      for (const [classId, results] of Object.entries(studentsByClass)) {
+        console.log(`[EndSession] Syncing ${results.length} students to class ${classId}`);
+        const syncResult = await syncQuizResultsToClass(
+          classId,
+          quiz.id,
+          quiz.title,
+          sessionId,
+          results
+        );
+        
+        if (syncResult.success) {
+          console.log(`[EndSession] Results synced to class ${classId} successfully`);
+        } else {
+          console.error(`[EndSession] Failed to sync to class ${classId}:`, syncResult.error);
+        }
+      }
+      
+      setIsSyncingResults(false);
+      
       await update(ref(database, getSessionPath(sessionId)), { 
         isActive: false, 
         endedAt: new Date().toISOString() 
@@ -481,11 +608,18 @@ export function QuizViewPage() {
         navigate(`/quiz/results/${sessionId}`);
         return;
       }
+    } else if (sessionId) {
+      await update(ref(database, getSessionPath(sessionId)), { 
+        isActive: false, 
+        endedAt: new Date().toISOString() 
+      });
     }
+    
     setSessionId(null);
     setSessionCode(null);
     setSession(null);
     setShowEndDialog(false);
+    setSyncToClassId('');
   };
   
   // Copy session code
@@ -657,6 +791,46 @@ export function QuizViewPage() {
             <p className="text-xs mt-3 text-center" style={{ color: '#64748b' }}>
               Nebo: <span style={{ color: '#94a3b8' }}>{window.location.origin}{import.meta.env.BASE_URL || '/'}quiz/join</span>
             </p>
+            
+            {/* Class notification section */}
+            <div className="mt-4 p-3 rounded-xl" style={{ background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(168, 85, 247, 0.2))', border: '1px solid rgba(99, 102, 241, 0.3)' }}>
+              <div className="flex items-center gap-2 mb-2">
+                <Bell className="w-4 h-4" style={{ color: '#a78bfa' }} />
+                <span className="text-sm font-medium" style={{ color: '#c4b5fd' }}>Připojit třídu automaticky</span>
+              </div>
+              <p className="text-xs mb-3" style={{ color: '#94a3b8' }}>
+                Online studenti se připojí automaticky
+              </p>
+              <div className="space-y-1.5">
+                {loadingClasses ? (
+                  <div className="text-center py-2" style={{ color: '#64748b' }}>Načítám...</div>
+                ) : realClasses.length > 0 ? (
+                  realClasses.slice(0, 5).map((cls) => (
+                    <button
+                      key={cls.id}
+                      onClick={() => notifyClassStudents(cls.id)}
+                      disabled={notifyingClass === cls.id}
+                      className="w-full flex items-center justify-between p-2 rounded-lg transition-all"
+                      style={{ backgroundColor: '#334155' }}
+                    >
+                      <span className="text-sm" style={{ color: '#ffffff' }}>{cls.name}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs" style={{ color: onlineCounts[cls.id] > 0 ? '#4ade80' : '#64748b' }}>
+                          {onlineCounts[cls.id] || 0} online / {cls.students?.length || 0}
+                        </span>
+                        {notifyingClass === cls.id ? (
+                          <div className="w-4 h-4 border-2 border-purple-400 border-t-transparent rounded-full animate-spin" />
+                        ) : (
+                          <Send className="w-3.5 h-3.5" style={{ color: '#a78bfa' }} />
+                        )}
+                      </div>
+                    </button>
+                  ))
+                ) : (
+                  <div className="text-center py-2" style={{ color: '#64748b' }}>Žádné třídy</div>
+                )}
+              </div>
+            </div>
           </div>
           
           {/* Lock mode toggle */}
@@ -909,27 +1083,69 @@ export function QuizViewPage() {
           {/* End session dialog */}
           {showEndDialog && (
             <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-50">
-              <div className="bg-white rounded-2xl p-6 max-w-sm w-full mx-4 shadow-2xl">
+              <div className="bg-white rounded-2xl p-6 max-w-md w-full mx-4 shadow-2xl">
                 <h3 className="text-lg font-bold text-slate-800 mb-2">Ukončit session?</h3>
-                <p className="text-slate-500 text-sm mb-6">
+                <p className="text-slate-500 text-sm mb-4">
                   Session bude ukončena a studenti budou odpojeni.
                 </p>
+                
+                {/* Sync to class option */}
+                <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 mb-4">
+                  <p className="text-sm font-medium text-emerald-800 mb-2">
+                    📊 Uložit výsledky do třídy
+                  </p>
+                  <select
+                    value={syncToClassId}
+                    onChange={(e) => setSyncToClassId(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '8px 12px',
+                      borderRadius: '8px',
+                      border: '1px solid #6ee7b7',
+                      fontSize: '14px',
+                      backgroundColor: '#ffffff',
+                      color: '#1f2937',
+                    }}
+                  >
+                    <option value="">-- Nevybráno (neuložit) --</option>
+                    {realClasses.map(c => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                  {syncToClassId && (
+                    <p className="text-xs text-emerald-600 mt-2">
+                      ✓ Výsledky budou uloženy do třídy a zobrazí se v přehledu
+                    </p>
+                  )}
+                </div>
+                
                 <div className="space-y-2">
                   <button
-                    onClick={() => endLiveSession(true)}
-                    className="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-medium flex items-center justify-center gap-2"
+                    onClick={() => endLiveSession(true, syncToClassId || undefined)}
+                    disabled={isSyncingResults}
+                    className="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-medium flex items-center justify-center gap-2 disabled:opacity-50"
                   >
-                    <BarChart2 className="w-4 h-4" />
-                    Ukončit a zobrazit výsledky
+                    {isSyncingResults ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                        Ukládám výsledky...
+                      </>
+                    ) : (
+                      <>
+                        <BarChart2 className="w-4 h-4" />
+                        {syncToClassId ? 'Uložit a zobrazit výsledky' : 'Ukončit a zobrazit výsledky'}
+                      </>
+                    )}
                   </button>
                   <button
-                    onClick={() => endLiveSession(false)}
-                    className="w-full py-3 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-700 font-medium"
+                    onClick={() => endLiveSession(false, syncToClassId || undefined)}
+                    disabled={isSyncingResults}
+                    className="w-full py-3 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-700 font-medium disabled:opacity-50"
                   >
-                    Ukončit bez výsledků
+                    {syncToClassId ? 'Uložit bez zobrazení' : 'Ukončit bez výsledků'}
                   </button>
                   <button
-                    onClick={() => setShowEndDialog(false)}
+                    onClick={() => { setShowEndDialog(false); setSyncToClassId(''); }}
                     className="w-full py-2 text-slate-500 hover:text-slate-700 text-sm"
                   >
                     Zrušit

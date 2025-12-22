@@ -32,10 +32,10 @@ interface TeachMeChatProps {
 }
 
 const MODELS = [
-  { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
+  { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash ⚡' },
+  { id: 'gpt-4o-mini', label: 'GPT-4o mini' },
   { id: 'gpt-5', label: 'GPT-5' },
   { id: 'gpt-5-mini', label: 'GPT-5 mini' },
-  { id: 'gpt-4o-mini', label: 'GPT-4o mini' },
   { id: 'gpt-4.1-mini', label: 'GPT-4.1 mini' }
 ] as const;
 
@@ -323,12 +323,18 @@ Odpovídej česky! 😊`;
         length: aiResponseText.length
       });
 
-    } catch (error) {
+    } catch (error: any) {
       console.error('Chat error:', error);
+      
+      // Use specific error message if available, otherwise generic message
+      const errorContent = error?.message && !error.message.includes('fetch') 
+        ? `❌ ${error.message}`
+        : 'Omlouvám se, došlo k chybě při komunikaci s AI. Zkus to prosím znovu.';
+      
       const errorMessage: Message = {
         id: crypto.randomUUID(),
         role: 'assistant',
-        content: 'Omlouvám se, došlo k chybě při komunikaci s AI. Zkus to prosím znovu.',
+        content: errorContent,
         timestamp: new Date()
       };
       setMessages(prev => [...prev, errorMessage]);
@@ -428,10 +434,10 @@ Odpovídej česky! 😊`;
                         {m.label}
                       </div>
                       <div className="text-xs text-gray-400 mt-1">
-                        {m.id === 'gemini-2.5-flash' && 'Google AI s RAG kontextem'}
+                        {m.id === 'gemini-2.5-flash' && 'Google AI - rychlý a chytrý'}
+                        {m.id === 'gpt-4o-mini' && 'OpenAI - rychlý a spolehlivý'}
                         {m.id === 'gpt-5' && 'OpenAI - GPT‑5'}
                         {m.id === 'gpt-5-mini' && 'OpenAI - GPT‑5 mini'}
-                        {m.id === 'gpt-4o-mini' && 'OpenAI - rychlý a spolehlivý'}
                         {m.id === 'gpt-4.1-mini' && 'OpenAI - nejnovější verze'}
                       </div>
                     </div>

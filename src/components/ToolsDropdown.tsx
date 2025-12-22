@@ -4,7 +4,7 @@ interface ToolsDropdownProps {
   isOpen?: boolean;
   onToggle?: () => void;
   label?: string;
-  variant?: 'default' | 'yellow' | 'green' | 'light';
+  variant?: 'default' | 'yellow' | 'green' | 'light' | 'blue';
 }
 
 export const ToolsDropdown = ({ 
@@ -32,6 +32,12 @@ export const ToolsDropdown = ({
           backgroundColor: '#f1f5f9',
           color: '#334155',
           chevronColor: '#64748b'
+        };
+      case 'blue':
+        return {
+          backgroundColor: '#60A5FA',
+          color: '#1e3a5f',
+          chevronColor: '#1e3a5f'
         };
       default:
         return {

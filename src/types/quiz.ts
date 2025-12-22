@@ -225,6 +225,7 @@ export interface QuizSession {
 export interface LiveQuizSession {
   id: string;
   quizId: string;
+  code?: string; // Session join code for students
   teacherId: string;
   teacherName: string;
   

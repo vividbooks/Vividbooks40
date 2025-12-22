@@ -1,4 +1,5 @@
 import OpenAI from 'openai';
+import { chatWithAIProxy, shouldUseProxy } from './ai-chat-proxy';
 
 // Get API key from localStorage or env variable
 export function getOpenAIKey(): string {
@@ -37,7 +38,7 @@ export interface ChatParams {
 
 export async function chatWithOpenAI(params: ChatParams): Promise<string> {
   try {
-    const messages: any[] = [
+    const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
       { role: 'system', content: params.systemPrompt }
     ];
 
@@ -48,6 +49,17 @@ export async function chatWithOpenAI(params: ChatParams): Promise<string> {
     }
 
     messages.push({ role: 'user', content: params.message });
+
+    // Use Supabase Edge Function proxy in production
+    if (shouldUseProxy()) {
+      return await chatWithAIProxy(messages, params.model, { temperature: 0.7, max_tokens: 1000 });
+    }
+
+    // Direct API call for development
+    const apiKey = getOpenAIKey();
+    if (!apiKey) {
+      throw new Error('NO_API_KEY');
+    }
 
     // GPT-5 models require `max_completion_tokens` instead of `max_tokens`.
     const isGpt5Family = /^gpt-5/i.test(params.model);
@@ -63,8 +75,30 @@ export async function chatWithOpenAI(params: ChatParams): Promise<string> {
     } as any);
 
     return completion.choices[0]?.message?.content || 'Omlouvám se, nemám odpověď.';
-  } catch (error) {
+  } catch (error: any) {
     console.error('OpenAI API Error:', error);
+    
+    // Parse specific error types for better user feedback
+    if (error.message === 'NO_API_KEY') {
+      throw new Error('Chybí OpenAI API klíč. Klikni na ikonu 🔑 a zadej svůj klíč.');
+    }
+    
+    if (error.status === 401 || error.code === 'invalid_api_key') {
+      throw new Error('Neplatný OpenAI API klíč. Zkontroluj nebo aktualizuj svůj klíč (ikona 🔑).');
+    }
+    
+    if (error.status === 429) {
+      throw new Error('Překročen limit OpenAI API. Počkej chvíli nebo zkontroluj svůj kredit na OpenAI.');
+    }
+    
+    if (error.status === 402 || error.code === 'insufficient_quota') {
+      throw new Error('Nedostatečný kredit na OpenAI účtu. Doplň kredit na platform.openai.com.');
+    }
+
+    if (error.status === 404) {
+      throw new Error(`Model "${error.model || 'neznámý'}" není dostupný. Zkus jiný model.`);
+    }
+    
     throw error;
   }
 }

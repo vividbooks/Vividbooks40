@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { setStudentAuthChangeCallback, StudentProfile as AuthStudentProfile } from './StudentAuthContext';
 import { UserRole, StudentProfile, StudentAssignment, StudentTestResult, TeacherEvaluation, StudentActivity } from '../types/profile';
 
 // Mock student data
@@ -181,6 +182,24 @@ const ViewModeContext = createContext<ViewModeContextType | null>(null);
 export function ViewModeProvider({ children }: { children: ReactNode }) {
   const [viewMode, setViewModeState] = useState<UserRole>('teacher');
   const [sharedFolders, setSharedFolders] = useState<SharedFolder[]>([]);
+  const [realStudent, setRealStudent] = useState<AuthStudentProfile | null>(null);
+
+  // Listen for student auth changes
+  useEffect(() => {
+    setStudentAuthChangeCallback((student) => {
+      setRealStudent(student);
+      // When a real student is logged in, always set to student mode
+      // This ensures students see student menu regardless of current URL
+      if (student) {
+        setViewModeState('student');
+        localStorage.setItem('viewMode', 'student');
+      }
+    });
+    
+    return () => {
+      setStudentAuthChangeCallback(() => {});
+    };
+  }, []);
 
   // Function to load shared folders from teacher's localStorage
   const loadSharedFolders = (studentClassName: string) => {
@@ -272,7 +291,14 @@ export function ViewModeProvider({ children }: { children: ReactNode }) {
     setViewMode,
     isStudent: viewMode === 'student',
     isTeacher: viewMode === 'teacher',
-    currentStudent: viewMode === 'student' ? MOCK_STUDENT : null,
+    // Use real student if logged in, otherwise fall back to mock student
+    currentStudent: viewMode === 'student' ? (realStudent ? {
+      ...MOCK_STUDENT,
+      id: realStudent.id,
+      name: realStudent.name,
+      email: realStudent.email || MOCK_STUDENT.email,
+      className: realStudent.class_name || MOCK_STUDENT.className,
+    } : MOCK_STUDENT) : null,
     studentAssignments: MOCK_ASSIGNMENTS,
     studentTestResults: MOCK_TEST_RESULTS,
     studentEvaluations: MOCK_EVALUATIONS,

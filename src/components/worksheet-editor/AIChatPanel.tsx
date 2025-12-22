@@ -551,7 +551,9 @@ export function AIChatPanel({
       console.log('[Edit] Prompt length:', prompt.length);
       
       // Call AI to modify blocks
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=AIzaSyDcPJrEcxThsVskj2LvYf6VB3mGTM45Ih0`, {
+      const geminiKey = localStorage.getItem('gemini_api_key') || import.meta.env.VITE_GEMINI_API_KEY || '';
+      if (!geminiKey) throw new Error('Gemini API klíč není nastaven');
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

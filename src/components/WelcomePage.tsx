@@ -1,5 +1,7 @@
-import { Link } from 'react-router-dom';
-import { FileText, Search, Moon, Sun, Settings, Lock } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { GraduationCap, Users, Settings, BarChart3, Key, ExternalLink, Loader2 } from 'lucide-react';
+import { supabase } from '../utils/supabase/client';
 
 interface WelcomePageProps {
   theme: 'light' | 'dark';
@@ -7,196 +9,227 @@ interface WelcomePageProps {
 }
 
 export function WelcomePage({ theme, toggleTheme }: WelcomePageProps) {
+  const navigate = useNavigate();
+  const [checking, setChecking] = useState(true);
+
+  // Check if user is already logged in and redirect
+  useEffect(() => {
+    const checkAuth = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        
+        if (user) {
+          // User is logged in - check if teacher or student
+          const viewMode = localStorage.getItem('viewMode');
+          
+          if (viewMode === 'student') {
+            navigate('/library/student-wall');
+          } else {
+            // Default to teacher/library view
+            navigate('/docs');
+          }
+          return;
+        }
+      } catch (error) {
+        console.error('Auth check error:', error);
+      }
+      setChecking(false);
+    };
+    
+    checkAuth();
+  }, [navigate]);
+  const links = [
+    {
+      title: 'Login pro učitele',
+      description: 'Přihlášení do učitelského rozhraní',
+      href: '/teacher/login',
+      icon: GraduationCap,
+      gradient: 'linear-gradient(135deg, #8B5CF6 0%, #6366F1 100%)',
+    },
+    {
+      title: 'Login pro studenty',
+      description: 'Přihlášení do studentského portálu',
+      href: '/student/login',
+      icon: Users,
+      gradient: 'linear-gradient(135deg, #10B981 0%, #14B8A6 100%)',
+    },
+    {
+      title: 'Administrace obsahu',
+      description: 'Správa knihovny a obsahu Vividbooks',
+      href: '/admin',
+      icon: Settings,
+      gradient: 'linear-gradient(135deg, #F97316 0%, #EF4444 100%)',
+    },
+    {
+      title: 'Aktivita škol',
+      description: 'Přehled aktivit a statistik škol',
+      href: '/admin/customer-success',
+      icon: BarChart3,
+      gradient: 'linear-gradient(135deg, #3B82F6 0%, #06B6D4 100%)',
+    },
+    {
+      title: 'Správa licencí',
+      description: 'Administrace licencí a předplatných',
+      href: '/admin/licence',
+      icon: Key,
+      gradient: 'linear-gradient(135deg, #EC4899 0%, #F43F5E 100%)',
+    },
+  ];
+
+  // Show loading while checking auth
+  if (checking) {
+    return (
+      <div 
+        className="min-h-screen flex items-center justify-center"
+        style={{
+          background: theme === 'dark' 
+            ? 'linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)'
+            : 'linear-gradient(135deg, #f8fafc 0%, #e2e8f0 50%, #cbd5e1 100%)',
+        }}
+      >
+        <Loader2 className="w-8 h-8 animate-spin" style={{ color: theme === 'dark' ? '#94a3b8' : '#64748b' }} />
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-background">
+    <div 
+      className="min-h-screen flex items-center justify-center p-6"
+      style={{
+        background: theme === 'dark' 
+          ? 'linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)'
+          : 'linear-gradient(135deg, #f8fafc 0%, #e2e8f0 50%, #cbd5e1 100%)',
+      }}
+    >
+      <div className="w-full max-w-2xl">
       {/* Header */}
-      <header className="sticky top-0 z-40 w-full border-b border-border bg-background/95 backdrop-blur">
-        <div className="flex h-14 items-center px-4 gap-4">
-          <Link to="/" className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-gradient-to-br from-orange-500 to-pink-500 rounded-lg flex items-center justify-center">
-              <span className="text-white font-bold text-sm">VB</span>
-            </div>
-            <span className="font-semibold">Vividbooks návody a metodika</span>
-          </Link>
-
-          <div className="flex-1 flex items-center justify-end gap-2">
-            <Link
-              to="/admin/login"
-              className="flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-accent rounded-md transition-colors"
-            >
-              <Lock className="h-4 w-4" />
-              <span className="hidden sm:inline">Admin Login</span>
-            </Link>
-
-            <button
-              onClick={toggleTheme}
-              className="p-2 hover:bg-accent rounded-md transition-colors"
-              aria-label="Toggle theme"
-            >
-              {theme === 'light' ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
-            </button>
+        <div className="text-center mb-12">
+          <div 
+            className="inline-flex items-center justify-center w-20 h-20 rounded-2xl mb-6"
+            style={{
+              background: 'linear-gradient(135deg, #8B5CF6 0%, #EC4899 100%)',
+              boxShadow: '0 10px 40px rgba(139, 92, 246, 0.3)',
+            }}
+          >
+            <span className="text-white font-bold text-3xl">VB</span>
           </div>
-        </div>
-      </header>
-
-      {/* Main content */}
-      <main className="container mx-auto px-4 py-16 max-w-5xl">
-        <div className="text-center mb-16">
-          <h1 className="mb-4">
-            Vividbooks návody a metodika
+          
+          <h1 
+            className="text-4xl font-bold mb-3"
+            style={{ 
+              color: theme === 'dark' ? '#f1f5f9' : '#1e293b',
+              letterSpacing: '-0.02em',
+            }}
+          >
+            Vividbooks 4.0
           </h1>
-          <p className="text-xl text-muted-foreground mb-8">
-            Naučte se používat Vividbooks k vytváření, správě a sdílení digitálních knih
+          
+          <p 
+            className="text-lg"
+            style={{ color: theme === 'dark' ? '#94a3b8' : '#64748b' }}
+          >
+            Vývojový rozcestník
           </p>
+        </div>
 
-          <div className="flex items-center justify-center gap-4">
+        {/* Links Grid */}
+        <div className="space-y-4">
+          {links.map((link) => (
             <Link
-              to="/admin/login"
-              className="bg-primary text-primary-foreground px-6 py-3 rounded-lg hover:opacity-90 transition-opacity"
+              key={link.href}
+              to={link.href}
+              className="group block"
             >
-              Get Started
+              <div
+                className="flex items-center gap-5 p-5 rounded-2xl transition-all duration-300"
+                style={{
+                  background: theme === 'dark' 
+                    ? 'rgba(255, 255, 255, 0.05)'
+                    : 'rgba(255, 255, 255, 0.8)',
+                  backdropFilter: 'blur(10px)',
+                  border: theme === 'dark'
+                    ? '1px solid rgba(255, 255, 255, 0.1)'
+                    : '1px solid rgba(0, 0, 0, 0.05)',
+                  boxShadow: theme === 'dark'
+                    ? '0 4px 20px rgba(0, 0, 0, 0.3)'
+                    : '0 4px 20px rgba(0, 0, 0, 0.05)',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.transform = 'translateY(-2px)';
+                  e.currentTarget.style.boxShadow = theme === 'dark'
+                    ? '0 8px 30px rgba(0, 0, 0, 0.4)'
+                    : '0 8px 30px rgba(0, 0, 0, 0.1)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = 'translateY(0)';
+                  e.currentTarget.style.boxShadow = theme === 'dark'
+                    ? '0 4px 20px rgba(0, 0, 0, 0.3)'
+                    : '0 4px 20px rgba(0, 0, 0, 0.05)';
+                }}
+              >
+                {/* Icon */}
+                <div 
+                  className="flex-shrink-0 w-14 h-14 rounded-xl flex items-center justify-center"
+                  style={{ 
+                    background: link.gradient,
+                    boxShadow: '0 4px 15px rgba(0, 0, 0, 0.2)',
+                  }}
+                >
+                  <link.icon className="w-7 h-7 text-white" />
+        </div>
+
+                {/* Text */}
+                <div className="flex-1 min-w-0">
+                  <h3 
+                    className="font-semibold text-lg mb-1"
+                    style={{ color: theme === 'dark' ? '#f1f5f9' : '#1e293b' }}
+                  >
+                    {link.title}
+                  </h3>
+                  <p 
+                    className="text-sm"
+                    style={{ color: theme === 'dark' ? '#94a3b8' : '#64748b' }}
+                  >
+                    {link.description}
+            </p>
+          </div>
+
+                {/* Arrow */}
+                <div 
+                  className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                  style={{ color: theme === 'dark' ? '#94a3b8' : '#64748b' }}
+                >
+                  <ExternalLink className="w-5 h-5" />
+        </div>
+              </div>
             </Link>
-            <a
-              href="https://github.com"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="border border-border px-6 py-3 rounded-lg hover:bg-accent transition-colors"
-            >
-              View on GitHub
-            </a>
-          </div>
+          ))}
         </div>
 
-        {/* Features */}
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8 mb-16">
-          <div className="p-6 border border-border rounded-lg">
-            <FileText className="h-10 w-10 text-primary mb-4" />
-            <h3 className="mb-2">Markdown Editor</h3>
-            <p className="text-muted-foreground">
-              Write documentation in Markdown with live preview support
-            </p>
-          </div>
-
-          <div className="p-6 border border-border rounded-lg">
-            <Search className="h-10 w-10 text-primary mb-4" />
-            <h3 className="mb-2">Full-text Search</h3>
-            <p className="text-muted-foreground">
-              Powerful search across all pages with keyboard shortcuts (⌘K)
-            </p>
-          </div>
-
-          <div className="p-6 border border-border rounded-lg">
-            <Moon className="h-10 w-10 text-primary mb-4" />
-            <h3 className="mb-2">Dark Mode</h3>
-            <p className="text-muted-foreground">
-              Automatic dark mode support with theme persistence
-            </p>
-          </div>
-
-          <div className="p-6 border border-border rounded-lg">
-            <Settings className="h-10 w-10 text-primary mb-4" />
-            <h3 className="mb-2">Drag & Drop Menu</h3>
-            <p className="text-muted-foreground">
-              Organize your documentation structure with intuitive drag and drop
-            </p>
-          </div>
-
-          <div className="p-6 border border-border rounded-lg">
-            <Lock className="h-10 w-10 text-primary mb-4" />
-            <h3 className="mb-2">Secure Admin</h3>
-            <p className="text-muted-foreground">
-              Protected admin panel with Supabase authentication
-            </p>
-          </div>
-
-          <div className="p-6 border border-border rounded-lg">
-            <FileText className="h-10 w-10 text-primary mb-4" />
-            <h3 className="mb-2">Responsive Design</h3>
-            <p className="text-muted-foreground">
-              Beautiful on all devices - mobile, tablet, and desktop
-            </p>
-          </div>
+        {/* Theme Toggle */}
+        <div className="mt-10 text-center">
+          <button
+            onClick={toggleTheme}
+            className="px-4 py-2 rounded-lg text-sm transition-colors"
+            style={{
+              background: theme === 'dark' 
+                ? 'rgba(255, 255, 255, 0.1)'
+                : 'rgba(0, 0, 0, 0.05)',
+              color: theme === 'dark' ? '#94a3b8' : '#64748b',
+            }}
+          >
+            {theme === 'light' ? '🌙 Tmavý režim' : '☀️ Světlý režim'}
+          </button>
         </div>
-
-        {/* Getting Started */}
-        <div className="p-8 border border-border rounded-lg bg-muted/30">
-          <h2 className="mb-4">Getting Started</h2>
-          <div className="space-y-4">
-            <div className="flex gap-4">
-              <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center">
-                1
-              </div>
-              <div>
-                <h4 className="mb-1">Create Admin Account</h4>
-                <p className="text-muted-foreground">
-                  Sign up for an admin account at <Link to="/admin/login" className="text-primary underline">/admin/login</Link>
-                </p>
-              </div>
-            </div>
-
-            <div className="flex gap-4">
-              <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center">
-                2
-              </div>
-              <div>
-                <h4 className="mb-1">Create Your First Page</h4>
-                <p className="text-muted-foreground">
-                  Use the admin panel to create documentation pages with Markdown content
-                </p>
-              </div>
-            </div>
-
-            <div className="flex gap-4">
-              <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center">
-                3
-              </div>
-              <div>
-                <h4 className="mb-1">Organize Your Menu</h4>
-                <p className="text-muted-foreground">
-                  Structure your documentation with drag & drop menu management
-                </p>
-              </div>
-            </div>
-
-            <div className="flex gap-4">
-              <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center">
-                4
-              </div>
-              <div>
-                <h4 className="mb-1">Share Your Docs</h4>
-                <p className="text-muted-foreground">
-                  Your documentation is now live and ready to share with the world
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Tech Stack */}
-        <div className="mt-16 text-center">
-          <h3 className="mb-6">Built With Modern Technologies</h3>
-          <div className="flex flex-wrap items-center justify-center gap-6 text-muted-foreground">
-            <span>React</span>
-            <span>•</span>
-            <span>TypeScript</span>
-            <span>•</span>
-            <span>Tailwind CSS</span>
-            <span>•</span>
-            <span>Supabase</span>
-            <span>•</span>
-            <span>React Router</span>
-            <span>•</span>
-            <span>Markdown</span>
-          </div>
-        </div>
-      </main>
 
       {/* Footer */}
-      <footer className="border-t border-border py-8 mt-16">
-        <div className="container mx-auto px-4 text-center text-muted-foreground text-sm">
-          <p>Built with ❤️ using Figma Make</p>
+        <div 
+          className="mt-8 text-center text-sm"
+          style={{ color: theme === 'dark' ? '#64748b' : '#94a3b8' }}
+        >
+          Vividbooks © 2024
         </div>
-      </footer>
+      </div>
     </div>
   );
 }
