@@ -52,6 +52,7 @@ import VividLogo from '../../imports/Group70';
 import { ToolsMenu } from '../ToolsMenu';
 import { ToolsDropdown } from '../ToolsDropdown';
 import { useViewMode } from '../../contexts/ViewModeContext';
+import { useStudentAuth } from '../../contexts/StudentAuthContext';
 
 interface ProfilePageLayoutProps {
   theme: 'light' | 'dark';
@@ -77,7 +78,11 @@ export function ProfilePageLayout({ theme, toggleTheme }: ProfilePageLayoutProps
   const [selectedSubjects, setSelectedSubjects] = useState<string[]>(['Fyzika', 'Matematika-2']);
   
   // Get current view mode (teacher or student)
-  const { isStudent, currentStudent } = useViewMode();
+  const { isStudent: viewModeIsStudent, currentStudent } = useViewMode();
+  const { student: authStudent } = useStudentAuth();
+  
+  // User is student if either viewMode says so OR if there's an authenticated student
+  const isStudent = viewModeIsStudent || !!authStudent;
   
   // Active section from URL or default to 'ucet'
   const activeSection = (searchParams.get('section') as ProfileSection) || 'ucet';
@@ -184,6 +189,26 @@ export function ProfilePageLayout({ theme, toggleTheme }: ProfilePageLayoutProps
     // Fallback to localStorage
     const localLicense = storage.getLicenseBySchoolId(schoolId);
     if (localLicense) setLicense(localLicense);
+  };
+
+  const handleLogout = async () => {
+    try {
+      // Sign out from Supabase
+      await supabase.auth.signOut();
+      
+      // Clear localStorage
+      localStorage.removeItem('vivid-teacher-school');
+      localStorage.removeItem('vivid-teacher-school-teachers');
+      localStorage.removeItem('viewMode');
+      localStorage.removeItem('vividbooks_current_user_profile');
+      
+      // Redirect to login page
+      navigate('/');
+    } catch (error) {
+      console.error('Logout error:', error);
+      // Still redirect even if error
+      navigate('/');
+    }
   };
 
   const handleSchoolPaired = async (pairedSchool: School) => {
@@ -456,6 +481,17 @@ export function ProfilePageLayout({ theme, toggleTheme }: ProfilePageLayoutProps
                       </button>
                     </div>
                   )}
+
+                  {/* Logout button */}
+                  <div className="mt-6 pt-4 border-t border-slate-200">
+                    <button
+                      onClick={handleLogout}
+                      className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left transition-all text-red-600 hover:bg-red-50"
+                    >
+                      <LogOut className="w-5 h-5" />
+                      <span>Odhlásit se</span>
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
