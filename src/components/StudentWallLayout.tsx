@@ -8,7 +8,7 @@
  * - Pending assignments
  */
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { 
   BookOpen, 
@@ -543,10 +543,108 @@ export function StudentWallLayout({ theme, toggleTheme }: StudentWallLayoutProps
     }
   }, [subjectResults, filter]);
   
-  // Count unread messages
+  // Helper function to check if item matches subject
+  const matchesSubject = useCallback((title: string, subject?: string) => {
+    if (subject === selectedSubject) return true;
+    if (!subject || subject === 'Quiz') {
+      const t = title.toLowerCase();
+      if (selectedSubject === 'Matematika') {
+        return t.includes('matem') || t.includes('math') || t.includes('počít') || t.includes('rovnic');
+      }
+      if (selectedSubject === 'Fyzika') {
+        return t.includes('fyzik') || t.includes('newton') || t.includes('síla') || t.includes('pohyb') || t.includes('energie');
+      }
+    }
+    return false;
+  }, [selectedSubject]);
+
+  // Filter pending assignments by subject
+  const filteredPendingAssignments = useMemo(() => {
+    return pendingAssignments.filter(a => matchesSubject(a.title, a.subject));
+  }, [pendingAssignments, matchesSubject]);
+
+  // Filter graded assignments by subject
+  const filteredGradedAssignments = useMemo(() => {
+    return gradedAssignments.filter(a => matchesSubject(a.title, a.subject));
+  }, [gradedAssignments, matchesSubject]);
+
+  // Filter messages by subject (check if subject mentioned in content or title)
+  const filteredMessages = useMemo(() => {
+    return messages.filter(m => {
+      const content = (m.content + ' ' + (m.title || '')).toLowerCase();
+      if (selectedSubject === 'Matematika') {
+        return content.includes('matem') || content.includes('math') || content.includes('počít');
+      }
+      if (selectedSubject === 'Fyzika') {
+        return content.includes('fyzik') || content.includes('newton') || content.includes('síla');
+      }
+      return true; // Show all if no match keywords
+    });
+  }, [messages, selectedSubject]);
+
+  // Filter evaluations by subject
+  const filteredReceivedEvaluations = useMemo(() => {
+    return receivedEvaluations.filter(e => 
+      matchesSubject(e.evaluation.quizTitle || '', e.evaluation.subjectName)
+    );
+  }, [receivedEvaluations, matchesSubject]);
+  
+  // Count unread messages (filtered by subject)
   const unreadMessagesCount = useMemo(() => {
-    return messages.filter(m => !m.is_read).length;
-  }, [messages]);
+    return filteredMessages.filter(m => !m.is_read).length;
+  }, [filteredMessages]);
+
+  // Calculate notification counts per subject
+  const subjectNotifications = useMemo(() => {
+    const counts: Record<string, number> = {};
+    
+    SUBJECTS.forEach(subject => {
+      let count = 0;
+      
+      // Count pending assignments for this subject
+      pendingAssignments.forEach(a => {
+        const t = a.title.toLowerCase();
+        const s = a.subject;
+        if (s === subject) count++;
+        else if (!s || s === 'Quiz') {
+          if (subject === 'Matematika' && (t.includes('matem') || t.includes('math'))) count++;
+          if (subject === 'Fyzika' && (t.includes('fyzik') || t.includes('newton'))) count++;
+        }
+      });
+      
+      // Count unread messages for this subject
+      messages.filter(m => !m.is_read).forEach(m => {
+        const content = (m.content + ' ' + (m.title || '')).toLowerCase();
+        if (subject === 'Matematika' && (content.includes('matem') || content.includes('math'))) count++;
+        if (subject === 'Fyzika' && (content.includes('fyzik') || content.includes('newton'))) count++;
+      });
+      
+      // Count new evaluations (last 7 days)
+      const weekAgo = new Date();
+      weekAgo.setDate(weekAgo.getDate() - 7);
+      receivedEvaluations.forEach(e => {
+        if (!e.evaluation?.createdAt) return;
+        try {
+          const created = parseISO(e.evaluation.createdAt);
+          if (created > weekAgo) {
+            const t = (e.evaluation.quizTitle || '').toLowerCase();
+            const s = e.evaluation.subjectName;
+            if (s === subject) count++;
+            else if (!s) {
+              if (subject === 'Matematika' && (t.includes('matem') || t.includes('math'))) count++;
+              if (subject === 'Fyzika' && (t.includes('fyzik') || t.includes('newton'))) count++;
+            }
+          }
+        } catch {
+          // Ignore parse errors
+        }
+      });
+      
+      counts[subject] = count;
+    });
+    
+    return counts;
+  }, [pendingAssignments, messages, receivedEvaluations]);
 
   const handleViewDetail = (result: StudentResult) => {
     if (result.sessionId) {
@@ -742,7 +840,7 @@ export function StudentWallLayout({ theme, toggleTheme }: StudentWallLayoutProps
                 <button
                   key={subject}
                   onClick={() => setSelectedSubject(subject)}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all ${
+                  className={`relative flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all ${
                     selectedSubject === subject
                       ? 'bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 shadow-sm'
                       : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-600'
@@ -750,6 +848,11 @@ export function StudentWallLayout({ theme, toggleTheme }: StudentWallLayoutProps
                 >
                   <div className={`w-2.5 h-2.5 rounded-full ${selectedSubject === subject ? 'bg-indigo-500' : 'bg-slate-400'}`} />
                   {subject}
+                  {subjectNotifications[subject] > 0 && (
+                    <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] flex items-center justify-center px-1 text-[10px] font-bold text-white bg-red-500 rounded-full">
+                      {subjectNotifications[subject]}
+                    </span>
+                  )}
                 </button>
               ))}
             </div>
@@ -992,9 +1095,9 @@ export function StudentWallLayout({ theme, toggleTheme }: StudentWallLayoutProps
             <div className="flex gap-1 overflow-x-auto overflow-y-visible" style={{ paddingTop: '8px', marginTop: '-8px' }}>
               {[
                 { key: 'all', label: 'Vše', newCount: 0 },
-                { key: 'evaluations', label: 'Hodnocení', newCount: 0 },
+                { key: 'evaluations', label: 'Hodnocení', newCount: filteredReceivedEvaluations.length },
                 { key: 'test', label: 'Testy', newCount: 0 },
-                { key: 'assignments', label: 'Úkoly', newCount: pendingAssignments.length },
+                { key: 'assignments', label: 'Úkoly', newCount: filteredPendingAssignments.length },
                 { key: 'individual', label: 'Vlastní práce', newCount: 0 },
                 { key: 'messages', label: 'Zprávy', newCount: unreadMessagesCount },
               ].map(tab => (
@@ -1093,12 +1196,12 @@ export function StudentWallLayout({ theme, toggleTheme }: StudentWallLayoutProps
               )}
               
               {/* Regular Messages */}
-              {messages.length === 0 && teacherContent.length === 0 ? (
+              {filteredMessages.length === 0 && teacherContent.length === 0 ? (
                 <div className="bg-white dark:bg-slate-800 rounded-2xl p-8 text-center border border-slate-200 dark:border-slate-700">
                   <MessageSquare className="w-12 h-12 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
-                  <p className="text-slate-500 dark:text-slate-400">Zatím nemáš žádné zprávy</p>
+                  <p className="text-slate-500 dark:text-slate-400">Žádné zprávy pro {selectedSubject}</p>
                 </div>
-              ) : messages.length > 0 && (
+              ) : filteredMessages.length > 0 && (
                 <>
                   {teacherContent.length > 0 && (
                     <h3 className="text-sm font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-3">
@@ -1106,7 +1209,7 @@ export function StudentWallLayout({ theme, toggleTheme }: StudentWallLayoutProps
                     </h3>
                   )}
                   <div className="space-y-4">
-                    {messages.map(message => (
+                    {filteredMessages.map(message => (
                       <div 
                         key={message.id}
                         onClick={async () => {
@@ -1157,14 +1260,14 @@ export function StudentWallLayout({ theme, toggleTheme }: StudentWallLayoutProps
                 <h2 className="text-xl font-bold text-slate-900 dark:text-white">Hodnocení od učitele</h2>
               </div>
               
-              {receivedEvaluations.length === 0 ? (
+              {filteredReceivedEvaluations.length === 0 ? (
                 <div className="bg-white dark:bg-slate-800 rounded-2xl p-8 text-center border border-slate-200 dark:border-slate-700">
                   <Award className="w-12 h-12 text-slate-300 dark:text-slate-600 mx-auto mb-3" />
-                  <p className="text-slate-500 dark:text-slate-400">Zatím nemáš žádná hodnocení</p>
+                  <p className="text-slate-500 dark:text-slate-400">Žádná hodnocení pro {selectedSubject}</p>
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {receivedEvaluations.map(({ evaluation, studentEvaluation }) => {
+                  {filteredReceivedEvaluations.map(({ evaluation, studentEvaluation }) => {
                     const isExpanded = expandedEvaluations.has(studentEvaluation.id);
                     return (
                       <div 
@@ -1250,21 +1353,21 @@ export function StudentWallLayout({ theme, toggleTheme }: StudentWallLayoutProps
               <div className="flex items-center gap-2 mb-4">
                   <Target className="w-5 h-5 text-indigo-500" />
                 <h2 className="text-xl font-bold text-slate-900 dark:text-white">Úkoly k vypracování</h2>
-                {pendingAssignments.length > 0 && (
+                {filteredPendingAssignments.length > 0 && (
                   <span className="px-2 py-0.5 bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 text-xs font-medium rounded-full">
-                    {pendingAssignments.length}
+                    {filteredPendingAssignments.length}
                   </span>
                 )}
               </div>
               
-              {pendingAssignments.length === 0 ? (
+              {filteredPendingAssignments.length === 0 ? (
                 <div className="bg-white dark:bg-slate-800 rounded-2xl p-8 text-center border border-slate-200 dark:border-slate-700">
                   <CheckCircle className="w-12 h-12 text-emerald-300 dark:text-emerald-600 mx-auto mb-3" />
-                  <p className="text-slate-500 dark:text-slate-400">Nemáš žádné úkoly - skvělá práce! 🎉</p>
+                  <p className="text-slate-500 dark:text-slate-400">Nemáš žádné úkoly pro {selectedSubject} 🎉</p>
                 </div>
               ) : (
               <div className="space-y-3">
-                  {pendingAssignments.map((assignment) => {
+                  {filteredPendingAssignments.map((assignment) => {
                   const isDraft = assignment.submission?.status === 'draft';
                   const isOverdue = assignment.due_date && isPast(parseISO(assignment.due_date));
                   
@@ -1321,7 +1424,7 @@ export function StudentWallLayout({ theme, toggleTheme }: StudentWallLayoutProps
           )}
 
           {/* Received Evaluations - Show in "all" view too */}
-          {filter === 'all' && receivedEvaluations.length > 0 && (
+          {filter === 'all' && filteredReceivedEvaluations.length > 0 && (
             <section className="mb-8">
               <div className="flex items-center gap-2 mb-4">
                 <FileText className="w-5 h-5 text-purple-500" />
@@ -1329,7 +1432,7 @@ export function StudentWallLayout({ theme, toggleTheme }: StudentWallLayoutProps
               </div>
               
               <div className="space-y-4">
-                {receivedEvaluations.map(({ evaluation, studentEvaluation }) => {
+                {filteredReceivedEvaluations.map(({ evaluation, studentEvaluation }) => {
                   const isExpanded = expandedEvaluations.has(studentEvaluation.id);
                   return (
                     <div 
@@ -1408,18 +1511,18 @@ export function StudentWallLayout({ theme, toggleTheme }: StudentWallLayoutProps
           )}
 
           {/* Graded Assignments - Show in "all" view */}
-          {filter === 'all' && gradedAssignments.length > 0 && (
+          {filter === 'all' && filteredGradedAssignments.length > 0 && (
             <section className="mb-8">
               <div className="flex items-center gap-2 mb-4">
                 <Award className="w-5 h-5 text-indigo-500" />
                 <h2 className="text-xl font-bold text-slate-900 dark:text-white">Ohodnocené úkoly</h2>
                 <span className="ml-2 px-2 py-0.5 bg-indigo-100 text-indigo-700 text-xs font-medium rounded-full">
-                  {gradedAssignments.length}
+                  {filteredGradedAssignments.length}
                 </span>
               </div>
               
               <div className="space-y-4">
-                {gradedAssignments.slice(0, 3).map((item) => (
+                {filteredGradedAssignments.slice(0, 3).map((item) => (
                   <GradedAssignmentCard
                     key={item.id}
                     assignment={item}
@@ -1431,12 +1534,12 @@ export function StudentWallLayout({ theme, toggleTheme }: StudentWallLayoutProps
                   />
                 ))}
                 
-                {gradedAssignments.length > 3 && (
+                {filteredGradedAssignments.length > 3 && (
                   <button
                     onClick={() => navigate('/student/my-content?tab=submitted')}
                     className="w-full py-3 text-center text-indigo-600 hover:text-indigo-700 font-medium text-sm"
                   >
-                    Zobrazit všechny ({gradedAssignments.length})
+                    Zobrazit všechny ({filteredGradedAssignments.length})
                   </button>
                 )}
               </div>
