@@ -37,8 +37,8 @@ export function PasteWarningDialog({
     : pastedText;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-end justify-center pb-8 sm:items-center sm:pb-0 bg-black/30 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full mx-4 overflow-hidden animate-in fade-in slide-in-from-bottom-4 sm:zoom-in-95 duration-200 border border-slate-200">
+    <div className="fixed inset-0 z-[99999] flex items-end justify-center pb-8 sm:items-center sm:pb-0 bg-black/30 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full mx-4 overflow-hidden animate-in fade-in slide-in-from-bottom-4 sm:zoom-in-95 duration-200 border border-slate-200 relative z-[99999]">
         {/* Header */}
         <div className="bg-amber-50 border-b border-amber-200 px-5 py-3">
           <div className="flex items-center gap-3">
