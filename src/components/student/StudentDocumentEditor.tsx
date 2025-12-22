@@ -140,8 +140,21 @@ export function StudentDocumentEditor({
   return (
     <div className="h-screen flex flex-col bg-slate-100">
       {/* Top Bar */}
-      <header className="h-14 bg-white border-b border-slate-200 flex items-center justify-between px-4 shrink-0">
-        <div className="flex items-center gap-3">
+      <header 
+        style={{
+          height: '56px',
+          backgroundColor: '#ffffff',
+          borderBottom: '1px solid #e2e8f0',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '0 16px',
+          flexShrink: 0,
+          position: 'relative',
+          zIndex: 40,
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           {/* Back Button */}
           <button
             onClick={onBack}
@@ -177,7 +190,7 @@ export function StudentDocumentEditor({
           </h1>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           {/* AI Assistant Button (if enabled) */}
           {settings.aiAssistantEnabled && !isSubmitted && (
             <button
@@ -243,14 +256,38 @@ export function StudentDocumentEditor({
             <button
               onClick={() => setShowSubmitConfirm(true)}
               disabled={isSubmitting}
-              className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium shadow-sm disabled:opacity-50"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '8px 16px',
+                backgroundColor: '#16a34a',
+                color: '#ffffff',
+                borderRadius: '8px',
+                fontWeight: 500,
+                border: 'none',
+                cursor: 'pointer',
+                boxShadow: '0 1px 2px rgba(0,0,0,0.1)',
+                opacity: isSubmitting ? 0.5 : 1,
+              }}
             >
-              <Send className="h-4 w-4" />
+              <Send style={{ width: '16px', height: '16px', color: '#ffffff' }} />
               <span>Odevzdat úkol</span>
             </button>
           ) : (
-            <div className="flex items-center gap-2 px-4 py-2 bg-green-100 text-green-700 rounded-lg font-medium">
-              <CheckCircle2 className="h-4 w-4" />
+            <div 
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '8px 16px',
+                backgroundColor: '#dcfce7',
+                color: '#15803d',
+                borderRadius: '8px',
+                fontWeight: 500,
+              }}
+            >
+              <CheckCircle2 style={{ width: '16px', height: '16px' }} />
               <span>Odevzdáno</span>
             </div>
           )}
