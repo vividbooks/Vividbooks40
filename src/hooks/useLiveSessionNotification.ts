@@ -26,6 +26,47 @@ interface UseLiveSessionNotificationReturn {
   isConnected: boolean;
 }
 
+// Session is considered stale after 5 minutes of inactivity
+const SESSION_TIMEOUT_MS = 5 * 60 * 1000;
+// Key for storing dismissed sessions in localStorage
+const DISMISSED_SESSIONS_KEY = 'vivid-dismissed-sessions';
+
+function getDismissedSessions(): string[] {
+  try {
+    const stored = localStorage.getItem(DISMISSED_SESSIONS_KEY);
+    return stored ? JSON.parse(stored) : [];
+  } catch {
+    return [];
+  }
+}
+
+function addDismissedSession(sessionId: string) {
+  const dismissed = getDismissedSessions();
+  if (!dismissed.includes(sessionId)) {
+    dismissed.push(sessionId);
+    // Keep only last 20 dismissed sessions
+    const trimmed = dismissed.slice(-20);
+    localStorage.setItem(DISMISSED_SESSIONS_KEY, JSON.stringify(trimmed));
+  }
+}
+
+function isSessionDismissed(sessionId: string): boolean {
+  return getDismissedSessions().includes(sessionId);
+}
+
+function isSessionStale(timestamp: string): boolean {
+  try {
+    const sessionTime = new Date(timestamp).getTime();
+    const now = Date.now();
+    const age = now - sessionTime;
+    // Session is stale if older than SESSION_TIMEOUT_MS
+    return age > SESSION_TIMEOUT_MS;
+  } catch {
+    // If timestamp is invalid, consider it stale
+    return true;
+  }
+}
+
 export function useLiveSessionNotification(): UseLiveSessionNotificationReturn {
   const { student } = useStudentAuth();
   const [pendingSession, setPendingSession] = useState<LiveSessionNotification | null>(null);
@@ -51,33 +92,38 @@ export function useLiveSessionNotification(): UseLiveSessionNotificationReturn {
       const data = snapshot.val() as LiveSessionNotification | null;
       console.log('[LiveSession] Firebase notification received:', data);
       
+      // Check if session is valid
       if (data && data.active && data.sessionId) {
+        // Check if session is too old (stale)
+        if (isSessionStale(data.timestamp)) {
+          console.log('[LiveSession] Session is stale (older than 5 minutes), ignoring:', data.documentTitle);
+          setPendingSession(null);
+          return;
+        }
+        
+        // Check if user already dismissed this session
+        if (isSessionDismissed(data.sessionId)) {
+          console.log('[LiveSession] Session was dismissed by user, ignoring:', data.documentTitle);
+          setPendingSession(null);
+          return;
+        }
+        
         console.log('[LiveSession] Active session found:', data.documentTitle);
         setPendingSession(data);
         setIsConnected(true);
         
         // Check if we're already on the target page to prevent infinite redirects
         const currentUrl = window.location.href;
-        const targetUrl = data.documentPath;
         const isAlreadyOnTarget = currentUrl.includes(data.sessionId) || 
-                                  currentUrl === targetUrl ||
                                   currentUrl.includes('/quiz/join/');
         
-        if (!isAlreadyOnTarget) {
-          // Auto-join after a short delay to show notification
-          setTimeout(() => {
-            if (data.sessionId) {
-              // Store session ID for FirebaseStudentView to pick up
-              localStorage.setItem('vivid-join-session', data.sessionId);
-              // Navigate to the document
-              window.location.href = data.documentPath;
-            }
-          }, 2000);
-        } else {
+        if (isAlreadyOnTarget) {
           console.log('[LiveSession] Already on target page, skipping redirect');
+          // Don't auto-redirect if already there, but still show notification
         }
+        // NOTE: Removed auto-redirect - let user click "Připojit se nyní" manually
       } else {
-        console.log('[LiveSession] No active session');
+        console.log('[LiveSession] No active session or session ended');
         setPendingSession(null);
       }
     }, (error) => {
@@ -103,8 +149,13 @@ export function useLiveSessionNotification(): UseLiveSessionNotificationReturn {
   }, [pendingSession]);
 
   const dismissSession = useCallback(() => {
+    if (pendingSession) {
+      // Remember that user dismissed this session
+      addDismissedSession(pendingSession.sessionId);
+      console.log('[LiveSession] User dismissed session:', pendingSession.sessionId);
+    }
     setPendingSession(null);
-  }, []);
+  }, [pendingSession]);
 
   return {
     pendingSession,
