@@ -96,17 +96,25 @@ export function PasteWarningDialog({
             Zrušit vložení
           </button>
           
-          <button
-            onClick={handleConfirmWithSource}
-            className="flex-1 px-4 py-2.5 rounded-xl transition-colors font-medium text-sm flex items-center justify-center gap-2"
-            style={{
-              backgroundColor: sourceUrl.trim() ? '#16a34a' : '#f59e0b',
-              color: 'white',
-            }}
-          >
-            <Check className="h-4 w-4" />
-            <span>{sourceUrl.trim() ? 'Potvrdit se zdrojem' : 'Pokračovat bez zdroje'}</span>
-          </button>
+          {sourceUrl.trim() ? (
+            <button
+              onClick={handleConfirmWithSource}
+              className="flex-1 px-4 py-2.5 rounded-xl font-medium text-sm flex items-center justify-center gap-2"
+              style={{ backgroundColor: '#16a34a', color: '#ffffff' }}
+            >
+              <Check className="h-4 w-4" style={{ color: '#ffffff' }} />
+              <span style={{ color: '#ffffff' }}>Potvrdit se zdrojem</span>
+            </button>
+          ) : (
+            <button
+              onClick={handleConfirmWithSource}
+              className="flex-1 px-4 py-2.5 rounded-xl font-medium text-sm flex items-center justify-center gap-2"
+              style={{ backgroundColor: '#f59e0b', color: '#ffffff' }}
+            >
+              <Check className="h-4 w-4" style={{ color: '#ffffff' }} />
+              <span style={{ color: '#ffffff' }}>Pokračovat bez zdroje</span>
+            </button>
+          )}
         </div>
       </div>
     </div>
