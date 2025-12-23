@@ -140,8 +140,8 @@ export function BlockResizer({
         ${isDragging ? 'z-50' : 'z-10'}
       `}
       style={isHorizontal 
-        ? { minWidth: 16, maxWidth: 16 } 
-        : { minHeight: 16, maxHeight: 16 }
+        ? { minWidth: 16, maxWidth: 16, marginLeft: -8, marginRight: -8 } 
+        : { minHeight: 16, maxHeight: 16, marginTop: -8, marginBottom: -8 }
       }
     >
       {/* Visible line - goes through center of handle */}

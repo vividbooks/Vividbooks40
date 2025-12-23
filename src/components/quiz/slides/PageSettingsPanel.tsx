@@ -291,43 +291,38 @@ export function PageSettingsPanel({ slide, onClose, onUpdate }: PageSettingsPane
                 ))}
               </div>
 
-              {/* Gap slider */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium text-slate-700">Mezera mezi bloky</span>
-                  <span className="text-sm text-slate-500">{(slide as InfoSlide).blockGap ?? getTemplateById((slide as InfoSlide).templateId || '')?.defaultGap ?? 8}px</span>
+              {/* Gap and Radius sliders - side by side */}
+              <div className="flex gap-4 pt-2">
+                {/* Gap slider */}
+                <div className="flex-1 space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-medium text-slate-600">Mezera</span>
+                    <span className="text-xs text-slate-500 tabular-nums">{(slide as InfoSlide).blockGap ?? getTemplateById((slide as InfoSlide).templateId || '')?.defaultGap ?? 8}px</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max="40"
+                    value={(slide as InfoSlide).blockGap ?? getTemplateById((slide as InfoSlide).templateId || '')?.defaultGap ?? 8}
+                    onChange={(e) => onUpdate({ blockGap: parseInt(e.target.value) } as any)}
+                    className="w-full h-1.5 bg-slate-300 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-indigo-600 [&::-webkit-slider-thumb]:cursor-pointer [&::-webkit-slider-thumb]:shadow-md"
+                  />
                 </div>
-                <input
-                  type="range"
-                  min="0"
-                  max="40"
-                  value={(slide as InfoSlide).blockGap ?? getTemplateById((slide as InfoSlide).templateId || '')?.defaultGap ?? 8}
-                  onChange={(e) => onUpdate({ blockGap: parseInt(e.target.value) } as any)}
-                  className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
-                />
-                <div className="flex justify-between text-xs text-slate-400">
-                  <span>0</span>
-                  <span>40</span>
-                </div>
-              </div>
 
-              {/* Border radius slider */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium text-slate-700">Zakulacení rohů</span>
-                  <span className="text-sm text-slate-500">{(slide as InfoSlide).blockRadius ?? getTemplateById((slide as InfoSlide).templateId || '')?.defaultRadius ?? 8}px</span>
-                </div>
-                <input
-                  type="range"
-                  min="0"
-                  max="32"
-                  value={(slide as InfoSlide).blockRadius ?? getTemplateById((slide as InfoSlide).templateId || '')?.defaultRadius ?? 8}
-                  onChange={(e) => onUpdate({ blockRadius: parseInt(e.target.value) } as any)}
-                  className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
-                />
-                <div className="flex justify-between text-xs text-slate-400">
-                  <span>0</span>
-                  <span>32</span>
+                {/* Border radius slider */}
+                <div className="flex-1 space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-medium text-slate-600">Zakulacení</span>
+                    <span className="text-xs text-slate-500 tabular-nums">{(slide as InfoSlide).blockRadius ?? getTemplateById((slide as InfoSlide).templateId || '')?.defaultRadius ?? 8}px</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max="32"
+                    value={(slide as InfoSlide).blockRadius ?? getTemplateById((slide as InfoSlide).templateId || '')?.defaultRadius ?? 8}
+                    onChange={(e) => onUpdate({ blockRadius: parseInt(e.target.value) } as any)}
+                    className="w-full h-1.5 bg-slate-300 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-indigo-600 [&::-webkit-slider-thumb]:cursor-pointer [&::-webkit-slider-thumb]:shadow-md"
+                  />
                 </div>
               </div>
             </div>
