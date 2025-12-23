@@ -12,6 +12,7 @@ import {
   Link2,
   Settings,
   Upload,
+  Trash2,
 } from 'lucide-react';
 import { SlideBlock, SlideBlockType } from '../../../types/quiz';
 
@@ -150,9 +151,9 @@ export function SlideBlockEditor({
       }}
       onClick={handleClick}
     >
-      {/* Type switcher & Settings - visible on hover */}
+      {/* Type switcher & Settings - LEFT corner, visible on hover */}
       <div 
-        className="absolute top-2 right-2 z-20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1"
+        className="absolute top-2 left-2 z-20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Type buttons */}
@@ -201,6 +202,22 @@ export function SlideBlockEditor({
           <Settings className="w-4 h-4" />
         </button>
       </div>
+
+      {/* Delete button - RIGHT corner, visible on hover when there's content */}
+      {(block.content || (block.gallery && block.gallery.length > 0)) && (
+        <div 
+          className="absolute top-2 right-2 z-20 opacity-0 group-hover:opacity-100 transition-opacity"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            onClick={() => onUpdate({ content: '', gallery: undefined, galleryIndex: undefined })}
+            className="p-1.5 rounded-lg shadow-lg border bg-red-500 text-white hover:bg-red-600 border-red-400 transition-colors"
+            title="Smazat obsah"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
+        </div>
+      )}
 
       {/* Content */}
       <div className="h-full p-4 flex flex-col justify-center">
