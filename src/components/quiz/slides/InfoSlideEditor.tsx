@@ -8,7 +8,7 @@
 
 import React, { useState, useCallback } from 'react';
 import { Palette, Layout } from 'lucide-react';
-import { 
+import {
   InfoSlide, 
   SlideLayout, 
   SlideLayoutType, 
@@ -49,7 +49,26 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick }: InfoSlideEdit
   // Get font family from template
   const getFontFamily = (): string => {
     if (!template?.font) return 'inherit';
-    return template.font;
+    // Add quotes for font names with spaces and fallback
+    const fontName = template.font;
+    if (fontName.includes(' ')) {
+      return `"${fontName}", sans-serif`;
+    }
+    return `${fontName}, sans-serif`;
+  };
+
+  // Get gap between blocks
+  const getBlockGap = (): number => {
+    if (slide.blockGap !== undefined) return slide.blockGap;
+    if (template?.defaultGap !== undefined) return template.defaultGap;
+    return 8; // Default gap
+  };
+
+  // Get border radius for blocks
+  const getBlockRadius = (): number => {
+    if (slide.blockRadius !== undefined) return slide.blockRadius;
+    if (template?.defaultRadius !== undefined) return template.defaultRadius;
+    return 8; // Default radius
   };
 
   // Handle layout change
@@ -132,7 +151,7 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick }: InfoSlideEdit
     switch (layout.type) {
       case 'title-content':
         return (
-          <div className="h-full flex flex-col">
+          <div className="h-full flex flex-col" style={{ gap: getBlockGap() }}>
             {/* Title block */}
             <div style={{ height: `${titleHeight}%`, minHeight: 60 }}>
               <SlideBlockEditor
@@ -142,6 +161,7 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick }: InfoSlideEdit
                 onSelect={() => setSelectedBlockIndex(0)}
                 placeholder="Nadpis..."
                 templateColor={getBlockColor(0)}
+                borderRadius={getBlockRadius()}
               />
             </div>
             
@@ -164,6 +184,7 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick }: InfoSlideEdit
                 onSelect={() => setSelectedBlockIndex(1)}
                 placeholder="Obsah..."
                 templateColor={getBlockColor(1)}
+                borderRadius={getBlockRadius()}
               />
             </div>
           </div>
@@ -171,7 +192,7 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick }: InfoSlideEdit
 
       case 'title-2cols':
         return (
-          <div className="h-full flex flex-col">
+          <div className="h-full flex flex-col" style={{ gap: getBlockGap() }}>
             {/* Title block */}
             <div style={{ height: `${titleHeight}%`, minHeight: 60 }}>
               <SlideBlockEditor
@@ -181,6 +202,7 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick }: InfoSlideEdit
                 onSelect={() => setSelectedBlockIndex(0)}
                 placeholder="Nadpis..."
                 templateColor={getBlockColor(0)}
+                borderRadius={getBlockRadius()}
               />
             </div>
             
@@ -193,7 +215,7 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick }: InfoSlideEdit
             />
             
             {/* Two columns */}
-            <div className="flex-1 flex" style={{ minHeight: 100 }}>
+            <div className="flex-1 flex" style={{ minHeight: 100, gap: getBlockGap() }}>
               <div style={{ width: `${columnRatios[0]}%` }}>
                 <SlideBlockEditor
                   block={layout.blocks[1]}
@@ -202,6 +224,7 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick }: InfoSlideEdit
                   onSelect={() => setSelectedBlockIndex(1)}
                   placeholder="Levý sloupec..."
                   templateColor={getBlockColor(1)}
+                  borderRadius={getBlockRadius()}
                 />
               </div>
               
@@ -221,6 +244,7 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick }: InfoSlideEdit
                   onSelect={() => setSelectedBlockIndex(2)}
                   placeholder="Pravý sloupec..."
                   templateColor={getBlockColor(2)}
+                  borderRadius={getBlockRadius()}
                 />
               </div>
             </div>
@@ -229,7 +253,7 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick }: InfoSlideEdit
 
       case 'title-3cols':
         return (
-          <div className="h-full flex flex-col">
+          <div className="h-full flex flex-col" style={{ gap: getBlockGap() }}>
             {/* Title block */}
             <div style={{ height: `${titleHeight}%`, minHeight: 60 }}>
               <SlideBlockEditor
@@ -239,6 +263,7 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick }: InfoSlideEdit
                 onSelect={() => setSelectedBlockIndex(0)}
                 placeholder="Nadpis..."
                 templateColor={getBlockColor(0)}
+                borderRadius={getBlockRadius()}
               />
             </div>
             
@@ -251,7 +276,7 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick }: InfoSlideEdit
             />
             
             {/* Three columns */}
-            <div className="flex-1 flex" style={{ minHeight: 100 }}>
+            <div className="flex-1 flex" style={{ minHeight: 100, gap: getBlockGap() }}>
               <div style={{ width: `${columnRatios[0]}%` }}>
                 <SlideBlockEditor
                   block={layout.blocks[1]}
@@ -260,6 +285,7 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick }: InfoSlideEdit
                   onSelect={() => setSelectedBlockIndex(1)}
                   placeholder="Sloupec 1..."
                   templateColor={getBlockColor(1)}
+                  borderRadius={getBlockRadius()}
                 />
               </div>
               
@@ -279,6 +305,7 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick }: InfoSlideEdit
                   onSelect={() => setSelectedBlockIndex(2)}
                   placeholder="Sloupec 2..."
                   templateColor={getBlockColor(2)}
+                  borderRadius={getBlockRadius()}
                 />
               </div>
               
@@ -298,6 +325,7 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick }: InfoSlideEdit
                   onSelect={() => setSelectedBlockIndex(3)}
                   placeholder="Sloupec 3..."
                   templateColor={getBlockColor(3)}
+                  borderRadius={getBlockRadius()}
                 />
               </div>
             </div>
@@ -306,7 +334,7 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick }: InfoSlideEdit
 
       case '2cols':
         return (
-          <div className="h-full flex">
+          <div className="h-full flex" style={{ gap: getBlockGap() }}>
             <div style={{ width: `${columnRatios[0]}%` }}>
               <SlideBlockEditor
                 block={layout.blocks[0]}
@@ -315,6 +343,7 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick }: InfoSlideEdit
                 onSelect={() => setSelectedBlockIndex(0)}
                 placeholder="Levý sloupec..."
                 templateColor={getBlockColor(0)}
+                borderRadius={getBlockRadius()}
               />
             </div>
             
@@ -334,14 +363,15 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick }: InfoSlideEdit
                 onSelect={() => setSelectedBlockIndex(1)}
                 placeholder="Pravý sloupec..."
                 templateColor={getBlockColor(1)}
+                borderRadius={getBlockRadius()}
               />
             </div>
           </div>
         );
 
       case '3cols':
-        return (
-          <div className="h-full flex">
+  return (
+          <div className="h-full flex" style={{ gap: getBlockGap() }}>
             <div style={{ width: `${columnRatios[0]}%` }}>
               <SlideBlockEditor
                 block={layout.blocks[0]}
@@ -350,6 +380,7 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick }: InfoSlideEdit
                 onSelect={() => setSelectedBlockIndex(0)}
                 placeholder="Sloupec 1..."
                 templateColor={getBlockColor(0)}
+                borderRadius={getBlockRadius()}
               />
             </div>
             
@@ -369,6 +400,7 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick }: InfoSlideEdit
                 onSelect={() => setSelectedBlockIndex(1)}
                 placeholder="Sloupec 2..."
                 templateColor={getBlockColor(1)}
+                borderRadius={getBlockRadius()}
               />
             </div>
             
@@ -388,14 +420,15 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick }: InfoSlideEdit
                 onSelect={() => setSelectedBlockIndex(2)}
                 placeholder="Sloupec 3..."
                 templateColor={getBlockColor(2)}
+                borderRadius={getBlockRadius()}
               />
             </div>
-          </div>
+        </div>
         );
 
       case 'left-large-right-split':
         return (
-          <div className="h-full flex">
+          <div className="h-full flex" style={{ gap: getBlockGap() }}>
             {/* Left large column */}
             <div style={{ width: `${columnRatios[0]}%` }}>
               <SlideBlockEditor
@@ -405,6 +438,7 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick }: InfoSlideEdit
                 onSelect={() => setSelectedBlockIndex(0)}
                 placeholder="Hlavní obsah..."
                 templateColor={getBlockColor(0)}
+                borderRadius={getBlockRadius()}
               />
             </div>
             
@@ -417,7 +451,7 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick }: InfoSlideEdit
             />
             
             {/* Right split column */}
-            <div style={{ width: `${columnRatios[1]}%` }} className="flex flex-col">
+            <div style={{ width: `${columnRatios[1]}%`, gap: getBlockGap() }} className="flex flex-col">
               <div style={{ height: `${splitRatio}%` }}>
                 <SlideBlockEditor
                   block={layout.blocks[1]}
@@ -426,6 +460,7 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick }: InfoSlideEdit
                   onSelect={() => setSelectedBlockIndex(1)}
                   placeholder="Horní..."
                   templateColor={getBlockColor(1)}
+                  borderRadius={getBlockRadius()}
                 />
               </div>
               
@@ -445,6 +480,7 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick }: InfoSlideEdit
                   onSelect={() => setSelectedBlockIndex(2)}
                   placeholder="Dolní..."
                   templateColor={getBlockColor(2)}
+                  borderRadius={getBlockRadius()}
                 />
               </div>
             </div>
@@ -453,9 +489,9 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick }: InfoSlideEdit
 
       case 'right-large-left-split':
         return (
-          <div className="h-full flex">
+          <div className="h-full flex" style={{ gap: getBlockGap() }}>
             {/* Left split column */}
-            <div style={{ width: `${columnRatios[0]}%` }} className="flex flex-col">
+            <div style={{ width: `${columnRatios[0]}%`, gap: getBlockGap() }} className="flex flex-col">
               <div style={{ height: `${splitRatio}%` }}>
                 <SlideBlockEditor
                   block={layout.blocks[0]}
@@ -464,6 +500,7 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick }: InfoSlideEdit
                   onSelect={() => setSelectedBlockIndex(0)}
                   placeholder="Horní..."
                   templateColor={getBlockColor(0)}
+                  borderRadius={getBlockRadius()}
                 />
               </div>
               
@@ -483,6 +520,7 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick }: InfoSlideEdit
                   onSelect={() => setSelectedBlockIndex(1)}
                   placeholder="Dolní..."
                   templateColor={getBlockColor(1)}
+                  borderRadius={getBlockRadius()}
                 />
               </div>
             </div>
@@ -504,6 +542,7 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick }: InfoSlideEdit
                 onSelect={() => setSelectedBlockIndex(2)}
                 placeholder="Hlavní obsah..."
                 templateColor={getBlockColor(2)}
+                borderRadius={getBlockRadius()}
               />
             </div>
           </div>

@@ -269,24 +269,67 @@ export function PageSettingsPanel({ slide, onClose, onUpdate }: PageSettingsPane
             title="Rozložení" 
             value={getLayoutName()}
           >
-            <div className="grid grid-cols-2 gap-2 pt-2">
-              {LAYOUTS.map((layoutOption) => (
-                <button
-                  key={layoutOption.id}
-                  onClick={() => {
-                    const newLayout = createSlideLayout(layoutOption.id as SlideLayoutType);
-                    onUpdate({ layout: newLayout } as any);
-                  }}
-                  className={`p-3 rounded-xl border-2 text-left transition-all ${
-                    (slide as InfoSlide).layout?.type === layoutOption.id
-                      ? 'border-indigo-500 bg-indigo-50'
-                      : 'border-slate-200 hover:border-slate-300 hover:bg-white'
-                  }`}
-                >
-                  <span className="text-xl mb-1 block">{layoutOption.preview}</span>
-                  <span className="text-xs font-medium text-slate-700">{layoutOption.label}</span>
-                </button>
-              ))}
+            <div className="space-y-4 pt-2">
+              {/* Layout grid */}
+              <div className="grid grid-cols-2 gap-2">
+                {LAYOUTS.map((layoutOption) => (
+                  <button
+                    key={layoutOption.id}
+                    onClick={() => {
+                      const newLayout = createSlideLayout(layoutOption.id as SlideLayoutType);
+                      onUpdate({ layout: newLayout } as any);
+                    }}
+                    className={`p-3 rounded-xl border-2 text-left transition-all ${
+                      (slide as InfoSlide).layout?.type === layoutOption.id
+                        ? 'border-indigo-500 bg-indigo-50'
+                        : 'border-slate-200 hover:border-slate-300 hover:bg-white'
+                    }`}
+                  >
+                    <span className="text-xl mb-1 block">{layoutOption.preview}</span>
+                    <span className="text-xs font-medium text-slate-700">{layoutOption.label}</span>
+                  </button>
+                ))}
+              </div>
+
+              {/* Gap slider */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium text-slate-700">Mezera mezi bloky</span>
+                  <span className="text-sm text-slate-500">{(slide as InfoSlide).blockGap ?? getTemplateById((slide as InfoSlide).templateId || '')?.defaultGap ?? 8}px</span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="40"
+                  value={(slide as InfoSlide).blockGap ?? getTemplateById((slide as InfoSlide).templateId || '')?.defaultGap ?? 8}
+                  onChange={(e) => onUpdate({ blockGap: parseInt(e.target.value) } as any)}
+                  className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                />
+                <div className="flex justify-between text-xs text-slate-400">
+                  <span>0</span>
+                  <span>40</span>
+                </div>
+              </div>
+
+              {/* Border radius slider */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium text-slate-700">Zakulacení rohů</span>
+                  <span className="text-sm text-slate-500">{(slide as InfoSlide).blockRadius ?? getTemplateById((slide as InfoSlide).templateId || '')?.defaultRadius ?? 8}px</span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="32"
+                  value={(slide as InfoSlide).blockRadius ?? getTemplateById((slide as InfoSlide).templateId || '')?.defaultRadius ?? 8}
+                  onChange={(e) => onUpdate({ blockRadius: parseInt(e.target.value) } as any)}
+                  className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                />
+                <div className="flex justify-between text-xs text-slate-400">
+                  <span>0</span>
+                  <span>32</span>
+                </div>
+              </div>
             </div>
           </AccordionSection>
         )}

@@ -1319,13 +1319,7 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
         />
       )}
       
-      {/* Backdrop for page settings */}
-      {showPageSettings && (
-        <div 
-          className="fixed inset-0 bg-black/20 z-30"
-          onClick={() => setShowPageSettings(false)}
-        />
-      )}
+      {/* No backdrop - allow interaction with slide while panel is open */}
     </div>
   );
 }

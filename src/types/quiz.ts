@@ -118,6 +118,8 @@ export interface SlideTemplate {
   font: TemplateFontFamily;
   colors: TemplateColorScheme;
   blockColors?: string[]; // Optional specific colors for each block
+  defaultGap?: number; // Default gap between blocks
+  defaultRadius?: number; // Default border radius
 }
 
 /**
@@ -136,6 +138,8 @@ export const SLIDE_TEMPLATES: SlideTemplate[] = [
       textLight: '#60A5FA',
     },
     blockColors: ['#DBEAFE', '#BFDBFE', '#93C5FD'],
+    defaultGap: 8,
+    defaultRadius: 12,
   },
   {
     id: 'elegant-serif',
@@ -149,6 +153,8 @@ export const SLIDE_TEMPLATES: SlideTemplate[] = [
       textLight: '#A78BFA',
     },
     blockColors: ['#EDE9FE', '#DDD6FE', '#C4B5FD'],
+    defaultGap: 0,
+    defaultRadius: 0,
   },
   {
     id: 'warm-creative',
@@ -162,6 +168,8 @@ export const SLIDE_TEMPLATES: SlideTemplate[] = [
       textLight: '#FBBF24',
     },
     blockColors: ['#FEF3C7', '#FDE68A', '#FCD34D'],
+    defaultGap: 16,
+    defaultRadius: 24,
   },
   {
     id: 'minimal-dark',
@@ -175,6 +183,8 @@ export const SLIDE_TEMPLATES: SlideTemplate[] = [
       textLight: '#6B7280',
     },
     blockColors: ['#F3F4F6', '#E5E7EB', '#D1D5DB'],
+    defaultGap: 4,
+    defaultRadius: 4,
   },
 ];
 
@@ -192,6 +202,9 @@ export function getTemplateById(templateId: string): SlideTemplate | undefined {
 export interface InfoSlide extends BaseSlide {
   type: 'info';
   templateId?: string; // Reference to template
+  // Block styling options
+  blockGap?: number; // Gap between blocks in pixels (0-40)
+  blockRadius?: number; // Border radius of blocks in pixels (0-32)
   // Legacy fields (for backwards compatibility)
   title: string;
   content: string; // HTML content

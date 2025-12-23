@@ -27,6 +27,7 @@ interface SlideBlockEditorProps {
   onSelect?: () => void;
   placeholder?: string;
   templateColor?: string; // Color from template
+  borderRadius?: number; // Border radius in pixels
 }
 
 export function SlideBlockEditor({
@@ -36,6 +37,7 @@ export function SlideBlockEditor({
   onSelect,
   placeholder = 'Klikněte pro úpravu...',
   templateColor,
+  borderRadius = 8,
 }: SlideBlockEditorProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [showBackgroundPicker, setShowBackgroundPicker] = useState(false);
@@ -150,13 +152,16 @@ export function SlideBlockEditor({
   return (
     <div
       className={`
-        relative group h-full rounded-xl transition-all overflow-hidden
+        relative group h-full transition-all overflow-hidden
         ${isSelected 
           ? 'ring-2 ring-blue-400 ring-offset-2' 
           : ''
         }
       `}
-      style={getBackgroundStyle()}
+      style={{
+        ...getBackgroundStyle(),
+        borderRadius: borderRadius,
+      }}
       onClick={handleClick}
     >
       {/* Content */}
