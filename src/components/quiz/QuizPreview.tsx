@@ -301,7 +301,7 @@ function BlockLayoutView({ slide }: { slide: InfoSlide }) {
 
   // Get template settings
   const template = slide.templateId ? getTemplateById(slide.templateId) : undefined;
-  const blockGap = slide.blockGap ?? template?.defaultGap ?? 8;
+  const blockGap = slide.blockGap ?? template?.defaultGap ?? 11;
   const blockRadius = slide.blockRadius ?? template?.defaultRadius ?? 8;
   const blockColors = template?.blockColors || [];
   const fontFamily = template?.font ? (template.font.includes(' ') ? `"${template.font}", sans-serif` : `${template.font}, sans-serif`) : 'inherit';

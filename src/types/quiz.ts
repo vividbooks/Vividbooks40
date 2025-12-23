@@ -138,7 +138,7 @@ export const SLIDE_TEMPLATES: SlideTemplate[] = [
       textLight: '#60A5FA',
     },
     blockColors: ['#DBEAFE', '#BFDBFE', '#93C5FD'],
-    defaultGap: 8,
+    defaultGap: 11,
     defaultRadius: 12,
   },
   {

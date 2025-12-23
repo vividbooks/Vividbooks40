@@ -296,17 +296,17 @@ export function PageSettingsPanel({ slide, onClose, onUpdate }: PageSettingsPane
                 {/* Gap dropdown */}
                 <div className="flex-1">
                   <label className="text-xs font-medium text-slate-600 mb-1 block">Mezera</label>
-                  <select
-                    value={(slide as InfoSlide).blockGap ?? getTemplateById((slide as InfoSlide).templateId || '')?.defaultGap ?? 8}
-                    onChange={(e) => onUpdate({ blockGap: parseInt(e.target.value) } as any)}
-                    className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent cursor-pointer"
-                  >
-                    <option value={0}>Žádná</option>
-                    <option value={4}>Malá (4px)</option>
-                    <option value={8}>Střední (8px)</option>
-                    <option value={16}>Velká (16px)</option>
-                    <option value={24}>Extra (24px)</option>
-                  </select>
+                    <select
+                      value={(slide as InfoSlide).blockGap ?? getTemplateById((slide as InfoSlide).templateId || '')?.defaultGap ?? 11}
+                      onChange={(e) => onUpdate({ blockGap: parseInt(e.target.value) } as any)}
+                      className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent cursor-pointer"
+                    >
+                      <option value={0}>Žádná</option>
+                      <option value={4}>Malá (4px)</option>
+                      <option value={11}>Střední (11px)</option>
+                      <option value={16}>Velká (16px)</option>
+                      <option value={24}>Extra (24px)</option>
+                    </select>
                 </div>
 
                 {/* Border radius dropdown */}
