@@ -959,10 +959,7 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
                       return (
                         <div
                           key={slide.id}
-                          onClick={() => {
-                            setSelectedSlideId(slide.id);
-                            setShowPageSettings(true);
-                          }}
+                          onClick={() => setSelectedSlideId(slide.id)}
                           className={`
                             group relative p-3 rounded-xl cursor-pointer transition-all border
                             ${selectedSlideId === slide.id 
@@ -1262,9 +1259,8 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
                   
                   {/* The actual editor */}
                   <div 
-                    className="rounded-xl shadow-sm border border-slate-200 transition-colors duration-300 cursor-pointer"
+                    className="rounded-xl shadow-sm border border-slate-200 transition-colors duration-300"
                     style={{ backgroundColor: selectedSlide.backgroundColor || '#ffffff' }}
-                    onClick={() => setShowPageSettings(true)}
                   >
                     {renderSlideEditor(selectedSlide, updateSlide)}
                   </div>
