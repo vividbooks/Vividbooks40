@@ -500,35 +500,6 @@ export function InfoSlideEditor({ slide, onUpdate }: InfoSlideEditorProps) {
       className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden"
       style={{ aspectRatio: '4/3', ...getSlideBackgroundStyle() }}
     >
-      {/* Toolbar */}
-      <div className="absolute top-4 left-4 z-20 flex gap-2">
-        <button
-          onClick={() => setShowLayoutPanel(true)}
-          className="flex items-center gap-2 px-3 py-1.5 bg-white/90 backdrop-blur rounded-lg shadow-sm border border-slate-200 text-slate-600 hover:bg-white transition-colors text-sm"
-        >
-          <Layout className="w-4 h-4" />
-          Rozložení
-        </button>
-        
-        <div className="relative">
-          <button
-            onClick={() => setShowBackgroundPicker(!showBackgroundPicker)}
-            className="flex items-center gap-2 px-3 py-1.5 bg-white/90 backdrop-blur rounded-lg shadow-sm border border-slate-200 text-slate-600 hover:bg-white transition-colors text-sm"
-          >
-            <Palette className="w-4 h-4" />
-            Pozadí
-          </button>
-          
-          {showBackgroundPicker && (
-            <BackgroundPicker
-              value={slide.slideBackground}
-              onChange={handleSlideBackgroundChange}
-              onClose={() => setShowBackgroundPicker(false)}
-            />
-          )}
-        </div>
-      </div>
-
       {/* Main content area */}
       <div 
         className="h-full p-4"
