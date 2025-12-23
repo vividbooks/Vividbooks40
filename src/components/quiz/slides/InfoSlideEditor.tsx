@@ -27,9 +27,10 @@ interface InfoSlideEditorProps {
   slide: InfoSlide;
   onUpdate: (id: string, updates: Partial<InfoSlide>) => void;
   onSlideClick?: () => void;
+  onBlockSettingsClick?: (blockIndex: number) => void;
 }
 
-export function InfoSlideEditor({ slide, onUpdate, onSlideClick }: InfoSlideEditorProps) {
+export function InfoSlideEditor({ slide, onUpdate, onSlideClick, onBlockSettingsClick }: InfoSlideEditorProps) {
   const [selectedBlockIndex, setSelectedBlockIndex] = useState<number | null>(null);
   const [showLayoutPanel, setShowLayoutPanel] = useState(!slide.layout);
   const [showBackgroundPicker, setShowBackgroundPicker] = useState(false);
@@ -159,6 +160,7 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick }: InfoSlideEdit
                 onUpdate={(updates) => handleBlockUpdate(0, updates)}
                 isSelected={selectedBlockIndex === 0}
                 onSelect={() => setSelectedBlockIndex(0)}
+                onSettingsClick={() => onBlockSettingsClick?.(0)}
                 placeholder="Nadpis..."
                 templateColor={getBlockColor(0)}
                 borderRadius={getBlockRadius()}
@@ -182,6 +184,7 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick }: InfoSlideEdit
                 onUpdate={(updates) => handleBlockUpdate(1, updates)}
                 isSelected={selectedBlockIndex === 1}
                 onSelect={() => setSelectedBlockIndex(1)}
+                onSettingsClick={() => onBlockSettingsClick?.(1)}
                 placeholder="Obsah..."
                 templateColor={getBlockColor(1)}
                 borderRadius={getBlockRadius()}
@@ -200,6 +203,7 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick }: InfoSlideEdit
                 onUpdate={(updates) => handleBlockUpdate(0, updates)}
                 isSelected={selectedBlockIndex === 0}
                 onSelect={() => setSelectedBlockIndex(0)}
+                onSettingsClick={() => onBlockSettingsClick?.(0)}
                 placeholder="Nadpis..."
                 templateColor={getBlockColor(0)}
                 borderRadius={getBlockRadius()}
@@ -222,6 +226,7 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick }: InfoSlideEdit
                   onUpdate={(updates) => handleBlockUpdate(1, updates)}
                   isSelected={selectedBlockIndex === 1}
                   onSelect={() => setSelectedBlockIndex(1)}
+                  onSettingsClick={() => onBlockSettingsClick?.(1)}
                   placeholder="Levý sloupec..."
                   templateColor={getBlockColor(1)}
                   borderRadius={getBlockRadius()}
@@ -242,6 +247,7 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick }: InfoSlideEdit
                   onUpdate={(updates) => handleBlockUpdate(2, updates)}
                   isSelected={selectedBlockIndex === 2}
                   onSelect={() => setSelectedBlockIndex(2)}
+                  onSettingsClick={() => onBlockSettingsClick?.(2)}
                   placeholder="Pravý sloupec..."
                   templateColor={getBlockColor(2)}
                   borderRadius={getBlockRadius()}
@@ -261,6 +267,7 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick }: InfoSlideEdit
                 onUpdate={(updates) => handleBlockUpdate(0, updates)}
                 isSelected={selectedBlockIndex === 0}
                 onSelect={() => setSelectedBlockIndex(0)}
+                onSettingsClick={() => onBlockSettingsClick?.(0)}
                 placeholder="Nadpis..."
                 templateColor={getBlockColor(0)}
                 borderRadius={getBlockRadius()}
@@ -283,6 +290,7 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick }: InfoSlideEdit
                   onUpdate={(updates) => handleBlockUpdate(1, updates)}
                   isSelected={selectedBlockIndex === 1}
                   onSelect={() => setSelectedBlockIndex(1)}
+                  onSettingsClick={() => onBlockSettingsClick?.(1)}
                   placeholder="Sloupec 1..."
                   templateColor={getBlockColor(1)}
                   borderRadius={getBlockRadius()}
@@ -303,6 +311,7 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick }: InfoSlideEdit
                   onUpdate={(updates) => handleBlockUpdate(2, updates)}
                   isSelected={selectedBlockIndex === 2}
                   onSelect={() => setSelectedBlockIndex(2)}
+                  onSettingsClick={() => onBlockSettingsClick?.(2)}
                   placeholder="Sloupec 2..."
                   templateColor={getBlockColor(2)}
                   borderRadius={getBlockRadius()}
@@ -323,6 +332,7 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick }: InfoSlideEdit
                   onUpdate={(updates) => handleBlockUpdate(3, updates)}
                   isSelected={selectedBlockIndex === 3}
                   onSelect={() => setSelectedBlockIndex(3)}
+                  onSettingsClick={() => onBlockSettingsClick?.(3)}
                   placeholder="Sloupec 3..."
                   templateColor={getBlockColor(3)}
                   borderRadius={getBlockRadius()}
@@ -341,6 +351,7 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick }: InfoSlideEdit
                 onUpdate={(updates) => handleBlockUpdate(0, updates)}
                 isSelected={selectedBlockIndex === 0}
                 onSelect={() => setSelectedBlockIndex(0)}
+                onSettingsClick={() => onBlockSettingsClick?.(0)}
                 placeholder="Levý sloupec..."
                 templateColor={getBlockColor(0)}
                 borderRadius={getBlockRadius()}
@@ -361,6 +372,7 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick }: InfoSlideEdit
                 onUpdate={(updates) => handleBlockUpdate(1, updates)}
                 isSelected={selectedBlockIndex === 1}
                 onSelect={() => setSelectedBlockIndex(1)}
+                onSettingsClick={() => onBlockSettingsClick?.(1)}
                 placeholder="Pravý sloupec..."
                 templateColor={getBlockColor(1)}
                 borderRadius={getBlockRadius()}
@@ -378,6 +390,7 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick }: InfoSlideEdit
                 onUpdate={(updates) => handleBlockUpdate(0, updates)}
                 isSelected={selectedBlockIndex === 0}
                 onSelect={() => setSelectedBlockIndex(0)}
+                onSettingsClick={() => onBlockSettingsClick?.(0)}
                 placeholder="Sloupec 1..."
                 templateColor={getBlockColor(0)}
                 borderRadius={getBlockRadius()}
@@ -398,6 +411,7 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick }: InfoSlideEdit
                 onUpdate={(updates) => handleBlockUpdate(1, updates)}
                 isSelected={selectedBlockIndex === 1}
                 onSelect={() => setSelectedBlockIndex(1)}
+                onSettingsClick={() => onBlockSettingsClick?.(1)}
                 placeholder="Sloupec 2..."
                 templateColor={getBlockColor(1)}
                 borderRadius={getBlockRadius()}
@@ -418,6 +432,7 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick }: InfoSlideEdit
                 onUpdate={(updates) => handleBlockUpdate(2, updates)}
                 isSelected={selectedBlockIndex === 2}
                 onSelect={() => setSelectedBlockIndex(2)}
+                onSettingsClick={() => onBlockSettingsClick?.(2)}
                 placeholder="Sloupec 3..."
                 templateColor={getBlockColor(2)}
                 borderRadius={getBlockRadius()}
@@ -436,6 +451,7 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick }: InfoSlideEdit
                 onUpdate={(updates) => handleBlockUpdate(0, updates)}
                 isSelected={selectedBlockIndex === 0}
                 onSelect={() => setSelectedBlockIndex(0)}
+                onSettingsClick={() => onBlockSettingsClick?.(0)}
                 placeholder="Hlavní obsah..."
                 templateColor={getBlockColor(0)}
                 borderRadius={getBlockRadius()}
@@ -458,6 +474,7 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick }: InfoSlideEdit
                   onUpdate={(updates) => handleBlockUpdate(1, updates)}
                   isSelected={selectedBlockIndex === 1}
                   onSelect={() => setSelectedBlockIndex(1)}
+                  onSettingsClick={() => onBlockSettingsClick?.(1)}
                   placeholder="Horní..."
                   templateColor={getBlockColor(1)}
                   borderRadius={getBlockRadius()}
@@ -478,6 +495,7 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick }: InfoSlideEdit
                   onUpdate={(updates) => handleBlockUpdate(2, updates)}
                   isSelected={selectedBlockIndex === 2}
                   onSelect={() => setSelectedBlockIndex(2)}
+                  onSettingsClick={() => onBlockSettingsClick?.(2)}
                   placeholder="Dolní..."
                   templateColor={getBlockColor(2)}
                   borderRadius={getBlockRadius()}
@@ -498,6 +516,7 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick }: InfoSlideEdit
                   onUpdate={(updates) => handleBlockUpdate(0, updates)}
                   isSelected={selectedBlockIndex === 0}
                   onSelect={() => setSelectedBlockIndex(0)}
+                  onSettingsClick={() => onBlockSettingsClick?.(0)}
                   placeholder="Horní..."
                   templateColor={getBlockColor(0)}
                   borderRadius={getBlockRadius()}
@@ -518,6 +537,7 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick }: InfoSlideEdit
                   onUpdate={(updates) => handleBlockUpdate(1, updates)}
                   isSelected={selectedBlockIndex === 1}
                   onSelect={() => setSelectedBlockIndex(1)}
+                  onSettingsClick={() => onBlockSettingsClick?.(1)}
                   placeholder="Dolní..."
                   templateColor={getBlockColor(1)}
                   borderRadius={getBlockRadius()}
@@ -540,6 +560,7 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick }: InfoSlideEdit
                 onUpdate={(updates) => handleBlockUpdate(2, updates)}
                 isSelected={selectedBlockIndex === 2}
                 onSelect={() => setSelectedBlockIndex(2)}
+                onSettingsClick={() => onBlockSettingsClick?.(2)}
                 placeholder="Hlavní obsah..."
                 templateColor={getBlockColor(2)}
                 borderRadius={getBlockRadius()}

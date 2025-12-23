@@ -12,18 +12,15 @@ import {
   Link2,
   Settings,
   Upload,
-  Maximize2,
-  Minimize2,
-  X,
 } from 'lucide-react';
 import { SlideBlock, SlideBlockType } from '../../../types/quiz';
-import { BackgroundPicker } from './BackgroundPicker';
 
 interface SlideBlockEditorProps {
   block: SlideBlock;
   onUpdate: (updates: Partial<SlideBlock>) => void;
   isSelected?: boolean;
   onSelect?: () => void;
+  onSettingsClick?: () => void;
   placeholder?: string;
   templateColor?: string;
   borderRadius?: number;
@@ -34,13 +31,12 @@ export function SlideBlockEditor({
   onUpdate,
   isSelected = false,
   onSelect,
+  onSettingsClick,
   placeholder = 'Klikněte pro úpravu...',
   templateColor,
   borderRadius = 8,
 }: SlideBlockEditorProps) {
   const [isEditing, setIsEditing] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
-  const [imageSize, setImageSize] = useState<'contain' | 'cover' | 'fill'>('contain');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -142,14 +138,6 @@ export function SlideBlockEditor({
     return style;
   };
 
-  const getImageSizeStyle = () => {
-    switch (imageSize) {
-      case 'cover': return 'object-cover w-full h-full';
-      case 'fill': return 'object-fill w-full h-full';
-      default: return 'object-contain max-w-full max-h-full';
-    }
-  };
-
   return (
     <div
       className={`
@@ -162,7 +150,7 @@ export function SlideBlockEditor({
       }}
       onClick={handleClick}
     >
-      {/* Type switcher - visible on hover */}
+      {/* Type switcher & Settings - visible on hover */}
       <div 
         className="absolute top-2 right-2 z-20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1"
         onClick={(e) => e.stopPropagation()}
@@ -204,96 +192,15 @@ export function SlideBlockEditor({
           </button>
         </div>
 
-        {/* Settings button */}
+        {/* Settings button - opens left panel */}
         <button
-          onClick={() => setShowSettings(!showSettings)}
-          className={`p-1.5 rounded-lg shadow-lg border transition-colors ${
-            showSettings 
-              ? 'bg-indigo-600 text-white border-indigo-600' 
-              : 'bg-white text-slate-500 hover:bg-slate-100 border-slate-200'
-          }`}
+          onClick={() => onSettingsClick?.()}
+          className="p-1.5 rounded-lg shadow-lg border bg-white text-slate-500 hover:bg-slate-100 border-slate-200 transition-colors"
           title="Nastavení bloku"
         >
           <Settings className="w-4 h-4" />
         </button>
       </div>
-
-      {/* Settings panel */}
-      {showSettings && (
-        <div 
-          className="absolute top-12 right-2 z-30 bg-white rounded-xl shadow-2xl border border-slate-200 w-72"
-          onClick={(e) => e.stopPropagation()}
-        >
-          {/* Header */}
-          <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
-            <span className="font-medium text-slate-700 text-sm">Nastavení bloku</span>
-            <button 
-              onClick={() => setShowSettings(false)}
-              className="p-1 rounded-md hover:bg-slate-100 text-slate-400"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-
-          <div className="p-4 space-y-4">
-            {/* Background color */}
-            <div>
-              <label className="text-xs font-medium text-slate-600 mb-2 block">Barva bloku</label>
-              <BackgroundPicker
-                value={block.background}
-                onChange={(bg) => onUpdate({ background: bg })}
-                onClose={() => {}}
-                showBlur={false}
-                showUpload={false}
-                showOpacity={false}
-                inline={true}
-              />
-            </div>
-
-            {/* Image sizing options (only for images) */}
-            {block.type === 'image' && block.content && (
-              <div>
-                <label className="text-xs font-medium text-slate-600 mb-2 block">Velikost obrázku</label>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => setImageSize('contain')}
-                    className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border text-sm transition-colors ${
-                      imageSize === 'contain' 
-                        ? 'border-indigo-500 bg-indigo-50 text-indigo-700' 
-                        : 'border-slate-200 hover:border-slate-300'
-                    }`}
-                  >
-                    <Minimize2 className="w-4 h-4" />
-                    Přizpůsobit
-                  </button>
-                  <button
-                    onClick={() => setImageSize('cover')}
-                    className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border text-sm transition-colors ${
-                      imageSize === 'cover' 
-                        ? 'border-indigo-500 bg-indigo-50 text-indigo-700' 
-                        : 'border-slate-200 hover:border-slate-300'
-                    }`}
-                  >
-                    <Maximize2 className="w-4 h-4" />
-                    Vyplnit
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* Replace image button */}
-            {block.type === 'image' && block.content && (
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-slate-200 hover:bg-slate-50 text-sm text-slate-600 transition-colors"
-              >
-                <Upload className="w-4 h-4" />
-                Nahrát jiný obrázek
-              </button>
-            )}
-          </div>
-        </div>
-      )}
 
       {/* Content */}
       <div className="h-full p-4 flex flex-col justify-center">
@@ -338,7 +245,7 @@ export function SlideBlockEditor({
               <img
                 src={block.content}
                 alt=""
-                className={`rounded-lg ${getImageSizeStyle()}`}
+                className="max-w-full max-h-full object-contain rounded-lg"
               />
             ) : (
               <button

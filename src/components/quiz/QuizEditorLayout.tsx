@@ -49,6 +49,7 @@ import { ref, onValue, off } from 'firebase/database';
 import {
   Quiz,
   QuizSlide,
+  InfoSlide,
   ActivityType,
   createEmptyQuiz,
   createABCSlide,
@@ -62,6 +63,7 @@ import { ExampleSlideEditor } from './slides/ExampleSlideEditor';
 import { InfoSlideEditor } from './slides/InfoSlideEditor';
 import { BackgroundPicker } from './slides/BackgroundPicker';
 import { PageSettingsPanel } from './slides/PageSettingsPanel';
+import { BlockSettingsPanel } from './slides/BlockSettingsPanel';
 import { QuizPreview } from './QuizPreview';
 import { TeacherSession } from './QuizLiveSession';
 import { AIBoardPanel } from './AIBoardPanel';
@@ -422,6 +424,7 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [showVersionHistory, setShowVersionHistory] = useState(false);
   const [showPageSettings, setShowPageSettings] = useState(false);
+  const [selectedBlockIndex, setSelectedBlockIndex] = useState<number | null>(null);
   
   // Results state
   const [sessions, setSessions] = useState<SessionData[]>([]);
@@ -1262,7 +1265,15 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
                     className="rounded-xl shadow-sm border border-slate-200 transition-colors duration-300"
                     style={{ backgroundColor: selectedSlide.backgroundColor || '#ffffff' }}
                   >
-                    {renderSlideEditor(selectedSlide, updateSlide, () => setShowPageSettings(true))}
+                    {renderSlideEditor(
+                      selectedSlide, 
+                      updateSlide, 
+                      () => setShowPageSettings(true),
+                      (blockIndex) => {
+                        setSelectedBlockIndex(blockIndex);
+                        setShowPageSettings(false); // Close page settings when block settings open
+                      }
+                    )}
                   </div>
                 </div>
               ) : (
@@ -1319,6 +1330,29 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
         />
       )}
       
+      {/* Block Settings Panel - Overlay on left side */}
+      {selectedBlockIndex !== null && selectedSlide?.type === 'info' && selectedSlide.layout && (
+        <BlockSettingsPanel
+          block={selectedSlide.layout.blocks[selectedBlockIndex]}
+          blockIndex={selectedBlockIndex}
+          onUpdate={(updates) => {
+            const newBlocks = [...selectedSlide.layout!.blocks];
+            newBlocks[selectedBlockIndex] = { ...newBlocks[selectedBlockIndex], ...updates };
+            updateSlide(selectedSlide.id, { layout: { ...selectedSlide.layout!, blocks: newBlocks } });
+          }}
+          onClose={() => setSelectedBlockIndex(null)}
+          onImageUpload={(file) => {
+            const reader = new FileReader();
+            reader.onload = (event) => {
+              const newBlocks = [...selectedSlide.layout!.blocks];
+              newBlocks[selectedBlockIndex] = { ...newBlocks[selectedBlockIndex], content: event.target?.result as string };
+              updateSlide(selectedSlide.id, { layout: { ...selectedSlide.layout!, blocks: newBlocks } });
+            };
+            reader.readAsDataURL(file);
+          }}
+        />
+      )}
+      
       {/* No backdrop - allow interaction with slide while panel is open */}
     </div>
   );
@@ -1344,11 +1378,12 @@ function getSlideTitle(slide: QuizSlide): string {
 function renderSlideEditor(
   slide: QuizSlide, 
   onUpdate: (id: string, updates: Partial<QuizSlide>) => void,
-  onSlideClick?: () => void
+  onSlideClick?: () => void,
+  onBlockSettingsClick?: (blockIndex: number) => void
 ): React.ReactNode {
   switch (slide.type) {
     case 'info':
-      return <InfoSlideEditor slide={slide} onUpdate={onUpdate} onSlideClick={onSlideClick} />;
+      return <InfoSlideEditor slide={slide} onUpdate={onUpdate} onSlideClick={onSlideClick} onBlockSettingsClick={onBlockSettingsClick} />;
     case 'activity':
       switch ((slide as any).activityType) {
         case 'abc':
