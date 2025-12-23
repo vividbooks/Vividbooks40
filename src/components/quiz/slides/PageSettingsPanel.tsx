@@ -59,7 +59,7 @@ export function PageSettingsPanel({ slide, onClose, onUpdate }: PageSettingsPane
   };
 
   const getBackgroundPreview = () => {
-    const bg = slide.background || (slide as any).backgroundColor;
+    const bg = (slide as any).slideBackground;
     if (!bg) return 'Bílá';
     if (typeof bg === 'string') return bg;
     if (bg.type === 'color' && bg.color) {
@@ -209,13 +209,9 @@ export function PageSettingsPanel({ slide, onClose, onUpdate }: PageSettingsPane
         >
           <div className="pt-2">
             <BackgroundPicker
-              value={slide.background || { type: 'color', color: (slide as any).backgroundColor || '#ffffff' }}
+              value={(slide as any).slideBackground || { type: 'color', color: '#ffffff' }}
               onChange={(bg) => {
-                if (bg?.type === 'color' && bg.color) {
-                  onUpdate({ backgroundColor: bg.color, background: bg } as any);
-                } else if (bg) {
-                  onUpdate({ background: bg } as any);
-                }
+                onUpdate({ slideBackground: bg } as any);
               }}
               onClose={() => {}}
               showUpload={true}
