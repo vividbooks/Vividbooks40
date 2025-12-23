@@ -173,7 +173,7 @@ export function SlideBlockEditor({
             onClick={() => handleTypeChange('text')}
             className={`p-1.5 rounded-md transition-colors ${
               block.type === 'text' 
-                ? 'bg-slate-700 text-white' 
+                ? 'bg-indigo-600 text-white' 
                 : 'hover:bg-slate-100 text-slate-500'
             }`}
             title="Text"
@@ -184,7 +184,7 @@ export function SlideBlockEditor({
             onClick={() => handleTypeChange('image')}
             className={`p-1.5 rounded-md transition-colors ${
               block.type === 'image' 
-                ? 'bg-slate-700 text-white' 
+                ? 'bg-indigo-600 text-white' 
                 : 'hover:bg-slate-100 text-slate-500'
             }`}
             title="Obrázek"
@@ -195,7 +195,7 @@ export function SlideBlockEditor({
             onClick={() => handleTypeChange('link')}
             className={`p-1.5 rounded-md transition-colors ${
               block.type === 'link' 
-                ? 'bg-slate-700 text-white' 
+                ? 'bg-indigo-600 text-white' 
                 : 'hover:bg-slate-100 text-slate-500'
             }`}
             title="Odkaz"
@@ -346,7 +346,7 @@ export function SlideBlockEditor({
                   e.stopPropagation();
                   fileInputRef.current?.click();
                 }}
-                className="flex flex-col items-center gap-3 p-8 rounded-xl border-2 border-dashed border-slate-300 hover:border-indigo-400 hover:bg-indigo-50 transition-colors"
+                className="flex flex-col items-center gap-3 p-6 rounded-xl hover:bg-slate-50 transition-colors"
               >
                 <div className="w-12 h-12 rounded-xl bg-slate-100 flex items-center justify-center">
                   <Upload className="w-6 h-6 text-slate-500" />
