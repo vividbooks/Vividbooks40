@@ -361,6 +361,7 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
   const [showSettings, setShowSettings] = useState(false);
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [showVersionHistory, setShowVersionHistory] = useState(false);
+  const [showPageSettings, setShowPageSettings] = useState(false);
   
   // Results state
   const [sessions, setSessions] = useState<SessionData[]>([]);
@@ -1186,49 +1187,14 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
                       </button>
                     </div>
 
-                    {/* Color Picker */}
-                    <div className="relative">
-                      <button
-                        onClick={() => setShowColorPicker(!showColorPicker)}
-                        className="flex items-center gap-2 px-3 py-1.5 bg-white rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors"
-                      >
-                        <div 
-                          className="w-4 h-4 rounded-full border border-slate-200 shadow-sm"
-                          style={{ backgroundColor: selectedSlide.backgroundColor || '#ffffff' }}
-                        />
-                        <Palette className="w-4 h-4" />
-                        <span className="text-sm font-medium">Barva</span>
-                      </button>
-
-                      {showColorPicker && (
-                        <>
-                          <div 
-                            className="fixed inset-0 z-0" 
-                            onClick={() => setShowColorPicker(false)}
-                          />
-                          <div className="absolute right-0 top-full mt-2 p-3 bg-white rounded-xl shadow-xl border border-slate-200 z-10 w-48">
-                            <p className="text-xs font-semibold text-slate-500 mb-2 uppercase tracking-wide">Barva pozadí</p>
-                            <div className="grid grid-cols-4 gap-2">
-                              {SLIDE_COLORS.map((color) => (
-                                <button
-                                  key={color.color}
-                                  onClick={() => {
-                                    updateSlide(selectedSlide.id, { backgroundColor: color.color });
-                                    setShowColorPicker(false);
-                                  }}
-                                  className={`w-8 h-8 rounded-full border shadow-sm hover:scale-110 transition-transform relative group ${
-                                    (selectedSlide.backgroundColor || '#ffffff') === color.color ? 'border-indigo-500 ring-2 ring-indigo-200' : 'border-slate-200'
-                                  }`}
-                                  style={{ backgroundColor: color.color }}
-                                  title={color.label}
-                                >
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                        </>
-                      )}
-                    </div>
+                    {/* Page Settings Button */}
+                    <button
+                      onClick={() => setShowPageSettings(true)}
+                      className="flex items-center gap-2 px-3 py-1.5 bg-white rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors"
+                      title="Nastavení stránky"
+                    >
+                      <Settings className="w-4 h-4" />
+                    </button>
                   </div>
                   
                   {/* The actual editor */}
@@ -1282,6 +1248,95 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
             onClose={() => setShowVersionHistory(false)}
           />
         </div>
+      )}
+      
+      {/* Page Settings Panel - Overlay on left side */}
+      {showPageSettings && selectedSlide && (
+        <div 
+          className="fixed top-0 left-0 h-full bg-white shadow-2xl z-40 flex flex-col overflow-hidden"
+          style={{ width: '420px' }}
+        >
+          {/* Header */}
+          <div className="flex items-center gap-3 px-5 py-4 border-b border-slate-200 bg-slate-50">
+            <button
+              onClick={() => setShowPageSettings(false)}
+              className="p-2 rounded-lg hover:bg-slate-200 text-slate-600 transition-colors"
+            >
+              <ArrowLeft className="w-5 h-5" />
+            </button>
+            <h2 className="text-lg font-semibold text-slate-800">Nastavení stránky</h2>
+          </div>
+          
+          {/* Content */}
+          <div className="flex-1 overflow-y-auto p-5 space-y-6">
+            {/* Layout Section */}
+            <div>
+              <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
+                <SlidersHorizontal className="w-4 h-4" />
+                Rozložení
+              </h3>
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { id: 'title-content', label: 'Nadpis + obsah', icon: '📝' },
+                  { id: 'title-2cols', label: 'Nadpis + 2 sloupce', icon: '📊' },
+                  { id: 'title-3cols', label: 'Nadpis + 3 sloupce', icon: '📋' },
+                  { id: '2cols', label: '2 sloupce', icon: '⬜⬜' },
+                  { id: '3cols', label: '3 sloupce', icon: '⬜⬜⬜' },
+                  { id: 'left-large-right-split', label: 'Levý velký', icon: '⬛⬜' },
+                  { id: 'right-large-left-split', label: 'Pravý velký', icon: '⬜⬛' },
+                ].map((layout) => (
+                  <button
+                    key={layout.id}
+                    onClick={() => {
+                      if (selectedSlide.type === 'info') {
+                        updateSlide(selectedSlide.id, { layout: layout.id as any });
+                      }
+                    }}
+                    className={`p-3 rounded-xl border-2 text-left transition-all ${
+                      (selectedSlide as any).layout === layout.id
+                        ? 'border-indigo-500 bg-indigo-50'
+                        : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+                    }`}
+                  >
+                    <span className="text-xl mb-1 block">{layout.icon}</span>
+                    <span className="text-xs font-medium text-slate-700">{layout.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+            
+            {/* Color Section */}
+            <div>
+              <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
+                <Palette className="w-4 h-4" />
+                Barva pozadí
+              </h3>
+              <div className="grid grid-cols-5 gap-2">
+                {SLIDE_COLORS.map((color) => (
+                  <button
+                    key={color.color}
+                    onClick={() => updateSlide(selectedSlide.id, { backgroundColor: color.color })}
+                    className={`w-12 h-12 rounded-xl border-2 shadow-sm hover:scale-110 transition-transform ${
+                      (selectedSlide.backgroundColor || '#ffffff') === color.color 
+                        ? 'border-indigo-500 ring-2 ring-indigo-200' 
+                        : 'border-slate-200'
+                    }`}
+                    style={{ backgroundColor: color.color }}
+                    title={color.label}
+                  />
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Backdrop for page settings */}
+      {showPageSettings && (
+        <div 
+          className="fixed inset-0 bg-black/20 z-30"
+          onClick={() => setShowPageSettings(false)}
+        />
       )}
     </div>
   );
