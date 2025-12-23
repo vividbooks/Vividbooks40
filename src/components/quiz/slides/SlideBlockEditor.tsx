@@ -211,7 +211,8 @@ export function SlideBlockEditor({
         >
           <button
             onClick={() => onUpdate({ content: '', gallery: undefined, galleryIndex: undefined })}
-            className="p-1.5 rounded-lg shadow-lg border bg-red-500 text-white hover:bg-red-600 border-red-400 transition-colors"
+            className="p-2 rounded-lg shadow-lg transition-colors"
+            style={{ backgroundColor: '#ef4444', color: 'white' }}
             title="Smazat obsah"
           >
             <Trash2 className="w-4 h-4" />
