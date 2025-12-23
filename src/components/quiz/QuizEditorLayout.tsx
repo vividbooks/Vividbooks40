@@ -40,7 +40,10 @@ import {
   Loader2,
   ArrowLeft,
   Palette,
+  History,
 } from 'lucide-react';
+import { useVersionHistory } from '../../hooks/useVersionHistory';
+import { VersionHistoryPanel } from '../shared/VersionHistoryPanel';
 import { database } from '../../utils/firebase-config';
 import { ref, onValue, off } from 'firebase/database';
 import {
@@ -357,6 +360,7 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
   const [activePanel, setActivePanel] = useState<ActivePanel>('board');
   const [showSettings, setShowSettings] = useState(false);
   const [showColorPicker, setShowColorPicker] = useState(false);
+  const [showVersionHistory, setShowVersionHistory] = useState(false);
   
   // Results state
   const [sessions, setSessions] = useState<SessionData[]>([]);
@@ -364,6 +368,28 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
   
   // Get current user
   const profile = storage.getCurrentUserProfile();
+  
+  // Version history hook
+  const versionHistory = useVersionHistory({
+    documentId: id || '',
+    documentType: 'quiz',
+    content: quiz ? JSON.stringify(quiz) : '',
+    title: quiz?.title || 'Nová tabule',
+    userId: profile?.userId,
+    userType: 'teacher',
+    userName: profile?.firstName,
+    autoSave: true,
+    autoSaveDelay: 60000, // Auto-save every minute
+    onVersionRestored: useCallback((version) => {
+      try {
+        const restoredQuiz = JSON.parse(version.content);
+        setQuiz(restoredQuiz);
+        setIsDirty(true);
+      } catch (e) {
+        console.error('Failed to parse restored quiz:', e);
+      }
+    }, []),
+  });
   
   // Load sessions when Results tab is active
   useEffect(() => {
@@ -1100,6 +1126,21 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
               
               <div className="flex items-center gap-3">
                 <button
+                  onClick={() => setShowVersionHistory(true)}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors font-medium text-sm ${
+                    versionHistory.hasUnsavedChanges 
+                      ? 'text-amber-600 hover:bg-amber-50' 
+                      : 'text-slate-600 hover:bg-slate-100'
+                  }`}
+                  title={`Historie verzí${versionHistory.totalVersions > 0 ? ` (${versionHistory.totalVersions})` : ''}`}
+                >
+                  <History className="w-4 h-4" />
+                  Historie
+                  {versionHistory.autoSavePending && (
+                    <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                  )}
+                </button>
+                <button
                   onClick={() => setShowPreview(true)}
                   className="flex items-center gap-2 px-4 py-2 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors font-medium text-sm"
                 >
@@ -1222,6 +1263,26 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
           </div>
         )}
       </div>
+
+      {/* Version History Modal */}
+      {showVersionHistory && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <VersionHistoryPanel
+            versions={versionHistory.versions}
+            loading={versionHistory.loading}
+            error={versionHistory.error}
+            totalVersions={versionHistory.totalVersions}
+            hasMoreVersions={versionHistory.hasMoreVersions}
+            hasUnsavedChanges={versionHistory.hasUnsavedChanges}
+            autoSavePending={versionHistory.autoSavePending}
+            currentVersion={versionHistory.lastSavedVersion}
+            onSaveManual={versionHistory.saveManualVersion}
+            onRestore={versionHistory.restoreVersion}
+            onLoadMore={versionHistory.loadMoreVersions}
+            onClose={() => setShowVersionHistory(false)}
+          />
+        </div>
+      )}
     </div>
   );
 }
