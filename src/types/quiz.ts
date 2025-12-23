@@ -22,11 +22,72 @@ export interface BaseSlide {
   backgroundColor?: string;
 }
 
+// =============================================
+// BLOCK-BASED LAYOUT SYSTEM FOR INFO SLIDES
+// =============================================
+
+/**
+ * Block content types
+ */
+export type SlideBlockType = 'text' | 'image' | 'link';
+
+/**
+ * Background settings for blocks and slides
+ */
+export interface BackgroundSettings {
+  type: 'color' | 'image';
+  color?: string;
+  imageUrl?: string;
+  opacity?: number; // 0-100
+  blur?: number; // 0-20
+}
+
+/**
+ * Individual block in a slide layout
+ */
+export interface SlideBlock {
+  id: string;
+  type: SlideBlockType;
+  content: string; // Text content, image URL, or link URL
+  title?: string; // For links - display text
+  background?: BackgroundSettings;
+  textAlign?: 'left' | 'center' | 'right';
+  fontSize?: 'small' | 'medium' | 'large' | 'xlarge';
+  fontWeight?: 'normal' | 'bold';
+}
+
+/**
+ * Layout types for info slides
+ * Desktop view - on mobile, blocks stack vertically
+ */
+export type SlideLayoutType = 
+  | 'title-content'      // Title block + main content
+  | 'title-2cols'        // Title + 2 columns
+  | 'title-3cols'        // Title + 3 columns
+  | '2cols'              // 2 columns only
+  | '3cols'              // 3 columns only
+  | 'left-large-right-split'  // Left column large, right split in half vertically
+  | 'right-large-left-split'; // Right column large, left split in half vertically
+
+/**
+ * Layout configuration with block ratios
+ */
+export interface SlideLayout {
+  type: SlideLayoutType;
+  blocks: SlideBlock[];
+  // Ratios for resizable areas (stored as percentages)
+  titleHeight?: number;     // % height of title block (default 20)
+  columnRatios?: number[];  // % widths of columns, e.g. [50, 50] or [33, 34, 33]
+  splitRatio?: number;      // % for split layouts (how much of split area is top vs bottom)
+}
+
 /**
  * Information slide - displays content without interaction
+ * Now supports block-based layouts
  */
 export interface InfoSlide extends BaseSlide {
   type: 'info';
+  // Legacy fields (for backwards compatibility)
   title: string;
   content: string; // HTML content
   media?: {
@@ -34,6 +95,9 @@ export interface InfoSlide extends BaseSlide {
     url: string;
     caption?: string;
   };
+  // New block-based layout system
+  layout?: SlideLayout;
+  slideBackground?: BackgroundSettings;
 }
 
 /**
@@ -417,15 +481,127 @@ export function createExampleSlide(order: number): ExampleActivitySlide {
 }
 
 /**
- * Create Info slide
+ * Create a unique block ID
  */
-export function createInfoSlide(order: number): InfoSlide {
+function createBlockId(): string {
+  return `block-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+}
+
+/**
+ * Create a new block with defaults
+ */
+export function createSlideBlock(type: SlideBlockType = 'text'): SlideBlock {
+  return {
+    id: createBlockId(),
+    type,
+    content: '',
+    textAlign: 'left',
+    fontSize: 'medium',
+    fontWeight: 'normal',
+  };
+}
+
+/**
+ * Create a layout with the specified type
+ */
+export function createSlideLayout(layoutType: SlideLayoutType): SlideLayout {
+  switch (layoutType) {
+    case 'title-content':
+      return {
+        type: layoutType,
+        blocks: [
+          { ...createSlideBlock('text'), fontSize: 'xlarge', fontWeight: 'bold' }, // Title
+          createSlideBlock('text'), // Content
+        ],
+        titleHeight: 15,
+      };
+    case 'title-2cols':
+      return {
+        type: layoutType,
+        blocks: [
+          { ...createSlideBlock('text'), fontSize: 'xlarge', fontWeight: 'bold' }, // Title
+          createSlideBlock('text'), // Left column
+          createSlideBlock('text'), // Right column
+        ],
+        titleHeight: 15,
+        columnRatios: [50, 50],
+      };
+    case 'title-3cols':
+      return {
+        type: layoutType,
+        blocks: [
+          { ...createSlideBlock('text'), fontSize: 'xlarge', fontWeight: 'bold' }, // Title
+          createSlideBlock('text'), // Left column
+          createSlideBlock('text'), // Middle column
+          createSlideBlock('text'), // Right column
+        ],
+        titleHeight: 15,
+        columnRatios: [33, 34, 33],
+      };
+    case '2cols':
+      return {
+        type: layoutType,
+        blocks: [
+          createSlideBlock('text'), // Left column
+          createSlideBlock('text'), // Right column
+        ],
+        columnRatios: [50, 50],
+      };
+    case '3cols':
+      return {
+        type: layoutType,
+        blocks: [
+          createSlideBlock('text'), // Left column
+          createSlideBlock('text'), // Middle column
+          createSlideBlock('text'), // Right column
+        ],
+        columnRatios: [33, 34, 33],
+      };
+    case 'left-large-right-split':
+      return {
+        type: layoutType,
+        blocks: [
+          createSlideBlock('text'), // Left large
+          createSlideBlock('text'), // Right top
+          createSlideBlock('text'), // Right bottom
+        ],
+        columnRatios: [60, 40],
+        splitRatio: 50,
+      };
+    case 'right-large-left-split':
+      return {
+        type: layoutType,
+        blocks: [
+          createSlideBlock('text'), // Left top
+          createSlideBlock('text'), // Left bottom
+          createSlideBlock('text'), // Right large
+        ],
+        columnRatios: [40, 60],
+        splitRatio: 50,
+      };
+    default:
+      return {
+        type: 'title-content',
+        blocks: [
+          { ...createSlideBlock('text'), fontSize: 'xlarge', fontWeight: 'bold' },
+          createSlideBlock('text'),
+        ],
+        titleHeight: 15,
+      };
+  }
+}
+
+/**
+ * Create Info slide with optional layout
+ */
+export function createInfoSlide(order: number, layoutType?: SlideLayoutType): InfoSlide {
   return {
     id: `slide-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
     type: 'info',
     order,
     title: '',
     content: '',
+    layout: layoutType ? createSlideLayout(layoutType) : undefined,
   };
 }
 
