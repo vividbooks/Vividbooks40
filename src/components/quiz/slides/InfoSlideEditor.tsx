@@ -440,8 +440,8 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick }: InfoSlideEdit
                 templateColor={getBlockColor(0)}
                 borderRadius={getBlockRadius()}
               />
-            </div>
-            
+      </div>
+      
             <BlockResizer
               direction="horizontal"
               value={columnRatios[0]}
@@ -461,9 +461,9 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick }: InfoSlideEdit
                   placeholder="Horní..."
                   templateColor={getBlockColor(1)}
                   borderRadius={getBlockRadius()}
-                />
-              </div>
-              
+        />
+      </div>
+      
               <BlockResizer
                 direction="vertical"
                 value={splitRatio}
@@ -483,7 +483,7 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick }: InfoSlideEdit
                   borderRadius={getBlockRadius()}
                 />
               </div>
-            </div>
+        </div>
           </div>
         );
 
@@ -502,8 +502,8 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick }: InfoSlideEdit
                   templateColor={getBlockColor(0)}
                   borderRadius={getBlockRadius()}
                 />
-              </div>
-              
+      </div>
+      
               <BlockResizer
                 direction="vertical"
                 value={splitRatio}
@@ -574,7 +574,7 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick }: InfoSlideEdit
 
   return (
     <div 
-      className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden cursor-pointer"
+      className="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden cursor-pointer"
       style={{ 
         aspectRatio: '4/3', 
         ...getSlideBackgroundStyle(),

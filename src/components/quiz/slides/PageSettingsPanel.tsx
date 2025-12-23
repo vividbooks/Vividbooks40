@@ -291,44 +291,38 @@ export function PageSettingsPanel({ slide, onClose, onUpdate }: PageSettingsPane
                 ))}
               </div>
 
-              {/* Gap and Radius sliders - side by side */}
-              <div className="flex gap-4 pt-2">
-                {/* Gap slider */}
-                <div className="flex-1 space-y-1">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-medium text-slate-600">Mezera</span>
-                    <span className="text-xs text-slate-500 tabular-nums">{(slide as InfoSlide).blockGap ?? getTemplateById((slide as InfoSlide).templateId || '')?.defaultGap ?? 8}px</span>
-                  </div>
-                  <div className="relative h-5 flex items-center">
-                    <div className="absolute inset-x-0 h-2 bg-slate-200 rounded-full" />
-                    <input
-                      type="range"
-                      min="0"
-                      max="40"
-                      value={(slide as InfoSlide).blockGap ?? getTemplateById((slide as InfoSlide).templateId || '')?.defaultGap ?? 8}
-                      onChange={(e) => onUpdate({ blockGap: parseInt(e.target.value) } as any)}
-                      className="relative w-full h-2 bg-transparent appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-indigo-600 [&::-webkit-slider-thumb]:cursor-pointer [&::-webkit-slider-thumb]:shadow-md [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-white"
-                    />
-                  </div>
+              {/* Gap and Radius dropdowns - side by side */}
+              <div className="flex gap-3 pt-2">
+                {/* Gap dropdown */}
+                <div className="flex-1">
+                  <label className="text-xs font-medium text-slate-600 mb-1 block">Mezera</label>
+                  <select
+                    value={(slide as InfoSlide).blockGap ?? getTemplateById((slide as InfoSlide).templateId || '')?.defaultGap ?? 8}
+                    onChange={(e) => onUpdate({ blockGap: parseInt(e.target.value) } as any)}
+                    className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent cursor-pointer"
+                  >
+                    <option value={0}>Žádná</option>
+                    <option value={4}>Malá (4px)</option>
+                    <option value={8}>Střední (8px)</option>
+                    <option value={16}>Velká (16px)</option>
+                    <option value={24}>Extra (24px)</option>
+                  </select>
                 </div>
 
-                {/* Border radius slider */}
-                <div className="flex-1 space-y-1">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-medium text-slate-600">Zakulacení</span>
-                    <span className="text-xs text-slate-500 tabular-nums">{(slide as InfoSlide).blockRadius ?? getTemplateById((slide as InfoSlide).templateId || '')?.defaultRadius ?? 8}px</span>
-                  </div>
-                  <div className="relative h-5 flex items-center">
-                    <div className="absolute inset-x-0 h-2 bg-slate-200 rounded-full" />
-                    <input
-                      type="range"
-                      min="0"
-                      max="32"
-                      value={(slide as InfoSlide).blockRadius ?? getTemplateById((slide as InfoSlide).templateId || '')?.defaultRadius ?? 8}
-                      onChange={(e) => onUpdate({ blockRadius: parseInt(e.target.value) } as any)}
-                      className="relative w-full h-2 bg-transparent appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-indigo-600 [&::-webkit-slider-thumb]:cursor-pointer [&::-webkit-slider-thumb]:shadow-md [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-white"
-                    />
-                  </div>
+                {/* Border radius dropdown */}
+                <div className="flex-1">
+                  <label className="text-xs font-medium text-slate-600 mb-1 block">Zakulacení</label>
+                  <select
+                    value={(slide as InfoSlide).blockRadius ?? getTemplateById((slide as InfoSlide).templateId || '')?.defaultRadius ?? 8}
+                    onChange={(e) => onUpdate({ blockRadius: parseInt(e.target.value) } as any)}
+                    className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent cursor-pointer"
+                  >
+                    <option value={0}>Žádné</option>
+                    <option value={4}>Malé (4px)</option>
+                    <option value={8}>Střední (8px)</option>
+                    <option value={16}>Velké (16px)</option>
+                    <option value={24}>Extra (24px)</option>
+                  </select>
                 </div>
               </div>
             </div>

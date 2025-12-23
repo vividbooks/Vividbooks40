@@ -298,6 +298,13 @@ function BlockLayoutView({ slide }: { slide: InfoSlide }) {
   const columnRatios = layout.columnRatios || [50, 50];
   const splitRatio = layout.splitRatio || 50;
 
+  // Get template settings
+  const template = slide.templateId ? getTemplateById(slide.templateId) : undefined;
+  const blockGap = slide.blockGap ?? template?.defaultGap ?? 8;
+  const blockRadius = slide.blockRadius ?? template?.defaultRadius ?? 8;
+  const blockColors = template?.blockColors || [];
+  const fontFamily = template?.font ? (template.font.includes(' ') ? `"${template.font}", sans-serif` : `${template.font}, sans-serif`) : 'inherit';
+
   // Get background style for slide
   const getSlideBackgroundStyle = (): React.CSSProperties => {
     if (!slide.slideBackground) return {};
@@ -315,11 +322,17 @@ function BlockLayoutView({ slide }: { slide: InfoSlide }) {
     return {};
   };
 
-  // Render a single block
-  const renderBlock = (block: typeof blocks[0]) => {
-    const bgStyle: React.CSSProperties = {};
+  // Render a single block with template styling
+  const renderBlock = (block: typeof blocks[0], blockIndex: number) => {
+    const bgStyle: React.CSSProperties = {
+      borderRadius: blockRadius,
+    };
+    
+    // Use block background if set, otherwise template color
     if (block.background?.type === 'color' && block.background.color) {
       bgStyle.backgroundColor = block.background.color === 'transparent' ? 'transparent' : block.background.color;
+    } else if (blockColors[blockIndex % blockColors.length]) {
+      bgStyle.backgroundColor = blockColors[blockIndex % blockColors.length];
     }
 
     const textAlignClass = block.textAlign === 'center' ? 'text-center' : block.textAlign === 'right' ? 'text-right' : 'text-left';
@@ -331,7 +344,7 @@ function BlockLayoutView({ slide }: { slide: InfoSlide }) {
     if (block.type === 'image' && block.content) {
       return (
         <div className="h-full flex items-center justify-center p-4" style={bgStyle}>
-          <img src={block.content} alt="" className="max-w-full max-h-full object-contain rounded-lg" />
+          <img src={block.content} alt="" className="max-w-full max-h-full object-contain" style={{ borderRadius: Math.max(0, blockRadius - 4) }} />
         </div>
       );
     }
@@ -354,76 +367,78 @@ function BlockLayoutView({ slide }: { slide: InfoSlide }) {
     );
   };
 
-  // Render based on layout type
+  // Render based on layout type - with dynamic gap
   const renderLayout = () => {
+    const gapStyle = { gap: blockGap };
+    
     switch (layout.type) {
       case 'title-content':
         return (
-          <div className="h-full flex flex-col">
-            <div style={{ height: `${titleHeight}%`, minHeight: 60 }}>{renderBlock(blocks[0])}</div>
-            <div className="flex-1">{renderBlock(blocks[1])}</div>
+          <div className="h-full flex flex-col" style={gapStyle}>
+            <div style={{ height: `${titleHeight}%`, minHeight: 60 }}>{renderBlock(blocks[0], 0)}</div>
+            <div className="flex-1">{renderBlock(blocks[1], 1)}</div>
           </div>
         );
 
       case 'title-2cols':
         return (
-          <div className="h-full flex flex-col">
-            <div style={{ height: `${titleHeight}%`, minHeight: 60 }}>{renderBlock(blocks[0])}</div>
-            <div className="flex-1 flex gap-2">
-              <div style={{ width: `${columnRatios[0]}%` }}>{renderBlock(blocks[1])}</div>
-              <div style={{ width: `${columnRatios[1]}%` }}>{renderBlock(blocks[2])}</div>
+          <div className="h-full flex flex-col" style={gapStyle}>
+            <div style={{ height: `${titleHeight}%`, minHeight: 60 }}>{renderBlock(blocks[0], 0)}</div>
+            <div className="flex-1 flex" style={gapStyle}>
+              <div style={{ width: `${columnRatios[0]}%` }}>{renderBlock(blocks[1], 1)}</div>
+              <div style={{ width: `${columnRatios[1]}%` }}>{renderBlock(blocks[2], 2)}</div>
             </div>
           </div>
         );
 
       case 'title-3cols':
         return (
-          <div className="h-full flex flex-col">
-            <div style={{ height: `${titleHeight}%`, minHeight: 60 }}>{renderBlock(blocks[0])}</div>
-            <div className="flex-1 flex gap-2">
-              <div style={{ width: `${columnRatios[0]}%` }}>{renderBlock(blocks[1])}</div>
-              <div style={{ width: `${columnRatios[1]}%` }}>{renderBlock(blocks[2])}</div>
-              <div style={{ width: `${columnRatios[2]}%` }}>{renderBlock(blocks[3])}</div>
+          <div className="h-full flex flex-col" style={gapStyle}>
+            <div style={{ height: `${titleHeight}%`, minHeight: 60 }}>{renderBlock(blocks[0], 0)}</div>
+            <div className="flex-1 flex" style={gapStyle}>
+              <div style={{ width: `${columnRatios[0]}%` }}>{renderBlock(blocks[1], 1)}</div>
+              <div style={{ width: `${columnRatios[1]}%` }}>{renderBlock(blocks[2], 2)}</div>
+              <div style={{ width: `${columnRatios[2]}%` }}>{renderBlock(blocks[3], 3)}</div>
             </div>
           </div>
         );
 
       case '2cols':
         return (
-          <div className="h-full flex gap-2">
-            <div style={{ width: `${columnRatios[0]}%` }}>{renderBlock(blocks[0])}</div>
-            <div style={{ width: `${columnRatios[1]}%` }}>{renderBlock(blocks[1])}</div>
+          <div className="h-full flex" style={gapStyle}>
+            <div style={{ width: `${columnRatios[0]}%` }}>{renderBlock(blocks[0], 0)}</div>
+            <div style={{ width: `${columnRatios[1]}%` }}>{renderBlock(blocks[1], 1)}</div>
           </div>
         );
 
       case '3cols':
         return (
-          <div className="h-full flex gap-2">
-            <div style={{ width: `${columnRatios[0]}%` }}>{renderBlock(blocks[0])}</div>
-            <div style={{ width: `${columnRatios[1]}%` }}>{renderBlock(blocks[1])}</div>
-            <div style={{ width: `${columnRatios[2]}%` }}>{renderBlock(blocks[2])}</div>
+          <div className="h-full flex" style={gapStyle}>
+            <div style={{ width: `${columnRatios[0]}%` }}>{renderBlock(blocks[0], 0)}</div>
+            <div style={{ width: `${columnRatios[1]}%` }}>{renderBlock(blocks[1], 1)}</div>
+            <div style={{ width: `${columnRatios[2]}%` }}>{renderBlock(blocks[2], 2)}</div>
           </div>
         );
 
       case 'left-large-right-split':
         return (
-          <div className="h-full flex gap-2">
-            <div style={{ width: `${columnRatios[0]}%` }}>{renderBlock(blocks[0])}</div>
-            <div style={{ width: `${columnRatios[1]}%` }} className="flex flex-col gap-2">
-              <div style={{ height: `${splitRatio}%` }}>{renderBlock(blocks[1])}</div>
-              <div style={{ height: `${100 - splitRatio}%` }}>{renderBlock(blocks[2])}</div>
+          <div className="h-full flex" style={gapStyle}>
+            <div style={{ width: `${columnRatios[0]}%` }}>{renderBlock(blocks[0], 0)}</div>
+            <div style={{ width: `${columnRatios[1]}%` }} className="flex flex-col" style={{ ...gapStyle, width: `${columnRatios[1]}%` }}>
+              <div style={{ height: `${splitRatio}%` }}>{renderBlock(blocks[1], 1)}</div>
+              <div style={{ height: `${100 - splitRatio}%` }}>{renderBlock(blocks[2], 2)}</div>
             </div>
           </div>
         );
 
       case 'right-large-left-split':
         return (
-          <div className="h-full flex gap-2">
-            <div style={{ width: `${columnRatios[0]}%` }} className="flex flex-col gap-2">
-              <div style={{ height: `${splitRatio}%` }}>{renderBlock(blocks[0])}</div>
-              <div style={{ height: `${100 - splitRatio}%` }}>{renderBlock(blocks[1])}</div>
+          <div className="h-full flex" style={gapStyle}>
+            <div className="flex flex-col" style={{ ...gapStyle, width: `${columnRatios[0]}%` }}>
+              <div style={{ height: `${splitRatio}%` }}>{renderBlock(blocks[0], 0)}</div>
+              <div style={{ height: `${100 - splitRatio}%` }}>{renderBlock(blocks[1], 1)}</div>
             </div>
-            <div style={{ width: `${columnRatios[1]}%` }}>{renderBlock(blocks[2])}</div>
+            <div style={{ width: `${columnRatios[1]}%` }}>{renderBlock(blocks[2], 2)}</div>
           </div>
         );
 
@@ -433,7 +448,14 @@ function BlockLayoutView({ slide }: { slide: InfoSlide }) {
   };
 
   return (
-    <div className="h-full p-4" style={getSlideBackgroundStyle()}>
+    <div 
+      className="h-full" 
+      style={{ 
+        ...getSlideBackgroundStyle(), 
+        padding: blockGap > 0 ? blockGap : 0,
+        fontFamily,
+      }}
+    >
       {renderLayout()}
     </div>
   );
