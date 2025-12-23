@@ -24,6 +24,7 @@ import {
   InfoSlide,
   SlideResponse,
   calculateQuizScore,
+  getTemplateById,
 } from '../../types/quiz';
 import { MathText } from '../math/MathText';
 
