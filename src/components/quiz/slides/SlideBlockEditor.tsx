@@ -302,15 +302,15 @@ export function SlideBlockEditor({
                 switch (navType) {
                   case 'dots-bottom':
                     return (
-                      <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1.5">
+                      <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-2 bg-black/30 px-3 py-2 rounded-full">
                         {block.gallery!.map((_, idx) => (
                           <button 
                             key={idx}
                             onClick={(e) => { e.stopPropagation(); onUpdate({ galleryIndex: idx }); }}
-                            className={`w-2.5 h-2.5 rounded-full transition-all ${
+                            className={`w-3 h-3 rounded-full transition-all shadow-sm ${
                               idx === currentIndex
-                                ? isDark ? 'bg-white w-5' : 'bg-slate-700 w-5'
-                                : isDark ? 'bg-white/50 hover:bg-white/70' : 'bg-slate-300 hover:bg-slate-400'
+                                ? 'bg-white scale-125'
+                                : 'bg-white/50 hover:bg-white/80'
                             }`}
                           />
                         ))}
@@ -319,15 +319,15 @@ export function SlideBlockEditor({
                   
                   case 'dots-side':
                     return (
-                      <div className="absolute right-2 top-1/2 -translate-y-1/2 flex flex-col gap-1.5">
+                      <div className="absolute right-3 top-1/2 -translate-y-1/2 flex flex-col gap-2 bg-black/30 px-2 py-3 rounded-full">
                         {block.gallery!.map((_, idx) => (
                           <button 
                             key={idx}
                             onClick={(e) => { e.stopPropagation(); onUpdate({ galleryIndex: idx }); }}
-                            className={`w-2.5 h-2.5 rounded-full transition-all ${
+                            className={`w-3 h-3 rounded-full transition-all shadow-sm ${
                               idx === currentIndex
-                                ? isDark ? 'bg-white h-5' : 'bg-slate-700 h-5'
-                                : isDark ? 'bg-white/50 hover:bg-white/70' : 'bg-slate-300 hover:bg-slate-400'
+                                ? 'bg-white scale-125'
+                                : 'bg-white/50 hover:bg-white/80'
                             }`}
                           />
                         ))}
@@ -339,23 +339,17 @@ export function SlideBlockEditor({
                       <>
                         <button
                           onClick={(e) => { e.stopPropagation(); goPrev(); }}
-                          className={`absolute left-2 top-1/2 -translate-y-1/2 p-2 rounded-full transition-all ${
-                            isDark 
-                              ? 'bg-white/20 hover:bg-white/40 text-white' 
-                              : 'bg-slate-200/80 hover:bg-slate-300 text-slate-700'
-                          }`}
+                          className="absolute left-2 top-1/2 -translate-y-1/2 p-2 rounded-full transition-all shadow-lg"
+                          style={{ backgroundColor: 'rgba(0,0,0,0.5)', color: 'white' }}
                         >
-                          <ChevronLeft className="w-5 h-5" />
+                          <ChevronLeft className="w-6 h-6" />
                         </button>
                         <button
                           onClick={(e) => { e.stopPropagation(); goNext(); }}
-                          className={`absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-full transition-all ${
-                            isDark 
-                              ? 'bg-white/20 hover:bg-white/40 text-white' 
-                              : 'bg-slate-200/80 hover:bg-slate-300 text-slate-700'
-                          }`}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-full transition-all shadow-lg"
+                          style={{ backgroundColor: 'rgba(0,0,0,0.5)', color: 'white' }}
                         >
-                          <ChevronRight className="w-5 h-5" />
+                          <ChevronRight className="w-6 h-6" />
                         </button>
                       </>
                     );
