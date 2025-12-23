@@ -498,7 +498,7 @@ export function InfoSlideEditor({ slide, onUpdate }: InfoSlideEditorProps) {
   return (
     <div 
       className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden"
-      style={{ aspectRatio: '16/9', ...getSlideBackgroundStyle() }}
+      style={{ aspectRatio: '4/3', ...getSlideBackgroundStyle() }}
     >
       {/* Toolbar */}
       <div className="absolute top-4 left-4 z-20 flex gap-2">

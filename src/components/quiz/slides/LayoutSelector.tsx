@@ -132,7 +132,7 @@ export function LayoutSelector({ selectedLayout, onSelectLayout }: LayoutSelecto
             `}
           >
             {/* Layout preview */}
-            <div className="aspect-[16/10] w-full bg-slate-100 rounded-lg mb-2 overflow-hidden">
+            <div className="aspect-[4/3] w-full bg-slate-100 rounded-lg mb-2 overflow-hidden">
               <LayoutIcon type={option.type} />
             </div>
             
