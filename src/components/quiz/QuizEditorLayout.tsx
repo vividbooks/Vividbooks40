@@ -61,6 +61,7 @@ import { OpenSlideEditor } from './slides/OpenSlideEditor';
 import { ExampleSlideEditor } from './slides/ExampleSlideEditor';
 import { InfoSlideEditor } from './slides/InfoSlideEditor';
 import { BackgroundPicker } from './slides/BackgroundPicker';
+import { PageSettingsPanel } from './slides/PageSettingsPanel';
 import { QuizPreview } from './QuizPreview';
 import { TeacherSession } from './QuizLiveSession';
 import { AIBoardPanel } from './AIBoardPanel';
@@ -1311,83 +1312,11 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
       
       {/* Page Settings Panel - Overlay on left side */}
       {showPageSettings && selectedSlide && (
-        <div 
-          className="fixed top-0 left-0 h-full bg-white shadow-2xl z-40 flex flex-col overflow-hidden"
-          style={{ width: '420px' }}
-        >
-          {/* Header */}
-          <div className="flex items-center gap-3 px-5 py-4 border-b border-slate-200 bg-slate-50">
-            <button
-              onClick={() => setShowPageSettings(false)}
-              className="p-2 rounded-lg hover:bg-slate-200 text-slate-600 transition-colors"
-            >
-              <ArrowLeft className="w-5 h-5" />
-            </button>
-            <h2 className="text-lg font-semibold text-slate-800">Nastavení stránky</h2>
-          </div>
-          
-          {/* Content */}
-          <div className="flex-1 overflow-y-auto p-5 space-y-6">
-            {/* Layout Section */}
-            <div>
-              <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
-                <SlidersHorizontal className="w-4 h-4" />
-                Rozložení
-              </h3>
-              <div className="grid grid-cols-2 gap-2">
-                {[
-                  { id: 'title-content', label: 'Nadpis + obsah', icon: '📝' },
-                  { id: 'title-2cols', label: 'Nadpis + 2 sloupce', icon: '📊' },
-                  { id: 'title-3cols', label: 'Nadpis + 3 sloupce', icon: '📋' },
-                  { id: '2cols', label: '2 sloupce', icon: '⬜⬜' },
-                  { id: '3cols', label: '3 sloupce', icon: '⬜⬜⬜' },
-                  { id: 'left-large-right-split', label: 'Levý velký', icon: '⬛⬜' },
-                  { id: 'right-large-left-split', label: 'Pravý velký', icon: '⬜⬛' },
-                ].map((layout) => (
-                  <button
-                    key={layout.id}
-                    onClick={() => {
-                      if (selectedSlide.type === 'info') {
-                        updateSlide(selectedSlide.id, { layout: layout.id as any });
-                      }
-                    }}
-                    className={`p-3 rounded-xl border-2 text-left transition-all ${
-                      (selectedSlide as any).layout === layout.id
-                        ? 'border-indigo-500 bg-indigo-50'
-                        : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50'
-                    }`}
-                  >
-                    <span className="text-xl mb-1 block">{layout.icon}</span>
-                    <span className="text-xs font-medium text-slate-700">{layout.label}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-            
-            {/* Color Section - using BackgroundPicker inline */}
-            <div>
-              <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
-                <Palette className="w-4 h-4" />
-                Barva pozadí
-              </h3>
-              <BackgroundPicker
-                value={selectedSlide.background || { type: 'color', color: selectedSlide.backgroundColor || '#ffffff' }}
-                onChange={(bg) => {
-                  if (bg?.type === 'color' && bg.color) {
-                    updateSlide(selectedSlide.id, { backgroundColor: bg.color, background: bg });
-                  } else if (bg) {
-                    updateSlide(selectedSlide.id, { background: bg });
-                  }
-                }}
-                onClose={() => {}}
-                showUpload={true}
-                showOpacity={true}
-                showBlur={false}
-                inline={true}
-              />
-            </div>
-          </div>
-        </div>
+        <PageSettingsPanel
+          slide={selectedSlide}
+          onClose={() => setShowPageSettings(false)}
+          onUpdate={(updates) => updateSlide(selectedSlide.id, updates)}
+        />
       )}
       
       {/* Backdrop for page settings */}
