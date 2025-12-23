@@ -130,7 +130,7 @@ export function BlockResizer({
         `}
       />
       
-      {/* Visible line */}
+      {/* Visible line - always visible in blue */}
       <div
         className={`
           absolute transition-all
@@ -139,20 +139,20 @@ export function BlockResizer({
             : 'w-full h-0.5'
           }
           ${isDragging 
-            ? 'bg-blue-500' 
-            : 'bg-slate-300 group-hover:bg-blue-400'
+            ? 'bg-blue-600' 
+            : 'bg-blue-400 group-hover:bg-blue-500'
           }
         `}
       />
       
-      {/* Handle bubble */}
+      {/* Handle bubble - always visible */}
       <div
         className={`
-          absolute rounded-full border-2 transition-all
-          ${isHorizontal ? 'w-3 h-8' : 'w-8 h-3'}
+          absolute rounded-full border-2 transition-all shadow-sm
+          ${isHorizontal ? 'w-4 h-10' : 'w-10 h-4'}
           ${isDragging 
-            ? 'bg-blue-500 border-blue-500 scale-110' 
-            : 'bg-white border-slate-300 group-hover:border-blue-400 group-hover:bg-blue-50'
+            ? 'bg-blue-500 border-blue-600 scale-110' 
+            : 'bg-white border-blue-400 group-hover:border-blue-500 group-hover:bg-blue-50'
           }
         `}
       />
@@ -161,7 +161,7 @@ export function BlockResizer({
       {isDragging && (
         <div
           className={`
-            absolute bg-blue-500 text-white text-xs font-bold px-2 py-0.5 rounded-full whitespace-nowrap
+            absolute bg-blue-600 text-white text-xs font-bold px-2 py-0.5 rounded-full whitespace-nowrap shadow-lg
             ${isHorizontal ? '-top-8' : '-left-12'}
           `}
         >
