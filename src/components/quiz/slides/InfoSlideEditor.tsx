@@ -584,9 +584,10 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick }: InfoSlideEdit
         onSlideClick?.();
       }}
     >
-      {/* Main content area */}
+      {/* Main content area - padding depends on gap setting */}
       <div 
-        className="h-full p-4"
+        className="h-full"
+        style={{ padding: getBlockGap() > 0 ? getBlockGap() : 0 }}
         onClick={(e) => {
           e.stopPropagation();
           setSelectedBlockIndex(null);

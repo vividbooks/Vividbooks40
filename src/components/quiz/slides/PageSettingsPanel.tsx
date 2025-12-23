@@ -299,14 +299,17 @@ export function PageSettingsPanel({ slide, onClose, onUpdate }: PageSettingsPane
                     <span className="text-xs font-medium text-slate-600">Mezera</span>
                     <span className="text-xs text-slate-500 tabular-nums">{(slide as InfoSlide).blockGap ?? getTemplateById((slide as InfoSlide).templateId || '')?.defaultGap ?? 8}px</span>
                   </div>
-                  <input
-                    type="range"
-                    min="0"
-                    max="40"
-                    value={(slide as InfoSlide).blockGap ?? getTemplateById((slide as InfoSlide).templateId || '')?.defaultGap ?? 8}
-                    onChange={(e) => onUpdate({ blockGap: parseInt(e.target.value) } as any)}
-                    className="w-full h-1.5 bg-slate-300 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-indigo-600 [&::-webkit-slider-thumb]:cursor-pointer [&::-webkit-slider-thumb]:shadow-md"
-                  />
+                  <div className="relative h-5 flex items-center">
+                    <div className="absolute inset-x-0 h-2 bg-slate-200 rounded-full" />
+                    <input
+                      type="range"
+                      min="0"
+                      max="40"
+                      value={(slide as InfoSlide).blockGap ?? getTemplateById((slide as InfoSlide).templateId || '')?.defaultGap ?? 8}
+                      onChange={(e) => onUpdate({ blockGap: parseInt(e.target.value) } as any)}
+                      className="relative w-full h-2 bg-transparent appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-indigo-600 [&::-webkit-slider-thumb]:cursor-pointer [&::-webkit-slider-thumb]:shadow-md [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-white"
+                    />
+                  </div>
                 </div>
 
                 {/* Border radius slider */}
@@ -315,14 +318,17 @@ export function PageSettingsPanel({ slide, onClose, onUpdate }: PageSettingsPane
                     <span className="text-xs font-medium text-slate-600">Zakulacení</span>
                     <span className="text-xs text-slate-500 tabular-nums">{(slide as InfoSlide).blockRadius ?? getTemplateById((slide as InfoSlide).templateId || '')?.defaultRadius ?? 8}px</span>
                   </div>
-                  <input
-                    type="range"
-                    min="0"
-                    max="32"
-                    value={(slide as InfoSlide).blockRadius ?? getTemplateById((slide as InfoSlide).templateId || '')?.defaultRadius ?? 8}
-                    onChange={(e) => onUpdate({ blockRadius: parseInt(e.target.value) } as any)}
-                    className="w-full h-1.5 bg-slate-300 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-indigo-600 [&::-webkit-slider-thumb]:cursor-pointer [&::-webkit-slider-thumb]:shadow-md"
-                  />
+                  <div className="relative h-5 flex items-center">
+                    <div className="absolute inset-x-0 h-2 bg-slate-200 rounded-full" />
+                    <input
+                      type="range"
+                      min="0"
+                      max="32"
+                      value={(slide as InfoSlide).blockRadius ?? getTemplateById((slide as InfoSlide).templateId || '')?.defaultRadius ?? 8}
+                      onChange={(e) => onUpdate({ blockRadius: parseInt(e.target.value) } as any)}
+                      className="relative w-full h-2 bg-transparent appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-indigo-600 [&::-webkit-slider-thumb]:cursor-pointer [&::-webkit-slider-thumb]:shadow-md [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-white"
+                    />
+                  </div>
                 </div>
               </div>
             </div>
