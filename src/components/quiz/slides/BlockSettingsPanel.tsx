@@ -91,7 +91,16 @@ export function BlockSettingsPanel({
     newGallery.splice(index, 1);
     
     if (newGallery.length === 0) {
-      onUpdate({ gallery: undefined, galleryIndex: undefined, content: '' });
+      // No images left
+      onUpdate({ gallery: undefined, galleryIndex: undefined, content: '', galleryNavType: undefined });
+    } else if (newGallery.length === 1) {
+      // Only one image left - convert back to single image mode
+      onUpdate({ 
+        gallery: undefined, 
+        galleryIndex: undefined, 
+        content: newGallery[0],
+        galleryNavType: undefined 
+      });
     } else {
       const newIndex = Math.min(block.galleryIndex || 0, newGallery.length - 1);
       onUpdate({ gallery: newGallery, galleryIndex: newIndex });
@@ -398,6 +407,23 @@ export function BlockSettingsPanel({
                   className="hidden"
                 />
 
+                {/* Gallery navigation type (only if gallery has 2+ images) */}
+                {hasGallery && block.gallery && block.gallery.length > 1 && (
+                  <div>
+                    <label className="text-xs font-medium text-slate-600 mb-2 block">Tlačítka</label>
+                    <select
+                      value={block.galleryNavType || 'dots-bottom'}
+                      onChange={(e) => onUpdate({ galleryNavType: e.target.value as any })}
+                      className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    >
+                      <option value="dots-bottom">Tečky dole</option>
+                      <option value="dots-side">Tečky na boku</option>
+                      <option value="arrows">Šipky na stranách</option>
+                      <option value="solution">Řešení</option>
+                    </select>
+                  </div>
+                )}
+
                 {/* Image fit mode (only if image exists) */}
                 {(block.content || hasGallery) && (
                   <>
@@ -494,6 +520,30 @@ export function BlockSettingsPanel({
                         </div>
                       </div>
                     )}
+
+                    {/* Image caption */}
+                    <div>
+                      <label className="text-xs font-medium text-slate-600 mb-2 block">Popisek obrázku</label>
+                      <input
+                        type="text"
+                        value={block.imageCaption || ''}
+                        onChange={(e) => onUpdate({ imageCaption: e.target.value })}
+                        placeholder="Popis obrázku..."
+                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      />
+                    </div>
+
+                    {/* Image link */}
+                    <div>
+                      <label className="text-xs font-medium text-slate-600 mb-2 block">Odkaz z obrázku</label>
+                      <input
+                        type="url"
+                        value={block.imageLink || ''}
+                        onChange={(e) => onUpdate({ imageLink: e.target.value })}
+                        placeholder="https://..."
+                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      />
+                    </div>
                   </>
                 )}
               </div>

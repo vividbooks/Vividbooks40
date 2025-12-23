@@ -13,6 +13,10 @@ import {
   Settings,
   Upload,
   Trash2,
+  ChevronLeft,
+  ChevronRight,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import { SlideBlock, SlideBlockType } from '../../../types/quiz';
 
@@ -38,6 +42,7 @@ export function SlideBlockEditor({
   borderRadius = 8,
 }: SlideBlockEditorProps) {
   const [isEditing, setIsEditing] = useState(false);
+  const [showSolution, setShowSolution] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -262,72 +267,185 @@ export function SlideBlockEditor({
             {(() => {
               // Get current image - from gallery or single content
               const hasGallery = block.gallery && block.gallery.length > 0;
+              const galleryLength = block.gallery?.length || 0;
+              const currentIndex = block.galleryIndex || 0;
               const currentImage = hasGallery 
-                ? block.gallery![block.galleryIndex || 0] 
+                ? block.gallery![currentIndex] 
                 : block.content;
               
               const imageFit = block.imageFit || 'contain';
               const imageScale = block.imageScale || 100;
+              const navType = block.galleryNavType || 'dots-bottom';
               
-              if (currentImage) {
-                if (imageFit === 'cover') {
-                  // Cover mode - fill the entire block
-                  return (
-                    <div className="absolute inset-0">
-                      <img
-                        src={currentImage}
-                        alt=""
-                        className="w-full h-full object-cover"
-                      />
-                      {/* Gallery indicator */}
-                      {hasGallery && block.gallery!.length > 1 && (
-                        <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1">
-                          {block.gallery!.map((_, idx) => (
-                            <div 
-                              key={idx}
-                              className={`w-2 h-2 rounded-full transition-all ${
-                                idx === (block.galleryIndex || 0)
-                                  ? 'bg-white w-4'
-                                  : 'bg-white/50'
-                              }`}
-                            />
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  );
-                } else {
-                  // Contain mode with scale
-                  return (
-                    <div className="relative flex items-center justify-center w-full h-full">
-                      <img
-                        src={currentImage}
-                        alt=""
-                        className="rounded-lg transition-transform"
-                        style={{
-                          maxWidth: `${imageScale}%`,
-                          maxHeight: `${imageScale}%`,
-                          objectFit: 'contain',
+              // For solution type: first image is "question", second is "solution"
+              const isSolutionMode = navType === 'solution' && hasGallery && galleryLength >= 2;
+              const displayImage = isSolutionMode 
+                ? (showSolution ? block.gallery![1] : block.gallery![0])
+                : currentImage;
+
+              const goNext = () => {
+                if (hasGallery && galleryLength > 1) {
+                  onUpdate({ galleryIndex: (currentIndex + 1) % galleryLength });
+                }
+              };
+
+              const goPrev = () => {
+                if (hasGallery && galleryLength > 1) {
+                  onUpdate({ galleryIndex: (currentIndex - 1 + galleryLength) % galleryLength });
+                }
+              };
+
+              // Render gallery navigation based on type
+              const renderNavigation = (isDark: boolean) => {
+                if (!hasGallery || galleryLength <= 1) return null;
+                
+                switch (navType) {
+                  case 'dots-bottom':
+                    return (
+                      <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1.5">
+                        {block.gallery!.map((_, idx) => (
+                          <button 
+                            key={idx}
+                            onClick={(e) => { e.stopPropagation(); onUpdate({ galleryIndex: idx }); }}
+                            className={`w-2.5 h-2.5 rounded-full transition-all ${
+                              idx === currentIndex
+                                ? isDark ? 'bg-white w-5' : 'bg-slate-700 w-5'
+                                : isDark ? 'bg-white/50 hover:bg-white/70' : 'bg-slate-300 hover:bg-slate-400'
+                            }`}
+                          />
+                        ))}
+                      </div>
+                    );
+                  
+                  case 'dots-side':
+                    return (
+                      <div className="absolute right-2 top-1/2 -translate-y-1/2 flex flex-col gap-1.5">
+                        {block.gallery!.map((_, idx) => (
+                          <button 
+                            key={idx}
+                            onClick={(e) => { e.stopPropagation(); onUpdate({ galleryIndex: idx }); }}
+                            className={`w-2.5 h-2.5 rounded-full transition-all ${
+                              idx === currentIndex
+                                ? isDark ? 'bg-white h-5' : 'bg-slate-700 h-5'
+                                : isDark ? 'bg-white/50 hover:bg-white/70' : 'bg-slate-300 hover:bg-slate-400'
+                            }`}
+                          />
+                        ))}
+                      </div>
+                    );
+                  
+                  case 'arrows':
+                    return (
+                      <>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); goPrev(); }}
+                          className={`absolute left-2 top-1/2 -translate-y-1/2 p-2 rounded-full transition-all ${
+                            isDark 
+                              ? 'bg-white/20 hover:bg-white/40 text-white' 
+                              : 'bg-slate-200/80 hover:bg-slate-300 text-slate-700'
+                          }`}
+                        >
+                          <ChevronLeft className="w-5 h-5" />
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); goNext(); }}
+                          className={`absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-full transition-all ${
+                            isDark 
+                              ? 'bg-white/20 hover:bg-white/40 text-white' 
+                              : 'bg-slate-200/80 hover:bg-slate-300 text-slate-700'
+                          }`}
+                        >
+                          <ChevronRight className="w-5 h-5" />
+                        </button>
+                      </>
+                    );
+                  
+                  case 'solution':
+                    return (
+                      <button
+                        onClick={(e) => { 
+                          e.stopPropagation(); 
+                          setShowSolution(!showSolution);
                         }}
-                      />
-                      {/* Gallery indicator */}
-                      {hasGallery && block.gallery!.length > 1 && (
-                        <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1">
-                          {block.gallery!.map((_, idx) => (
-                            <div 
-                              key={idx}
-                              className={`w-2 h-2 rounded-full transition-all ${
-                                idx === (block.galleryIndex || 0)
-                                  ? 'bg-slate-700 w-4'
-                                  : 'bg-slate-300'
-                              }`}
-                            />
-                          ))}
-                        </div>
-                      )}
-                    </div>
+                        className={`absolute bottom-3 left-1/2 -translate-x-1/2 px-4 py-2 rounded-lg font-medium text-sm transition-all flex items-center gap-2 ${
+                          showSolution
+                            ? 'bg-slate-700 text-white hover:bg-slate-800'
+                            : 'bg-indigo-600 text-white hover:bg-indigo-700'
+                        }`}
+                      >
+                        {showSolution ? (
+                          <>
+                            <EyeOff className="w-4 h-4" />
+                            Skrýt řešení
+                          </>
+                        ) : (
+                          <>
+                            <Eye className="w-4 h-4" />
+                            Zobrazit řešení
+                          </>
+                        )}
+                      </button>
+                    );
+                  
+                  default:
+                    return null;
+                }
+              };
+              
+              if (displayImage) {
+                const imageElement = imageFit === 'cover' ? (
+                  <div className="absolute inset-0">
+                    <img
+                      src={displayImage}
+                      alt={block.imageCaption || ''}
+                      className="w-full h-full object-cover"
+                    />
+                    {renderNavigation(true)}
+                    {/* Caption */}
+                    {block.imageCaption && (
+                      <div className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-sm px-3 py-2 text-center">
+                        {block.imageCaption}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="relative flex flex-col items-center justify-center w-full h-full">
+                    <img
+                      src={displayImage}
+                      alt={block.imageCaption || ''}
+                      className="rounded-lg transition-transform"
+                      style={{
+                        maxWidth: `${imageScale}%`,
+                        maxHeight: `${imageScale}%`,
+                        objectFit: 'contain',
+                      }}
+                    />
+                    {renderNavigation(false)}
+                    {/* Caption */}
+                    {block.imageCaption && (
+                      <div className="text-slate-600 text-sm mt-2 text-center px-2">
+                        {block.imageCaption}
+                      </div>
+                    )}
+                  </div>
+                );
+
+                // Wrap with link if imageLink is set
+                if (block.imageLink) {
+                  return (
+                    <a 
+                      href={block.imageLink} 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="w-full h-full"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      {imageElement}
+                    </a>
                   );
                 }
+                
+                return imageElement;
               } else {
                 return (
                   <button

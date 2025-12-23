@@ -57,9 +57,12 @@ export interface SlideBlock {
   // Image settings
   imageFit?: 'contain' | 'cover'; // contain = show slider, cover = fill block
   imageScale?: number; // 10-200, percentage of image size (when imageFit = contain)
+  imageCaption?: string; // Image description/caption
+  imageLink?: string; // URL to open when image is clicked
   // Gallery settings
   gallery?: string[]; // Array of image URLs for gallery mode
   galleryIndex?: number; // Current gallery index
+  galleryNavType?: 'dots-bottom' | 'dots-side' | 'arrows' | 'solution'; // Navigation type
 }
 
 /**
