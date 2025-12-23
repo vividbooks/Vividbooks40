@@ -11,7 +11,7 @@ import React, { useState, useRef, useCallback } from 'react';
 interface BlockResizerProps {
   direction: 'horizontal' | 'vertical';
   value: number; // Current percentage (0-100)
-  onChange: (newValue: number) => void;
+  onChange: (newValue: number) => void; // Called in realtime during drag
   min?: number; // Minimum percentage
   max?: number; // Maximum percentage
   snapTo?: number[]; // Snap points (e.g. [50] to snap to 50%)
@@ -90,7 +90,11 @@ export function BlockResizer({
         }
       }
 
-      setLocalValue(Math.round(newValue));
+      const roundedValue = Math.round(newValue);
+      setLocalValue(roundedValue);
+      
+      // Call onChange for realtime update
+      onChange(roundedValue);
     };
 
     const handleMouseUp = (upEvent: MouseEvent) => {
@@ -152,37 +156,18 @@ export function BlockResizer({
         }}
       />
       
-      {/* Handle bubble - transparent center so line shows through */}
-      <div
+      {/* Handle bubble */}
+      <div 
         className={`
-          absolute flex items-center justify-center transition-all
+          absolute rounded-full transition-all shadow-md
           ${isHorizontal ? 'w-5 h-12' : 'w-12 h-5'}
           ${isDragging ? 'scale-110' : ''}
         `}
-      >
-        {/* Outer pill shape */}
-        <div 
-          className={`
-            absolute rounded-full transition-all shadow-md
-            ${isHorizontal ? 'w-5 h-12' : 'w-12 h-5'}
-          `}
-          style={{
-            backgroundColor: isDragging ? lineColor : 'white',
-            border: `2px solid ${isDragging ? lineColorHover : lineColor}`,
-          }}
-        />
-        {/* Inner line through the middle */}
-        <div
-          className="absolute transition-all"
-          style={{
-            backgroundColor: isDragging ? 'white' : lineColor,
-            ...(isHorizontal 
-              ? { width: 2, height: '70%' } 
-              : { width: '70%', height: 2 }
-            ),
-          }}
-        />
-      </div>
+        style={{
+          backgroundColor: isDragging ? lineColor : 'white',
+          border: `2px solid ${isDragging ? lineColorHover : lineColor}`,
+        }}
+      />
       
       {/* Percentage indicator during drag */}
       {isDragging && (
