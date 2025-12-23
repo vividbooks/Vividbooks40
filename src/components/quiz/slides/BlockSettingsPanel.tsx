@@ -4,7 +4,7 @@
  * Left panel for editing individual block settings.
  */
 
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   ArrowLeft,
   ChevronDown,
@@ -20,6 +20,11 @@ import {
   AlignCenter,
   AlignRight,
   Bold,
+  Plus,
+  Trash2,
+  Images,
+  ChevronLeftIcon,
+  ChevronRightIcon,
 } from 'lucide-react';
 import { SlideBlock, SlideBlockType } from '../../../types/quiz';
 import { BackgroundPicker } from './BackgroundPicker';
@@ -30,6 +35,7 @@ interface BlockSettingsPanelProps {
   onUpdate: (updates: Partial<SlideBlock>) => void;
   onClose: () => void;
   onImageUpload: (file: File) => void;
+  onGalleryImageUpload?: (files: File[]) => void;
 }
 
 export function BlockSettingsPanel({
@@ -38,16 +44,17 @@ export function BlockSettingsPanel({
   onUpdate,
   onClose,
   onImageUpload,
+  onGalleryImageUpload,
 }: BlockSettingsPanelProps) {
   const [expandedSection, setExpandedSection] = useState<string | null>('type');
-  const [imageSize, setImageSize] = useState<'contain' | 'cover'>('contain');
+  const galleryInputRef = useRef<HTMLInputElement>(null);
 
   const toggleSection = (section: string) => {
     setExpandedSection(prev => prev === section ? null : section);
   };
 
   const handleTypeChange = (newType: SlideBlockType) => {
-    onUpdate({ type: newType, content: '' });
+    onUpdate({ type: newType, content: '', gallery: undefined, galleryIndex: undefined });
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -55,6 +62,48 @@ export function BlockSettingsPanel({
     if (file) {
       onImageUpload(file);
     }
+  };
+
+  const handleGalleryFilesSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length > 0) {
+      // Convert files to data URLs
+      Promise.all(files.map(file => {
+        return new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onload = (event) => {
+            resolve(event.target?.result as string);
+          };
+          reader.readAsDataURL(file);
+        });
+      })).then(urls => {
+        const currentGallery = block.gallery || (block.content ? [block.content] : []);
+        onUpdate({ 
+          gallery: [...currentGallery, ...urls],
+          galleryIndex: currentGallery.length > 0 ? block.galleryIndex : 0
+        });
+      });
+    }
+  };
+
+  const removeGalleryImage = (index: number) => {
+    const newGallery = [...(block.gallery || [])];
+    newGallery.splice(index, 1);
+    
+    if (newGallery.length === 0) {
+      onUpdate({ gallery: undefined, galleryIndex: undefined, content: '' });
+    } else {
+      const newIndex = Math.min(block.galleryIndex || 0, newGallery.length - 1);
+      onUpdate({ gallery: newGallery, galleryIndex: newIndex });
+    }
+  };
+
+  const createGallery = () => {
+    // If there's already a single image, convert it to gallery
+    if (block.content && !block.gallery) {
+      onUpdate({ gallery: [block.content], galleryIndex: 0 });
+    }
+    galleryInputRef.current?.click();
   };
 
   const getBlockTypeName = () => {
@@ -65,6 +114,10 @@ export function BlockSettingsPanel({
       default: return 'Text';
     }
   };
+
+  const imageFit = block.imageFit || 'contain';
+  const imageScale = block.imageScale || 100;
+  const hasGallery = block.gallery && block.gallery.length > 1;
 
   return (
     <div
@@ -270,50 +323,178 @@ export function BlockSettingsPanel({
             </button>
 
             {expandedSection === 'image' && (
-              <div className="px-5 pb-4 space-y-3">
-                {/* Upload button */}
-                <label className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl border-2 border-dashed border-slate-300 hover:border-indigo-400 hover:bg-indigo-50 cursor-pointer transition-colors">
-                  <Upload className="w-5 h-5 text-slate-500" />
-                  <span className="text-sm text-slate-600">
-                    {block.content ? 'Nahrát jiný obrázek' : 'Nahrát obrázek'}
-                  </span>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={handleFileSelect}
-                    className="hidden"
-                  />
-                </label>
-
-                {/* Image size (only if image is uploaded) */}
-                {block.content && (
+              <div className="px-5 pb-4 space-y-4">
+                {/* Gallery preview */}
+                {hasGallery && (
                   <div>
-                    <label className="text-xs font-medium text-slate-600 mb-2 block">Velikost</label>
-                    <div className="flex gap-2">
+                    <label className="text-xs font-medium text-slate-600 mb-2 block">Galerie</label>
+                    <div className="flex flex-wrap gap-2">
+                      {block.gallery?.map((url, index) => (
+                        <div 
+                          key={index} 
+                          className={`relative w-16 h-16 rounded-lg overflow-hidden border-2 cursor-pointer transition-all ${
+                            index === (block.galleryIndex || 0) 
+                              ? 'border-indigo-500 ring-2 ring-indigo-200' 
+                              : 'border-slate-200 hover:border-slate-300'
+                          }`}
+                          onClick={() => onUpdate({ galleryIndex: index })}
+                        >
+                          <img src={url} alt="" className="w-full h-full object-cover" />
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              removeGalleryImage(index);
+                            }}
+                            className="absolute top-0.5 right-0.5 p-0.5 bg-red-500 text-white rounded-full hover:bg-red-600"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ))}
+                      {/* Add more button */}
                       <button
-                        onClick={() => setImageSize('contain')}
-                        className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg border-2 text-sm transition-all ${
-                          imageSize === 'contain'
-                            ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
-                            : 'border-slate-200 hover:border-slate-300'
-                        }`}
+                        onClick={() => galleryInputRef.current?.click()}
+                        className="w-16 h-16 rounded-lg border-2 border-dashed border-slate-300 hover:border-indigo-400 hover:bg-indigo-50 flex items-center justify-center transition-colors"
                       >
-                        <Minimize2 className="w-4 h-4" />
-                        Přizpůsobit
-                      </button>
-                      <button
-                        onClick={() => setImageSize('cover')}
-                        className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg border-2 text-sm transition-all ${
-                          imageSize === 'cover'
-                            ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
-                            : 'border-slate-200 hover:border-slate-300'
-                        }`}
-                      >
-                        <Maximize2 className="w-4 h-4" />
-                        Vyplnit
+                        <Plus className="w-5 h-5 text-slate-400" />
                       </button>
                     </div>
                   </div>
+                )}
+
+                {/* Upload / Create gallery buttons */}
+                <div className="flex gap-2">
+                  <label className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl border-2 border-slate-200 hover:border-indigo-400 hover:bg-indigo-50 cursor-pointer transition-colors">
+                    <Upload className="w-5 h-5 text-slate-500" />
+                    <span className="text-sm text-slate-600">
+                      {block.content || hasGallery ? 'Změnit' : 'Nahrát'}
+                    </span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleFileSelect}
+                      className="hidden"
+                    />
+                  </label>
+                  
+                  <button
+                    onClick={createGallery}
+                    className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl border-2 border-slate-200 hover:border-indigo-400 hover:bg-indigo-50 transition-colors"
+                  >
+                    <Images className="w-5 h-5 text-slate-500" />
+                    <span className="text-sm text-slate-600">
+                      {hasGallery ? 'Přidat' : 'Galerie'}
+                    </span>
+                  </button>
+                </div>
+
+                {/* Hidden input for multiple files */}
+                <input
+                  ref={galleryInputRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={handleGalleryFilesSelect}
+                  className="hidden"
+                />
+
+                {/* Image fit mode (only if image exists) */}
+                {(block.content || hasGallery) && (
+                  <>
+                    <div>
+                      <label className="text-xs font-medium text-slate-600 mb-2 block">Režim zobrazení</label>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => onUpdate({ imageFit: 'contain', imageScale: block.imageScale || 100 })}
+                          className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg border-2 text-sm transition-all ${
+                            imageFit === 'contain'
+                              ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
+                              : 'border-slate-200 hover:border-slate-300'
+                          }`}
+                        >
+                          <Minimize2 className="w-4 h-4" />
+                          Přizpůsobit
+                        </button>
+                        <button
+                          onClick={() => onUpdate({ imageFit: 'cover' })}
+                          className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg border-2 text-sm transition-all ${
+                            imageFit === 'cover'
+                              ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
+                              : 'border-slate-200 hover:border-slate-300'
+                          }`}
+                        >
+                          <Maximize2 className="w-4 h-4" />
+                          Vyplnit
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Scale slider (only for contain mode) */}
+                    {imageFit === 'contain' && (
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <label className="text-xs font-medium text-slate-600">Velikost obrázku</label>
+                          <span className="text-xs font-medium text-indigo-600">{imageScale}%</span>
+                        </div>
+                        
+                        {/* Custom slider with visible track */}
+                        <div className="relative h-8 flex items-center">
+                          {/* Track background */}
+                          <div className="absolute inset-x-0 h-2 bg-slate-200 rounded-full" />
+                          
+                          {/* Filled track */}
+                          <div 
+                            className="absolute left-0 h-2 bg-indigo-500 rounded-full"
+                            style={{ width: `${((imageScale - 10) / 190) * 100}%` }}
+                          />
+                          
+                          {/* Slider input */}
+                          <input
+                            type="range"
+                            min="10"
+                            max="200"
+                            value={imageScale}
+                            onChange={(e) => onUpdate({ imageScale: parseInt(e.target.value) })}
+                            className="relative w-full h-8 appearance-none bg-transparent cursor-pointer z-10
+                              [&::-webkit-slider-thumb]:appearance-none 
+                              [&::-webkit-slider-thumb]:w-5 
+                              [&::-webkit-slider-thumb]:h-5 
+                              [&::-webkit-slider-thumb]:bg-white 
+                              [&::-webkit-slider-thumb]:border-2
+                              [&::-webkit-slider-thumb]:border-indigo-500
+                              [&::-webkit-slider-thumb]:rounded-full 
+                              [&::-webkit-slider-thumb]:shadow-md
+                              [&::-webkit-slider-thumb]:cursor-pointer
+                              [&::-moz-range-thumb]:w-5 
+                              [&::-moz-range-thumb]:h-5 
+                              [&::-moz-range-thumb]:bg-white 
+                              [&::-moz-range-thumb]:border-2
+                              [&::-moz-range-thumb]:border-indigo-500
+                              [&::-moz-range-thumb]:rounded-full 
+                              [&::-moz-range-thumb]:shadow-md
+                              [&::-moz-range-thumb]:cursor-pointer"
+                          />
+                        </div>
+                        
+                        {/* Preset buttons */}
+                        <div className="flex gap-1 mt-2">
+                          {[25, 50, 75, 100, 150, 200].map(value => (
+                            <button
+                              key={value}
+                              onClick={() => onUpdate({ imageScale: value })}
+                              className={`flex-1 py-1 text-xs rounded transition-all ${
+                                imageScale === value
+                                  ? 'bg-indigo-500 text-white'
+                                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                              }`}
+                            >
+                              {value}%
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             )}
@@ -365,4 +546,3 @@ export function BlockSettingsPanel({
 }
 
 export default BlockSettingsPanel;
-

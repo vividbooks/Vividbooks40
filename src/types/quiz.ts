@@ -54,6 +54,12 @@ export interface SlideBlock {
   textAlign?: 'left' | 'center' | 'right';
   fontSize?: 'small' | 'medium' | 'large' | 'xlarge';
   fontWeight?: 'normal' | 'bold';
+  // Image settings
+  imageFit?: 'contain' | 'cover'; // contain = show slider, cover = fill block
+  imageScale?: number; // 10-200, percentage of image size (when imageFit = contain)
+  // Gallery settings
+  gallery?: string[]; // Array of image URLs for gallery mode
+  galleryIndex?: number; // Current gallery index
 }
 
 /**

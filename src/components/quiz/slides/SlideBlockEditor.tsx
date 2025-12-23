@@ -240,27 +240,93 @@ export function SlideBlockEditor({
         )}
 
         {block.type === 'image' && (
-          <div className="h-full flex items-center justify-center">
-            {block.content ? (
-              <img
-                src={block.content}
-                alt=""
-                className="max-w-full max-h-full object-contain rounded-lg"
-              />
-            ) : (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  fileInputRef.current?.click();
-                }}
-                className="flex flex-col items-center gap-3 p-6 rounded-xl hover:bg-slate-50 transition-colors"
-              >
-                <div className="w-12 h-12 rounded-xl bg-slate-100 flex items-center justify-center">
-                  <Upload className="w-6 h-6 text-slate-500" />
-                </div>
-                <span className="text-sm text-slate-500">nahrát</span>
-              </button>
-            )}
+          <div className="h-full flex items-center justify-center overflow-hidden">
+            {(() => {
+              // Get current image - from gallery or single content
+              const hasGallery = block.gallery && block.gallery.length > 0;
+              const currentImage = hasGallery 
+                ? block.gallery![block.galleryIndex || 0] 
+                : block.content;
+              
+              const imageFit = block.imageFit || 'contain';
+              const imageScale = block.imageScale || 100;
+              
+              if (currentImage) {
+                if (imageFit === 'cover') {
+                  // Cover mode - fill the entire block
+                  return (
+                    <div className="absolute inset-0">
+                      <img
+                        src={currentImage}
+                        alt=""
+                        className="w-full h-full object-cover"
+                      />
+                      {/* Gallery indicator */}
+                      {hasGallery && block.gallery!.length > 1 && (
+                        <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1">
+                          {block.gallery!.map((_, idx) => (
+                            <div 
+                              key={idx}
+                              className={`w-2 h-2 rounded-full transition-all ${
+                                idx === (block.galleryIndex || 0)
+                                  ? 'bg-white w-4'
+                                  : 'bg-white/50'
+                              }`}
+                            />
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                } else {
+                  // Contain mode with scale
+                  return (
+                    <div className="relative flex items-center justify-center w-full h-full">
+                      <img
+                        src={currentImage}
+                        alt=""
+                        className="rounded-lg transition-transform"
+                        style={{
+                          maxWidth: `${imageScale}%`,
+                          maxHeight: `${imageScale}%`,
+                          objectFit: 'contain',
+                        }}
+                      />
+                      {/* Gallery indicator */}
+                      {hasGallery && block.gallery!.length > 1 && (
+                        <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1">
+                          {block.gallery!.map((_, idx) => (
+                            <div 
+                              key={idx}
+                              className={`w-2 h-2 rounded-full transition-all ${
+                                idx === (block.galleryIndex || 0)
+                                  ? 'bg-slate-700 w-4'
+                                  : 'bg-slate-300'
+                              }`}
+                            />
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                }
+              } else {
+                return (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      fileInputRef.current?.click();
+                    }}
+                    className="flex flex-col items-center gap-3 p-6 rounded-xl hover:bg-slate-50 transition-colors"
+                  >
+                    <div className="w-12 h-12 rounded-xl bg-slate-100 flex items-center justify-center">
+                      <Upload className="w-6 h-6 text-slate-500" />
+                    </div>
+                    <span className="text-sm text-slate-500">nahrát</span>
+                  </button>
+                );
+              }
+            })()}
             <input
               ref={fileInputRef}
               type="file"
