@@ -1370,12 +1370,21 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
                 <Palette className="w-4 h-4" />
                 Barva pozadí
               </h3>
-              <div className="bg-slate-50 rounded-xl p-4">
-                <InlineColorPicker
-                  value={selectedSlide.backgroundColor}
-                  onChange={(color) => updateSlide(selectedSlide.id, { backgroundColor: color })}
-                />
-              </div>
+              <BackgroundPicker
+                value={selectedSlide.background || { type: 'color', color: selectedSlide.backgroundColor || '#ffffff' }}
+                onChange={(bg) => {
+                  if (bg?.type === 'color' && bg.color) {
+                    updateSlide(selectedSlide.id, { backgroundColor: bg.color, background: bg });
+                  } else if (bg) {
+                    updateSlide(selectedSlide.id, { background: bg });
+                  }
+                }}
+                onClose={() => {}}
+                showUpload={true}
+                showOpacity={true}
+                showBlur={false}
+                inline={true}
+              />
             </div>
           </div>
         </div>

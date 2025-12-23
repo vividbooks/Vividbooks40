@@ -61,6 +61,7 @@ interface BackgroundPickerProps {
   showUpload?: boolean;
   showOpacity?: boolean;
   showBlur?: boolean;
+  inline?: boolean; // If true, renders inline without absolute positioning
 }
 
 export function BackgroundPicker({
@@ -70,6 +71,7 @@ export function BackgroundPicker({
   showUpload = true,
   showOpacity = true,
   showBlur = true,
+  inline = false,
 }: BackgroundPickerProps) {
   const [recentColors, setRecentColors] = useState<string[]>(() => {
     const saved = localStorage.getItem('vividboard-recent-colors');
@@ -137,16 +139,20 @@ export function BackgroundPicker({
 
   return (
     <div 
-      className="absolute z-50 bg-white rounded-2xl shadow-2xl border border-slate-200 p-4 w-[360px]"
-      style={{ top: '100%', left: 0, marginTop: 8 }}
+      className={`bg-white rounded-2xl border border-slate-200 p-4 ${
+        inline ? 'w-full' : 'absolute z-50 shadow-2xl w-[360px]'
+      }`}
+      style={inline ? {} : { top: '100%', left: 0, marginTop: 8 }}
     >
-      {/* Header with close button */}
-      <button
-        onClick={onClose}
-        className="absolute top-2 right-2 p-1 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors"
-      >
-        <X className="w-4 h-4" />
-      </button>
+      {/* Header with close button - only show for popup mode */}
+      {!inline && (
+        <button
+          onClick={onClose}
+          className="absolute top-2 right-2 p-1 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors"
+        >
+          <X className="w-4 h-4" />
+        </button>
+      )}
 
       {/* Upload and Custom Color buttons */}
       <div className="flex gap-2 mb-4">
@@ -277,7 +283,7 @@ export function BackgroundPicker({
         </div>
 
         {/* Main color grid */}
-        <div className="grid grid-cols-10 gap-1.5 mb-2">
+        <div className="grid grid-cols-8 gap-1.5 mb-2">
           {COLOR_PALETTE.colors.map((color, idx) => (
             <button
               key={`color-${idx}`}
