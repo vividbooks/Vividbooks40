@@ -60,6 +60,7 @@ import { ABCSlideEditor } from './slides/ABCSlideEditor';
 import { OpenSlideEditor } from './slides/OpenSlideEditor';
 import { ExampleSlideEditor } from './slides/ExampleSlideEditor';
 import { InfoSlideEditor } from './slides/InfoSlideEditor';
+import { BackgroundPicker } from './slides/BackgroundPicker';
 import { QuizPreview } from './QuizPreview';
 import { TeacherSession } from './QuizLiveSession';
 import { AIBoardPanel } from './AIBoardPanel';
@@ -226,6 +227,64 @@ function AddContentButton({
         Přidat obsah
       </span>
     </button>
+  );
+}
+
+// ============================================
+// INLINE COLOR PICKER (for page settings panel)
+// ============================================
+
+const COLOR_GRID = {
+  grays: ['transparent', '#ffffff', '#f8fafc', '#f1f5f9', '#e2e8f0', '#cbd5e1', '#94a3b8', '#64748b', '#1e293b', '#0f172a'],
+  colors: [
+    '#7f1d1d', '#b91c1c', '#166534', '#0f766e', '#0369a1', '#1d4ed8', '#6d28d9', '#a21caf',
+    '#dc2626', '#ef4444', '#22c55e', '#14b8a6', '#0ea5e9', '#3b82f6', '#8b5cf6', '#d946ef',
+    '#fca5a5', '#fecaca', '#86efac', '#5eead4', '#7dd3fc', '#93c5fd', '#c4b5fd', '#f0abfc',
+    '#fee2e2', '#fef2f2', '#dcfce7', '#ccfbf1', '#e0f2fe', '#dbeafe', '#ede9fe', '#fae8ff',
+  ],
+};
+
+function InlineColorPicker({ value, onChange }: { value?: string; onChange: (color: string) => void }) {
+  const selectedColor = value || '#ffffff';
+  
+  return (
+    <div className="space-y-3">
+      {/* Grays row */}
+      <div className="flex gap-1.5 flex-wrap">
+        {COLOR_GRID.grays.map((color, idx) => (
+          <button
+            key={`gray-${idx}`}
+            onClick={() => onChange(color === 'transparent' ? '#ffffff' : color)}
+            className={`w-7 h-7 rounded-full border-2 transition-all hover:scale-110 ${
+              selectedColor === color ? 'border-indigo-500 ring-2 ring-indigo-200' : 'border-slate-200'
+            }`}
+            style={{ backgroundColor: color === 'transparent' ? '#fff' : color }}
+          >
+            {color === 'transparent' && (
+              <div className="w-full h-full rounded-full relative overflow-hidden">
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="w-5 h-0.5 bg-red-400 rotate-45" />
+                </div>
+              </div>
+            )}
+          </button>
+        ))}
+      </div>
+      
+      {/* Color grid */}
+      <div className="grid grid-cols-8 gap-1.5">
+        {COLOR_GRID.colors.map((color, idx) => (
+          <button
+            key={`color-${idx}`}
+            onClick={() => onChange(color)}
+            className={`w-7 h-7 rounded-full border-2 transition-all hover:scale-110 ${
+              selectedColor === color ? 'border-indigo-500 ring-2 ring-indigo-200' : 'border-transparent'
+            }`}
+            style={{ backgroundColor: color }}
+          />
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -1305,26 +1364,17 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
               </div>
             </div>
             
-            {/* Color Section */}
+            {/* Color Section - using BackgroundPicker inline */}
             <div>
               <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
                 <Palette className="w-4 h-4" />
                 Barva pozadí
               </h3>
-              <div className="grid grid-cols-5 gap-2">
-                {SLIDE_COLORS.map((color) => (
-                  <button
-                    key={color.color}
-                    onClick={() => updateSlide(selectedSlide.id, { backgroundColor: color.color })}
-                    className={`w-12 h-12 rounded-xl border-2 shadow-sm hover:scale-110 transition-transform ${
-                      (selectedSlide.backgroundColor || '#ffffff') === color.color 
-                        ? 'border-indigo-500 ring-2 ring-indigo-200' 
-                        : 'border-slate-200'
-                    }`}
-                    style={{ backgroundColor: color.color }}
-                    title={color.label}
-                  />
-                ))}
+              <div className="bg-slate-50 rounded-xl p-4">
+                <InlineColorPicker
+                  value={selectedSlide.backgroundColor}
+                  onChange={(color) => updateSlide(selectedSlide.id, { backgroundColor: color })}
+                />
               </div>
             </div>
           </div>
