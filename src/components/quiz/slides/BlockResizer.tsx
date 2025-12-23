@@ -16,6 +16,7 @@ interface BlockResizerProps {
   max?: number; // Maximum percentage
   snapTo?: number[]; // Snap points (e.g. [50] to snap to 50%)
   snapThreshold?: number; // How close to snap point to trigger snap
+  backgroundColor?: string; // Background color to determine line contrast
 }
 
 export function BlockResizer({
@@ -26,6 +27,7 @@ export function BlockResizer({
   max = 85,
   snapTo = [50],
   snapThreshold = 3,
+  backgroundColor,
 }: BlockResizerProps) {
   const resizerRef = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -33,6 +35,22 @@ export function BlockResizer({
 
   // Use local value during drag for smooth visuals
   const displayValue = localValue !== null ? localValue : value;
+
+  // Determine if background is light or dark for contrast
+  const isLightBackground = useCallback(() => {
+    if (!backgroundColor) return true; // Default to light
+    // Simple luminance check for hex colors
+    const hex = backgroundColor.replace('#', '');
+    if (hex.length !== 6) return true;
+    const r = parseInt(hex.substr(0, 2), 16);
+    const g = parseInt(hex.substr(2, 2), 16);
+    const b = parseInt(hex.substr(4, 2), 16);
+    const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+    return luminance > 0.5;
+  }, [backgroundColor]);
+
+  const lineColor = isLightBackground() ? 'rgb(59, 130, 246)' : 'rgb(147, 197, 253)'; // blue-500 or blue-300
+  const lineColorHover = isLightBackground() ? 'rgb(37, 99, 235)' : 'rgb(191, 219, 254)'; // blue-600 or blue-200
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -114,56 +132,66 @@ export function BlockResizer({
       onMouseDown={handleMouseDown}
       className={`
         group relative flex items-center justify-center
-        ${isHorizontal ? 'w-6 cursor-col-resize' : 'h-6 cursor-row-resize'}
+        ${isHorizontal ? 'w-4 cursor-col-resize' : 'h-4 cursor-row-resize'}
         ${isDragging ? 'z-50' : 'z-10'}
       `}
       style={isHorizontal 
-        ? { minWidth: 24, maxWidth: 24 } 
-        : { minHeight: 24, maxHeight: 24 }
+        ? { minWidth: 16, maxWidth: 16 } 
+        : { minHeight: 16, maxHeight: 16 }
       }
     >
-      {/* Invisible hit area */}
-      <div 
-        className={`
-          absolute 
-          ${isHorizontal ? 'w-6 h-full' : 'w-full h-6'}
-        `}
+      {/* Visible line - goes through center of handle */}
+      <div
+        className="absolute transition-all"
+        style={{
+          backgroundColor: isDragging ? lineColorHover : lineColor,
+          ...(isHorizontal 
+            ? { width: 2, height: '100%' } 
+            : { width: '100%', height: 2 }
+          ),
+        }}
       />
       
-      {/* Visible line - always visible in blue */}
+      {/* Handle bubble - transparent center so line shows through */}
       <div
         className={`
-          absolute transition-all
-          ${isHorizontal 
-            ? 'w-0.5 h-full' 
-            : 'w-full h-0.5'
-          }
-          ${isDragging 
-            ? 'bg-blue-600' 
-            : 'bg-blue-400 group-hover:bg-blue-500'
-          }
+          absolute flex items-center justify-center transition-all
+          ${isHorizontal ? 'w-5 h-12' : 'w-12 h-5'}
+          ${isDragging ? 'scale-110' : ''}
         `}
-      />
-      
-      {/* Handle bubble - always visible */}
-      <div
-        className={`
-          absolute rounded-full border-2 transition-all shadow-sm
-          ${isHorizontal ? 'w-4 h-10' : 'w-10 h-4'}
-          ${isDragging 
-            ? 'bg-blue-500 border-blue-600 scale-110' 
-            : 'bg-white border-blue-400 group-hover:border-blue-500 group-hover:bg-blue-50'
-          }
-        `}
-      />
+      >
+        {/* Outer pill shape */}
+        <div 
+          className={`
+            absolute rounded-full transition-all shadow-md
+            ${isHorizontal ? 'w-5 h-12' : 'w-12 h-5'}
+          `}
+          style={{
+            backgroundColor: isDragging ? lineColor : 'white',
+            border: `2px solid ${isDragging ? lineColorHover : lineColor}`,
+          }}
+        />
+        {/* Inner line through the middle */}
+        <div
+          className="absolute transition-all"
+          style={{
+            backgroundColor: isDragging ? 'white' : lineColor,
+            ...(isHorizontal 
+              ? { width: 2, height: '70%' } 
+              : { width: '70%', height: 2 }
+            ),
+          }}
+        />
+      </div>
       
       {/* Percentage indicator during drag */}
       {isDragging && (
         <div
-          className={`
-            absolute bg-blue-600 text-white text-xs font-bold px-2 py-0.5 rounded-full whitespace-nowrap shadow-lg
-            ${isHorizontal ? '-top-8' : '-left-12'}
-          `}
+          className="absolute text-white text-xs font-bold px-2 py-0.5 rounded-full whitespace-nowrap shadow-lg"
+          style={{
+            backgroundColor: lineColorHover,
+            ...(isHorizontal ? { top: -32 } : { left: -48 }),
+          }}
         >
           {displayValue}%
         </div>

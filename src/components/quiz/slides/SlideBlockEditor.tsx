@@ -141,10 +141,10 @@ export function SlideBlockEditor({
   return (
     <div
       className={`
-        relative group h-full rounded-xl transition-all overflow-hidden border-2
+        relative group h-full rounded-xl transition-all overflow-hidden
         ${isSelected 
-          ? 'border-blue-500 ring-2 ring-blue-200' 
-          : 'border-blue-200 hover:border-blue-400'
+          ? 'ring-2 ring-blue-400 ring-offset-2' 
+          : ''
         }
       `}
       style={getBackgroundStyle()}
