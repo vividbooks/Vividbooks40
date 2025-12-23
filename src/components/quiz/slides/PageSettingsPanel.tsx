@@ -12,7 +12,7 @@ import {
   Info,
   HelpCircle
 } from 'lucide-react';
-import { QuizSlide, InfoSlide } from '../../../types/quiz';
+import { QuizSlide, InfoSlide, SlideLayoutType, createSlideLayout } from '../../../types/quiz';
 import { BackgroundPicker } from './BackgroundPicker';
 
 interface PageSettingsPanelProps {
@@ -53,8 +53,9 @@ export function PageSettingsPanel({ slide, onClose, onUpdate }: PageSettingsPane
 
   const getLayoutName = () => {
     if (slide.type !== 'info') return '-';
-    const layout = LAYOUTS.find(l => l.id === (slide as InfoSlide).layout);
-    return layout?.label || 'Nadpis + obsah';
+    const slideLayout = (slide as InfoSlide).layout;
+    const layoutOption = LAYOUTS.find(l => l.id === slideLayout?.type);
+    return layoutOption?.label || 'Nadpis + obsah';
   };
 
   const getBackgroundPreview = () => {
@@ -178,18 +179,21 @@ export function PageSettingsPanel({ slide, onClose, onUpdate }: PageSettingsPane
             value={getLayoutName()}
           >
             <div className="grid grid-cols-2 gap-2 pt-2">
-              {LAYOUTS.map((layout) => (
+              {LAYOUTS.map((layoutOption) => (
                 <button
-                  key={layout.id}
-                  onClick={() => onUpdate({ layout: layout.id as any })}
+                  key={layoutOption.id}
+                  onClick={() => {
+                    const newLayout = createSlideLayout(layoutOption.id as SlideLayoutType);
+                    onUpdate({ layout: newLayout } as any);
+                  }}
                   className={`p-3 rounded-xl border-2 text-left transition-all ${
-                    (slide as InfoSlide).layout === layout.id
+                    (slide as InfoSlide).layout?.type === layoutOption.id
                       ? 'border-indigo-500 bg-indigo-50'
                       : 'border-slate-200 hover:border-slate-300 hover:bg-white'
                   }`}
                 >
-                  <span className="text-xl mb-1 block">{layout.preview}</span>
-                  <span className="text-xs font-medium text-slate-700">{layout.label}</span>
+                  <span className="text-xl mb-1 block">{layoutOption.preview}</span>
+                  <span className="text-xs font-medium text-slate-700">{layoutOption.label}</span>
                 </button>
               ))}
             </div>
