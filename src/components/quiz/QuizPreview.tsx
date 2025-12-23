@@ -291,6 +291,149 @@ function InfoSlideView({ slide }: { slide: InfoSlide }) {
   );
 }
 
+// Image block with gallery support for preview
+function ImageBlockPreview({ block, borderRadius }: { block: any; borderRadius: number }) {
+  const [galleryIndex, setGalleryIndex] = useState(0);
+  const [showSolution, setShowSolution] = useState(false);
+
+  const hasGallery = block.gallery && block.gallery.length > 1;
+  const imageFit = block.imageFit || 'contain';
+  const imageScale = block.imageScale || 100;
+  const navType = block.galleryNavType || 'dots-bottom';
+
+  // Get current image
+  const currentImage = hasGallery
+    ? (navType === 'solution' ? (showSolution ? block.gallery[1] : block.gallery[0]) : block.gallery[galleryIndex])
+    : block.content;
+
+  const goNext = () => {
+    if (hasGallery) {
+      setGalleryIndex((prev) => (prev + 1) % block.gallery.length);
+    }
+  };
+
+  const goPrev = () => {
+    if (hasGallery) {
+      setGalleryIndex((prev) => (prev - 1 + block.gallery.length) % block.gallery.length);
+    }
+  };
+
+  if (!currentImage) return null;
+
+  const renderNavigation = () => {
+    if (!hasGallery) return null;
+
+    switch (navType) {
+      case 'dots-bottom':
+        return (
+          <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-2 bg-black/30 px-3 py-2 rounded-full">
+            {block.gallery.map((_: string, idx: number) => (
+              <button
+                key={idx}
+                onClick={() => setGalleryIndex(idx)}
+                className={`w-3 h-3 rounded-full transition-all ${
+                  idx === galleryIndex ? 'bg-white scale-125' : 'bg-white/50 hover:bg-white/80'
+                }`}
+              />
+            ))}
+          </div>
+        );
+
+      case 'dots-side':
+        return (
+          <div className="absolute right-3 top-1/2 -translate-y-1/2 flex flex-col gap-2 bg-black/30 px-2 py-3 rounded-full">
+            {block.gallery.map((_: string, idx: number) => (
+              <button
+                key={idx}
+                onClick={() => setGalleryIndex(idx)}
+                className={`w-3 h-3 rounded-full transition-all ${
+                  idx === galleryIndex ? 'bg-white scale-125' : 'bg-white/50 hover:bg-white/80'
+                }`}
+              />
+            ))}
+          </div>
+        );
+
+      case 'arrows':
+        return (
+          <>
+            <button
+              onClick={goPrev}
+              className="absolute left-2 top-1/2 -translate-y-1/2 p-2 rounded-full shadow-lg"
+              style={{ backgroundColor: 'rgba(0,0,0,0.5)', color: 'white' }}
+            >
+              <ChevronLeft className="w-6 h-6" />
+            </button>
+            <button
+              onClick={goNext}
+              className="absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-full shadow-lg"
+              style={{ backgroundColor: 'rgba(0,0,0,0.5)', color: 'white' }}
+            >
+              <ChevronRight className="w-6 h-6" />
+            </button>
+          </>
+        );
+
+      case 'solution':
+        return (
+          <button
+            onClick={() => setShowSolution(!showSolution)}
+            className={`absolute bottom-3 left-1/2 -translate-x-1/2 px-4 py-2 rounded-lg font-medium text-sm transition-all flex items-center gap-2 ${
+              showSolution
+                ? 'bg-slate-700 text-white hover:bg-slate-800'
+                : 'bg-indigo-600 text-white hover:bg-indigo-700'
+            }`}
+          >
+            {showSolution ? 'Skrýt řešení' : 'Zobrazit řešení'}
+          </button>
+        );
+
+      default:
+        return null;
+    }
+  };
+
+  const imageContent = (
+    <div className="relative h-full w-full flex items-center justify-center overflow-hidden" style={{ borderRadius }}>
+      {imageFit === 'cover' ? (
+        <img
+          src={currentImage}
+          alt={block.imageCaption || ''}
+          className="w-full h-full object-cover"
+        />
+      ) : (
+        <img
+          src={currentImage}
+          alt={block.imageCaption || ''}
+          className="transition-transform"
+          style={{
+            maxWidth: `${imageScale}%`,
+            maxHeight: `${imageScale}%`,
+            objectFit: 'contain',
+            borderRadius: Math.max(0, borderRadius - 4),
+          }}
+        />
+      )}
+      {renderNavigation()}
+      {block.imageCaption && (
+        <div className={`absolute bottom-0 left-0 right-0 ${hasGallery ? 'bottom-14' : 'bottom-0'} bg-black/50 text-white text-sm px-3 py-2 text-center`}>
+          {block.imageCaption}
+        </div>
+      )}
+    </div>
+  );
+
+  if (block.imageLink) {
+    return (
+      <a href={block.imageLink} target="_blank" rel="noopener noreferrer" className="h-full w-full block">
+        {imageContent}
+      </a>
+    );
+  }
+
+  return imageContent;
+}
+
 // Block-based layout renderer for new info slides
 function BlockLayoutView({ slide }: { slide: InfoSlide }) {
   const layout = slide.layout!;
@@ -342,10 +485,10 @@ function BlockLayoutView({ slide }: { slide: InfoSlide }) {
                           block.fontSize === 'small' ? 'text-sm' : 'text-base md:text-lg';
     const fontWeightClass = block.fontWeight === 'bold' ? 'font-bold' : 'font-normal';
 
-    if (block.type === 'image' && block.content) {
+    if (block.type === 'image' && (block.content || (block.gallery && block.gallery.length > 0))) {
       return (
-        <div className="h-full flex items-center justify-center p-4" style={bgStyle}>
-          <img src={block.content} alt="" className="max-w-full max-h-full object-contain" style={{ borderRadius: Math.max(0, blockRadius - 4) }} />
+        <div className="h-full p-2" style={bgStyle}>
+          <ImageBlockPreview block={block} borderRadius={Math.max(0, blockRadius - 4)} />
         </div>
       );
     }

@@ -17,6 +17,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Trash2,
+  Undo2,
+  Redo2,
   Copy,
   GripVertical,
   FileText,
@@ -413,6 +415,70 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
   const [isDirty, setIsDirty] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   
+  // Undo/Redo state
+  const [undoStack, setUndoStack] = useState<Quiz[]>([]);
+  const [redoStack, setRedoStack] = useState<Quiz[]>([]);
+  const maxUndoSteps = 50;
+
+  // Update quiz with undo support
+  const updateQuizWithUndo = useCallback((newQuiz: Quiz) => {
+    if (quiz) {
+      setUndoStack(prev => {
+        const newStack = [...prev, quiz];
+        return newStack.slice(-maxUndoSteps);
+      });
+      setRedoStack([]); // Clear redo on new action
+    }
+    setQuiz(newQuiz);
+    setIsDirty(true);
+  }, [quiz]);
+
+  // Undo action
+  const undo = useCallback(() => {
+    if (undoStack.length > 0) {
+      const previousState = undoStack[undoStack.length - 1];
+      setUndoStack(prev => prev.slice(0, -1));
+      if (quiz) {
+        setRedoStack(prev => [...prev, quiz]);
+      }
+      setQuiz(previousState);
+      setIsDirty(true);
+    }
+  }, [undoStack, quiz]);
+
+  // Redo action
+  const redo = useCallback(() => {
+    if (redoStack.length > 0) {
+      const nextState = redoStack[redoStack.length - 1];
+      setRedoStack(prev => prev.slice(0, -1));
+      if (quiz) {
+        setUndoStack(prev => [...prev, quiz]);
+      }
+      setQuiz(nextState);
+      setIsDirty(true);
+    }
+  }, [redoStack, quiz]);
+
+  // Keyboard shortcuts for undo/redo
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'z') {
+        e.preventDefault();
+        if (e.shiftKey) {
+          redo();
+        } else {
+          undo();
+        }
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key === 'y') {
+        e.preventDefault();
+        redo();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [undo, redo]);
+  
   // UI state
   const [isResizing, setIsResizing] = useState(false);
   const [showLiveSession, setShowLiveSession] = useState(false);
@@ -672,13 +738,12 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
       s.id === slideId ? { ...s, ...updates } : s
     );
     
-    setQuiz({
+    updateQuizWithUndo({
       ...quiz,
       slides: newSlides,
       updatedAt: new Date().toISOString(),
     });
-    setIsDirty(true);
-  }, [quiz]);
+  }, [quiz, updateQuizWithUndo]);
   
   const moveSlide = useCallback((slideId: string, direction: 'up' | 'down') => {
     if (!quiz) return;
@@ -1189,6 +1254,28 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
               </div>
               
               <div className="flex items-center gap-3">
+                {/* Undo/Redo buttons */}
+                <div className="flex items-center gap-1 mr-2">
+                  <button
+                    onClick={undo}
+                    disabled={undoStack.length === 0}
+                    className="p-2 rounded-lg text-slate-500 hover:bg-slate-100 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+                    title="Zpět (Ctrl+Z)"
+                  >
+                    <Undo2 className="w-5 h-5" />
+                  </button>
+                  <button
+                    onClick={redo}
+                    disabled={redoStack.length === 0}
+                    className="p-2 rounded-lg text-slate-500 hover:bg-slate-100 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
+                    title="Vpřed (Ctrl+Shift+Z)"
+                  >
+                    <Redo2 className="w-5 h-5" />
+                  </button>
+                </div>
+
+                <div className="w-px h-6 bg-slate-200" />
+
                 <button
                   onClick={() => setShowVersionHistory(true)}
                   className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors font-medium text-sm ${
