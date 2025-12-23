@@ -15,6 +15,8 @@ import {
   SlideBlock,
   createSlideLayout,
   BackgroundSettings,
+  getTemplateById,
+  SlideTemplate,
 } from '../../../types/quiz';
 import { SlideBlockEditor } from './SlideBlockEditor';
 import { BlockResizer } from './BlockResizer';
@@ -24,15 +26,31 @@ import { BackgroundPicker } from './BackgroundPicker';
 interface InfoSlideEditorProps {
   slide: InfoSlide;
   onUpdate: (id: string, updates: Partial<InfoSlide>) => void;
+  onSlideClick?: () => void;
 }
 
-export function InfoSlideEditor({ slide, onUpdate }: InfoSlideEditorProps) {
+export function InfoSlideEditor({ slide, onUpdate, onSlideClick }: InfoSlideEditorProps) {
   const [selectedBlockIndex, setSelectedBlockIndex] = useState<number | null>(null);
   const [showLayoutPanel, setShowLayoutPanel] = useState(!slide.layout);
   const [showBackgroundPicker, setShowBackgroundPicker] = useState(false);
 
   // Get or create layout
   const layout = slide.layout || createSlideLayout('title-content');
+
+  // Get template if set
+  const template: SlideTemplate | undefined = slide.templateId ? getTemplateById(slide.templateId) : undefined;
+
+  // Get block color based on template
+  const getBlockColor = (blockIndex: number): string | undefined => {
+    if (!template?.blockColors) return undefined;
+    return template.blockColors[blockIndex % template.blockColors.length];
+  };
+
+  // Get font family from template
+  const getFontFamily = (): string => {
+    if (!template?.font) return 'inherit';
+    return template.font;
+  };
 
   // Handle layout change
   const handleLayoutChange = (layoutType: SlideLayoutType) => {
@@ -123,6 +141,7 @@ export function InfoSlideEditor({ slide, onUpdate }: InfoSlideEditorProps) {
                 isSelected={selectedBlockIndex === 0}
                 onSelect={() => setSelectedBlockIndex(0)}
                 placeholder="Nadpis..."
+                templateColor={getBlockColor(0)}
               />
             </div>
             
@@ -144,6 +163,7 @@ export function InfoSlideEditor({ slide, onUpdate }: InfoSlideEditorProps) {
                 isSelected={selectedBlockIndex === 1}
                 onSelect={() => setSelectedBlockIndex(1)}
                 placeholder="Obsah..."
+                templateColor={getBlockColor(1)}
               />
             </div>
           </div>
@@ -160,6 +180,7 @@ export function InfoSlideEditor({ slide, onUpdate }: InfoSlideEditorProps) {
                 isSelected={selectedBlockIndex === 0}
                 onSelect={() => setSelectedBlockIndex(0)}
                 placeholder="Nadpis..."
+                templateColor={getBlockColor(0)}
               />
             </div>
             
@@ -180,6 +201,7 @@ export function InfoSlideEditor({ slide, onUpdate }: InfoSlideEditorProps) {
                   isSelected={selectedBlockIndex === 1}
                   onSelect={() => setSelectedBlockIndex(1)}
                   placeholder="Levý sloupec..."
+                  templateColor={getBlockColor(1)}
                 />
               </div>
               
@@ -198,6 +220,7 @@ export function InfoSlideEditor({ slide, onUpdate }: InfoSlideEditorProps) {
                   isSelected={selectedBlockIndex === 2}
                   onSelect={() => setSelectedBlockIndex(2)}
                   placeholder="Pravý sloupec..."
+                  templateColor={getBlockColor(2)}
                 />
               </div>
             </div>
@@ -215,6 +238,7 @@ export function InfoSlideEditor({ slide, onUpdate }: InfoSlideEditorProps) {
                 isSelected={selectedBlockIndex === 0}
                 onSelect={() => setSelectedBlockIndex(0)}
                 placeholder="Nadpis..."
+                templateColor={getBlockColor(0)}
               />
             </div>
             
@@ -235,6 +259,7 @@ export function InfoSlideEditor({ slide, onUpdate }: InfoSlideEditorProps) {
                   isSelected={selectedBlockIndex === 1}
                   onSelect={() => setSelectedBlockIndex(1)}
                   placeholder="Sloupec 1..."
+                  templateColor={getBlockColor(1)}
                 />
               </div>
               
@@ -253,6 +278,7 @@ export function InfoSlideEditor({ slide, onUpdate }: InfoSlideEditorProps) {
                   isSelected={selectedBlockIndex === 2}
                   onSelect={() => setSelectedBlockIndex(2)}
                   placeholder="Sloupec 2..."
+                  templateColor={getBlockColor(2)}
                 />
               </div>
               
@@ -271,6 +297,7 @@ export function InfoSlideEditor({ slide, onUpdate }: InfoSlideEditorProps) {
                   isSelected={selectedBlockIndex === 3}
                   onSelect={() => setSelectedBlockIndex(3)}
                   placeholder="Sloupec 3..."
+                  templateColor={getBlockColor(3)}
                 />
               </div>
             </div>
@@ -287,6 +314,7 @@ export function InfoSlideEditor({ slide, onUpdate }: InfoSlideEditorProps) {
                 isSelected={selectedBlockIndex === 0}
                 onSelect={() => setSelectedBlockIndex(0)}
                 placeholder="Levý sloupec..."
+                templateColor={getBlockColor(0)}
               />
             </div>
             
@@ -305,6 +333,7 @@ export function InfoSlideEditor({ slide, onUpdate }: InfoSlideEditorProps) {
                 isSelected={selectedBlockIndex === 1}
                 onSelect={() => setSelectedBlockIndex(1)}
                 placeholder="Pravý sloupec..."
+                templateColor={getBlockColor(1)}
               />
             </div>
           </div>
@@ -320,6 +349,7 @@ export function InfoSlideEditor({ slide, onUpdate }: InfoSlideEditorProps) {
                 isSelected={selectedBlockIndex === 0}
                 onSelect={() => setSelectedBlockIndex(0)}
                 placeholder="Sloupec 1..."
+                templateColor={getBlockColor(0)}
               />
             </div>
             
@@ -338,6 +368,7 @@ export function InfoSlideEditor({ slide, onUpdate }: InfoSlideEditorProps) {
                 isSelected={selectedBlockIndex === 1}
                 onSelect={() => setSelectedBlockIndex(1)}
                 placeholder="Sloupec 2..."
+                templateColor={getBlockColor(1)}
               />
             </div>
             
@@ -356,6 +387,7 @@ export function InfoSlideEditor({ slide, onUpdate }: InfoSlideEditorProps) {
                 isSelected={selectedBlockIndex === 2}
                 onSelect={() => setSelectedBlockIndex(2)}
                 placeholder="Sloupec 3..."
+                templateColor={getBlockColor(2)}
               />
             </div>
           </div>
@@ -372,6 +404,7 @@ export function InfoSlideEditor({ slide, onUpdate }: InfoSlideEditorProps) {
                 isSelected={selectedBlockIndex === 0}
                 onSelect={() => setSelectedBlockIndex(0)}
                 placeholder="Hlavní obsah..."
+                templateColor={getBlockColor(0)}
               />
             </div>
             
@@ -392,6 +425,7 @@ export function InfoSlideEditor({ slide, onUpdate }: InfoSlideEditorProps) {
                   isSelected={selectedBlockIndex === 1}
                   onSelect={() => setSelectedBlockIndex(1)}
                   placeholder="Horní..."
+                  templateColor={getBlockColor(1)}
                 />
               </div>
               
@@ -410,6 +444,7 @@ export function InfoSlideEditor({ slide, onUpdate }: InfoSlideEditorProps) {
                   isSelected={selectedBlockIndex === 2}
                   onSelect={() => setSelectedBlockIndex(2)}
                   placeholder="Dolní..."
+                  templateColor={getBlockColor(2)}
                 />
               </div>
             </div>
@@ -428,6 +463,7 @@ export function InfoSlideEditor({ slide, onUpdate }: InfoSlideEditorProps) {
                   isSelected={selectedBlockIndex === 0}
                   onSelect={() => setSelectedBlockIndex(0)}
                   placeholder="Horní..."
+                  templateColor={getBlockColor(0)}
                 />
               </div>
               
@@ -446,6 +482,7 @@ export function InfoSlideEditor({ slide, onUpdate }: InfoSlideEditorProps) {
                   isSelected={selectedBlockIndex === 1}
                   onSelect={() => setSelectedBlockIndex(1)}
                   placeholder="Dolní..."
+                  templateColor={getBlockColor(1)}
                 />
               </div>
             </div>
@@ -466,6 +503,7 @@ export function InfoSlideEditor({ slide, onUpdate }: InfoSlideEditorProps) {
                 isSelected={selectedBlockIndex === 2}
                 onSelect={() => setSelectedBlockIndex(2)}
                 placeholder="Hlavní obsah..."
+                templateColor={getBlockColor(2)}
               />
             </div>
           </div>
@@ -497,13 +535,24 @@ export function InfoSlideEditor({ slide, onUpdate }: InfoSlideEditorProps) {
 
   return (
     <div 
-      className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden"
-      style={{ aspectRatio: '4/3', ...getSlideBackgroundStyle() }}
+      className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden cursor-pointer"
+      style={{ 
+        aspectRatio: '4/3', 
+        ...getSlideBackgroundStyle(),
+        fontFamily: getFontFamily(),
+      }}
+      onClick={() => {
+        onSlideClick?.();
+      }}
     >
       {/* Main content area */}
       <div 
         className="h-full p-4"
-        onClick={() => setSelectedBlockIndex(null)}
+        onClick={(e) => {
+          e.stopPropagation();
+          setSelectedBlockIndex(null);
+          onSlideClick?.();
+        }}
       >
         {renderLayout()}
       </div>

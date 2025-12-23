@@ -81,12 +81,117 @@ export interface SlideLayout {
   splitRatio?: number;      // % for split layouts (how much of split area is top vs bottom)
 }
 
+// =============================================
+// SLIDE TEMPLATES (FONTS & COLORS)
+// =============================================
+
+/**
+ * Available font families for templates
+ * Using Google Fonts compatible names
+ */
+export type TemplateFontFamily = 
+  | 'Sora'
+  | 'Space Grotesk'
+  | 'Playfair Display'
+  | 'Itim'
+  | 'Sacramento'
+  | 'Lora'
+  | 'Oswald';
+
+/**
+ * Color scheme for a template
+ */
+export interface TemplateColorScheme {
+  primary: string;      // Main background/accent color
+  secondary: string;    // Secondary color for blocks
+  tertiary?: string;    // Third color if needed
+  text: string;         // Text color
+  textLight?: string;   // Light text color
+}
+
+/**
+ * Slide template definition
+ */
+export interface SlideTemplate {
+  id: string;
+  name: string;
+  font: TemplateFontFamily;
+  colors: TemplateColorScheme;
+  blockColors?: string[]; // Optional specific colors for each block
+}
+
+/**
+ * Predefined templates
+ */
+export const SLIDE_TEMPLATES: SlideTemplate[] = [
+  {
+    id: 'modern-blue',
+    name: 'Moderní modrá',
+    font: 'Sora',
+    colors: {
+      primary: '#3B82F6',
+      secondary: '#DBEAFE',
+      tertiary: '#EFF6FF',
+      text: '#1E3A8A',
+      textLight: '#60A5FA',
+    },
+    blockColors: ['#DBEAFE', '#BFDBFE', '#93C5FD'],
+  },
+  {
+    id: 'elegant-serif',
+    name: 'Elegantní',
+    font: 'Playfair Display',
+    colors: {
+      primary: '#7C3AED',
+      secondary: '#EDE9FE',
+      tertiary: '#F5F3FF',
+      text: '#4C1D95',
+      textLight: '#A78BFA',
+    },
+    blockColors: ['#EDE9FE', '#DDD6FE', '#C4B5FD'],
+  },
+  {
+    id: 'warm-creative',
+    name: 'Kreativní',
+    font: 'Itim',
+    colors: {
+      primary: '#F59E0B',
+      secondary: '#FEF3C7',
+      tertiary: '#FFFBEB',
+      text: '#92400E',
+      textLight: '#FBBF24',
+    },
+    blockColors: ['#FEF3C7', '#FDE68A', '#FCD34D'],
+  },
+  {
+    id: 'minimal-dark',
+    name: 'Minimalistická',
+    font: 'Space Grotesk',
+    colors: {
+      primary: '#1F2937',
+      secondary: '#F3F4F6',
+      tertiary: '#E5E7EB',
+      text: '#111827',
+      textLight: '#6B7280',
+    },
+    blockColors: ['#F3F4F6', '#E5E7EB', '#D1D5DB'],
+  },
+];
+
+/**
+ * Get template by ID
+ */
+export function getTemplateById(templateId: string): SlideTemplate | undefined {
+  return SLIDE_TEMPLATES.find(t => t.id === templateId);
+}
+
 /**
  * Information slide - displays content without interaction
  * Now supports block-based layouts
  */
 export interface InfoSlide extends BaseSlide {
   type: 'info';
+  templateId?: string; // Reference to template
   // Legacy fields (for backwards compatibility)
   title: string;
   content: string; // HTML content

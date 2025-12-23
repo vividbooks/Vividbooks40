@@ -1262,7 +1262,7 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
                     className="rounded-xl shadow-sm border border-slate-200 transition-colors duration-300"
                     style={{ backgroundColor: selectedSlide.backgroundColor || '#ffffff' }}
                   >
-                    {renderSlideEditor(selectedSlide, updateSlide)}
+                    {renderSlideEditor(selectedSlide, updateSlide, () => setShowPageSettings(true))}
                   </div>
                 </div>
               ) : (
@@ -1349,11 +1349,12 @@ function getSlideTitle(slide: QuizSlide): string {
 
 function renderSlideEditor(
   slide: QuizSlide, 
-  onUpdate: (id: string, updates: Partial<QuizSlide>) => void
+  onUpdate: (id: string, updates: Partial<QuizSlide>) => void,
+  onSlideClick?: () => void
 ): React.ReactNode {
   switch (slide.type) {
     case 'info':
-      return <InfoSlideEditor slide={slide} onUpdate={onUpdate} />;
+      return <InfoSlideEditor slide={slide} onUpdate={onUpdate} onSlideClick={onSlideClick} />;
     case 'activity':
       switch ((slide as any).activityType) {
         case 'abc':

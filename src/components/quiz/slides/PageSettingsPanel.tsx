@@ -12,8 +12,9 @@ import {
   Info,
   HelpCircle
 } from 'lucide-react';
-import { QuizSlide, InfoSlide, SlideLayoutType, createSlideLayout } from '../../../types/quiz';
+import { QuizSlide, InfoSlide, SlideLayoutType, createSlideLayout, SLIDE_TEMPLATES, SlideTemplate, getTemplateById } from '../../../types/quiz';
 import { BackgroundPicker } from './BackgroundPicker';
+import { Paintbrush } from 'lucide-react';
 
 interface PageSettingsPanelProps {
   slide: QuizSlide;
@@ -21,7 +22,7 @@ interface PageSettingsPanelProps {
   onUpdate: (updates: Partial<QuizSlide>) => void;
 }
 
-type SectionId = 'type' | 'layout' | 'background' | 'chapter' | 'note';
+type SectionId = 'type' | 'template' | 'layout' | 'background' | 'chapter' | 'note';
 
 const SLIDE_TYPES = [
   { id: 'info', label: 'Informace', icon: Info, description: 'Informační slide s textem a obrázky' },
@@ -72,6 +73,21 @@ export function PageSettingsPanel({ slide, onClose, onUpdate }: PageSettingsPane
     }
     if (bg.type === 'image') return 'Obrázek';
     return 'Bílá';
+  };
+
+  const getTemplateName = () => {
+    if (slide.type !== 'info') return '-';
+    const templateId = (slide as InfoSlide).templateId;
+    if (!templateId) return 'Žádná';
+    const template = getTemplateById(templateId);
+    return template?.name || 'Žádná';
+  };
+
+  const getCurrentTemplate = (): SlideTemplate | undefined => {
+    if (slide.type !== 'info') return undefined;
+    const templateId = (slide as InfoSlide).templateId;
+    if (!templateId) return undefined;
+    return getTemplateById(templateId);
   };
 
   // Accordion Section Component
@@ -170,7 +186,82 @@ export function PageSettingsPanel({ slide, onClose, onUpdate }: PageSettingsPane
           </div>
         </AccordionSection>
 
-        {/* 2. Rozložení (only for info slides) */}
+        {/* 2. Šablona (only for info slides) */}
+        {slide.type === 'info' && (
+          <AccordionSection 
+            id="template" 
+            icon={Paintbrush} 
+            title="Šablona" 
+            value={
+              <div className="flex items-center gap-2">
+                {getCurrentTemplate() && (
+                  <span 
+                    className="inline-block w-4 h-4 rounded-full border border-slate-300"
+                    style={{ backgroundColor: getCurrentTemplate()?.colors.primary }}
+                  />
+                )}
+                <span>{getTemplateName()}</span>
+              </div>
+            }
+          >
+            <div className="space-y-2 pt-2">
+              {/* No template option */}
+              <button
+                onClick={() => onUpdate({ templateId: undefined } as any)}
+                className={`w-full flex items-center gap-3 p-3 rounded-xl border-2 transition-all ${
+                  !(slide as InfoSlide).templateId
+                    ? 'border-indigo-500 bg-indigo-50'
+                    : 'border-slate-200 hover:border-slate-300 hover:bg-white'
+                }`}
+              >
+                <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center text-slate-400">
+                  ✕
+                </div>
+                <div className="text-left">
+                  <div className={`font-medium ${!(slide as InfoSlide).templateId ? 'text-indigo-700' : 'text-slate-700'}`}>
+                    Žádná šablona
+                  </div>
+                  <div className="text-xs text-slate-500">Vlastní nastavení</div>
+                </div>
+              </button>
+
+              {/* Template options */}
+              {SLIDE_TEMPLATES.map((template) => (
+                <button
+                  key={template.id}
+                  onClick={() => onUpdate({ templateId: template.id } as any)}
+                  className={`w-full flex items-center gap-3 p-3 rounded-xl border-2 transition-all ${
+                    (slide as InfoSlide).templateId === template.id
+                      ? 'border-indigo-500 bg-indigo-50'
+                      : 'border-slate-200 hover:border-slate-300 hover:bg-white'
+                  }`}
+                >
+                  {/* Color preview */}
+                  <div className="flex gap-0.5">
+                    {template.blockColors?.slice(0, 3).map((color, idx) => (
+                      <div 
+                        key={idx}
+                        className="w-3 h-10 rounded-sm first:rounded-l-lg last:rounded-r-lg"
+                        style={{ backgroundColor: color }}
+                      />
+                    ))}
+                  </div>
+                  <div className="text-left flex-1">
+                    <div 
+                      className={`font-medium ${(slide as InfoSlide).templateId === template.id ? 'text-indigo-700' : 'text-slate-700'}`}
+                      style={{ fontFamily: template.font }}
+                    >
+                      {template.name}
+                    </div>
+                    <div className="text-xs text-slate-500">Font: {template.font}</div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </AccordionSection>
+        )}
+
+        {/* 3. Rozložení (only for info slides) */}
         {slide.type === 'info' && (
           <AccordionSection 
             id="layout" 
@@ -200,7 +291,7 @@ export function PageSettingsPanel({ slide, onClose, onUpdate }: PageSettingsPane
           </AccordionSection>
         )}
 
-        {/* 3. Barva pozadí */}
+        {/* 4. Barva pozadí */}
         <AccordionSection 
           id="background" 
           icon={Palette} 
@@ -222,7 +313,7 @@ export function PageSettingsPanel({ slide, onClose, onUpdate }: PageSettingsPane
           </div>
         </AccordionSection>
 
-        {/* 4. Jméno kapitoly */}
+        {/* 5. Jméno kapitoly */}
         <AccordionSection 
           id="chapter" 
           icon={Bookmark} 
@@ -243,7 +334,7 @@ export function PageSettingsPanel({ slide, onClose, onUpdate }: PageSettingsPane
           </div>
         </AccordionSection>
 
-        {/* 5. Poznámka ke stránce */}
+        {/* 6. Poznámka ke stránce */}
         <AccordionSection 
           id="note" 
           icon={MessageSquare} 

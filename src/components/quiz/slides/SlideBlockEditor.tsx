@@ -26,6 +26,7 @@ interface SlideBlockEditorProps {
   isSelected?: boolean;
   onSelect?: () => void;
   placeholder?: string;
+  templateColor?: string; // Color from template
 }
 
 export function SlideBlockEditor({
@@ -34,6 +35,7 @@ export function SlideBlockEditor({
   isSelected = false,
   onSelect,
   placeholder = 'Klikněte pro úpravu...',
+  templateColor,
 }: SlideBlockEditorProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [showBackgroundPicker, setShowBackgroundPicker] = useState(false);
@@ -116,10 +118,17 @@ export function SlideBlockEditor({
 
   // Get background style
   const getBackgroundStyle = (): React.CSSProperties => {
+    const style: React.CSSProperties = {};
+    
+    // Use template color as default if no explicit background
+    if (templateColor && !block.background) {
+      style.backgroundColor = templateColor;
+      return style;
+    }
+    
     if (!block.background) return {};
     
     const bg = block.background;
-    const style: React.CSSProperties = {};
     
     if (bg.type === 'color' && bg.color) {
       style.backgroundColor = bg.color === 'transparent' ? 'transparent' : bg.color;
