@@ -305,10 +305,10 @@ function ImageBlockPreview({ block, borderRadius }: { block: any; borderRadius: 
   // Calculate image position for cropped images
   const posX = block.imagePositionX || 0;
   const posY = block.imagePositionY || 0;
-  const centerOffset = (100 - imageScale) / 2;
-  const moveRange = (imageScale - 100) / 2;
-  const imageLeft = centerOffset + (posX / 100) * moveRange;
-  const imageTop = centerOffset + (posY / 100) * moveRange;
+  const extraPercent = imageScale - 100;
+  const maxOffset = extraPercent / 2;
+  const imageLeft = -maxOffset - (posX / 100) * maxOffset;
+  const imageTop = -maxOffset - (posY / 100) * maxOffset;
 
   // Get current image
   const currentImage = hasGallery

@@ -47,11 +47,17 @@ export function SlideBlockEditor({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageContainerRef = useRef<HTMLDivElement>(null);
   
-  // Drag state stored in refs to avoid stale closures
-  const isDraggingRef = useRef(false);
-  const dragStartRef = useRef({ x: 0, y: 0 });
-  const positionStartRef = useRef({ x: 0, y: 0 });
-  const [, forceUpdate] = useState(0); // For re-render on drag state change
+  // Drag state
+  const [isDragging, setIsDragging] = useState(false);
+  const dragDataRef = useRef({ 
+    startX: 0, 
+    startY: 0, 
+    startPosX: 0, 
+    startPosY: 0,
+    scale: 100,
+    containerWidth: 0,
+    containerHeight: 0
+  });
 
   useEffect(() => {
     if (isEditing && textareaRef.current) {
@@ -66,43 +72,40 @@ export function SlideBlockEditor({
   const handleImageMouseDown = (e: React.MouseEvent) => {
     const scale = block.imageScale || 100;
     if (scale <= 100) return;
+    if (!imageContainerRef.current) return;
     
     e.preventDefault();
     e.stopPropagation();
     
-    isDraggingRef.current = true;
-    dragStartRef.current = { x: e.clientX, y: e.clientY };
-    positionStartRef.current = { 
-      x: block.imagePositionX || 0, 
-      y: block.imagePositionY || 0 
+    const rect = imageContainerRef.current.getBoundingClientRect();
+    
+    // Store all needed data at drag start
+    dragDataRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      startPosX: block.imagePositionX || 0,
+      startPosY: block.imagePositionY || 0,
+      scale: scale,
+      containerWidth: rect.width,
+      containerHeight: rect.height
     };
-    forceUpdate(n => n + 1);
+    
+    setIsDragging(true);
     
     const handleMouseMove = (moveEvent: MouseEvent) => {
-      if (!isDraggingRef.current || !imageContainerRef.current) return;
-      
-      const rect = imageContainerRef.current.getBoundingClientRect();
-      const scale = block.imageScale || 100;
+      const data = dragDataRef.current;
       
       // Delta in pixels
-      const deltaX = moveEvent.clientX - dragStartRef.current.x;
-      const deltaY = moveEvent.clientY - dragStartRef.current.y;
+      const deltaX = moveEvent.clientX - data.startX;
+      const deltaY = moveEvent.clientY - data.startY;
       
-      // How much the image can move (in pixels) = (scale - 100)% of container size / 2
-      const maxMoveX = (rect.width * (scale - 100)) / 200;
-      const maxMoveY = (rect.height * (scale - 100)) / 200;
+      // Simple: full container width drag = move from -100 to 100 (range of 200)
+      // So sensitivity = 200 / containerWidth
+      const sensitivityX = 400 / data.containerWidth; // More sensitive
+      const sensitivityY = 400 / data.containerHeight;
       
-      // Convert pixel delta to position (-100 to 100)
-      // When dragging right, we want image to move right, so we see more of left side
-      let newX = positionStartRef.current.x;
-      let newY = positionStartRef.current.y;
-      
-      if (maxMoveX > 0) {
-        newX = positionStartRef.current.x + (deltaX / maxMoveX) * 100;
-      }
-      if (maxMoveY > 0) {
-        newY = positionStartRef.current.y + (deltaY / maxMoveY) * 100;
-      }
+      let newX = data.startPosX + deltaX * sensitivityX;
+      let newY = data.startPosY + deltaY * sensitivityY;
       
       // Clamp to -100 to 100
       newX = Math.max(-100, Math.min(100, newX));
@@ -112,8 +115,7 @@ export function SlideBlockEditor({
     };
 
     const handleMouseUp = () => {
-      isDraggingRef.current = false;
-      forceUpdate(n => n + 1);
+      setIsDragging(false);
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
     };
@@ -459,25 +461,46 @@ export function SlideBlockEditor({
                 const posX = block.imagePositionX || 0;
                 const posY = block.imagePositionY || 0;
                 
-                // Calculate image position:
-                // - Image is (imageScale)% of container
-                // - Center position: left = (100 - imageScale) / 2 = 50 - imageScale/2
-                // - Movement range: (imageScale - 100) / 2 on each side
-                // - posX = 100 means image moved right (we see left part)
-                // - posX = -100 means image moved left (we see right part)
-                const centerOffset = (100 - imageScale) / 2; // Negative when scale > 100
-                const moveRange = (imageScale - 100) / 2; // How much we can move from center
-                const imageLeft = centerOffset + (posX / 100) * moveRange;
-                const imageTop = centerOffset + (posY / 100) * moveRange;
+                // Simple positioning:
+                // posX/posY go from -100 to 100
+                // When posX = 0: image centered
+                // When posX = -100: image all the way left (we see right side)
+                // When posX = 100: image all the way right (we see left side)
+                // 
+                // For a 150% image:
+                // - Center: left = -25% (half of extra 50%)
+                // - Left edge (posX=-100): left = 0%
+                // - Right edge (posX=100): left = -50%
+                const extraPercent = imageScale - 100; // e.g., 50 for 150%
+                const maxOffset = extraPercent / 2; // e.g., 25 for 150%
                 
-                const isDragging = isDraggingRef.current;
+                // posX = -100 -> imageLeft = 0
+                // posX = 0 -> imageLeft = -maxOffset
+                // posX = 100 -> imageLeft = -extraPercent
+                const imageLeft = -maxOffset - (posX / 100) * maxOffset;
+                const imageTop = -maxOffset - (posY / 100) * maxOffset;
                 
                 const imageElement = imageFit === 'cover' ? (
                   <div 
                     ref={imageContainerRef}
-                    className={`absolute inset-0 overflow-hidden ${imageScale > 100 ? (isDragging ? 'cursor-grabbing' : 'cursor-grab') : ''}`}
+                    className={`absolute inset-0 ${imageScale > 100 ? (isDragging ? 'cursor-grabbing' : 'cursor-grab') : ''}`}
                     onMouseDown={handleImageMouseDown}
+                    style={{ overflow: isDragging ? 'visible' : 'hidden' }}
                   >
+                    {/* Gray overlay showing image bounds when dragging */}
+                    {imageScale > 100 && isDragging && (
+                      <div 
+                        className="absolute pointer-events-none bg-slate-200/80 border-2 border-dashed border-slate-400"
+                        style={{
+                          width: `${imageScale}%`,
+                          height: `${imageScale}%`,
+                          left: `${imageLeft}%`,
+                          top: `${imageTop}%`,
+                          zIndex: 5,
+                        }}
+                      />
+                    )}
+                    
                     {/* Image positioned inside container */}
                     <img
                       src={displayImage}
@@ -489,28 +512,23 @@ export function SlideBlockEditor({
                         objectFit: 'cover',
                         left: `${imageLeft}%`,
                         top: `${imageTop}%`,
+                        zIndex: 10,
                       }}
                       draggable={false}
                     />
                     
-                    {/* Visual feedback when dragging */}
+                    {/* Block boundary indicator when dragging */}
                     {imageScale > 100 && isDragging && (
                       <div 
-                        className="absolute pointer-events-none border-2 border-white shadow-lg"
-                        style={{
-                          width: `${imageScale}%`,
-                          height: `${imageScale}%`,
-                          left: `${imageLeft}%`,
-                          top: `${imageTop}%`,
-                          boxShadow: '0 0 0 2000px rgba(0,0,0,0.3)',
-                        }}
+                        className="absolute inset-0 pointer-events-none border-4 border-indigo-500 z-20"
+                        style={{ borderRadius: borderRadius }}
                       />
                     )}
                     
                     {renderNavigation(true)}
                     {/* Caption */}
                     {block.imageCaption && (
-                      <div className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-sm px-3 py-2 text-center pointer-events-none">
+                      <div className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-sm px-3 py-2 text-center pointer-events-none z-30">
                         {block.imageCaption}
                       </div>
                     )}
