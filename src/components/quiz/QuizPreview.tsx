@@ -302,13 +302,9 @@ function ImageBlockPreview({ block, borderRadius }: { block: any; borderRadius: 
   const imageFit = imageScale > 100 ? 'cover' : (block.imageFit || 'contain');
   const navType = block.galleryNavType || 'dots-bottom';
   
-  // Calculate image position for cropped images
-  const posX = block.imagePositionX || 0;
-  const posY = block.imagePositionY || 0;
-  const extraPercent = imageScale - 100;
-  const maxOffset = extraPercent / 2;
-  const imageLeft = -maxOffset - (posX / 100) * maxOffset;
-  const imageTop = -maxOffset - (posY / 100) * maxOffset;
+  // Image position for object-position (0-100, default 50 = center)
+  const posX = block.imagePositionX ?? 50;
+  const posY = block.imagePositionY ?? 50;
 
   // Get current image
   const currentImage = hasGallery
@@ -408,13 +404,11 @@ function ImageBlockPreview({ block, borderRadius }: { block: any; borderRadius: 
         <img
           src={currentImage}
           alt={block.imageCaption || ''}
-          className="absolute"
+          className="w-full h-full"
           style={{
-            width: `${imageScale}%`,
-            height: `${imageScale}%`,
             objectFit: 'cover',
-            left: `${imageLeft}%`,
-            top: `${imageTop}%`,
+            objectPosition: `${posX}% ${posY}%`,
+            transform: imageScale > 100 ? `scale(${imageScale / 100})` : undefined,
           }}
         />
       ) : (

@@ -57,8 +57,8 @@ export interface SlideBlock {
   // Image settings
   imageFit?: 'contain' | 'cover'; // contain = show slider, cover = fill block
   imageScale?: number; // 10-300, percentage of image size
-  imagePositionX?: number; // -100 to 100, horizontal position when cropped (0 = center)
-  imagePositionY?: number; // -100 to 100, vertical position when cropped (0 = center)
+  imagePositionX?: number; // 0-100, horizontal position for object-position (50 = center)
+  imagePositionY?: number; // 0-100, vertical position for object-position (50 = center)
   imageCaption?: string; // Image description/caption
   imageLink?: string; // URL to open when image is clicked
   // Gallery settings
