@@ -43,12 +43,15 @@ export function SlideBlockEditor({
 }: SlideBlockEditorProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [showSolution, setShowSolution] = useState(false);
-  const [isDragging, setIsDragging] = useState(false);
-  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
-  const [positionStart, setPositionStart] = useState({ x: 0, y: 0 });
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageContainerRef = useRef<HTMLDivElement>(null);
+  
+  // Drag state stored in refs to avoid stale closures
+  const isDraggingRef = useRef(false);
+  const dragStartRef = useRef({ x: 0, y: 0 });
+  const positionStartRef = useRef({ x: 0, y: 0 });
+  const [, forceUpdate] = useState(0); // For re-render on drag state change
 
   useEffect(() => {
     if (isEditing && textareaRef.current) {
@@ -61,37 +64,45 @@ export function SlideBlockEditor({
 
   // Image drag handlers for positioning when scale > 100%
   const handleImageMouseDown = (e: React.MouseEvent) => {
-    const imageScale = block.imageScale || 100;
-    if (imageScale <= 100) return;
+    const scale = block.imageScale || 100;
+    if (scale <= 100) return;
     
     e.preventDefault();
     e.stopPropagation();
-    setIsDragging(true);
-    setDragStart({ x: e.clientX, y: e.clientY });
-    setPositionStart({ 
+    
+    isDraggingRef.current = true;
+    dragStartRef.current = { x: e.clientX, y: e.clientY };
+    positionStartRef.current = { 
       x: block.imagePositionX || 0, 
       y: block.imagePositionY || 0 
-    });
-  };
-
-  useEffect(() => {
-    if (!isDragging) return;
-
-    const handleMouseMove = (e: MouseEvent) => {
-      if (!imageContainerRef.current) return;
+    };
+    forceUpdate(n => n + 1);
+    
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      if (!isDraggingRef.current || !imageContainerRef.current) return;
       
       const rect = imageContainerRef.current.getBoundingClientRect();
+      const scale = block.imageScale || 100;
       
-      // Convert pixel movement to percentage directly
-      const deltaX = e.clientX - dragStart.x;
-      const deltaY = e.clientY - dragStart.y;
+      // Delta in pixels
+      const deltaX = moveEvent.clientX - dragStartRef.current.x;
+      const deltaY = moveEvent.clientY - dragStartRef.current.y;
       
-      // Sensitivity: pixels to move for full range (-100 to 100)
-      const sensitivityX = rect.width / 2;
-      const sensitivityY = rect.height / 2;
+      // How much the image can move (in pixels) = (scale - 100)% of container size / 2
+      const maxMoveX = (rect.width * (scale - 100)) / 200;
+      const maxMoveY = (rect.height * (scale - 100)) / 200;
       
-      let newX = positionStart.x + (deltaX / sensitivityX) * 100;
-      let newY = positionStart.y + (deltaY / sensitivityY) * 100;
+      // Convert pixel delta to position (-100 to 100)
+      // When dragging right, we want image to move right, so we see more of left side
+      let newX = positionStartRef.current.x;
+      let newY = positionStartRef.current.y;
+      
+      if (maxMoveX > 0) {
+        newX = positionStartRef.current.x + (deltaX / maxMoveX) * 100;
+      }
+      if (maxMoveY > 0) {
+        newY = positionStartRef.current.y + (deltaY / maxMoveY) * 100;
+      }
       
       // Clamp to -100 to 100
       newX = Math.max(-100, Math.min(100, newX));
@@ -101,17 +112,15 @@ export function SlideBlockEditor({
     };
 
     const handleMouseUp = () => {
-      setIsDragging(false);
+      isDraggingRef.current = false;
+      forceUpdate(n => n + 1);
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
     };
 
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseup', handleMouseUp);
-
-    return () => {
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
-    };
-  }, [isDragging, dragStart, positionStart, block.imageScale, onUpdate]);
+  };
 
   const autoResize = () => {
     if (textareaRef.current) {
@@ -446,20 +455,30 @@ export function SlideBlockEditor({
               };
               
               if (displayImage) {
-                // Calculate object-position for cropped images
+                // Position values from -100 to 100
                 const posX = block.imagePositionX || 0;
                 const posY = block.imagePositionY || 0;
-                // Convert -100 to 100 range to 0% to 100%
-                const objectPositionX = 50 - (posX / 2);
-                const objectPositionY = 50 - (posY / 2);
+                
+                // Calculate image position:
+                // - Image is (imageScale)% of container
+                // - Center position: left = (100 - imageScale) / 2 = 50 - imageScale/2
+                // - Movement range: (imageScale - 100) / 2 on each side
+                // - posX = 100 means image moved right (we see left part)
+                // - posX = -100 means image moved left (we see right part)
+                const centerOffset = (100 - imageScale) / 2; // Negative when scale > 100
+                const moveRange = (imageScale - 100) / 2; // How much we can move from center
+                const imageLeft = centerOffset + (posX / 100) * moveRange;
+                const imageTop = centerOffset + (posY / 100) * moveRange;
+                
+                const isDragging = isDraggingRef.current;
                 
                 const imageElement = imageFit === 'cover' ? (
                   <div 
                     ref={imageContainerRef}
-                    className={`absolute inset-0 overflow-hidden ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
+                    className={`absolute inset-0 overflow-hidden ${imageScale > 100 ? (isDragging ? 'cursor-grabbing' : 'cursor-grab') : ''}`}
                     onMouseDown={handleImageMouseDown}
                   >
-                    {/* Image positioned as larger element inside container */}
+                    {/* Image positioned inside container */}
                     <img
                       src={displayImage}
                       alt={block.imageCaption || ''}
@@ -468,25 +487,22 @@ export function SlideBlockEditor({
                         width: `${imageScale}%`,
                         height: `${imageScale}%`,
                         objectFit: 'cover',
-                        // Position based on drag: posX/posY range from -100 to 100
-                        // When posX = 0, image is centered
-                        // When posX = -100, image is at left edge
-                        // When posX = 100, image is at right edge
-                        left: `${50 - imageScale/2 + (posX * (imageScale - 100) / 200)}%`,
-                        top: `${50 - imageScale/2 + (posY * (imageScale - 100) / 200)}%`,
+                        left: `${imageLeft}%`,
+                        top: `${imageTop}%`,
                       }}
                       draggable={false}
                     />
                     
-                    {/* Image boundary outline when scale > 100 */}
+                    {/* Visual feedback when dragging */}
                     {imageScale > 100 && isDragging && (
                       <div 
-                        className="absolute pointer-events-none border-2 border-dashed border-white/70"
+                        className="absolute pointer-events-none border-2 border-white shadow-lg"
                         style={{
                           width: `${imageScale}%`,
                           height: `${imageScale}%`,
-                          left: `${50 - imageScale/2 + (posX * (imageScale - 100) / 200)}%`,
-                          top: `${50 - imageScale/2 + (posY * (imageScale - 100) / 200)}%`,
+                          left: `${imageLeft}%`,
+                          top: `${imageTop}%`,
+                          boxShadow: '0 0 0 2000px rgba(0,0,0,0.3)',
                         }}
                       />
                     )}
