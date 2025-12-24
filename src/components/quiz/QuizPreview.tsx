@@ -406,11 +406,13 @@ function ImageBlockPreview({ block, borderRadius }: { block: any; borderRadius: 
         <img
           src={currentImage}
           alt={block.imageCaption || ''}
-          className="w-full h-full"
+          className="absolute"
           style={{
+            width: `${imageScale}%`,
+            height: `${imageScale}%`,
             objectFit: 'cover',
-            objectPosition: `${objectPositionX}% ${objectPositionY}%`,
-            transform: `scale(${imageScale / 100})`,
+            left: `${50 - imageScale/2 + (posX * (imageScale - 100) / 200)}%`,
+            top: `${50 - imageScale/2 + (posY * (imageScale - 100) / 200)}%`,
           }}
         />
       ) : (

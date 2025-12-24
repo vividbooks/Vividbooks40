@@ -444,24 +444,48 @@ export function BlockSettingsPanel({
                         </span>
                       </div>
                       
-                      {/* Custom slider with 100% marker */}
-                      <div className="relative h-8 flex items-center">
-                        {/* Track background - always visible */}
-                        <div className="absolute inset-x-0 h-2 bg-slate-300 rounded-full shadow-inner" />
+                      {/* Custom slider with visible track */}
+                      <div className="relative pt-2 pb-2">
+                        {/* Track container */}
+                        <div className="relative h-3 w-full">
+                          {/* Background track - gray */}
+                          <div 
+                            className="absolute top-1/2 -translate-y-1/2 left-0 right-0 h-2 rounded-full"
+                            style={{ backgroundColor: '#e2e8f0' }}
+                          />
+                          
+                          {/* Filled track - indigo or amber */}
+                          <div 
+                            className="absolute top-1/2 -translate-y-1/2 left-0 h-2 rounded-full"
+                            style={{ 
+                              width: `${((imageScale - 10) / 290) * 100}%`,
+                              backgroundColor: imageScale > 100 ? '#f59e0b' : '#6366f1'
+                            }}
+                          />
+                          
+                          {/* 100% marker */}
+                          <div 
+                            className="absolute top-1/2 -translate-y-1/2 w-1 h-4 rounded-full"
+                            style={{ 
+                              left: `${((100 - 10) / 290) * 100}%`,
+                              backgroundColor: '#94a3b8',
+                              transform: 'translate(-50%, -50%)'
+                            }}
+                          />
+                          
+                          {/* Thumb */}
+                          <div 
+                            className="absolute top-1/2 w-5 h-5 rounded-full border-2 shadow-md cursor-pointer"
+                            style={{ 
+                              left: `${((imageScale - 10) / 290) * 100}%`,
+                              transform: 'translate(-50%, -50%)',
+                              backgroundColor: 'white',
+                              borderColor: imageScale > 100 ? '#f59e0b' : '#6366f1'
+                            }}
+                          />
+                        </div>
                         
-                        {/* Filled track - different color for >100% */}
-                        <div 
-                          className={`absolute left-0 h-2 rounded-full transition-colors ${imageScale > 100 ? 'bg-amber-500' : 'bg-indigo-500'}`}
-                          style={{ width: `${((imageScale - 10) / 290) * 100}%` }}
-                        />
-                        
-                        {/* 100% marker line */}
-                        <div 
-                          className="absolute w-0.5 h-4 bg-slate-400 rounded-full z-5"
-                          style={{ left: `${((100 - 10) / 290) * 100}%`, transform: 'translateX(-50%)' }}
-                        />
-                        
-                        {/* Slider input */}
+                        {/* Invisible range input for interaction */}
                         <input
                           type="range"
                           min="10"
@@ -474,24 +498,7 @@ export function BlockSettingsPanel({
                               imageFit: val > 100 ? 'cover' : 'contain'
                             });
                           }}
-                          className="relative w-full h-8 appearance-none bg-transparent cursor-pointer z-10
-                            [&::-webkit-slider-thumb]:appearance-none 
-                            [&::-webkit-slider-thumb]:w-5 
-                            [&::-webkit-slider-thumb]:h-5 
-                            [&::-webkit-slider-thumb]:bg-white 
-                            [&::-webkit-slider-thumb]:border-2
-                            [&::-webkit-slider-thumb]:border-indigo-500
-                            [&::-webkit-slider-thumb]:rounded-full 
-                            [&::-webkit-slider-thumb]:shadow-md
-                            [&::-webkit-slider-thumb]:cursor-pointer
-                            [&::-moz-range-thumb]:w-5 
-                            [&::-moz-range-thumb]:h-5 
-                            [&::-moz-range-thumb]:bg-white 
-                            [&::-moz-range-thumb]:border-2
-                            [&::-moz-range-thumb]:border-indigo-500
-                            [&::-moz-range-thumb]:rounded-full 
-                            [&::-moz-range-thumb]:shadow-md
-                            [&::-moz-range-thumb]:cursor-pointer"
+                          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                         />
                       </div>
                       

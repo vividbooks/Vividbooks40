@@ -459,23 +459,29 @@ export function SlideBlockEditor({
                     className={`absolute inset-0 overflow-hidden ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
                     onMouseDown={handleImageMouseDown}
                   >
-                    {/* Actual visible image */}
+                    {/* Image positioned as larger element inside container */}
                     <img
                       src={displayImage}
                       alt={block.imageCaption || ''}
-                      className="w-full h-full pointer-events-none select-none"
+                      className="absolute pointer-events-none select-none"
                       style={{
+                        width: `${imageScale}%`,
+                        height: `${imageScale}%`,
                         objectFit: 'cover',
-                        objectPosition: `${objectPositionX}% ${objectPositionY}%`,
-                        transform: `scale(${imageScale / 100})`,
+                        // Position based on drag: posX/posY range from -100 to 100
+                        // When posX = 0, image is centered
+                        // When posX = -100, image is at left edge
+                        // When posX = 100, image is at right edge
+                        left: `${50 - imageScale/2 + (posX * (imageScale - 100) / 200)}%`,
+                        top: `${50 - imageScale/2 + (posY * (imageScale - 100) / 200)}%`,
                       }}
                       draggable={false}
                     />
                     
-                    {/* Image boundary outline when dragging or scale > 100 */}
-                    {imageScale > 100 && (
+                    {/* Image boundary outline when scale > 100 */}
+                    {imageScale > 100 && isDragging && (
                       <div 
-                        className="absolute pointer-events-none border-2 border-dashed border-indigo-400 opacity-50"
+                        className="absolute pointer-events-none border-2 border-dashed border-white/70"
                         style={{
                           width: `${imageScale}%`,
                           height: `${imageScale}%`,
