@@ -63,7 +63,7 @@ import { ABCSlideEditor } from './slides/ABCSlideEditor';
 import { OpenSlideEditor } from './slides/OpenSlideEditor';
 import { ExampleSlideEditor } from './slides/ExampleSlideEditor';
 import { InfoSlideEditor } from './slides/InfoSlideEditor';
-import { SlideTextToolbar } from './slides/SlideTextToolbar';
+import { RichTextEditor } from '../RichTextEditor';
 import { BackgroundPicker } from './slides/BackgroundPicker';
 import { PageSettingsPanel } from './slides/PageSettingsPanel';
 import { BlockSettingsPanel } from './slides/BlockSettingsPanel';
@@ -1367,35 +1367,16 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
                     </button>
                   </div>
                   
-                  {/* Text Toolbar - shown when editing text */}
+                  {/* Rich Text Editor - shown when editing text */}
                   {editingTextBlockIndex !== null && selectedSlide?.type === 'info' && selectedSlide.layout && (
-                    <div className="flex justify-center mb-3">
-                      <SlideTextToolbar
-                        isBold={selectedSlide.layout.blocks[editingTextBlockIndex]?.fontWeight === 'bold'}
-                        textAlign={selectedSlide.layout.blocks[editingTextBlockIndex]?.textAlign || 'left'}
-                        fontSize={selectedSlide.layout.blocks[editingTextBlockIndex]?.fontSize || 'medium'}
-                        onBoldToggle={() => {
-                          const block = selectedSlide.layout!.blocks[editingTextBlockIndex];
-                          const newBlocks = [...selectedSlide.layout!.blocks];
-                          newBlocks[editingTextBlockIndex] = { 
-                            ...block, 
-                            fontWeight: block.fontWeight === 'bold' ? 'normal' : 'bold' 
-                          };
-                          updateSlide(selectedSlide.id, { layout: { ...selectedSlide.layout!, blocks: newBlocks } });
-                        }}
-                        onAlignChange={(align) => {
+                    <div className="mb-4 bg-slate-50 rounded-xl border border-slate-200 shadow-sm">
+                      <RichTextEditor
+                        content={selectedSlide.layout.blocks[editingTextBlockIndex]?.content || ''}
+                        onChange={(content) => {
                           const newBlocks = [...selectedSlide.layout!.blocks];
                           newBlocks[editingTextBlockIndex] = { 
                             ...newBlocks[editingTextBlockIndex], 
-                            textAlign: align 
-                          };
-                          updateSlide(selectedSlide.id, { layout: { ...selectedSlide.layout!, blocks: newBlocks } });
-                        }}
-                        onFontSizeChange={(size) => {
-                          const newBlocks = [...selectedSlide.layout!.blocks];
-                          newBlocks[editingTextBlockIndex] = { 
-                            ...newBlocks[editingTextBlockIndex], 
-                            fontSize: size 
+                            content: content 
                           };
                           updateSlide(selectedSlide.id, { layout: { ...selectedSlide.layout!, blocks: newBlocks } });
                         }}

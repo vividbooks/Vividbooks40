@@ -297,38 +297,23 @@ export function SlideBlockEditor({
       {/* Content */}
       <div className="h-full p-4 flex flex-col justify-center">
         {block.type === 'text' && (
-          <>
-            {isEditing ? (
-              <textarea
-                ref={textareaRef}
-                value={block.content}
-                onChange={(e) => {
-                  onUpdate({ content: e.target.value });
-                  autoResize();
-                }}
-                onBlur={handleBlur}
-                onKeyDown={handleKeyDown}
-                onInput={autoResize}
-                className={`
-                  w-full bg-transparent outline-none resize-none
-                  ${getFontSizeClass()} ${getTextAlignClass()}
-                  ${block.fontWeight === 'bold' ? 'font-bold' : 'font-normal'}
-                `}
-                placeholder={placeholder}
+          <div
+            className={`
+              w-full prose prose-slate max-w-none
+              ${getTextAlignClass()}
+              ${!block.content ? 'text-slate-400' : 'text-slate-800'}
+              ${isEditing ? 'ring-2 ring-indigo-400 ring-offset-2 rounded-lg p-2' : ''}
+            `}
+          >
+            {block.content ? (
+              <div 
+                dangerouslySetInnerHTML={{ __html: block.content }}
+                className="[&_p]:my-1 [&_h1]:my-2 [&_h2]:my-2 [&_h3]:my-2"
               />
             ) : (
-              <div
-                className={`
-                  w-full whitespace-pre-wrap
-                  ${getFontSizeClass()} ${getTextAlignClass()}
-                  ${block.fontWeight === 'bold' ? 'font-bold' : 'font-normal'}
-                  ${!block.content ? 'text-slate-400' : 'text-slate-800'}
-                `}
-              >
-                {block.content || placeholder}
-              </div>
+              <span className="text-slate-400">{placeholder}</span>
             )}
-          </>
+          </div>
         )}
 
         {block.type === 'image' && (
