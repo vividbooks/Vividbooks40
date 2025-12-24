@@ -1315,7 +1315,16 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
             <div 
               className="flex-1 overflow-auto p-8 flex justify-center bg-slate-100/50"
               onClick={(e) => {
-                // Close panels when clicking on the canvas background (not on slide)
+                // Close panels when clicking on the canvas background
+                // Check if click is on the gray background area (not on slide content)
+                const target = e.target as HTMLElement;
+                if (target === e.currentTarget || target.classList.contains('bg-slate-100/50')) {
+                  setShowPageSettings(false);
+                  setSelectedBlockIndex(null);
+                }
+              }}
+              onMouseDown={(e) => {
+                // Also handle mousedown on the gray area
                 if (e.target === e.currentTarget) {
                   setShowPageSettings(false);
                   setSelectedBlockIndex(null);
