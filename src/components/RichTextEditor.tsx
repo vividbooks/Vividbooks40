@@ -292,8 +292,8 @@ interface RichTextEditorProps {
   content: string;
   onChange: (content: string) => void;
   readOnly?: boolean;
-  // Show only toolbar without content area (for slide editor)
-  toolbarOnly?: boolean;
+  // Show compact version with smaller content area (for slide editor)
+  compact?: boolean;
   // Paste detection for student assignments
   enablePasteDetection?: boolean;
   onPasteDetected?: (pastedText: string, wordCount: number) => void;
@@ -315,7 +315,7 @@ export function RichTextEditor({
   content, 
   onChange, 
   readOnly = false,
-  toolbarOnly = false,
+  compact = false,
   enablePasteDetection = false,
   onPasteDetected,
 }: RichTextEditorProps) {
@@ -780,7 +780,7 @@ export function RichTextEditor({
       
       {/* Single Row Toolbar - Sticky when scrolling, fixed sizing */}
       <div 
-        className={`sticky top-0 z-50 flex items-center shadow-[0_2px_8px_rgba(0,0,0,0.06)] flex-wrap ${toolbarOnly ? 'rounded-xl' : 'rounded-t-[11px]'}`}
+        className={`sticky top-0 z-50 flex items-center shadow-[0_2px_8px_rgba(0,0,0,0.06)] flex-wrap ${compact ? 'rounded-t-xl' : 'rounded-t-[11px]'}`}
         style={{ 
           backgroundColor: '#EFF1F8',
           padding: '10px 12px',
@@ -1334,11 +1334,10 @@ export function RichTextEditor({
         />
       </div>
 
-        {/* Editor Content - White background (hidden in toolbarOnly mode) */}
-        {!toolbarOnly && (
+        {/* Editor Content - White background */}
         <div 
-          className="bg-white mx-3 mb-3 overflow-hidden cursor-text relative"
-          style={{ borderRadius: '18px', padding: '60px' }}
+          className={`bg-white overflow-hidden cursor-text relative ${compact ? 'mx-0 mb-0 rounded-b-xl' : 'mx-3 mb-3'}`}
+          style={{ borderRadius: compact ? '0 0 12px 12px' : '18px', padding: compact ? '16px 20px' : '60px', minHeight: compact ? '80px' : undefined }}
           onClick={() => editor?.chain().focus().run()}
         >
           {/* Placeholder overlay for empty editor */}
@@ -1667,7 +1666,6 @@ export function RichTextEditor({
         )}
       </div>
         </div>
-        )}
 
       {/* Image Dialog */}
       {showImageDialog && (
