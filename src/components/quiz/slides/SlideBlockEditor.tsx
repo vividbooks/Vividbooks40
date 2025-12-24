@@ -362,12 +362,11 @@ export function SlideBlockEditor({
                           e.stopPropagation(); 
                           setShowSolution(!showSolution);
                         }}
-                        className={`absolute bottom-0 left-0 right-0 px-4 py-3 font-medium text-sm transition-all flex items-center justify-center gap-2 ${
+                        className={`absolute bottom-3 left-1/2 -translate-x-1/2 px-5 py-2.5 rounded-full font-medium text-sm transition-all flex items-center gap-2 shadow-lg ${
                           showSolution
                             ? 'bg-slate-700 text-white hover:bg-slate-800'
                             : 'bg-indigo-600 text-white hover:bg-indigo-700'
                         }`}
-                        style={{ borderRadius: '0 0 8px 8px' }}
                       >
                         {showSolution ? (
                           <>
