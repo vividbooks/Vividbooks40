@@ -23,6 +23,7 @@ import { SlideBlock, SlideBlockType } from '../../../types/quiz';
 interface SlideBlockEditorProps {
   block: SlideBlock;
   onUpdate: (updates: Partial<SlideBlock>) => void;
+  onDelete?: () => void; // Delete the entire block (change layout)
   isSelected?: boolean;
   onSelect?: () => void;
   onSettingsClick?: () => void;
@@ -34,6 +35,7 @@ interface SlideBlockEditorProps {
 export function SlideBlockEditor({
   block,
   onUpdate,
+  onDelete,
   isSelected = false,
   onSelect,
   onSettingsClick,
@@ -269,22 +271,28 @@ export function SlideBlockEditor({
         </button>
       </div>
 
-      {/* Delete button - RIGHT corner, visible on hover when there's content */}
-      {(block.content || (block.gallery && block.gallery.length > 0)) && (
-        <div 
-          className="absolute top-2 right-2 z-20 opacity-0 group-hover:opacity-100 transition-opacity"
-          onClick={(e) => e.stopPropagation()}
+      {/* Delete button - RIGHT corner, always visible on hover */}
+      <div 
+        className="absolute top-2 right-2 z-20 opacity-0 group-hover:opacity-100 transition-opacity"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button
+          onClick={() => {
+            if (hasContent) {
+              // If has content, just clear the content
+              onUpdate({ content: '', gallery: undefined, galleryIndex: undefined, imagePositionX: undefined, imagePositionY: undefined });
+            } else {
+              // If no content, delete the block (change layout)
+              onDelete?.();
+            }
+          }}
+          className="p-2 rounded-lg shadow-lg transition-colors"
+          style={{ backgroundColor: '#ef4444', color: 'white' }}
+          title={hasContent ? "Smazat obsah" : "Smazat blok"}
         >
-          <button
-            onClick={() => onUpdate({ content: '', gallery: undefined, galleryIndex: undefined })}
-            className="p-2 rounded-lg shadow-lg transition-colors"
-            style={{ backgroundColor: '#ef4444', color: 'white' }}
-            title="Smazat obsah"
-          >
-            <Trash2 className="w-4 h-4" />
-          </button>
-        </div>
-      )}
+          <Trash2 className="w-4 h-4" />
+        </button>
+      </div>
 
       {/* Content */}
       <div className="h-full p-4 flex flex-col justify-center">

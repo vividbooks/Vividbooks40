@@ -72,13 +72,87 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick, onBlockSettings
     return 8; // Default radius
   };
 
-  // Handle layout change
+  // Handle layout change - preserve existing block contents
   const handleLayoutChange = (layoutType: SlideLayoutType) => {
     const newLayout = createSlideLayout(layoutType);
+    
+    // Preserve existing block contents
+    if (layout.blocks) {
+      const existingBlocks = layout.blocks.filter(b => b.content || (b.gallery && b.gallery.length > 0));
+      
+      // Copy content from existing blocks to new blocks
+      for (let i = 0; i < Math.min(existingBlocks.length, newLayout.blocks.length); i++) {
+        newLayout.blocks[i] = {
+          ...newLayout.blocks[i],
+          content: existingBlocks[i].content,
+          type: existingBlocks[i].type,
+          gallery: existingBlocks[i].gallery,
+          galleryIndex: existingBlocks[i].galleryIndex,
+          galleryNavType: existingBlocks[i].galleryNavType,
+          imageScale: existingBlocks[i].imageScale,
+          imagePositionX: existingBlocks[i].imagePositionX,
+          imagePositionY: existingBlocks[i].imagePositionY,
+          imageCaption: existingBlocks[i].imageCaption,
+          imageLink: existingBlocks[i].imageLink,
+          imageFit: existingBlocks[i].imageFit,
+          background: existingBlocks[i].background,
+          textAlign: existingBlocks[i].textAlign,
+          fontSize: existingBlocks[i].fontSize,
+          fontWeight: existingBlocks[i].fontWeight,
+        };
+      }
+    }
+    
     onUpdate(slide.id, { layout: newLayout });
     setShowLayoutPanel(false);
     setSelectedBlockIndex(null);
   };
+  
+  // Handle block deletion - changes layout by removing a block
+  const handleBlockDelete = useCallback((blockIndex: number) => {
+    // Get current blocks with content
+    const blocksWithContent = layout.blocks.filter((b, i) => i !== blockIndex);
+    
+    // Determine new layout type based on remaining blocks
+    let newLayoutType: SlideLayoutType;
+    const remainingCount = blocksWithContent.length;
+    
+    if (remainingCount <= 1) {
+      newLayoutType = 'title-content';
+    } else if (remainingCount === 2) {
+      newLayoutType = '2cols';
+    } else {
+      newLayoutType = '3cols';
+    }
+    
+    // Create new layout and preserve contents
+    const newLayout = createSlideLayout(newLayoutType);
+    for (let i = 0; i < Math.min(blocksWithContent.length, newLayout.blocks.length); i++) {
+      newLayout.blocks[i] = {
+        ...newLayout.blocks[i],
+        ...blocksWithContent[i],
+        id: newLayout.blocks[i].id, // Keep new block ID
+      };
+    }
+    
+    onUpdate(slide.id, { layout: newLayout });
+    setSelectedBlockIndex(null);
+  }, [layout, onUpdate, slide.id]);
+
+  // Helper to render block editor with all props
+  const renderBlockEditor = (blockIndex: number, placeholder: string) => (
+    <SlideBlockEditor
+      block={layout.blocks[blockIndex]}
+      onUpdate={(updates) => handleBlockUpdate(blockIndex, updates)}
+      onDelete={() => handleBlockDelete(blockIndex)}
+      isSelected={selectedBlockIndex === blockIndex}
+      onSelect={() => setSelectedBlockIndex(blockIndex)}
+      onSettingsClick={() => onBlockSettingsClick?.(blockIndex)}
+      placeholder={placeholder}
+      templateColor={getBlockColor(blockIndex)}
+      borderRadius={getBlockRadius()}
+    />
+  );
 
   // Handle block update
   const handleBlockUpdate = useCallback((blockIndex: number, updates: Partial<SlideBlock>) => {
@@ -155,16 +229,7 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick, onBlockSettings
           <div className="h-full flex flex-col" style={{ gap: getBlockGap() }}>
             {/* Title block */}
             <div style={{ height: `${titleHeight}%`, minHeight: 60 }}>
-              <SlideBlockEditor
-                block={layout.blocks[0]}
-                onUpdate={(updates) => handleBlockUpdate(0, updates)}
-                isSelected={selectedBlockIndex === 0}
-                onSelect={() => setSelectedBlockIndex(0)}
-                onSettingsClick={() => onBlockSettingsClick?.(0)}
-                placeholder="Nadpis..."
-                templateColor={getBlockColor(0)}
-                borderRadius={getBlockRadius()}
-              />
+              {renderBlockEditor(0, "Nadpis...")}
             </div>
             
             {/* Title-Content resizer */}
@@ -179,16 +244,7 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick, onBlockSettings
             
             {/* Content block */}
             <div className="flex-1" style={{ minHeight: 100 }}>
-              <SlideBlockEditor
-                block={layout.blocks[1]}
-                onUpdate={(updates) => handleBlockUpdate(1, updates)}
-                isSelected={selectedBlockIndex === 1}
-                onSelect={() => setSelectedBlockIndex(1)}
-                onSettingsClick={() => onBlockSettingsClick?.(1)}
-                placeholder="Obsah..."
-                templateColor={getBlockColor(1)}
-                borderRadius={getBlockRadius()}
-              />
+              {renderBlockEditor(1, "Obsah...")}
             </div>
           </div>
         );
@@ -198,16 +254,7 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick, onBlockSettings
           <div className="h-full flex flex-col" style={{ gap: getBlockGap() }}>
             {/* Title block */}
             <div style={{ height: `${titleHeight}%`, minHeight: 60 }}>
-              <SlideBlockEditor
-                block={layout.blocks[0]}
-                onUpdate={(updates) => handleBlockUpdate(0, updates)}
-                isSelected={selectedBlockIndex === 0}
-                onSelect={() => setSelectedBlockIndex(0)}
-                onSettingsClick={() => onBlockSettingsClick?.(0)}
-                placeholder="Nadpis..."
-                templateColor={getBlockColor(0)}
-                borderRadius={getBlockRadius()}
-              />
+              {renderBlockEditor(0, "Nadpis...")}
             </div>
             
             <BlockResizer
@@ -221,16 +268,7 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick, onBlockSettings
             {/* Two columns */}
             <div className="flex-1 flex" style={{ minHeight: 100, gap: getBlockGap() }}>
               <div style={{ width: `${columnRatios[0]}%` }}>
-                <SlideBlockEditor
-                  block={layout.blocks[1]}
-                  onUpdate={(updates) => handleBlockUpdate(1, updates)}
-                  isSelected={selectedBlockIndex === 1}
-                  onSelect={() => setSelectedBlockIndex(1)}
-                  onSettingsClick={() => onBlockSettingsClick?.(1)}
-                  placeholder="Levý sloupec..."
-                  templateColor={getBlockColor(1)}
-                  borderRadius={getBlockRadius()}
-                />
+                {renderBlockEditor(1, "Levý sloupec...")}
               </div>
               
               <BlockResizer
@@ -242,16 +280,7 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick, onBlockSettings
               />
               
               <div style={{ width: `${columnRatios[1]}%` }}>
-                <SlideBlockEditor
-                  block={layout.blocks[2]}
-                  onUpdate={(updates) => handleBlockUpdate(2, updates)}
-                  isSelected={selectedBlockIndex === 2}
-                  onSelect={() => setSelectedBlockIndex(2)}
-                  onSettingsClick={() => onBlockSettingsClick?.(2)}
-                  placeholder="Pravý sloupec..."
-                  templateColor={getBlockColor(2)}
-                  borderRadius={getBlockRadius()}
-                />
+                {renderBlockEditor(2, "Pravý sloupec...")}
               </div>
             </div>
           </div>
@@ -262,16 +291,7 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick, onBlockSettings
           <div className="h-full flex flex-col" style={{ gap: getBlockGap() }}>
             {/* Title block */}
             <div style={{ height: `${titleHeight}%`, minHeight: 60 }}>
-              <SlideBlockEditor
-                block={layout.blocks[0]}
-                onUpdate={(updates) => handleBlockUpdate(0, updates)}
-                isSelected={selectedBlockIndex === 0}
-                onSelect={() => setSelectedBlockIndex(0)}
-                onSettingsClick={() => onBlockSettingsClick?.(0)}
-                placeholder="Nadpis..."
-                templateColor={getBlockColor(0)}
-                borderRadius={getBlockRadius()}
-              />
+              {renderBlockEditor(0, "Nadpis...")}
             </div>
             
             <BlockResizer
@@ -285,16 +305,7 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick, onBlockSettings
             {/* Three columns */}
             <div className="flex-1 flex" style={{ minHeight: 100, gap: getBlockGap() }}>
               <div style={{ width: `${columnRatios[0]}%` }}>
-                <SlideBlockEditor
-                  block={layout.blocks[1]}
-                  onUpdate={(updates) => handleBlockUpdate(1, updates)}
-                  isSelected={selectedBlockIndex === 1}
-                  onSelect={() => setSelectedBlockIndex(1)}
-                  onSettingsClick={() => onBlockSettingsClick?.(1)}
-                  placeholder="Sloupec 1..."
-                  templateColor={getBlockColor(1)}
-                  borderRadius={getBlockRadius()}
-                />
+                {renderBlockEditor(1, "Sloupec 1...")}
               </div>
               
               <BlockResizer
@@ -306,16 +317,7 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick, onBlockSettings
               />
               
               <div style={{ width: `${columnRatios[1]}%` }}>
-                <SlideBlockEditor
-                  block={layout.blocks[2]}
-                  onUpdate={(updates) => handleBlockUpdate(2, updates)}
-                  isSelected={selectedBlockIndex === 2}
-                  onSelect={() => setSelectedBlockIndex(2)}
-                  onSettingsClick={() => onBlockSettingsClick?.(2)}
-                  placeholder="Sloupec 2..."
-                  templateColor={getBlockColor(2)}
-                  borderRadius={getBlockRadius()}
-                />
+                {renderBlockEditor(2, "Sloupec 2...")}
               </div>
               
               <BlockResizer
@@ -327,16 +329,7 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick, onBlockSettings
               />
               
               <div style={{ width: `${columnRatios[2]}%` }}>
-                <SlideBlockEditor
-                  block={layout.blocks[3]}
-                  onUpdate={(updates) => handleBlockUpdate(3, updates)}
-                  isSelected={selectedBlockIndex === 3}
-                  onSelect={() => setSelectedBlockIndex(3)}
-                  onSettingsClick={() => onBlockSettingsClick?.(3)}
-                  placeholder="Sloupec 3..."
-                  templateColor={getBlockColor(3)}
-                  borderRadius={getBlockRadius()}
-                />
+                {renderBlockEditor(3, "Sloupec 3...")}
               </div>
             </div>
           </div>
@@ -346,16 +339,7 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick, onBlockSettings
         return (
           <div className="h-full flex" style={{ gap: getBlockGap() }}>
             <div style={{ width: `${columnRatios[0]}%` }}>
-              <SlideBlockEditor
-                block={layout.blocks[0]}
-                onUpdate={(updates) => handleBlockUpdate(0, updates)}
-                isSelected={selectedBlockIndex === 0}
-                onSelect={() => setSelectedBlockIndex(0)}
-                onSettingsClick={() => onBlockSettingsClick?.(0)}
-                placeholder="Levý sloupec..."
-                templateColor={getBlockColor(0)}
-                borderRadius={getBlockRadius()}
-              />
+              {renderBlockEditor(0, "Levý sloupec...")}
             </div>
             
             <BlockResizer
@@ -367,16 +351,7 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick, onBlockSettings
             />
             
             <div style={{ width: `${columnRatios[1]}%` }}>
-              <SlideBlockEditor
-                block={layout.blocks[1]}
-                onUpdate={(updates) => handleBlockUpdate(1, updates)}
-                isSelected={selectedBlockIndex === 1}
-                onSelect={() => setSelectedBlockIndex(1)}
-                onSettingsClick={() => onBlockSettingsClick?.(1)}
-                placeholder="Pravý sloupec..."
-                templateColor={getBlockColor(1)}
-                borderRadius={getBlockRadius()}
-              />
+              {renderBlockEditor(1, "Pravý sloupec...")}
             </div>
           </div>
         );
@@ -385,16 +360,7 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick, onBlockSettings
   return (
           <div className="h-full flex" style={{ gap: getBlockGap() }}>
             <div style={{ width: `${columnRatios[0]}%` }}>
-              <SlideBlockEditor
-                block={layout.blocks[0]}
-                onUpdate={(updates) => handleBlockUpdate(0, updates)}
-                isSelected={selectedBlockIndex === 0}
-                onSelect={() => setSelectedBlockIndex(0)}
-                onSettingsClick={() => onBlockSettingsClick?.(0)}
-                placeholder="Sloupec 1..."
-                templateColor={getBlockColor(0)}
-                borderRadius={getBlockRadius()}
-              />
+              {renderBlockEditor(0, "Sloupec 1...")}
             </div>
             
             <BlockResizer
@@ -406,16 +372,7 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick, onBlockSettings
             />
             
             <div style={{ width: `${columnRatios[1]}%` }}>
-              <SlideBlockEditor
-                block={layout.blocks[1]}
-                onUpdate={(updates) => handleBlockUpdate(1, updates)}
-                isSelected={selectedBlockIndex === 1}
-                onSelect={() => setSelectedBlockIndex(1)}
-                onSettingsClick={() => onBlockSettingsClick?.(1)}
-                placeholder="Sloupec 2..."
-                templateColor={getBlockColor(1)}
-                borderRadius={getBlockRadius()}
-              />
+              {renderBlockEditor(1, "Sloupec 2...")}
             </div>
             
             <BlockResizer
@@ -427,16 +384,7 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick, onBlockSettings
             />
             
             <div style={{ width: `${columnRatios[2]}%` }}>
-              <SlideBlockEditor
-                block={layout.blocks[2]}
-                onUpdate={(updates) => handleBlockUpdate(2, updates)}
-                isSelected={selectedBlockIndex === 2}
-                onSelect={() => setSelectedBlockIndex(2)}
-                onSettingsClick={() => onBlockSettingsClick?.(2)}
-                placeholder="Sloupec 3..."
-                templateColor={getBlockColor(2)}
-                borderRadius={getBlockRadius()}
-              />
+              {renderBlockEditor(2, "Sloupec 3...")}
             </div>
         </div>
         );
@@ -446,16 +394,7 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick, onBlockSettings
           <div className="h-full flex" style={{ gap: getBlockGap() }}>
             {/* Left large column */}
             <div style={{ width: `${columnRatios[0]}%` }}>
-              <SlideBlockEditor
-                block={layout.blocks[0]}
-                onUpdate={(updates) => handleBlockUpdate(0, updates)}
-                isSelected={selectedBlockIndex === 0}
-                onSelect={() => setSelectedBlockIndex(0)}
-                onSettingsClick={() => onBlockSettingsClick?.(0)}
-                placeholder="Hlavní obsah..."
-                templateColor={getBlockColor(0)}
-                borderRadius={getBlockRadius()}
-              />
+              {renderBlockEditor(0, "Hlavní obsah...")}
       </div>
       
             <BlockResizer
@@ -469,16 +408,7 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick, onBlockSettings
             {/* Right split column */}
             <div style={{ width: `${columnRatios[1]}%`, gap: getBlockGap() }} className="flex flex-col">
               <div style={{ height: `${splitRatio}%` }}>
-                <SlideBlockEditor
-                  block={layout.blocks[1]}
-                  onUpdate={(updates) => handleBlockUpdate(1, updates)}
-                  isSelected={selectedBlockIndex === 1}
-                  onSelect={() => setSelectedBlockIndex(1)}
-                  onSettingsClick={() => onBlockSettingsClick?.(1)}
-                  placeholder="Horní..."
-                  templateColor={getBlockColor(1)}
-                  borderRadius={getBlockRadius()}
-        />
+                {renderBlockEditor(1, "Horní...")}
       </div>
       
               <BlockResizer
@@ -490,16 +420,7 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick, onBlockSettings
               />
               
               <div style={{ height: `${100 - splitRatio}%` }}>
-                <SlideBlockEditor
-                  block={layout.blocks[2]}
-                  onUpdate={(updates) => handleBlockUpdate(2, updates)}
-                  isSelected={selectedBlockIndex === 2}
-                  onSelect={() => setSelectedBlockIndex(2)}
-                  onSettingsClick={() => onBlockSettingsClick?.(2)}
-                  placeholder="Dolní..."
-                  templateColor={getBlockColor(2)}
-                  borderRadius={getBlockRadius()}
-                />
+                {renderBlockEditor(2, "Dolní...")}
               </div>
         </div>
           </div>
@@ -511,16 +432,7 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick, onBlockSettings
             {/* Left split column */}
             <div style={{ width: `${columnRatios[0]}%`, gap: getBlockGap() }} className="flex flex-col">
               <div style={{ height: `${splitRatio}%` }}>
-                <SlideBlockEditor
-                  block={layout.blocks[0]}
-                  onUpdate={(updates) => handleBlockUpdate(0, updates)}
-                  isSelected={selectedBlockIndex === 0}
-                  onSelect={() => setSelectedBlockIndex(0)}
-                  onSettingsClick={() => onBlockSettingsClick?.(0)}
-                  placeholder="Horní..."
-                  templateColor={getBlockColor(0)}
-                  borderRadius={getBlockRadius()}
-                />
+                {renderBlockEditor(0, "Horní...")}
       </div>
       
               <BlockResizer
@@ -532,16 +444,7 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick, onBlockSettings
               />
               
               <div style={{ height: `${100 - splitRatio}%` }}>
-                <SlideBlockEditor
-                  block={layout.blocks[1]}
-                  onUpdate={(updates) => handleBlockUpdate(1, updates)}
-                  isSelected={selectedBlockIndex === 1}
-                  onSelect={() => setSelectedBlockIndex(1)}
-                  onSettingsClick={() => onBlockSettingsClick?.(1)}
-                  placeholder="Dolní..."
-                  templateColor={getBlockColor(1)}
-                  borderRadius={getBlockRadius()}
-                />
+                {renderBlockEditor(1, "Dolní...")}
               </div>
             </div>
             
@@ -555,16 +458,7 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick, onBlockSettings
             
             {/* Right large column */}
             <div style={{ width: `${columnRatios[1]}%` }}>
-              <SlideBlockEditor
-                block={layout.blocks[2]}
-                onUpdate={(updates) => handleBlockUpdate(2, updates)}
-                isSelected={selectedBlockIndex === 2}
-                onSelect={() => setSelectedBlockIndex(2)}
-                onSettingsClick={() => onBlockSettingsClick?.(2)}
-                placeholder="Hlavní obsah..."
-                templateColor={getBlockColor(2)}
-                borderRadius={getBlockRadius()}
-              />
+              {renderBlockEditor(2, "Hlavní obsah...")}
             </div>
           </div>
         );
