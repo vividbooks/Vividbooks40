@@ -27,6 +27,8 @@ interface SlideBlockEditorProps {
   isSelected?: boolean;
   onSelect?: () => void;
   onSettingsClick?: () => void;
+  onTextEditStart?: () => void; // Called when text editing starts
+  onTextEditEnd?: () => void; // Called when text editing ends
   placeholder?: string;
   templateColor?: string;
   borderRadius?: number;
@@ -39,6 +41,8 @@ export function SlideBlockEditor({
   isSelected = false,
   onSelect,
   onSettingsClick,
+  onTextEditStart,
+  onTextEditEnd,
   placeholder = 'Klikněte pro úpravu...',
   templateColor,
   borderRadius = 8,
@@ -120,6 +124,7 @@ export function SlideBlockEditor({
     onSelect?.();
     if (block.type === 'text') {
       setIsEditing(true);
+      onTextEditStart?.();
     } else if (block.type === 'link') {
       setIsEditing(true);
     }
@@ -127,6 +132,7 @@ export function SlideBlockEditor({
 
   const handleBlur = () => {
     setIsEditing(false);
+    onTextEditEnd?.();
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -271,28 +277,22 @@ export function SlideBlockEditor({
         </button>
       </div>
 
-      {/* Delete button - RIGHT corner, always visible on hover */}
-      <div 
-        className="absolute top-2 right-2 z-20 opacity-0 group-hover:opacity-100 transition-opacity"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <button
-          onClick={() => {
-            if (hasContent) {
-              // If has content, just clear the content
-              onUpdate({ content: '', gallery: undefined, galleryIndex: undefined, imagePositionX: undefined, imagePositionY: undefined });
-            } else {
-              // If no content, delete the block (change layout)
-              onDelete?.();
-            }
-          }}
-          className="p-2 rounded-lg shadow-lg transition-colors"
-          style={{ backgroundColor: '#ef4444', color: 'white' }}
-          title={hasContent ? "Smazat obsah" : "Smazat blok"}
+      {/* Delete button - RIGHT corner, visible on hover when there's content */}
+      {hasContent && (
+        <div 
+          className="absolute top-2 right-2 z-20 opacity-0 group-hover:opacity-100 transition-opacity"
+          onClick={(e) => e.stopPropagation()}
         >
-          <Trash2 className="w-4 h-4" />
-        </button>
-      </div>
+          <button
+            onClick={() => onUpdate({ content: '', gallery: undefined, galleryIndex: undefined, imagePositionX: undefined, imagePositionY: undefined })}
+            className="p-2 rounded-lg shadow-lg transition-colors"
+            style={{ backgroundColor: '#ef4444', color: 'white' }}
+            title="Smazat obsah"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
+        </div>
+      )}
 
       {/* Content */}
       <div className="h-full p-4 flex flex-col justify-center">

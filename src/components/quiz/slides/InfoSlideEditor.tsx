@@ -28,9 +28,11 @@ interface InfoSlideEditorProps {
   onUpdate: (id: string, updates: Partial<InfoSlide>) => void;
   onSlideClick?: () => void;
   onBlockSettingsClick?: (blockIndex: number) => void;
+  onTextEditStart?: (blockIndex: number) => void;
+  onTextEditEnd?: () => void;
 }
 
-export function InfoSlideEditor({ slide, onUpdate, onSlideClick, onBlockSettingsClick }: InfoSlideEditorProps) {
+export function InfoSlideEditor({ slide, onUpdate, onSlideClick, onBlockSettingsClick, onTextEditStart, onTextEditEnd }: InfoSlideEditorProps) {
   const [selectedBlockIndex, setSelectedBlockIndex] = useState<number | null>(null);
   const [showLayoutPanel, setShowLayoutPanel] = useState(!slide.layout);
   const [showBackgroundPicker, setShowBackgroundPicker] = useState(false);
@@ -148,6 +150,8 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick, onBlockSettings
       isSelected={selectedBlockIndex === blockIndex}
       onSelect={() => setSelectedBlockIndex(blockIndex)}
       onSettingsClick={() => onBlockSettingsClick?.(blockIndex)}
+      onTextEditStart={() => onTextEditStart?.(blockIndex)}
+      onTextEditEnd={onTextEditEnd}
       placeholder={placeholder}
       templateColor={getBlockColor(blockIndex)}
       borderRadius={getBlockRadius()}

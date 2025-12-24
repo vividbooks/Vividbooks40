@@ -63,6 +63,7 @@ import { ABCSlideEditor } from './slides/ABCSlideEditor';
 import { OpenSlideEditor } from './slides/OpenSlideEditor';
 import { ExampleSlideEditor } from './slides/ExampleSlideEditor';
 import { InfoSlideEditor } from './slides/InfoSlideEditor';
+import { SlideTextToolbar } from './slides/SlideTextToolbar';
 import { BackgroundPicker } from './slides/BackgroundPicker';
 import { PageSettingsPanel } from './slides/PageSettingsPanel';
 import { BlockSettingsPanel } from './slides/BlockSettingsPanel';
@@ -491,6 +492,7 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
   const [showVersionHistory, setShowVersionHistory] = useState(false);
   const [showPageSettings, setShowPageSettings] = useState(false);
   const [selectedBlockIndex, setSelectedBlockIndex] = useState<number | null>(null);
+  const [editingTextBlockIndex, setEditingTextBlockIndex] = useState<number | null>(null);
   
   // Results state
   const [sessions, setSessions] = useState<SessionData[]>([]);
@@ -1365,6 +1367,42 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
                     </button>
                   </div>
                   
+                  {/* Text Toolbar - shown when editing text */}
+                  {editingTextBlockIndex !== null && selectedSlide?.type === 'info' && selectedSlide.layout && (
+                    <div className="flex justify-center mb-3">
+                      <SlideTextToolbar
+                        isBold={selectedSlide.layout.blocks[editingTextBlockIndex]?.fontWeight === 'bold'}
+                        textAlign={selectedSlide.layout.blocks[editingTextBlockIndex]?.textAlign || 'left'}
+                        fontSize={selectedSlide.layout.blocks[editingTextBlockIndex]?.fontSize || 'medium'}
+                        onBoldToggle={() => {
+                          const block = selectedSlide.layout!.blocks[editingTextBlockIndex];
+                          const newBlocks = [...selectedSlide.layout!.blocks];
+                          newBlocks[editingTextBlockIndex] = { 
+                            ...block, 
+                            fontWeight: block.fontWeight === 'bold' ? 'normal' : 'bold' 
+                          };
+                          updateSlide(selectedSlide.id, { layout: { ...selectedSlide.layout!, blocks: newBlocks } });
+                        }}
+                        onAlignChange={(align) => {
+                          const newBlocks = [...selectedSlide.layout!.blocks];
+                          newBlocks[editingTextBlockIndex] = { 
+                            ...newBlocks[editingTextBlockIndex], 
+                            textAlign: align 
+                          };
+                          updateSlide(selectedSlide.id, { layout: { ...selectedSlide.layout!, blocks: newBlocks } });
+                        }}
+                        onFontSizeChange={(size) => {
+                          const newBlocks = [...selectedSlide.layout!.blocks];
+                          newBlocks[editingTextBlockIndex] = { 
+                            ...newBlocks[editingTextBlockIndex], 
+                            fontSize: size 
+                          };
+                          updateSlide(selectedSlide.id, { layout: { ...selectedSlide.layout!, blocks: newBlocks } });
+                        }}
+                      />
+                    </div>
+                  )}
+                  
                   {/* The actual editor */}
                   <div 
                     className="rounded-xl shadow-sm border border-slate-200 transition-colors duration-300"
@@ -1377,6 +1415,12 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
                       (blockIndex) => {
                         setSelectedBlockIndex(blockIndex);
                         setShowPageSettings(false); // Close page settings when block settings open
+                      },
+                      (blockIndex) => {
+                        setEditingTextBlockIndex(blockIndex);
+                      },
+                      () => {
+                        setEditingTextBlockIndex(null);
                       }
                     )}
                   </div>
@@ -1484,11 +1528,22 @@ function renderSlideEditor(
   slide: QuizSlide, 
   onUpdate: (id: string, updates: Partial<QuizSlide>) => void,
   onSlideClick?: () => void,
-  onBlockSettingsClick?: (blockIndex: number) => void
+  onBlockSettingsClick?: (blockIndex: number) => void,
+  onTextEditStart?: (blockIndex: number) => void,
+  onTextEditEnd?: () => void
 ): React.ReactNode {
   switch (slide.type) {
     case 'info':
-      return <InfoSlideEditor slide={slide} onUpdate={onUpdate} onSlideClick={onSlideClick} onBlockSettingsClick={onBlockSettingsClick} />;
+      return (
+        <InfoSlideEditor 
+          slide={slide} 
+          onUpdate={onUpdate} 
+          onSlideClick={onSlideClick} 
+          onBlockSettingsClick={onBlockSettingsClick}
+          onTextEditStart={onTextEditStart}
+          onTextEditEnd={onTextEditEnd}
+        />
+      );
     case 'activity':
       switch ((slide as any).activityType) {
         case 'abc':
