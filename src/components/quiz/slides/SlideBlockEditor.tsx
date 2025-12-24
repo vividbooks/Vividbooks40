@@ -43,8 +43,12 @@ export function SlideBlockEditor({
 }: SlideBlockEditorProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [showSolution, setShowSolution] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const [positionStart, setPositionStart] = useState({ x: 0, y: 0 });
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const imageContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (isEditing && textareaRef.current) {
@@ -54,6 +58,65 @@ export function SlideBlockEditor({
       autoResize();
     }
   }, [isEditing]);
+
+  // Image drag handlers for positioning when scale > 100%
+  const handleImageMouseDown = (e: React.MouseEvent) => {
+    const imageScale = block.imageScale || 100;
+    if (imageScale <= 100) return;
+    
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+    setDragStart({ x: e.clientX, y: e.clientY });
+    setPositionStart({ 
+      x: block.imagePositionX || 0, 
+      y: block.imagePositionY || 0 
+    });
+  };
+
+  useEffect(() => {
+    if (!isDragging) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!imageContainerRef.current) return;
+      
+      const rect = imageContainerRef.current.getBoundingClientRect();
+      const imageScale = block.imageScale || 100;
+      
+      // Calculate how much extra space the image has
+      const extraScale = (imageScale - 100) / 100;
+      const maxOffsetX = (rect.width * extraScale) / 2;
+      const maxOffsetY = (rect.height * extraScale) / 2;
+      
+      // Convert pixel movement to percentage
+      const deltaX = e.clientX - dragStart.x;
+      const deltaY = e.clientY - dragStart.y;
+      
+      // Sensitivity factor
+      const sensitivity = 0.5;
+      
+      let newX = positionStart.x + (deltaX / maxOffsetX) * 100 * sensitivity;
+      let newY = positionStart.y + (deltaY / maxOffsetY) * 100 * sensitivity;
+      
+      // Clamp to -100 to 100
+      newX = Math.max(-100, Math.min(100, newX));
+      newY = Math.max(-100, Math.min(100, newY));
+      
+      onUpdate({ imagePositionX: newX, imagePositionY: newY });
+    };
+
+    const handleMouseUp = () => {
+      setIsDragging(false);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isDragging, dragStart, positionStart, block.imageScale, onUpdate]);
 
   const autoResize = () => {
     if (textareaRef.current) {
@@ -362,7 +425,7 @@ export function SlideBlockEditor({
                           e.stopPropagation(); 
                           setShowSolution(!showSolution);
                         }}
-                        className={`absolute bottom-3 left-1/2 -translate-x-1/2 px-5 py-2.5 rounded-full font-medium text-sm transition-all flex items-center gap-2 shadow-lg ${
+                        className={`absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 px-5 py-2 rounded-full font-medium text-sm transition-all flex items-center gap-2 shadow-lg z-30 ${
                           showSolution
                             ? 'bg-slate-700 text-white hover:bg-slate-800'
                             : 'bg-indigo-600 text-white hover:bg-indigo-700'
@@ -388,17 +451,49 @@ export function SlideBlockEditor({
               };
               
               if (displayImage) {
+                // Calculate object-position for cropped images
+                const posX = block.imagePositionX || 0;
+                const posY = block.imagePositionY || 0;
+                // Convert -100 to 100 range to 0% to 100%
+                const objectPositionX = 50 - (posX / 2);
+                const objectPositionY = 50 - (posY / 2);
+                
                 const imageElement = imageFit === 'cover' ? (
-                  <div className="absolute inset-0">
+                  <div 
+                    ref={imageContainerRef}
+                    className={`absolute inset-0 overflow-hidden ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
+                    onMouseDown={handleImageMouseDown}
+                  >
+                    {/* Actual visible image */}
                     <img
                       src={displayImage}
                       alt={block.imageCaption || ''}
-                      className="w-full h-full object-cover"
+                      className="w-full h-full pointer-events-none select-none"
+                      style={{
+                        objectFit: 'cover',
+                        objectPosition: `${objectPositionX}% ${objectPositionY}%`,
+                        transform: `scale(${imageScale / 100})`,
+                      }}
+                      draggable={false}
                     />
+                    
+                    {/* Image boundary outline when dragging or scale > 100 */}
+                    {imageScale > 100 && (
+                      <div 
+                        className="absolute pointer-events-none border-2 border-dashed border-indigo-400 opacity-50"
+                        style={{
+                          width: `${imageScale}%`,
+                          height: `${imageScale}%`,
+                          left: `${50 - imageScale/2 + (posX * (imageScale - 100) / 200)}%`,
+                          top: `${50 - imageScale/2 + (posY * (imageScale - 100) / 200)}%`,
+                        }}
+                      />
+                    )}
+                    
                     {renderNavigation(true)}
                     {/* Caption */}
                     {block.imageCaption && (
-                      <div className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-sm px-3 py-2 text-center">
+                      <div className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-sm px-3 py-2 text-center pointer-events-none">
                         {block.imageCaption}
                       </div>
                     )}

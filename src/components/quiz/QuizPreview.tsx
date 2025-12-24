@@ -301,6 +301,12 @@ function ImageBlockPreview({ block, borderRadius }: { block: any; borderRadius: 
   // If scale > 100%, use cover mode (crop), otherwise contain
   const imageFit = imageScale > 100 ? 'cover' : (block.imageFit || 'contain');
   const navType = block.galleryNavType || 'dots-bottom';
+  
+  // Calculate object-position for cropped images
+  const posX = block.imagePositionX || 0;
+  const posY = block.imagePositionY || 0;
+  const objectPositionX = 50 - (posX / 2);
+  const objectPositionY = 50 - (posY / 2);
 
   // Get current image
   const currentImage = hasGallery
@@ -379,7 +385,7 @@ function ImageBlockPreview({ block, borderRadius }: { block: any; borderRadius: 
         return (
           <button
             onClick={() => setShowSolution(!showSolution)}
-            className={`absolute bottom-3 left-1/2 -translate-x-1/2 px-5 py-2.5 rounded-full font-medium text-sm transition-all flex items-center gap-2 shadow-lg ${
+            className={`absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 px-5 py-2 rounded-full font-medium text-sm transition-all flex items-center gap-2 shadow-lg z-30 ${
               showSolution
                 ? 'bg-slate-700 text-white hover:bg-slate-800'
                 : 'bg-indigo-600 text-white hover:bg-indigo-700'
@@ -400,7 +406,12 @@ function ImageBlockPreview({ block, borderRadius }: { block: any; borderRadius: 
         <img
           src={currentImage}
           alt={block.imageCaption || ''}
-          className="w-full h-full object-cover"
+          className="w-full h-full"
+          style={{
+            objectFit: 'cover',
+            objectPosition: `${objectPositionX}% ${objectPositionY}%`,
+            transform: `scale(${imageScale / 100})`,
+          }}
         />
       ) : (
         <img

@@ -439,12 +439,12 @@ export function BlockSettingsPanel({
                     <div>
                       <div className="flex items-center justify-between mb-2">
                         <label className="text-xs font-medium text-slate-600">Velikost obrázku</label>
-                        <span className="text-xs font-medium text-indigo-600">
-                          {imageScale}% {imageScale > 100 ? '(ořez)' : ''}
+                        <span className={`text-xs font-medium ${imageScale > 100 ? 'text-amber-600' : 'text-indigo-600'}`}>
+                          {imageScale}%
                         </span>
                       </div>
                       
-                      {/* Custom slider with 100% marker in center */}
+                      {/* Custom slider with 100% marker */}
                       <div className="relative h-8 flex items-center">
                         {/* Track background */}
                         <div className="absolute inset-x-0 h-2 bg-slate-200 rounded-full" />
@@ -452,24 +452,23 @@ export function BlockSettingsPanel({
                         {/* Filled track - different color for >100% */}
                         <div 
                           className={`absolute left-0 h-2 rounded-full ${imageScale > 100 ? 'bg-amber-500' : 'bg-indigo-500'}`}
-                          style={{ width: `${((imageScale - 10) / 190) * 100}%` }}
+                          style={{ width: `${((imageScale - 10) / 290) * 100}%` }}
                         />
                         
                         {/* 100% marker line */}
                         <div 
                           className="absolute w-0.5 h-4 bg-slate-400 rounded-full z-5"
-                          style={{ left: `${((100 - 10) / 190) * 100}%`, transform: 'translateX(-50%)' }}
+                          style={{ left: `${((100 - 10) / 290) * 100}%`, transform: 'translateX(-50%)' }}
                         />
                         
                         {/* Slider input */}
                         <input
                           type="range"
                           min="10"
-                          max="200"
+                          max="300"
                           value={imageScale}
                           onChange={(e) => {
                             const val = parseInt(e.target.value);
-                            // Auto-set imageFit based on scale
                             onUpdate({ 
                               imageScale: val,
                               imageFit: val > 100 ? 'cover' : 'contain'
@@ -498,10 +497,17 @@ export function BlockSettingsPanel({
                       
                       {/* Labels below slider */}
                       <div className="flex justify-between text-xs text-slate-400 mt-1">
-                        <span>Přizpůsobit</span>
+                        <span>10%</span>
                         <span>100%</span>
-                        <span>Vyplnit</span>
+                        <span>300%</span>
                       </div>
+                      
+                      {/* Info about cropping */}
+                      {imageScale > 100 && (
+                        <div className="mt-2 p-2 bg-amber-50 rounded-lg text-xs text-amber-700">
+                          💡 Přetáhni obrázek v bloku pro nastavení pozice ořezu
+                        </div>
+                      )}
                     </div>
 
                     {/* Image caption */}
