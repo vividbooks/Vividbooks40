@@ -446,12 +446,12 @@ export function BlockSettingsPanel({
                       
                       {/* Custom slider with 100% marker */}
                       <div className="relative h-8 flex items-center">
-                        {/* Track background */}
-                        <div className="absolute inset-x-0 h-2 bg-slate-200 rounded-full" />
+                        {/* Track background - always visible */}
+                        <div className="absolute inset-x-0 h-2 bg-slate-300 rounded-full shadow-inner" />
                         
                         {/* Filled track - different color for >100% */}
                         <div 
-                          className={`absolute left-0 h-2 rounded-full ${imageScale > 100 ? 'bg-amber-500' : 'bg-indigo-500'}`}
+                          className={`absolute left-0 h-2 rounded-full transition-colors ${imageScale > 100 ? 'bg-amber-500' : 'bg-indigo-500'}`}
                           style={{ width: `${((imageScale - 10) / 290) * 100}%` }}
                         />
                         

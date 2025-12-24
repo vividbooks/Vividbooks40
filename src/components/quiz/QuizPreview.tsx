@@ -385,11 +385,11 @@ function ImageBlockPreview({ block, borderRadius }: { block: any; borderRadius: 
         return (
           <button
             onClick={() => setShowSolution(!showSolution)}
-            className={`absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 px-5 py-2 rounded-full font-medium text-sm transition-all flex items-center gap-2 shadow-lg z-30 ${
-              showSolution
-                ? 'bg-slate-700 text-white hover:bg-slate-800'
-                : 'bg-indigo-600 text-white hover:bg-indigo-700'
-            }`}
+            className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 px-5 py-2 rounded-full font-medium text-sm transition-all flex items-center gap-2 shadow-lg z-30"
+            style={{
+              backgroundColor: showSolution ? '#334155' : '#4f46e5',
+              color: 'white',
+            }}
           >
             {showSolution ? 'Skrýt řešení' : 'Zobrazit řešení'}
           </button>

@@ -81,22 +81,17 @@ export function SlideBlockEditor({
       if (!imageContainerRef.current) return;
       
       const rect = imageContainerRef.current.getBoundingClientRect();
-      const imageScale = block.imageScale || 100;
       
-      // Calculate how much extra space the image has
-      const extraScale = (imageScale - 100) / 100;
-      const maxOffsetX = (rect.width * extraScale) / 2;
-      const maxOffsetY = (rect.height * extraScale) / 2;
-      
-      // Convert pixel movement to percentage
+      // Convert pixel movement to percentage directly
       const deltaX = e.clientX - dragStart.x;
       const deltaY = e.clientY - dragStart.y;
       
-      // Sensitivity factor
-      const sensitivity = 0.5;
+      // Sensitivity: pixels to move for full range (-100 to 100)
+      const sensitivityX = rect.width / 2;
+      const sensitivityY = rect.height / 2;
       
-      let newX = positionStart.x + (deltaX / maxOffsetX) * 100 * sensitivity;
-      let newY = positionStart.y + (deltaY / maxOffsetY) * 100 * sensitivity;
+      let newX = positionStart.x + (deltaX / sensitivityX) * 100;
+      let newY = positionStart.y + (deltaY / sensitivityY) * 100;
       
       // Clamp to -100 to 100
       newX = Math.max(-100, Math.min(100, newX));
@@ -425,11 +420,11 @@ export function SlideBlockEditor({
                           e.stopPropagation(); 
                           setShowSolution(!showSolution);
                         }}
-                        className={`absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 px-5 py-2 rounded-full font-medium text-sm transition-all flex items-center gap-2 shadow-lg z-30 ${
-                          showSolution
-                            ? 'bg-slate-700 text-white hover:bg-slate-800'
-                            : 'bg-indigo-600 text-white hover:bg-indigo-700'
-                        }`}
+                        className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 px-5 py-2 rounded-full font-medium text-sm transition-all flex items-center gap-2 shadow-lg z-30"
+                        style={{
+                          backgroundColor: showSolution ? '#334155' : '#4f46e5',
+                          color: 'white',
+                        }}
                       >
                         {showSolution ? (
                           <>
