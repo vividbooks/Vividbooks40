@@ -292,6 +292,8 @@ interface RichTextEditorProps {
   content: string;
   onChange: (content: string) => void;
   readOnly?: boolean;
+  // Show only toolbar without content area (for slide editor)
+  toolbarOnly?: boolean;
   // Paste detection for student assignments
   enablePasteDetection?: boolean;
   onPasteDetected?: (pastedText: string, wordCount: number) => void;
@@ -313,6 +315,7 @@ export function RichTextEditor({
   content, 
   onChange, 
   readOnly = false,
+  toolbarOnly = false,
   enablePasteDetection = false,
   onPasteDetected,
 }: RichTextEditorProps) {
@@ -777,7 +780,7 @@ export function RichTextEditor({
       
       {/* Single Row Toolbar - Sticky when scrolling, fixed sizing */}
       <div 
-        className="sticky top-0 z-50 flex items-center rounded-t-[11px] shadow-[0_2px_8px_rgba(0,0,0,0.06)] flex-wrap"
+        className={`sticky top-0 z-50 flex items-center shadow-[0_2px_8px_rgba(0,0,0,0.06)] flex-wrap ${toolbarOnly ? 'rounded-xl' : 'rounded-t-[11px]'}`}
         style={{ 
           backgroundColor: '#EFF1F8',
           padding: '10px 12px',
@@ -1331,7 +1334,8 @@ export function RichTextEditor({
         />
       </div>
 
-        {/* Editor Content - White background */}
+        {/* Editor Content - White background (hidden in toolbarOnly mode) */}
+        {!toolbarOnly && (
         <div 
           className="bg-white mx-3 mb-3 overflow-hidden cursor-text relative"
           style={{ borderRadius: '18px', padding: '60px' }}
@@ -1663,6 +1667,7 @@ export function RichTextEditor({
         )}
       </div>
         </div>
+        )}
 
       {/* Image Dialog */}
       {showImageDialog && (

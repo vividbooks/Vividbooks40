@@ -1367,9 +1367,9 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
                     </button>
                   </div>
                   
-                  {/* Rich Text Editor - shown when editing text */}
+                  {/* Rich Text Toolbar - shown when editing text */}
                   {editingTextBlockIndex !== null && selectedSlide?.type === 'info' && selectedSlide.layout && (
-                    <div className="mb-4 bg-slate-50 rounded-xl border border-slate-200 shadow-sm">
+                    <div className="mb-4">
                       <RichTextEditor
                         content={selectedSlide.layout.blocks[editingTextBlockIndex]?.content || ''}
                         onChange={(content) => {
@@ -1380,6 +1380,7 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
                           };
                           updateSlide(selectedSlide.id, { layout: { ...selectedSlide.layout!, blocks: newBlocks } });
                         }}
+                        toolbarOnly={true}
                       />
                     </div>
                   )}
