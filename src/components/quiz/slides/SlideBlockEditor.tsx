@@ -121,6 +121,7 @@ export function SlideBlockEditor({
   };
 
   const handleClick = (e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent click from propagating to parent
     onSelect?.();
     if (block.type === 'text') {
       setIsEditing(true);

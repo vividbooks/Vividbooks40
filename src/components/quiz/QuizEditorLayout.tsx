@@ -1323,6 +1323,7 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
                 if (target === e.currentTarget || target.classList.contains('bg-slate-100/50')) {
                   setShowPageSettings(false);
                   setSelectedBlockIndex(null);
+                  setEditingTextBlockIndex(null);
                 }
               }}
               onMouseDown={(e) => {
@@ -1330,6 +1331,7 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
                 if (e.target === e.currentTarget) {
                   setShowPageSettings(false);
                   setSelectedBlockIndex(null);
+                  setEditingTextBlockIndex(null);
                 }
               }}
             >
@@ -1369,7 +1371,10 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
                   
                   {/* Rich Text Editor - shown when editing text */}
                   {editingTextBlockIndex !== null && selectedSlide?.type === 'info' && selectedSlide.layout && (
-                    <div className="mb-4 rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                    <div 
+                      className="mb-4 rounded-xl border border-slate-200 shadow-sm overflow-hidden"
+                      onClick={(e) => e.stopPropagation()}
+                    >
                       <RichTextEditor
                         content={selectedSlide.layout.blocks[editingTextBlockIndex]?.content || ''}
                         onChange={(content) => {
