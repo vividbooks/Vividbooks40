@@ -273,8 +273,9 @@ export function SlideBlockEditor({
                 ? block.gallery![currentIndex] 
                 : block.content;
               
-              const imageFit = block.imageFit || 'contain';
               const imageScale = block.imageScale || 100;
+              // If scale > 100%, use cover mode (crop), otherwise contain
+              const imageFit = imageScale > 100 ? 'cover' : (block.imageFit || 'contain');
               const navType = block.galleryNavType || 'dots-bottom';
               
               // For solution type: first image is "question", second is "solution"
@@ -361,11 +362,12 @@ export function SlideBlockEditor({
                           e.stopPropagation(); 
                           setShowSolution(!showSolution);
                         }}
-                        className={`absolute bottom-3 left-1/2 -translate-x-1/2 px-4 py-2 rounded-lg font-medium text-sm transition-all flex items-center gap-2 ${
+                        className={`absolute bottom-0 left-0 right-0 px-4 py-3 font-medium text-sm transition-all flex items-center justify-center gap-2 ${
                           showSolution
                             ? 'bg-slate-700 text-white hover:bg-slate-800'
                             : 'bg-indigo-600 text-white hover:bg-indigo-700'
                         }`}
+                        style={{ borderRadius: '0 0 8px 8px' }}
                       >
                         {showSolution ? (
                           <>

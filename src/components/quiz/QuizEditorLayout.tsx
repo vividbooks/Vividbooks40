@@ -1312,9 +1312,18 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
             </div>
             
             {/* Editor Canvas */}
-            <div className="flex-1 overflow-auto p-8 flex justify-center bg-slate-100/50">
+            <div 
+              className="flex-1 overflow-auto p-8 flex justify-center bg-slate-100/50"
+              onClick={(e) => {
+                // Close panels when clicking on the canvas background (not on slide)
+                if (e.target === e.currentTarget) {
+                  setShowPageSettings(false);
+                  setSelectedBlockIndex(null);
+                }
+              }}
+            >
               {selectedSlide ? (
-                <div className="w-full max-w-5xl flex flex-col mb-8">
+                <div className="w-full flex flex-col mb-8" style={{ maxWidth: 'min(1024px, calc((100vh - 200px) * 4 / 3))' }}>
                   {/* Navigation above slide */}
                   <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center gap-2">

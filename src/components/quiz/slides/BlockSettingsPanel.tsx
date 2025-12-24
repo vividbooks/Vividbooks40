@@ -10,8 +10,6 @@ import {
   ChevronDown,
   ChevronRight,
   Palette,
-  Maximize2,
-  Minimize2,
   Upload,
   Type,
   Image as ImageIcon,
@@ -23,8 +21,6 @@ import {
   Plus,
   Trash2,
   Images,
-  ChevronLeftIcon,
-  ChevronRightIcon,
 } from 'lucide-react';
 import { SlideBlock, SlideBlockType } from '../../../types/quiz';
 import { BackgroundPicker } from './BackgroundPicker';
@@ -46,7 +42,9 @@ export function BlockSettingsPanel({
   onImageUpload,
   onGalleryImageUpload,
 }: BlockSettingsPanelProps) {
-  const [expandedSection, setExpandedSection] = useState<string | null>('type');
+  const [expandedSection, setExpandedSection] = useState<string | null>(
+    block.type === 'image' ? 'image' : 'type'
+  );
   const galleryInputRef = useRef<HTMLInputElement>(null);
 
   const toggleSection = (section: string) => {
@@ -371,7 +369,7 @@ export function BlockSettingsPanel({
                   </div>
                 )}
 
-                {/* Upload / Create gallery buttons */}
+                {/* Upload / Create gallery / Delete buttons */}
                 <div className="flex gap-2">
                   <label className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl border-2 border-slate-200 hover:border-indigo-400 hover:bg-indigo-50 cursor-pointer transition-colors">
                     <Upload className="w-5 h-5 text-slate-500" />
@@ -396,6 +394,17 @@ export function BlockSettingsPanel({
                     </span>
                   </button>
                 </div>
+
+                {/* Delete current image button */}
+                {hasGallery && block.gallery && block.gallery.length > 0 && (
+                  <button
+                    onClick={() => removeGalleryImage(block.galleryIndex || 0)}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-red-600 hover:bg-red-50 transition-colors text-sm"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    Smazat označený obrázek
+                  </button>
+                )}
 
                 {/* Hidden input for multiple files */}
                 <input
@@ -424,102 +433,76 @@ export function BlockSettingsPanel({
                   </div>
                 )}
 
-                {/* Image fit mode (only if image exists) */}
+                {/* Image scale slider (only if image exists) */}
                 {(block.content || hasGallery) && (
                   <>
                     <div>
-                      <label className="text-xs font-medium text-slate-600 mb-2 block">Režim zobrazení</label>
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => onUpdate({ imageFit: 'contain', imageScale: block.imageScale || 100 })}
-                          className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg border-2 text-sm transition-all ${
-                            imageFit === 'contain'
-                              ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
-                              : 'border-slate-200 hover:border-slate-300'
-                          }`}
-                        >
-                          <Minimize2 className="w-4 h-4" />
-                          Přizpůsobit
-                        </button>
-                        <button
-                          onClick={() => onUpdate({ imageFit: 'cover' })}
-                          className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg border-2 text-sm transition-all ${
-                            imageFit === 'cover'
-                              ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
-                              : 'border-slate-200 hover:border-slate-300'
-                          }`}
-                        >
-                          <Maximize2 className="w-4 h-4" />
-                          Vyplnit
-                        </button>
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="text-xs font-medium text-slate-600">Velikost obrázku</label>
+                        <span className="text-xs font-medium text-indigo-600">
+                          {imageScale}% {imageScale > 100 ? '(ořez)' : ''}
+                        </span>
+                      </div>
+                      
+                      {/* Custom slider with 100% marker in center */}
+                      <div className="relative h-8 flex items-center">
+                        {/* Track background */}
+                        <div className="absolute inset-x-0 h-2 bg-slate-200 rounded-full" />
+                        
+                        {/* Filled track - different color for >100% */}
+                        <div 
+                          className={`absolute left-0 h-2 rounded-full ${imageScale > 100 ? 'bg-amber-500' : 'bg-indigo-500'}`}
+                          style={{ width: `${((imageScale - 10) / 190) * 100}%` }}
+                        />
+                        
+                        {/* 100% marker line */}
+                        <div 
+                          className="absolute w-0.5 h-4 bg-slate-400 rounded-full z-5"
+                          style={{ left: `${((100 - 10) / 190) * 100}%`, transform: 'translateX(-50%)' }}
+                        />
+                        
+                        {/* Slider input */}
+                        <input
+                          type="range"
+                          min="10"
+                          max="200"
+                          value={imageScale}
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value);
+                            // Auto-set imageFit based on scale
+                            onUpdate({ 
+                              imageScale: val,
+                              imageFit: val > 100 ? 'cover' : 'contain'
+                            });
+                          }}
+                          className="relative w-full h-8 appearance-none bg-transparent cursor-pointer z-10
+                            [&::-webkit-slider-thumb]:appearance-none 
+                            [&::-webkit-slider-thumb]:w-5 
+                            [&::-webkit-slider-thumb]:h-5 
+                            [&::-webkit-slider-thumb]:bg-white 
+                            [&::-webkit-slider-thumb]:border-2
+                            [&::-webkit-slider-thumb]:border-indigo-500
+                            [&::-webkit-slider-thumb]:rounded-full 
+                            [&::-webkit-slider-thumb]:shadow-md
+                            [&::-webkit-slider-thumb]:cursor-pointer
+                            [&::-moz-range-thumb]:w-5 
+                            [&::-moz-range-thumb]:h-5 
+                            [&::-moz-range-thumb]:bg-white 
+                            [&::-moz-range-thumb]:border-2
+                            [&::-moz-range-thumb]:border-indigo-500
+                            [&::-moz-range-thumb]:rounded-full 
+                            [&::-moz-range-thumb]:shadow-md
+                            [&::-moz-range-thumb]:cursor-pointer"
+                        />
+                      </div>
+                      
+                      {/* Labels below slider */}
+                      <div className="flex justify-between text-xs text-slate-400 mt-1">
+                        <span>Přizpůsobit</span>
+                        <span>100%</span>
+                        <span>Vyplnit</span>
                       </div>
                     </div>
-
-                    {/* Scale slider (only for contain mode) */}
-                    {imageFit === 'contain' && (
-                      <div>
-                        <div className="flex items-center justify-between mb-2">
-                          <label className="text-xs font-medium text-slate-600">Velikost obrázku</label>
-                          <span className="text-xs font-medium text-indigo-600">{imageScale}%</span>
-                        </div>
-                        
-                        {/* Custom slider with visible track */}
-                        <div className="relative h-8 flex items-center">
-                          {/* Track background */}
-                          <div className="absolute inset-x-0 h-2 bg-slate-200 rounded-full" />
-                          
-                          {/* Filled track */}
-                          <div 
-                            className="absolute left-0 h-2 bg-indigo-500 rounded-full"
-                            style={{ width: `${((imageScale - 10) / 190) * 100}%` }}
-                          />
-                          
-                          {/* Slider input */}
-                          <input
-                            type="range"
-                            min="10"
-                            max="200"
-                            value={imageScale}
-                            onChange={(e) => onUpdate({ imageScale: parseInt(e.target.value) })}
-                            className="relative w-full h-8 appearance-none bg-transparent cursor-pointer z-10
-                              [&::-webkit-slider-thumb]:appearance-none 
-                              [&::-webkit-slider-thumb]:w-5 
-                              [&::-webkit-slider-thumb]:h-5 
-                              [&::-webkit-slider-thumb]:bg-white 
-                              [&::-webkit-slider-thumb]:border-2
-                              [&::-webkit-slider-thumb]:border-indigo-500
-                              [&::-webkit-slider-thumb]:rounded-full 
-                              [&::-webkit-slider-thumb]:shadow-md
-                              [&::-webkit-slider-thumb]:cursor-pointer
-                              [&::-moz-range-thumb]:w-5 
-                              [&::-moz-range-thumb]:h-5 
-                              [&::-moz-range-thumb]:bg-white 
-                              [&::-moz-range-thumb]:border-2
-                              [&::-moz-range-thumb]:border-indigo-500
-                              [&::-moz-range-thumb]:rounded-full 
-                              [&::-moz-range-thumb]:shadow-md
-                              [&::-moz-range-thumb]:cursor-pointer"
-                          />
-                        </div>
-                        
-                        {/* Preset buttons */}
-                        <div className="flex gap-1 mt-2">
-                          {[25, 50, 75, 100, 150, 200].map(value => (
-                            <button
-                              key={value}
-                              onClick={() => onUpdate({ imageScale: value })}
-                              className={`flex-1 py-1 text-xs rounded transition-all ${
-                                imageScale === value
-                                  ? 'bg-indigo-500 text-white'
-                                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                              }`}
-                            >
-                              {value}%
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
 
                     {/* Image caption */}
                     <div>
