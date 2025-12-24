@@ -394,7 +394,7 @@ function ImageBlockPreview({ block, borderRadius }: { block: any; borderRadius: 
   };
 
   const imageContent = (
-    <div className="relative h-full w-full flex items-center justify-center overflow-hidden" style={{ borderRadius }}>
+    <div className="absolute inset-0 flex items-center justify-center overflow-hidden" style={{ borderRadius }}>
       {imageFit === 'cover' ? (
         <img
           src={currentImage}
@@ -405,10 +405,11 @@ function ImageBlockPreview({ block, borderRadius }: { block: any; borderRadius: 
         <img
           src={currentImage}
           alt={block.imageCaption || ''}
-          className="transition-transform"
+          className="transition-transform max-w-full max-h-full"
           style={{
-            maxWidth: `${imageScale}%`,
-            maxHeight: `${imageScale}%`,
+            width: `${imageScale}%`,
+            height: 'auto',
+            maxHeight: '100%',
             objectFit: 'contain',
             borderRadius: Math.max(0, borderRadius - 4),
           }}
@@ -416,7 +417,7 @@ function ImageBlockPreview({ block, borderRadius }: { block: any; borderRadius: 
       )}
       {renderNavigation()}
       {block.imageCaption && (
-        <div className={`absolute bottom-0 left-0 right-0 ${hasGallery ? 'bottom-14' : 'bottom-0'} bg-black/50 text-white text-sm px-3 py-2 text-center`}>
+        <div className={`absolute ${hasGallery ? 'bottom-14' : 'bottom-0'} left-0 right-0 bg-black/50 text-white text-sm px-3 py-2 text-center`}>
           {block.imageCaption}
         </div>
       )}
@@ -487,7 +488,7 @@ function BlockLayoutView({ slide }: { slide: InfoSlide }) {
 
     if (block.type === 'image' && (block.content || (block.gallery && block.gallery.length > 0))) {
       return (
-        <div className="h-full p-2" style={bgStyle}>
+        <div className="h-full w-full overflow-hidden relative" style={bgStyle}>
           <ImageBlockPreview block={block} borderRadius={Math.max(0, blockRadius - 4)} />
         </div>
       );
