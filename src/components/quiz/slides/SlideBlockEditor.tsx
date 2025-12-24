@@ -60,16 +60,11 @@ export function SlideBlockEditor({
     }
   }, [isEditing]);
 
-  // Simple image drag using object-position (0-100%)
+  // Image drag - always available, changes object-position
   const handleImageMouseDown = (e: React.MouseEvent) => {
-    const scale = block.imageScale || 100;
-    if (scale <= 100) return;
-    
     e.preventDefault();
     e.stopPropagation();
     
-    // imagePositionX/Y are stored as 0-100 (percentage for object-position)
-    // Default is 50 (centered)
     dragStartRef.current = {
       x: e.clientX,
       y: e.clientY,
@@ -80,13 +75,13 @@ export function SlideBlockEditor({
     setIsDragging(true);
     
     const handleMouseMove = (moveEvent: MouseEvent) => {
-      // Delta in pixels - drag right = show left side = decrease X
       const deltaX = moveEvent.clientX - dragStartRef.current.x;
       const deltaY = moveEvent.clientY - dragStartRef.current.y;
       
-      // Sensitivity: 200px drag = full range (0-100)
-      const sensitivity = 0.5;
+      // Sensitivity: 300px drag = full range (0-100)
+      const sensitivity = 100 / 300;
       
+      // Drag right = see left part = decrease posX
       let newX = dragStartRef.current.posX - deltaX * sensitivity;
       let newY = dragStartRef.current.posY - deltaY * sensitivity;
       
@@ -447,29 +442,30 @@ export function SlideBlockEditor({
                 const imageElement = imageFit === 'cover' ? (
                   <div 
                     ref={imageContainerRef}
-                    className={`absolute inset-0 overflow-hidden ${imageScale > 100 ? (isDragging ? 'cursor-grabbing' : 'cursor-grab') : ''}`}
+                    className={`absolute inset-0 overflow-hidden ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
                     onMouseDown={handleImageMouseDown}
                   >
-                    {/* Simple image with object-fit and object-position */}
+                    {/* Image with object-fit cover and draggable position */}
                     <img
                       src={displayImage}
                       alt={block.imageCaption || ''}
-                      className="w-full h-full pointer-events-none select-none"
+                      className="pointer-events-none select-none"
                       style={{
+                        width: `${imageScale}%`,
+                        height: `${imageScale}%`,
                         objectFit: 'cover',
                         objectPosition: `${posX}% ${posY}%`,
-                        transform: imageScale > 100 ? `scale(${imageScale / 100})` : undefined,
                       }}
                       draggable={false}
                     />
                     
                     {/* Drag indicator */}
-                    {imageScale > 100 && isDragging && (
+                    {isDragging && (
                       <div className="absolute inset-0 pointer-events-none border-4 border-indigo-500 bg-indigo-500/10" style={{ borderRadius }} />
                     )}
                     
                     {/* Position indicator when dragging */}
-                    {imageScale > 100 && isDragging && (
+                    {isDragging && (
                       <div className="absolute top-2 left-2 bg-black/70 text-white text-xs px-2 py-1 rounded pointer-events-none z-50">
                         Pozice: {Math.round(posX)}%, {Math.round(posY)}%
                       </div>
