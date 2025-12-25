@@ -14,6 +14,7 @@ import {
   RotateCcw,
   ArrowLeft,
   ArrowRight,
+  Menu,
 } from 'lucide-react';
 import {
   Quiz,
@@ -735,9 +736,18 @@ export function QuizPreview({ quiz, onClose, isLive = false, onComplete }: QuizP
   const [textAnswer, setTextAnswer] = useState('');
   const [showResult, setShowResult] = useState(false);
   const [isCompleted, setIsCompleted] = useState(false);
+  const [showChapterMenu, setShowChapterMenu] = useState(false);
   
   const currentSlide = quiz.slides[currentSlideIndex];
   const currentResponse = responses.find(r => r.slideId === currentSlide?.id);
+  
+  // Get chapters from slides with chapterName
+  const chapters = quiz.slides
+    .map((slide, index) => ({
+      index,
+      name: (slide as InfoSlide).chapterName,
+    }))
+    .filter(ch => ch.name);
   const hasAnswered = !!currentResponse;
   
   const score = calculateQuizScore(responses, quiz.slides);
@@ -984,16 +994,59 @@ export function QuizPreview({ quiz, onClose, isLive = false, onComplete }: QuizP
   
   return (
     <div className="fixed inset-0 flex flex-col z-50" style={{ backgroundColor: bgColor }}>
-      {/* Desktop: Top bar with X */}
+      {/* Desktop: Top bar with X and chapter menu */}
       <div className="hidden lg:flex absolute top-0 left-0 right-0 z-20 items-center justify-between px-4 py-3">
-        {onClose && (
-          <button
-            onClick={onClose}
-            className="w-10 h-10 rounded-full backdrop-blur shadow-sm flex items-center justify-center transition-colors bg-white/80 text-slate-500 hover:bg-white hover:text-slate-700"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {onClose && (
+            <button
+              onClick={onClose}
+              className="w-10 h-10 rounded-full backdrop-blur shadow-sm flex items-center justify-center transition-colors bg-white/80 text-slate-500 hover:bg-white hover:text-slate-700"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          )}
+          
+          {/* Chapter menu button */}
+          {chapters.length > 0 && (
+            <div className="relative">
+              <button
+                onClick={() => setShowChapterMenu(!showChapterMenu)}
+                className="w-10 h-10 rounded-full backdrop-blur shadow-sm flex items-center justify-center transition-colors bg-white/80 text-slate-500 hover:bg-white hover:text-slate-700"
+              >
+                <Menu className="w-5 h-5" />
+              </button>
+              
+              {/* Chapter dropdown */}
+              {showChapterMenu && (
+                <div className="absolute top-12 left-0 bg-white rounded-xl shadow-2xl border border-slate-200 py-2 min-w-[200px] z-50">
+                  <div className="px-4 py-2 border-b border-slate-100">
+                    <h3 className="text-sm font-semibold text-slate-700">Kapitoly</h3>
+                  </div>
+                  {chapters.map((chapter, idx) => (
+                    <button
+                      key={chapter.index}
+                      onClick={() => {
+                        if (!isAnimating) {
+                          setIsAnimating(true);
+                          setPrevSlideIndex(currentSlideIndex);
+                          setCurrentSlideIndex(chapter.index);
+                          setTimeout(() => setIsAnimating(false), 400);
+                        }
+                        setShowChapterMenu(false);
+                      }}
+                      className={`w-full text-left px-4 py-2 hover:bg-slate-50 transition-colors ${
+                        currentSlideIndex === chapter.index ? 'bg-indigo-50 text-indigo-700' : 'text-slate-700'
+                      }`}
+                    >
+                      <span className="text-xs text-slate-400 mr-2">{idx + 1}.</span>
+                      {chapter.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
         
         {/* Score */}
         {quiz.settings.showScore && (
@@ -1012,6 +1065,47 @@ export function QuizPreview({ quiz, onClose, isLive = false, onComplete }: QuizP
       
       {/* Mobile: Top navigation with arrows and progress bar */}
       <div className="flex lg:hidden items-center gap-3 px-4 py-4" style={{ backgroundColor: bgColor }}>
+        {/* Menu button for chapters */}
+        {chapters.length > 0 && (
+          <div className="relative">
+            <button
+              onClick={() => setShowChapterMenu(!showChapterMenu)}
+              className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 bg-[#CBD5E1] text-slate-600"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+            
+            {/* Chapter dropdown (mobile) */}
+            {showChapterMenu && (
+              <div className="absolute top-12 left-0 bg-white rounded-xl shadow-2xl border border-slate-200 py-2 min-w-[200px] z-50">
+                <div className="px-4 py-2 border-b border-slate-100">
+                  <h3 className="text-sm font-semibold text-slate-700">Kapitoly</h3>
+                </div>
+                {chapters.map((chapter, idx) => (
+                  <button
+                    key={chapter.index}
+                    onClick={() => {
+                      if (!isAnimating) {
+                        setIsAnimating(true);
+                        setPrevSlideIndex(currentSlideIndex);
+                        setCurrentSlideIndex(chapter.index);
+                        setTimeout(() => setIsAnimating(false), 400);
+                      }
+                      setShowChapterMenu(false);
+                    }}
+                    className={`w-full text-left px-4 py-2 hover:bg-slate-50 transition-colors ${
+                      currentSlideIndex === chapter.index ? 'bg-indigo-50 text-indigo-700' : 'text-slate-700'
+                    }`}
+                  >
+                    <span className="text-xs text-slate-400 mr-2">{idx + 1}.</span>
+                    {chapter.name}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      
         {/* Left arrow */}
         <button
           onClick={goToPrevSlide}

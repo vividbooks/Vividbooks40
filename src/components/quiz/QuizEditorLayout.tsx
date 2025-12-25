@@ -491,6 +491,7 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [showVersionHistory, setShowVersionHistory] = useState(false);
   const [showPageSettings, setShowPageSettings] = useState(false);
+  const [pageSettingsSection, setPageSettingsSection] = useState<'type' | 'template' | 'layout' | 'background' | 'chapter' | 'note' | undefined>(undefined);
   const [selectedBlockIndex, setSelectedBlockIndex] = useState<number | null>(null);
   const [editingTextBlockIndex, setEditingTextBlockIndex] = useState<number | null>(null);
   
@@ -1500,6 +1501,33 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
                       }
                     )}
                   </div>
+                  
+                  {/* Buttons below slide */}
+                  <div className="flex items-center justify-between mt-4">
+                    {/* Nová kapitola - left */}
+                    <button
+                      onClick={() => {
+                        setPageSettingsSection('chapter');
+                        setShowPageSettings(true);
+                      }}
+                      className="flex items-center gap-2 px-4 py-2 bg-white rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300 transition-colors shadow-sm"
+                    >
+                      <ListOrdered className="w-4 h-4 text-indigo-500" />
+                      <span className="text-sm font-medium">Nová kapitola</span>
+                    </button>
+                    
+                    {/* Přidat poznámku - right */}
+                    <button
+                      onClick={() => {
+                        setPageSettingsSection('note');
+                        setShowPageSettings(true);
+                      }}
+                      className="flex items-center gap-2 px-4 py-2 bg-white rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300 transition-colors shadow-sm"
+                    >
+                      <MessageSquare className="w-4 h-4 text-indigo-500" />
+                      <span className="text-sm font-medium">Přidat poznámku</span>
+                    </button>
+                  </div>
                 </div>
               ) : (
                 <div className="flex flex-col items-center justify-center h-full text-slate-400">
@@ -1550,8 +1578,12 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
       {showPageSettings && selectedSlide && (
         <PageSettingsPanel
           slide={selectedSlide}
-          onClose={() => setShowPageSettings(false)}
+          onClose={() => {
+            setShowPageSettings(false);
+            setPageSettingsSection(undefined);
+          }}
           onUpdate={(updates) => updateSlide(selectedSlide.id, updates)}
+          initialSection={pageSettingsSection}
         />
       )}
       

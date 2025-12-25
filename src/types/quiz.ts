@@ -223,6 +223,9 @@ export interface InfoSlide extends BaseSlide {
   // Block styling options
   blockGap?: number; // Gap between blocks in pixels (0-40)
   blockRadius?: number; // Border radius of blocks in pixels (0-32)
+  // Chapter and notes
+  chapterName?: string; // Chapter name for navigation
+  note?: string; // Private note for teacher
   // Legacy fields (for backwards compatibility)
   title: string;
   content: string; // HTML content

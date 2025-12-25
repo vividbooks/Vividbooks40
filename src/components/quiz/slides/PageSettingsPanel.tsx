@@ -20,6 +20,7 @@ interface PageSettingsPanelProps {
   slide: QuizSlide;
   onClose: () => void;
   onUpdate: (updates: Partial<QuizSlide>) => void;
+  initialSection?: SectionId; // Which section to expand initially
 }
 
 type SectionId = 'type' | 'template' | 'layout' | 'background' | 'chapter' | 'note';
@@ -111,8 +112,8 @@ const LAYOUTS = [
   { id: 'right-large-left-split', label: 'Pravý velký' },
 ];
 
-export function PageSettingsPanel({ slide, onClose, onUpdate }: PageSettingsPanelProps) {
-  const [expandedSection, setExpandedSection] = useState<SectionId | null>(null);
+export function PageSettingsPanel({ slide, onClose, onUpdate, initialSection }: PageSettingsPanelProps) {
+  const [expandedSection, setExpandedSection] = useState<SectionId | null>(initialSection || null);
 
   const toggleSection = (sectionId: SectionId) => {
     setExpandedSection(prev => prev === sectionId ? null : sectionId);
