@@ -121,7 +121,6 @@ export function SlideBlockEditor({
   };
 
   const handleClick = (e: React.MouseEvent) => {
-    e.stopPropagation(); // Prevent click from propagating to parent
     onSelect?.();
     if (block.type === 'text') {
       setIsEditing(true);
@@ -298,25 +297,38 @@ export function SlideBlockEditor({
       {/* Content */}
       <div className="h-full p-4 flex flex-col justify-center">
         {block.type === 'text' && (
-          <textarea
-            ref={textareaRef}
-            value={block.content || ''}
-            onChange={(e) => onUpdate({ content: e.target.value })}
-            onBlur={handleBlur}
-            onKeyDown={handleKeyDown}
-            placeholder={placeholder}
-            className={`
-              w-full h-full min-h-[60px] resize-none border-0 bg-transparent
-              focus:outline-none focus:ring-0
-              ${getTextAlignClass()}
-              ${getFontSizeClass()}
-              ${block.fontWeight === 'bold' ? 'font-bold' : 'font-normal'}
-              text-slate-800 placeholder:text-slate-400
-            `}
-            style={{ 
-              fontFamily: 'inherit',
-            }}
-          />
+          <>
+            {isEditing ? (
+              <textarea
+                ref={textareaRef}
+                value={block.content}
+                onChange={(e) => {
+                  onUpdate({ content: e.target.value });
+                  autoResize();
+                }}
+                onBlur={handleBlur}
+                onKeyDown={handleKeyDown}
+                onInput={autoResize}
+                className={`
+                  w-full bg-transparent outline-none resize-none
+                  ${getFontSizeClass()} ${getTextAlignClass()}
+                  ${block.fontWeight === 'bold' ? 'font-bold' : 'font-normal'}
+                `}
+                placeholder={placeholder}
+              />
+            ) : (
+              <div
+                className={`
+                  w-full whitespace-pre-wrap
+                  ${getFontSizeClass()} ${getTextAlignClass()}
+                  ${block.fontWeight === 'bold' ? 'font-bold' : 'font-normal'}
+                  ${!block.content ? 'text-slate-400' : 'text-slate-800'}
+                `}
+              >
+                {block.content || placeholder}
+              </div>
+            )}
+          </>
         )}
 
         {block.type === 'image' && (

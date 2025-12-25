@@ -292,8 +292,6 @@ interface RichTextEditorProps {
   content: string;
   onChange: (content: string) => void;
   readOnly?: boolean;
-  // Show compact version with smaller content area (for slide editor)
-  compact?: boolean;
   // Paste detection for student assignments
   enablePasteDetection?: boolean;
   onPasteDetected?: (pastedText: string, wordCount: number) => void;
@@ -315,7 +313,6 @@ export function RichTextEditor({
   content, 
   onChange, 
   readOnly = false,
-  compact = false,
   enablePasteDetection = false,
   onPasteDetected,
 }: RichTextEditorProps) {
@@ -780,7 +777,7 @@ export function RichTextEditor({
       
       {/* Single Row Toolbar - Sticky when scrolling, fixed sizing */}
       <div 
-        className={`sticky top-0 z-50 flex items-center shadow-[0_2px_8px_rgba(0,0,0,0.06)] flex-wrap ${compact ? 'rounded-t-xl' : 'rounded-t-[11px]'}`}
+        className="sticky top-0 z-50 flex items-center rounded-t-[11px] shadow-[0_2px_8px_rgba(0,0,0,0.06)] flex-wrap"
         style={{ 
           backgroundColor: '#EFF1F8',
           padding: '10px 12px',
@@ -1336,22 +1333,22 @@ export function RichTextEditor({
 
         {/* Editor Content - White background */}
         <div 
-          className={`bg-white overflow-hidden cursor-text relative ${compact ? 'mx-0 mb-0 rounded-b-xl' : 'mx-3 mb-3'}`}
-          style={{ borderRadius: compact ? '0 0 12px 12px' : '18px', padding: compact ? '16px 20px' : '60px', minHeight: compact ? '120px' : undefined }}
+          className="bg-white mx-3 mb-3 overflow-hidden cursor-text relative"
+          style={{ borderRadius: '18px', padding: '60px' }}
           onClick={() => editor?.chain().focus().run()}
         >
           {/* Placeholder overlay for empty editor */}
           {editor && editor.isEmpty && (
             <div 
               className="absolute pointer-events-none text-gray-400"
-              style={{ top: compact ? '16px' : '60px', left: compact ? '20px' : '60px' }}
+              style={{ top: '60px', left: '60px' }}
             >
               Začněte psát...
             </div>
           )}
 
       {/* Editor Content with table buttons overlay */}
-      <div className="relative [&_.ProseMirror]:min-h-[60px] [&_.ProseMirror]:outline-none [&_.ProseMirror]:focus:outline-none" ref={editorWrapperRef}>
+      <div className="relative" ref={editorWrapperRef}>
       <EditorContent editor={editor} />
         
         {/* Table control buttons - positioned dynamically */}

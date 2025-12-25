@@ -63,7 +63,7 @@ import { ABCSlideEditor } from './slides/ABCSlideEditor';
 import { OpenSlideEditor } from './slides/OpenSlideEditor';
 import { ExampleSlideEditor } from './slides/ExampleSlideEditor';
 import { InfoSlideEditor } from './slides/InfoSlideEditor';
-// RichTextEditor removed - using direct textarea in blocks
+import { SlideTextToolbar } from './slides/SlideTextToolbar';
 import { BackgroundPicker } from './slides/BackgroundPicker';
 import { PageSettingsPanel } from './slides/PageSettingsPanel';
 import { BlockSettingsPanel } from './slides/BlockSettingsPanel';
@@ -492,7 +492,7 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
   const [showVersionHistory, setShowVersionHistory] = useState(false);
   const [showPageSettings, setShowPageSettings] = useState(false);
   const [selectedBlockIndex, setSelectedBlockIndex] = useState<number | null>(null);
-  // Text editing now happens directly in textarea within blocks
+  const [editingTextBlockIndex, setEditingTextBlockIndex] = useState<number | null>(null);
   
   // Results state
   const [sessions, setSessions] = useState<SessionData[]>([]);
@@ -1323,7 +1323,6 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
                 if (target === e.currentTarget || target.classList.contains('bg-slate-100/50')) {
                   setShowPageSettings(false);
                   setSelectedBlockIndex(null);
-                  setEditingTextBlockIndex(null);
                 }
               }}
               onMouseDown={(e) => {
@@ -1331,12 +1330,11 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
                 if (e.target === e.currentTarget) {
                   setShowPageSettings(false);
                   setSelectedBlockIndex(null);
-                  setEditingTextBlockIndex(null);
                 }
               }}
             >
               {selectedSlide ? (
-                <div className="w-full flex flex-col mb-8" style={{ maxWidth: 'min(1024px, calc((100vh - 200px) * 4 / 3))' }}>
+                <div className="relative w-full flex flex-col mb-8" style={{ maxWidth: 'min(1024px, calc((100vh - 200px) * 4 / 3))' }}>
                   {/* Navigation above slide */}
                   <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center gap-2">
@@ -1369,7 +1367,42 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
                     </button>
                   </div>
                   
-                  
+                  {/* Text Toolbar - shown when editing text, overlays the navigation */}
+                  {editingTextBlockIndex !== null && selectedSlide?.type === 'info' && selectedSlide.layout && (
+                    <div className="absolute top-0 left-0 z-50">
+                      <SlideTextToolbar
+                        isBold={selectedSlide.layout.blocks[editingTextBlockIndex]?.fontWeight === 'bold'}
+                        textAlign={selectedSlide.layout.blocks[editingTextBlockIndex]?.textAlign || 'left'}
+                        fontSize={selectedSlide.layout.blocks[editingTextBlockIndex]?.fontSize || 'medium'}
+                        onBoldToggle={() => {
+                          const block = selectedSlide.layout!.blocks[editingTextBlockIndex];
+                          const newBlocks = [...selectedSlide.layout!.blocks];
+                          newBlocks[editingTextBlockIndex] = { 
+                            ...block, 
+                            fontWeight: block.fontWeight === 'bold' ? 'normal' : 'bold' 
+                          };
+                          updateSlide(selectedSlide.id, { layout: { ...selectedSlide.layout!, blocks: newBlocks } });
+                        }}
+                        onAlignChange={(align) => {
+                          const newBlocks = [...selectedSlide.layout!.blocks];
+                          newBlocks[editingTextBlockIndex] = { 
+                            ...newBlocks[editingTextBlockIndex], 
+                            textAlign: align 
+                          };
+                          updateSlide(selectedSlide.id, { layout: { ...selectedSlide.layout!, blocks: newBlocks } });
+                        }}
+                        onFontSizeChange={(size) => {
+                          const newBlocks = [...selectedSlide.layout!.blocks];
+                          newBlocks[editingTextBlockIndex] = { 
+                            ...newBlocks[editingTextBlockIndex], 
+                            fontSize: size 
+                          };
+                          updateSlide(selectedSlide.id, { layout: { ...selectedSlide.layout!, blocks: newBlocks } });
+                        }}
+                      />
+                    </div>
+                  )}
+
                   {/* The actual editor */}
                   <div 
                     className="rounded-xl shadow-sm border border-slate-200 transition-colors duration-300"
