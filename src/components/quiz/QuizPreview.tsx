@@ -517,14 +517,13 @@ function BlockLayoutView({ slide }: { slide: InfoSlide }) {
       );
     }
 
-    // Text block
+    // Text block - wrap in container with fixed height for scroll to work
     const textStyle: React.CSSProperties = {
-      ...bgStyle,
       fontSize,
       color: block.textColor || '#1e293b',
       backgroundColor: block.highlightColor && block.highlightColor !== 'transparent' 
         ? block.highlightColor 
-        : bgStyle.backgroundColor,
+        : 'transparent',
     };
     
     // For 'fit' mode, calculate font size based on container
@@ -617,7 +616,12 @@ function BlockLayoutView({ slide }: { slide: InfoSlide }) {
       );
     };
 
-    return <TextContent />;
+    // Wrapper with fixed height and overflow hidden to enable scrolling inside
+    return (
+      <div className="h-full w-full overflow-hidden" style={bgStyle}>
+        <TextContent />
+      </div>
+    );
   };
 
   // Render based on layout type - with dynamic gap
