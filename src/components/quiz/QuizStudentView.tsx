@@ -34,8 +34,10 @@ import {
   QuizSlide, 
   ABCActivitySlide, 
   OpenActivitySlide, 
-  SlideResponse 
+  SlideResponse,
+  InfoSlide 
 } from '../../types/quiz';
+import { BlockLayoutView } from './QuizPreview';
 
 // ============================================
 // CONSTANTS
@@ -955,6 +957,9 @@ export function QuizStudentView() {
                 ${currentSlideIndex > prevSlideIndex && isAnimating ? 'animate-slide-in' : ''}
                 ${currentSlideIndex < prevSlideIndex && isAnimating ? 'animate-slide-in-left' : ''}
               `}
+              style={{
+                aspectRatio: currentSlide?.type === 'info' ? '4/3' : undefined,
+              }}
               key={currentSlideIndex}
             >
               {/* Question */}
@@ -1118,13 +1123,17 @@ export function QuizStudentView() {
               
               {/* Info slide */}
               {currentSlide.type === 'info' && (
-                <div className="flex-1 flex items-center justify-center p-8">
-                  {(currentSlide as any).content && (
-                    <div 
-                      className="prose prose-lg max-w-3xl text-center text-slate-600"
-                      dangerouslySetInnerHTML={{ __html: (currentSlide as any).content }}
-                    />
-                  )}
+                <div className="flex-1 flex flex-col" style={{ minHeight: 0 }}>
+                  {(currentSlide as InfoSlide).layout && (currentSlide as InfoSlide).layout!.blocks.length > 0 ? (
+                    <BlockLayoutView slide={currentSlide as InfoSlide} />
+                  ) : (currentSlide as any).content ? (
+                    <div className="flex-1 flex items-center justify-center p-8">
+                      <div 
+                        className="prose prose-lg max-w-3xl text-center text-slate-600"
+                        dangerouslySetInnerHTML={{ __html: (currentSlide as any).content }}
+                      />
+                    </div>
+                  ) : null}
                 </div>
               )}
               
