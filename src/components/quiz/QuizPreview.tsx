@@ -600,19 +600,17 @@ function BlockLayoutView({ slide }: { slide: InfoSlide }) {
       return (
         <div 
           ref={containerRef}
-          className={`h-full p-4 flex flex-col ${
-            block.textOverflow === 'scroll' ? 'overflow-y-scroll' : 
-            block.textOverflow === 'fit' ? 'overflow-hidden' : 
-            'overflow-y-scroll'
-          } ${block.textOverflow === 'fit' ? '' : ''} ${textAlignClass} ${fontWeightClass} ${fontStyleClass} ${textDecorationClass}`} 
+          className={`h-full w-full ${textAlignClass} ${fontWeightClass} ${fontStyleClass} ${textDecorationClass}`} 
           style={{
+            ...bgStyle,
             ...textStyle,
             fontSize: block.textOverflow === 'fit' && fitFontSize ? `${fitFontSize}px` : textStyle.fontSize,
             whiteSpace: 'pre-wrap',
             wordWrap: 'break-word',
             lineHeight: 1.4,
-            paddingTop: '16px',
-            paddingBottom: '16px',
+            padding: '16px',
+            overflowY: hasScroll ? 'auto' : 'hidden',
+            overflowX: 'hidden',
             // Always show scrollbar when scrollable
             scrollbarWidth: hasScroll ? 'thin' : undefined,
             scrollbarColor: hasScroll ? '#cbd5e1 transparent' : undefined,
@@ -623,12 +621,7 @@ function BlockLayoutView({ slide }: { slide: InfoSlide }) {
       );
     };
 
-    // Wrapper with fixed height and overflow hidden to enable scrolling inside
-    return (
-      <div className="h-full w-full overflow-hidden" style={bgStyle}>
-        <TextContent />
-      </div>
-    );
+    return <TextContent />;
   };
 
   // Render based on layout type - with dynamic gap
