@@ -63,6 +63,7 @@ export function SlideTextToolbar({
     <div 
       className="flex items-center gap-1 px-3 py-2 bg-white rounded-xl shadow-lg border border-slate-200"
       onClick={(e) => e.stopPropagation()}
+      onMouseDown={(e) => e.preventDefault()} // Prevent blur on textarea when clicking toolbar
     >
       {/* Font Size Dropdown */}
       <div className="relative">
