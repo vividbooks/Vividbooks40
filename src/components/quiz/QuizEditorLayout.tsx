@@ -1650,8 +1650,10 @@ function renderSlideEditor(
 ): React.ReactNode {
   switch (slide.type) {
     case 'info':
+      const infoSlide = slide as InfoSlide;
       return (
         <InfoSlideEditor 
+          key={`${slide.id}-${infoSlide.layout?.type || 'default'}-${infoSlide.layout?.blocks?.length || 0}`}
           slide={slide} 
           onUpdate={onUpdate} 
           onSlideClick={onSlideClick} 
