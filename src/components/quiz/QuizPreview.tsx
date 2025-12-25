@@ -989,6 +989,7 @@ export function QuizPreview({ quiz, onClose, isLive = false, onComplete }: QuizP
                 currentSlideIndex < prevSlideIndex && isAnimating ? 'animate-slide-in-left' : ''
               }`}
               key={currentSlideIndex}
+              style={{ aspectRatio: currentSlide?.type === 'info' ? '4/3' : undefined }}
             >
               {currentSlide ? (
                 renderSlideView(currentSlide)
