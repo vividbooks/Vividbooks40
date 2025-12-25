@@ -1129,8 +1129,11 @@ export function QuizJoinPage() {
     <div className="flex flex-col h-screen" style={{ backgroundColor: '#F0F1F8' }}>
       {renderConnectionBanner()}
       
-      {/* Progress bar header - ALWAYS VISIBLE */}
-      <div className="flex items-center justify-center px-4 py-2" style={{ backgroundColor: '#F0F1F8' }}>
+      {/* Progress bar header - hidden on mobile when canNavigate (arrows have their own progress bar) */}
+      <div 
+        className={`flex items-center justify-center px-4 py-2 ${canNavigate && isMobile ? 'hidden' : ''}`} 
+        style={{ backgroundColor: '#F0F1F8' }}
+      >
         {/* Progress bar - centered with max width */}
         <div className="flex items-center gap-1.5" style={{ width: '300px', maxWidth: '50%' }}>
           {renderProgressBar()}
@@ -1150,20 +1153,31 @@ export function QuizJoinPage() {
       
       {/* Mobile: Navigation arrows for unlocked mode */}
       {canNavigate && (
-        <div className="flex lg:hidden items-center gap-3 px-4 py-2">
+        <div className="flex lg:hidden items-center gap-2 px-4 py-2">
           <button
             onClick={goToPrevSlide}
             disabled={currentSlideIndex === 0}
-            className={`w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 ${currentSlideIndex === 0 ? 'opacity-30 cursor-not-allowed' : ''} bg-[#CBD5E1] text-slate-600`}
+            className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${currentSlideIndex === 0 ? 'opacity-30 cursor-not-allowed' : ''} bg-[#CBD5E1] text-slate-600`}
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
           <div className="flex-1 flex items-center gap-1.5">
             {renderProgressBar()}
           </div>
+          {/* Stats */}
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <div className="flex items-center gap-1 text-emerald-600">
+              <CheckCircle className="w-4 h-4" />
+              <span className="font-semibold text-sm">{correctCount}</span>
+            </div>
+            <div className="flex items-center gap-1 text-red-500">
+              <XCircle className="w-4 h-4" />
+              <span className="font-semibold text-sm">{wrongCount}</span>
+            </div>
+          </div>
           <button
             onClick={() => (currentSlideIndex < quiz.slides.length - 1 && canProceed) ? goToNextSlide() : (!canProceed ? triggerWiggle() : null)}
-            className={`w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 transition-all duration-300 ${(currentSlideIndex === quiz.slides.length - 1 || !canProceed) ? 'bg-slate-300 text-slate-400' : 'text-white'}`}
+            className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 transition-all duration-300 ${(currentSlideIndex === quiz.slides.length - 1 || !canProceed) ? 'bg-slate-300 text-slate-400' : 'text-white'}`}
             style={{ backgroundColor: (currentSlideIndex < quiz.slides.length - 1 && canProceed) ? '#7C3AED' : undefined }}
           >
             <ArrowRight className="w-5 h-5" />
