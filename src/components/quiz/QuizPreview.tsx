@@ -527,14 +527,67 @@ function BlockLayoutView({ slide }: { slide: InfoSlide }) {
         : bgStyle.backgroundColor,
     };
     
-    return (
-      <div 
-        className={`h-full p-4 flex flex-col justify-center whitespace-pre-wrap ${textAlignClass} ${fontWeightClass} ${fontStyleClass} ${textDecorationClass}`} 
-        style={textStyle}
-      >
-        <MathText>{block.content}</MathText>
-      </div>
-    );
+    // For 'fit' mode, calculate font size based on container
+    const TextContent = () => {
+      const containerRef = React.useRef<HTMLDivElement>(null);
+      const [fitFontSize, setFitFontSize] = React.useState<number | null>(null);
+
+      React.useEffect(() => {
+        if (block.textOverflow === 'fit' && containerRef.current && block.content) {
+          const container = containerRef.current;
+          const targetHeight = container.clientHeight * 0.9;
+          const containerWidth = container.clientWidth - 32;
+
+          let minSize = 8;
+          let maxSize = 48;
+          
+          const measureEl = document.createElement('div');
+          measureEl.style.cssText = `
+            position: absolute;
+            visibility: hidden;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            width: ${containerWidth}px;
+            font-weight: ${block.fontWeight === 'bold' ? 'bold' : 'normal'};
+            font-style: ${block.fontStyle === 'italic' ? 'italic' : 'normal'};
+            line-height: 1.4;
+          `;
+          measureEl.textContent = block.content;
+          document.body.appendChild(measureEl);
+
+          let optimalSize = minSize;
+          while (minSize <= maxSize) {
+            const midSize = Math.floor((minSize + maxSize) / 2);
+            measureEl.style.fontSize = `${midSize}px`;
+            
+            if (measureEl.scrollHeight <= targetHeight) {
+              optimalSize = midSize;
+              minSize = midSize + 1;
+            } else {
+              maxSize = midSize - 1;
+            }
+          }
+
+          document.body.removeChild(measureEl);
+          setFitFontSize(optimalSize);
+        }
+      }, []);
+
+      return (
+        <div 
+          ref={containerRef}
+          className={`h-full p-4 flex flex-col ${block.textOverflow === 'scroll' ? 'overflow-y-auto' : ''} ${block.textOverflow === 'fit' ? '' : 'justify-center'} whitespace-pre-wrap ${textAlignClass} ${fontWeightClass} ${fontStyleClass} ${textDecorationClass}`} 
+          style={{
+            ...textStyle,
+            fontSize: block.textOverflow === 'fit' && fitFontSize ? `${fitFontSize}px` : textStyle.fontSize,
+          }}
+        >
+          <MathText>{block.content}</MathText>
+        </div>
+      );
+    };
+
+    return <TextContent />;
   };
 
   // Render based on layout type - with dynamic gap

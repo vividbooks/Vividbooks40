@@ -59,6 +59,8 @@ export interface SlideBlock {
   textColor?: string; // Text color
   highlightColor?: string; // Background highlight color
   listType?: 'none' | 'bullet' | 'numbered' | 'checklist'; // List formatting
+  // Text overflow settings
+  textOverflow?: 'scroll' | 'fit'; // scroll = scrollable block, fit = auto-size text to fit 90% of block height
   // Image settings
   imageFit?: 'contain' | 'cover'; // contain = show slider, cover = fill block
   imageScale?: number; // 10-300, percentage of image size

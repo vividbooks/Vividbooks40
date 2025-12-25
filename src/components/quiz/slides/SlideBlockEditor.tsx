@@ -49,7 +49,10 @@ export function SlideBlockEditor({
 }: SlideBlockEditorProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [showSolution, setShowSolution] = useState(false);
+  const [showOverflowDialog, setShowOverflowDialog] = useState(false);
+  const [isOverflowing, setIsOverflowing] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const textContainerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageContainerRef = useRef<HTMLDivElement>(null);
   
@@ -65,6 +68,66 @@ export function SlideBlockEditor({
       autoResize();
     }
   }, [isEditing]);
+
+  // Check for text overflow when not editing
+  useEffect(() => {
+    if (!isEditing && block.type === 'text' && textContainerRef.current && !block.textOverflow) {
+      const container = textContainerRef.current;
+      const hasOverflow = container.scrollHeight > container.clientHeight + 5; // 5px tolerance
+      setIsOverflowing(hasOverflow);
+      if (hasOverflow && block.content && block.content.length > 50) {
+        setShowOverflowDialog(true);
+      }
+    }
+  }, [isEditing, block.content, block.type, block.textOverflow]);
+
+  // Auto-fit font size calculation
+  useEffect(() => {
+    if (block.textOverflow === 'fit' && textContainerRef.current && !isEditing) {
+      const container = textContainerRef.current;
+      const textElement = container.querySelector('div') as HTMLDivElement;
+      if (!textElement || !block.content) return;
+
+      // Binary search for optimal font size
+      let minSize = 8;
+      let maxSize = 48;
+      const targetHeight = container.clientHeight * 0.9; // 90% of block height
+      const containerWidth = container.clientWidth - 32; // minus padding
+
+      // Create a temporary element for measurement
+      const measureEl = document.createElement('div');
+      measureEl.style.cssText = `
+        position: absolute;
+        visibility: hidden;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+        width: ${containerWidth}px;
+        font-weight: ${block.fontWeight === 'bold' ? 'bold' : 'normal'};
+        font-style: ${block.fontStyle === 'italic' ? 'italic' : 'normal'};
+      `;
+      measureEl.textContent = block.content;
+      document.body.appendChild(measureEl);
+
+      let optimalSize = minSize;
+      while (minSize <= maxSize) {
+        const midSize = Math.floor((minSize + maxSize) / 2);
+        measureEl.style.fontSize = `${midSize}px`;
+        measureEl.style.lineHeight = '1.4';
+        
+        if (measureEl.scrollHeight <= targetHeight) {
+          optimalSize = midSize;
+          minSize = midSize + 1;
+        } else {
+          maxSize = midSize - 1;
+        }
+      }
+
+      document.body.removeChild(measureEl);
+      
+      // Apply the calculated font size via CSS variable
+      container.style.setProperty('--fit-font-size', `${optimalSize}px`);
+    }
+  }, [block.textOverflow, block.content, block.fontWeight, block.fontStyle, isEditing]);
 
   // Simple image drag using object-position (0-100%)
   const handleImageMouseDown = (e: React.MouseEvent) => {
@@ -296,8 +359,52 @@ export function SlideBlockEditor({
         </div>
       )}
 
+      {/* Overflow Dialog */}
+      {showOverflowDialog && (
+        <div 
+          className="absolute inset-0 z-50 flex items-center justify-center bg-black/30 rounded-lg"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="bg-white rounded-xl shadow-2xl p-5 max-w-xs mx-4">
+            <h3 className="font-semibold text-slate-800 mb-3 text-center">Text přesahuje blok</h3>
+            <p className="text-sm text-slate-600 mb-4 text-center">Jak chcete zobrazit delší text?</p>
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={() => {
+                  onUpdate({ textOverflow: 'scroll' });
+                  setShowOverflowDialog(false);
+                }}
+                className="px-4 py-2.5 rounded-lg text-sm font-medium transition-colors"
+                style={{ backgroundColor: '#4f46e5', color: 'white' }}
+              >
+                📜 Scrollovací blok
+              </button>
+              <button
+                onClick={() => {
+                  onUpdate({ textOverflow: 'fit' });
+                  setShowOverflowDialog(false);
+                }}
+                className="px-4 py-2.5 rounded-lg text-sm font-medium transition-colors"
+                style={{ backgroundColor: '#0891b2', color: 'white' }}
+              >
+                🔤 Přizpůsobit velikost písma
+              </button>
+              <button
+                onClick={() => setShowOverflowDialog(false)}
+                className="px-4 py-2 rounded-lg text-sm text-slate-500 hover:bg-slate-100 transition-colors"
+              >
+                Ponechat
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Content */}
-      <div className="h-full p-4 flex flex-col justify-center">
+      <div 
+        ref={textContainerRef}
+        className={`h-full p-4 flex flex-col ${block.textOverflow === 'scroll' ? 'overflow-y-auto' : 'overflow-hidden'} ${block.textOverflow === 'fit' ? '' : 'justify-center'}`}
+      >
         {block.type === 'text' && (
           <>
             {isEditing ? (
@@ -336,7 +443,7 @@ export function SlideBlockEditor({
                   ${!block.content ? 'text-slate-400' : ''}
                 `}
                 style={{
-                  fontSize: getFontSize(),
+                  fontSize: block.textOverflow === 'fit' ? 'var(--fit-font-size, ' + getFontSize() + ')' : getFontSize(),
                   color: block.content ? (block.textColor || '#1e293b') : undefined,
                   backgroundColor: block.highlightColor && block.highlightColor !== 'transparent' ? block.highlightColor : 'transparent',
                 }}

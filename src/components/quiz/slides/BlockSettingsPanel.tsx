@@ -299,12 +299,53 @@ export function BlockSettingsPanel({
                     value={block.fontSize || 'medium'}
                     onChange={(e) => onUpdate({ fontSize: e.target.value as any })}
                     className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    disabled={block.textOverflow === 'fit'}
                   >
                     <option value="small">Malé</option>
                     <option value="medium">Střední</option>
                     <option value="large">Velké</option>
                     <option value="xlarge">Extra velké</option>
                   </select>
+                  {block.textOverflow === 'fit' && (
+                    <p className="text-xs text-slate-400 mt-1">Velikost je automaticky přizpůsobena</p>
+                  )}
+                </div>
+
+                {/* Text overflow */}
+                <div>
+                  <label className="text-xs font-medium text-slate-600 mb-2 block">Přetečení textu</label>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => onUpdate({ textOverflow: undefined })}
+                      className={`flex-1 py-2 px-3 rounded-lg border-2 text-xs font-medium transition-all ${
+                        !block.textOverflow
+                          ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
+                          : 'border-slate-200 hover:border-slate-300 text-slate-600'
+                      }`}
+                    >
+                      Výchozí
+                    </button>
+                    <button
+                      onClick={() => onUpdate({ textOverflow: 'scroll' })}
+                      className={`flex-1 py-2 px-3 rounded-lg border-2 text-xs font-medium transition-all ${
+                        block.textOverflow === 'scroll'
+                          ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
+                          : 'border-slate-200 hover:border-slate-300 text-slate-600'
+                      }`}
+                    >
+                      📜 Scroll
+                    </button>
+                    <button
+                      onClick={() => onUpdate({ textOverflow: 'fit' })}
+                      className={`flex-1 py-2 px-3 rounded-lg border-2 text-xs font-medium transition-all ${
+                        block.textOverflow === 'fit'
+                          ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
+                          : 'border-slate-200 hover:border-slate-300 text-slate-600'
+                      }`}
+                    >
+                      🔤 Auto
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
