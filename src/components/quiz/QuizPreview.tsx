@@ -266,12 +266,16 @@ function ExampleSlideView({ slide }: { slide: ExampleActivitySlide }) {
 function InfoSlideView({ slide }: { slide: InfoSlide }) {
   // If slide has new block-based layout, render it
   if (slide.layout && slide.layout.blocks.length > 0) {
-    return <BlockLayoutView slide={slide} />;
+    return (
+      <div className="flex-1 h-full">
+        <BlockLayoutView slide={slide} />
+      </div>
+    );
   }
 
   // Fallback to legacy format
   return (
-    <div className="flex flex-col h-full p-8">
+    <div className="flex flex-col flex-1 h-full p-8">
       {slide.title && (
         <h1 className="text-3xl md:text-4xl font-bold text-[#4E5871] mb-6">
           <MathText>{slide.title}</MathText>
@@ -638,18 +642,18 @@ function BlockLayoutView({ slide }: { slide: InfoSlide }) {
       case 'title-content':
         return (
           <div className="h-full flex flex-col" style={gapStyle}>
-            <div className="min-h-[60px] lg:h-auto" style={{ height: `${titleHeight}%`, minHeight: 60 }}>{renderBlock(blocks[0], 0)}</div>
-            <div className="flex-1 min-h-[200px] lg:min-h-0">{renderBlock(blocks[1], 1)}</div>
+            <div style={{ flex: `0 0 ${titleHeight}%`, minHeight: 60 }}>{renderBlock(blocks[0], 0)}</div>
+            <div className="flex-1" style={{ minHeight: 0 }}>{renderBlock(blocks[1], 1)}</div>
           </div>
         );
 
       case 'title-2cols':
         return (
           <div className="h-full flex flex-col" style={gapStyle}>
-            <div className="min-h-[60px] lg:h-auto" style={{ height: `${titleHeight}%`, minHeight: 60 }}>{renderBlock(blocks[0], 0)}</div>
-            <div className="flex-1 flex flex-col lg:flex-row" style={gapStyle}>
-              <div className="flex-1 min-h-[150px] lg:min-h-0">{renderBlock(blocks[1], 1)}</div>
-              <div className="flex-1 min-h-[150px] lg:min-h-0">{renderBlock(blocks[2], 2)}</div>
+            <div style={{ flex: `0 0 ${titleHeight}%`, minHeight: 60 }}>{renderBlock(blocks[0], 0)}</div>
+            <div className="flex-1 flex flex-col lg:flex-row" style={{ ...gapStyle, minHeight: 0 }}>
+              <div className="flex-1" style={{ minHeight: 0 }}>{renderBlock(blocks[1], 1)}</div>
+              <div className="flex-1" style={{ minHeight: 0 }}>{renderBlock(blocks[2], 2)}</div>
             </div>
           </div>
         );
@@ -657,11 +661,11 @@ function BlockLayoutView({ slide }: { slide: InfoSlide }) {
       case 'title-3cols':
         return (
           <div className="h-full flex flex-col" style={gapStyle}>
-            <div className="min-h-[60px] lg:h-auto" style={{ height: `${titleHeight}%`, minHeight: 60 }}>{renderBlock(blocks[0], 0)}</div>
-            <div className="flex-1 flex flex-col lg:flex-row" style={gapStyle}>
-              <div className="flex-1 min-h-[120px] lg:min-h-0">{renderBlock(blocks[1], 1)}</div>
-              <div className="flex-1 min-h-[120px] lg:min-h-0">{renderBlock(blocks[2], 2)}</div>
-              <div className="flex-1 min-h-[120px] lg:min-h-0">{renderBlock(blocks[3], 3)}</div>
+            <div style={{ flex: `0 0 ${titleHeight}%`, minHeight: 60 }}>{renderBlock(blocks[0], 0)}</div>
+            <div className="flex-1 flex flex-col lg:flex-row" style={{ ...gapStyle, minHeight: 0 }}>
+              <div className="flex-1" style={{ minHeight: 0 }}>{renderBlock(blocks[1], 1)}</div>
+              <div className="flex-1" style={{ minHeight: 0 }}>{renderBlock(blocks[2], 2)}</div>
+              <div className="flex-1" style={{ minHeight: 0 }}>{renderBlock(blocks[3], 3)}</div>
             </div>
           </div>
         );
@@ -669,27 +673,27 @@ function BlockLayoutView({ slide }: { slide: InfoSlide }) {
       case '2cols':
         return (
           <div className="h-full flex flex-col lg:flex-row" style={gapStyle}>
-            <div className="flex-1 min-h-[200px] lg:min-h-0">{renderBlock(blocks[0], 0)}</div>
-            <div className="flex-1 min-h-[200px] lg:min-h-0">{renderBlock(blocks[1], 1)}</div>
+            <div className="flex-1" style={{ minHeight: 0 }}>{renderBlock(blocks[0], 0)}</div>
+            <div className="flex-1" style={{ minHeight: 0 }}>{renderBlock(blocks[1], 1)}</div>
           </div>
         );
 
       case '3cols':
         return (
           <div className="h-full flex flex-col lg:flex-row" style={gapStyle}>
-            <div className="flex-1 min-h-[150px] lg:min-h-0">{renderBlock(blocks[0], 0)}</div>
-            <div className="flex-1 min-h-[150px] lg:min-h-0">{renderBlock(blocks[1], 1)}</div>
-            <div className="flex-1 min-h-[150px] lg:min-h-0">{renderBlock(blocks[2], 2)}</div>
+            <div className="flex-1" style={{ minHeight: 0 }}>{renderBlock(blocks[0], 0)}</div>
+            <div className="flex-1" style={{ minHeight: 0 }}>{renderBlock(blocks[1], 1)}</div>
+            <div className="flex-1" style={{ minHeight: 0 }}>{renderBlock(blocks[2], 2)}</div>
           </div>
         );
 
       case 'left-large-right-split':
         return (
           <div className="h-full flex flex-col lg:flex-row" style={gapStyle}>
-            <div className="flex-1 min-h-[200px] lg:min-h-0 lg:flex-[2]">{renderBlock(blocks[0], 0)}</div>
-            <div className="flex flex-col lg:flex-1" style={gapStyle}>
-              <div className="flex-1 min-h-[100px] lg:min-h-0">{renderBlock(blocks[1], 1)}</div>
-              <div className="flex-1 min-h-[100px] lg:min-h-0">{renderBlock(blocks[2], 2)}</div>
+            <div className="lg:flex-[2]" style={{ flex: 1, minHeight: 0 }}>{renderBlock(blocks[0], 0)}</div>
+            <div className="flex flex-col lg:flex-1" style={{ ...gapStyle, minHeight: 0 }}>
+              <div className="flex-1" style={{ minHeight: 0 }}>{renderBlock(blocks[1], 1)}</div>
+              <div className="flex-1" style={{ minHeight: 0 }}>{renderBlock(blocks[2], 2)}</div>
             </div>
           </div>
         );
@@ -697,11 +701,11 @@ function BlockLayoutView({ slide }: { slide: InfoSlide }) {
       case 'right-large-left-split':
         return (
           <div className="h-full flex flex-col-reverse lg:flex-row" style={gapStyle}>
-            <div className="flex flex-col lg:flex-1" style={gapStyle}>
-              <div className="flex-1 min-h-[100px] lg:min-h-0">{renderBlock(blocks[0], 0)}</div>
-              <div className="flex-1 min-h-[100px] lg:min-h-0">{renderBlock(blocks[1], 1)}</div>
+            <div className="flex flex-col lg:flex-1" style={{ ...gapStyle, minHeight: 0 }}>
+              <div className="flex-1" style={{ minHeight: 0 }}>{renderBlock(blocks[0], 0)}</div>
+              <div className="flex-1" style={{ minHeight: 0 }}>{renderBlock(blocks[1], 1)}</div>
             </div>
-            <div className="flex-1 min-h-[200px] lg:min-h-0 lg:flex-[2]">{renderBlock(blocks[2], 2)}</div>
+            <div className="lg:flex-[2]" style={{ flex: 1, minHeight: 0 }}>{renderBlock(blocks[2], 2)}</div>
           </div>
         );
 
@@ -1158,18 +1162,22 @@ export function QuizPreview({ quiz, onClose, isLive = false, onComplete }: QuizP
           {/* Slide content */}
           <div className="flex-1 flex items-stretch px-4 overflow-auto">
             <div 
-              className={`w-full max-w-5xl mx-auto rounded-3xl shadow-2xl overflow-hidden flex flex-col bg-white ${
+              className={`w-full max-w-5xl mx-auto rounded-3xl shadow-2xl overflow-hidden bg-white ${
                 currentSlideIndex > prevSlideIndex && isAnimating ? 'animate-slide-in' : ''
               } ${
                 currentSlideIndex < prevSlideIndex && isAnimating ? 'animate-slide-in-left' : ''
               }`}
               style={{ 
                 aspectRatio: currentSlide?.type === 'info' ? '4/3' : undefined,
+                display: 'flex',
+                flexDirection: 'column',
               }}
               key={currentSlideIndex}
             >
               {currentSlide ? (
-                renderSlideView(currentSlide)
+                <div className="flex-1 flex flex-col" style={{ minHeight: 0 }}>
+                  {renderSlideView(currentSlide)}
+                </div>
               ) : (
                 <div className="flex items-center justify-center h-full text-slate-500">
                   <p className="text-xl">Žádné slidy</p>
