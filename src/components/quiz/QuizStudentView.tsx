@@ -961,23 +961,25 @@ export function QuizStudentView() {
           
           {/* Slide card */}
           <div 
-            className="flex-1 flex items-stretch px-4"
+            className="flex-1 flex items-stretch"
             style={{
               overflowY: isMobile ? 'auto' : 'hidden',
               overflowX: 'hidden',
               WebkitOverflowScrolling: 'touch',
+              // Info slides fill width, activity slides centered with padding
+              paddingLeft: currentSlide?.type === 'info' ? 0 : 16,
+              paddingRight: currentSlide?.type === 'info' ? 0 : 16,
             }}
           >
             <div 
               className={`
-                w-full max-w-5xl mx-auto rounded-3xl shadow-2xl overflow-hidden flex flex-col bg-white
+                w-full rounded-3xl shadow-2xl overflow-hidden flex flex-col bg-white
+                ${currentSlide?.type !== 'info' ? 'max-w-5xl mx-auto' : ''}
                 ${currentSlideIndex > prevSlideIndex && isAnimating ? 'animate-slide-in' : ''}
                 ${currentSlideIndex < prevSlideIndex && isAnimating ? 'animate-slide-in-left' : ''}
               `}
               style={{
-                // On mobile: no aspect ratio, auto height for scrolling
-                // On desktop: 4:3 aspect ratio for info slides
-                aspectRatio: currentSlide?.type === 'info' && !isMobile ? '4/3' : undefined,
+                // On mobile: auto height for scrolling
                 height: isMobile ? 'auto' : undefined,
                 alignSelf: isMobile ? 'flex-start' : 'stretch',
               }}

@@ -1232,22 +1232,25 @@ export function QuizPreview({ quiz, onClose, isLive = false, onComplete }: QuizP
           
           {/* Slide content */}
           <div 
-            className="flex-1 flex px-4 items-stretch"
+            className="flex-1 flex items-stretch"
             style={{ 
               overflowY: isMobile ? 'auto' : 'hidden',
               overflowX: 'hidden',
               WebkitOverflowScrolling: 'touch',
+              // Info slides fill width with small padding, activity slides centered with max width
+              paddingLeft: currentSlide?.type === 'info' ? 0 : 16,
+              paddingRight: currentSlide?.type === 'info' ? 0 : 16,
             }}
           >
             <div 
-              className={`w-full max-w-5xl mx-auto rounded-3xl shadow-2xl bg-white ${
+              className={`w-full rounded-3xl shadow-2xl bg-white ${
+                currentSlide?.type !== 'info' ? 'max-w-5xl mx-auto' : ''
+              } ${
                 currentSlideIndex > prevSlideIndex && isAnimating ? 'animate-slide-in' : ''
               } ${
                 currentSlideIndex < prevSlideIndex && isAnimating ? 'animate-slide-in-left' : ''
               }`}
               style={{ 
-                // On mobile: auto height for scrolling, on desktop: 4:3 aspect ratio
-                aspectRatio: currentSlide?.type === 'info' && !isMobile ? '4/3' : undefined,
                 display: 'flex',
                 flexDirection: 'column',
                 overflow: 'hidden',

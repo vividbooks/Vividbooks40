@@ -1401,16 +1401,23 @@ export function QuizViewPage() {
           </div>
           
           {/* Slide content */}
-          <div className="flex-1 flex items-stretch px-4 overflow-hidden">
+          <div 
+            className="flex-1 flex items-stretch overflow-hidden"
+            style={{
+              // Info slides fill width, activity slides centered with max width
+              paddingLeft: currentSlide?.type === 'info' ? 0 : 16,
+              paddingRight: currentSlide?.type === 'info' ? 0 : 16,
+            }}
+          >
             <div 
               className={`
-                w-full max-w-5xl mx-auto rounded-3xl shadow-2xl overflow-hidden flex flex-col
+                w-full rounded-3xl shadow-2xl overflow-hidden flex flex-col
+                ${currentSlide?.type !== 'info' ? 'max-w-5xl mx-auto' : ''}
                 ${currentSlideIndex > prevSlideIndex && isAnimating ? 'animate-slide-in' : ''}
                 ${currentSlideIndex < prevSlideIndex && isAnimating ? 'animate-slide-in-left' : ''}
               `}
               style={{ 
                 backgroundColor: getSlideBackground(currentSlide),
-                aspectRatio: currentSlide?.type === 'info' ? '4/3' : undefined,
               }}
               key={currentSlideIndex}
             >
