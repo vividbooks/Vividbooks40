@@ -532,46 +532,69 @@ function BlockLayoutView({ slide }: { slide: InfoSlide }) {
       const containerRef = React.useRef<HTMLDivElement>(null);
       const [fitFontSize, setFitFontSize] = React.useState<number | null>(null);
 
-      React.useEffect(() => {
-        if (block.textOverflow === 'fit' && containerRef.current && block.content) {
-          const container = containerRef.current;
-          const targetHeight = container.clientHeight * 0.9;
-          const containerWidth = container.clientWidth - 32;
+      const calculateFitSize = React.useCallback(() => {
+        if (block.textOverflow !== 'fit' || !containerRef.current || !block.content) return;
+        
+        const container = containerRef.current;
+        const targetHeight = container.clientHeight * 0.9;
+        const containerWidth = container.clientWidth - 32;
 
-          let minSize = 8;
-          let maxSize = 48;
+        if (targetHeight <= 0 || containerWidth <= 0) return;
+
+        // Can go up to 120px for large blocks
+        let minSize = 8;
+        let maxSize = 120;
+        
+        const measureEl = document.createElement('div');
+        measureEl.style.cssText = `
+          position: absolute;
+          visibility: hidden;
+          white-space: pre-wrap;
+          word-wrap: break-word;
+          width: ${containerWidth}px;
+          font-weight: ${block.fontWeight === 'bold' ? 'bold' : 'normal'};
+          font-style: ${block.fontStyle === 'italic' ? 'italic' : 'normal'};
+          line-height: 1.4;
+        `;
+        measureEl.textContent = block.content;
+        document.body.appendChild(measureEl);
+
+        let optimalSize = minSize;
+        while (minSize <= maxSize) {
+          const midSize = Math.floor((minSize + maxSize) / 2);
+          measureEl.style.fontSize = `${midSize}px`;
           
-          const measureEl = document.createElement('div');
-          measureEl.style.cssText = `
-            position: absolute;
-            visibility: hidden;
-            white-space: pre-wrap;
-            word-wrap: break-word;
-            width: ${containerWidth}px;
-            font-weight: ${block.fontWeight === 'bold' ? 'bold' : 'normal'};
-            font-style: ${block.fontStyle === 'italic' ? 'italic' : 'normal'};
-            line-height: 1.4;
-          `;
-          measureEl.textContent = block.content;
-          document.body.appendChild(measureEl);
-
-          let optimalSize = minSize;
-          while (minSize <= maxSize) {
-            const midSize = Math.floor((minSize + maxSize) / 2);
-            measureEl.style.fontSize = `${midSize}px`;
-            
-            if (measureEl.scrollHeight <= targetHeight) {
-              optimalSize = midSize;
-              minSize = midSize + 1;
-            } else {
-              maxSize = midSize - 1;
-            }
+          if (measureEl.scrollHeight <= targetHeight) {
+            optimalSize = midSize;
+            minSize = midSize + 1;
+          } else {
+            maxSize = midSize - 1;
           }
-
-          document.body.removeChild(measureEl);
-          setFitFontSize(optimalSize);
         }
+
+        document.body.removeChild(measureEl);
+        setFitFontSize(optimalSize);
       }, []);
+
+      // Initial calculation
+      React.useEffect(() => {
+        calculateFitSize();
+      }, [calculateFitSize]);
+
+      // ResizeObserver for real-time updates
+      React.useEffect(() => {
+        if (block.textOverflow !== 'fit' || !containerRef.current) return;
+
+        const resizeObserver = new ResizeObserver(() => {
+          calculateFitSize();
+        });
+
+        resizeObserver.observe(containerRef.current);
+
+        return () => {
+          resizeObserver.disconnect();
+        };
+      }, [calculateFitSize]);
 
       return (
         <div 

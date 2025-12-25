@@ -81,53 +81,73 @@ export function SlideBlockEditor({
     }
   }, [isEditing, block.content, block.type, block.textOverflow]);
 
-  // Auto-fit font size calculation
-  useEffect(() => {
-    if (block.textOverflow === 'fit' && textContainerRef.current && !isEditing) {
-      const container = textContainerRef.current;
-      const textElement = container.querySelector('div') as HTMLDivElement;
-      if (!textElement || !block.content) return;
+  // Auto-fit font size calculation - runs on content change and container resize
+  const calculateFitFontSize = React.useCallback(() => {
+    if (block.textOverflow !== 'fit' || !textContainerRef.current || !block.content || isEditing) return;
+    
+    const container = textContainerRef.current;
+    const targetHeight = container.clientHeight * 0.9; // 90% of block height
+    const containerWidth = container.clientWidth - 32; // minus padding
 
-      // Binary search for optimal font size
-      let minSize = 8;
-      let maxSize = 48;
-      const targetHeight = container.clientHeight * 0.9; // 90% of block height
-      const containerWidth = container.clientWidth - 32; // minus padding
+    if (targetHeight <= 0 || containerWidth <= 0) return;
 
-      // Create a temporary element for measurement
-      const measureEl = document.createElement('div');
-      measureEl.style.cssText = `
-        position: absolute;
-        visibility: hidden;
-        white-space: pre-wrap;
-        word-wrap: break-word;
-        width: ${containerWidth}px;
-        font-weight: ${block.fontWeight === 'bold' ? 'bold' : 'normal'};
-        font-style: ${block.fontStyle === 'italic' ? 'italic' : 'normal'};
-      `;
-      measureEl.textContent = block.content;
-      document.body.appendChild(measureEl);
+    // Binary search for optimal font size - can go up to 120px for large blocks
+    let minSize = 8;
+    let maxSize = 120;
 
-      let optimalSize = minSize;
-      while (minSize <= maxSize) {
-        const midSize = Math.floor((minSize + maxSize) / 2);
-        measureEl.style.fontSize = `${midSize}px`;
-        measureEl.style.lineHeight = '1.4';
-        
-        if (measureEl.scrollHeight <= targetHeight) {
-          optimalSize = midSize;
-          minSize = midSize + 1;
-        } else {
-          maxSize = midSize - 1;
-        }
-      }
+    // Create a temporary element for measurement
+    const measureEl = document.createElement('div');
+    measureEl.style.cssText = `
+      position: absolute;
+      visibility: hidden;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      width: ${containerWidth}px;
+      font-weight: ${block.fontWeight === 'bold' ? 'bold' : 'normal'};
+      font-style: ${block.fontStyle === 'italic' ? 'italic' : 'normal'};
+      line-height: 1.4;
+    `;
+    measureEl.textContent = block.content;
+    document.body.appendChild(measureEl);
 
-      document.body.removeChild(measureEl);
+    let optimalSize = minSize;
+    while (minSize <= maxSize) {
+      const midSize = Math.floor((minSize + maxSize) / 2);
+      measureEl.style.fontSize = `${midSize}px`;
       
-      // Apply the calculated font size via CSS variable
-      container.style.setProperty('--fit-font-size', `${optimalSize}px`);
+      if (measureEl.scrollHeight <= targetHeight) {
+        optimalSize = midSize;
+        minSize = midSize + 1;
+      } else {
+        maxSize = midSize - 1;
+      }
     }
+
+    document.body.removeChild(measureEl);
+    
+    // Apply the calculated font size via CSS variable
+    container.style.setProperty('--fit-font-size', `${optimalSize}px`);
   }, [block.textOverflow, block.content, block.fontWeight, block.fontStyle, isEditing]);
+
+  // Run calculation on content/settings change
+  useEffect(() => {
+    calculateFitFontSize();
+  }, [calculateFitFontSize]);
+
+  // Use ResizeObserver to recalculate when block size changes
+  useEffect(() => {
+    if (block.textOverflow !== 'fit' || !textContainerRef.current) return;
+
+    const resizeObserver = new ResizeObserver(() => {
+      calculateFitFontSize();
+    });
+
+    resizeObserver.observe(textContainerRef.current);
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [block.textOverflow, calculateFitFontSize]);
 
   // Simple image drag using object-position (0-100%)
   const handleImageMouseDown = (e: React.MouseEvent) => {
