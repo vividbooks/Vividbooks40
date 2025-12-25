@@ -689,9 +689,9 @@ function BlockLayoutView({ slide }: { slide: InfoSlide }) {
 
       case 'left-large-right-split':
         return (
-          <div className="h-full flex flex-col lg:flex-row" style={gapStyle}>
-            <div className="flex-[2]" style={{ minHeight: 0 }}>{renderBlock(blocks[0], 0)}</div>
-            <div className="flex-1 flex flex-col" style={{ ...gapStyle, minHeight: 0 }}>
+          <div className="h-full flex flex-row" style={gapStyle}>
+            <div className="flex-[2]" style={{ minHeight: 0, minWidth: 0 }}>{renderBlock(blocks[0], 0)}</div>
+            <div className="flex-1 flex flex-col" style={{ ...gapStyle, minHeight: 0, minWidth: 0 }}>
               <div className="flex-1" style={{ minHeight: 0 }}>{renderBlock(blocks[1], 1)}</div>
               <div className="flex-1" style={{ minHeight: 0 }}>{renderBlock(blocks[2], 2)}</div>
             </div>
@@ -700,12 +700,12 @@ function BlockLayoutView({ slide }: { slide: InfoSlide }) {
 
       case 'right-large-left-split':
         return (
-          <div className="h-full flex flex-col lg:flex-row" style={gapStyle}>
-            <div className="flex-1 flex flex-col" style={{ ...gapStyle, minHeight: 0 }}>
+          <div className="h-full flex flex-row" style={gapStyle}>
+            <div className="flex-1 flex flex-col" style={{ ...gapStyle, minHeight: 0, minWidth: 0 }}>
               <div className="flex-1" style={{ minHeight: 0 }}>{renderBlock(blocks[0], 0)}</div>
               <div className="flex-1" style={{ minHeight: 0 }}>{renderBlock(blocks[1], 1)}</div>
             </div>
-            <div className="flex-[2]" style={{ minHeight: 0 }}>{renderBlock(blocks[2], 2)}</div>
+            <div className="flex-[2]" style={{ minHeight: 0, minWidth: 0 }}>{renderBlock(blocks[2], 2)}</div>
           </div>
         );
 
@@ -722,8 +722,23 @@ function BlockLayoutView({ slide }: { slide: InfoSlide }) {
         padding: blockGap > 0 ? blockGap : 0,
         fontFamily,
         containerType: 'inline-size',
+        position: 'relative',
       }}
     >
+      {/* DEBUG: Show layout type */}
+      <div style={{ 
+        position: 'absolute', 
+        top: 4, 
+        right: 4, 
+        background: 'red', 
+        color: 'white', 
+        padding: '2px 8px', 
+        borderRadius: 4, 
+        fontSize: 12, 
+        zIndex: 9999 
+      }}>
+        {layout.type} | blocks: {blocks.length}
+      </div>
       {renderLayout()}
     </div>
   );
