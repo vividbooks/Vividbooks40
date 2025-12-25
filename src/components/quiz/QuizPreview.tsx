@@ -458,6 +458,16 @@ function BlockLayoutView({ slide }: { slide: InfoSlide }) {
   const columnRatios = layout.columnRatios || [50, 50];
   const splitRatio = layout.splitRatio || 50;
 
+  // Detect mobile screen
+  const [isMobile, setIsMobile] = useState(false);
+  
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth < 768);
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
   // Get template settings
   const template = slide.templateId ? getTemplateById(slide.templateId) : undefined;
   const blockGap = slide.blockGap ?? template?.defaultGap ?? 11;
@@ -641,71 +651,71 @@ function BlockLayoutView({ slide }: { slide: InfoSlide }) {
     switch (layout.type) {
       case 'title-content':
         return (
-          <div style={{ height: '100%', display: 'flex', flexDirection: 'column', ...gapStyle }}>
-            <div style={{ flex: `0 0 ${titleHeight}%`, minHeight: 60 }}>{renderBlock(blocks[0], 0)}</div>
-            <div style={{ flex: 1, minHeight: 0 }}>{renderBlock(blocks[1], 1)}</div>
+          <div style={{ height: isMobile ? 'auto' : '100%', display: 'flex', flexDirection: 'column', ...gapStyle }}>
+            <div style={{ flex: isMobile ? 'none' : `0 0 ${titleHeight}%`, minHeight: 60 }}>{renderBlock(blocks[0], 0)}</div>
+            <div style={{ flex: 1, minHeight: isMobile ? 200 : 0 }}>{renderBlock(blocks[1], 1)}</div>
           </div>
         );
 
       case 'title-2cols':
         return (
-          <div style={{ height: '100%', display: 'flex', flexDirection: 'column', ...gapStyle }}>
-            <div style={{ flex: `0 0 ${titleHeight}%`, minHeight: 60 }}>{renderBlock(blocks[0], 0)}</div>
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'row', minHeight: 0, ...gapStyle }}>
-              <div style={{ flex: `0 0 ${columnRatios[0]}%`, minHeight: 0, minWidth: 0 }}>{renderBlock(blocks[1], 1)}</div>
-              <div style={{ flex: 1, minHeight: 0, minWidth: 0 }}>{renderBlock(blocks[2], 2)}</div>
+          <div style={{ height: isMobile ? 'auto' : '100%', display: 'flex', flexDirection: 'column', ...gapStyle }}>
+            <div style={{ flex: isMobile ? 'none' : `0 0 ${titleHeight}%`, minHeight: 60 }}>{renderBlock(blocks[0], 0)}</div>
+            <div style={{ flex: 1, display: 'flex', flexDirection: isMobile ? 'column' : 'row', minHeight: 0, ...gapStyle }}>
+              <div style={{ flex: isMobile ? 'none' : `0 0 ${columnRatios[0]}%`, minHeight: isMobile ? 120 : 0, minWidth: 0 }}>{renderBlock(blocks[1], 1)}</div>
+              <div style={{ flex: 1, minHeight: isMobile ? 120 : 0, minWidth: 0 }}>{renderBlock(blocks[2], 2)}</div>
             </div>
           </div>
         );
 
       case 'title-3cols':
         return (
-          <div style={{ height: '100%', display: 'flex', flexDirection: 'column', ...gapStyle }}>
-            <div style={{ flex: `0 0 ${titleHeight}%`, minHeight: 60 }}>{renderBlock(blocks[0], 0)}</div>
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'row', minHeight: 0, ...gapStyle }}>
-              <div style={{ flex: `0 0 ${columnRatios[0]}%`, minHeight: 0, minWidth: 0 }}>{renderBlock(blocks[1], 1)}</div>
-              <div style={{ flex: `0 0 ${columnRatios[1]}%`, minHeight: 0, minWidth: 0 }}>{renderBlock(blocks[2], 2)}</div>
-              <div style={{ flex: 1, minHeight: 0, minWidth: 0 }}>{renderBlock(blocks[3], 3)}</div>
+          <div style={{ height: isMobile ? 'auto' : '100%', display: 'flex', flexDirection: 'column', ...gapStyle }}>
+            <div style={{ flex: isMobile ? 'none' : `0 0 ${titleHeight}%`, minHeight: 60 }}>{renderBlock(blocks[0], 0)}</div>
+            <div style={{ flex: 1, display: 'flex', flexDirection: isMobile ? 'column' : 'row', minHeight: 0, ...gapStyle }}>
+              <div style={{ flex: isMobile ? 'none' : `0 0 ${columnRatios[0]}%`, minHeight: isMobile ? 100 : 0, minWidth: 0 }}>{renderBlock(blocks[1], 1)}</div>
+              <div style={{ flex: isMobile ? 'none' : `0 0 ${columnRatios[1]}%`, minHeight: isMobile ? 100 : 0, minWidth: 0 }}>{renderBlock(blocks[2], 2)}</div>
+              <div style={{ flex: 1, minHeight: isMobile ? 100 : 0, minWidth: 0 }}>{renderBlock(blocks[3], 3)}</div>
             </div>
           </div>
         );
 
       case '2cols':
         return (
-          <div style={{ height: '100%', display: 'flex', flexDirection: 'row', ...gapStyle }}>
-            <div style={{ flex: `0 0 ${columnRatios[0]}%`, minHeight: 0, minWidth: 0 }}>{renderBlock(blocks[0], 0)}</div>
-            <div style={{ flex: 1, minHeight: 0, minWidth: 0 }}>{renderBlock(blocks[1], 1)}</div>
+          <div style={{ height: isMobile ? 'auto' : '100%', display: 'flex', flexDirection: isMobile ? 'column' : 'row', ...gapStyle }}>
+            <div style={{ flex: isMobile ? 'none' : `0 0 ${columnRatios[0]}%`, minHeight: isMobile ? 150 : 0, minWidth: 0 }}>{renderBlock(blocks[0], 0)}</div>
+            <div style={{ flex: 1, minHeight: isMobile ? 150 : 0, minWidth: 0 }}>{renderBlock(blocks[1], 1)}</div>
           </div>
         );
 
       case '3cols':
         return (
-          <div style={{ height: '100%', display: 'flex', flexDirection: 'row', ...gapStyle }}>
-            <div style={{ flex: `0 0 ${columnRatios[0]}%`, minHeight: 0, minWidth: 0 }}>{renderBlock(blocks[0], 0)}</div>
-            <div style={{ flex: `0 0 ${columnRatios[1]}%`, minHeight: 0, minWidth: 0 }}>{renderBlock(blocks[1], 1)}</div>
-            <div style={{ flex: 1, minHeight: 0, minWidth: 0 }}>{renderBlock(blocks[2], 2)}</div>
+          <div style={{ height: isMobile ? 'auto' : '100%', display: 'flex', flexDirection: isMobile ? 'column' : 'row', ...gapStyle }}>
+            <div style={{ flex: isMobile ? 'none' : `0 0 ${columnRatios[0]}%`, minHeight: isMobile ? 120 : 0, minWidth: 0 }}>{renderBlock(blocks[0], 0)}</div>
+            <div style={{ flex: isMobile ? 'none' : `0 0 ${columnRatios[1]}%`, minHeight: isMobile ? 120 : 0, minWidth: 0 }}>{renderBlock(blocks[1], 1)}</div>
+            <div style={{ flex: 1, minHeight: isMobile ? 120 : 0, minWidth: 0 }}>{renderBlock(blocks[2], 2)}</div>
           </div>
         );
 
       case 'left-large-right-split':
         return (
-          <div style={{ height: '100%', display: 'flex', flexDirection: 'row', ...gapStyle }}>
-            <div style={{ flex: `0 0 ${columnRatios[0]}%`, minHeight: 0, minWidth: 0 }}>{renderBlock(blocks[0], 0)}</div>
-            <div style={{ flex: `0 0 ${columnRatios[1]}%`, display: 'flex', flexDirection: 'column', minHeight: 0, minWidth: 0, ...gapStyle }}>
-              <div style={{ flex: `0 0 ${splitRatio}%`, minHeight: 0 }}>{renderBlock(blocks[1], 1)}</div>
-              <div style={{ flex: 1, minHeight: 0 }}>{renderBlock(blocks[2], 2)}</div>
+          <div style={{ height: isMobile ? 'auto' : '100%', display: 'flex', flexDirection: isMobile ? 'column' : 'row', ...gapStyle }}>
+            <div style={{ flex: isMobile ? 'none' : `0 0 ${columnRatios[0]}%`, minHeight: isMobile ? 200 : 0, minWidth: 0 }}>{renderBlock(blocks[0], 0)}</div>
+            <div style={{ flex: isMobile ? 'none' : `0 0 ${columnRatios[1]}%`, display: 'flex', flexDirection: 'column', minHeight: 0, minWidth: 0, ...gapStyle }}>
+              <div style={{ flex: isMobile ? 'none' : `0 0 ${splitRatio}%`, minHeight: isMobile ? 100 : 0 }}>{renderBlock(blocks[1], 1)}</div>
+              <div style={{ flex: 1, minHeight: isMobile ? 100 : 0 }}>{renderBlock(blocks[2], 2)}</div>
             </div>
           </div>
         );
 
       case 'right-large-left-split':
         return (
-          <div style={{ height: '100%', display: 'flex', flexDirection: 'row', ...gapStyle }}>
-            <div style={{ flex: `0 0 ${columnRatios[0]}%`, display: 'flex', flexDirection: 'column', minHeight: 0, minWidth: 0, ...gapStyle }}>
-              <div style={{ flex: `0 0 ${splitRatio}%`, minHeight: 0 }}>{renderBlock(blocks[0], 0)}</div>
-              <div style={{ flex: 1, minHeight: 0 }}>{renderBlock(blocks[1], 1)}</div>
+          <div style={{ height: isMobile ? 'auto' : '100%', display: 'flex', flexDirection: isMobile ? 'column' : 'row', ...gapStyle }}>
+            <div style={{ flex: isMobile ? 'none' : `0 0 ${columnRatios[0]}%`, display: 'flex', flexDirection: 'column', minHeight: 0, minWidth: 0, ...gapStyle }}>
+              <div style={{ flex: isMobile ? 'none' : `0 0 ${splitRatio}%`, minHeight: isMobile ? 100 : 0 }}>{renderBlock(blocks[0], 0)}</div>
+              <div style={{ flex: 1, minHeight: isMobile ? 100 : 0 }}>{renderBlock(blocks[1], 1)}</div>
             </div>
-            <div style={{ flex: `0 0 ${columnRatios[1]}%`, minHeight: 0, minWidth: 0 }}>{renderBlock(blocks[2], 2)}</div>
+            <div style={{ flex: isMobile ? 'none' : `0 0 ${columnRatios[1]}%`, minHeight: isMobile ? 200 : 0, minWidth: 0 }}>{renderBlock(blocks[2], 2)}</div>
           </div>
         );
 
