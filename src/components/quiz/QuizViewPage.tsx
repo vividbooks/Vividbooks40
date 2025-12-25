@@ -1401,18 +1401,23 @@ export function QuizViewPage() {
           </div>
           
           {/* Slide content */}
-          <div className="flex-1 flex items-stretch px-4">
+          <div className="flex-1 flex items-stretch px-4 overflow-hidden">
             <div 
               className={`
                 w-full max-w-5xl mx-auto rounded-3xl shadow-2xl overflow-hidden flex flex-col
                 ${currentSlideIndex > prevSlideIndex && isAnimating ? 'animate-slide-in' : ''}
                 ${currentSlideIndex < prevSlideIndex && isAnimating ? 'animate-slide-in-left' : ''}
               `}
-              style={{ backgroundColor: getSlideBackground(currentSlide) }}
+              style={{ 
+                backgroundColor: getSlideBackground(currentSlide),
+                aspectRatio: currentSlide?.type === 'info' ? '4/3' : undefined,
+              }}
               key={currentSlideIndex}
             >
               {currentSlide ? (
-                renderSlideView(currentSlide)
+                <div className="flex-1 flex flex-col" style={{ minHeight: 0 }}>
+                  {renderSlideView(currentSlide)}
+                </div>
               ) : (
                 <div className="flex items-center justify-center h-full text-white/70">
                   <p className="text-xl">Žádné slidy</p>
