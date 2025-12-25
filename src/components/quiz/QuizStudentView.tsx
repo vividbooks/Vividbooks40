@@ -962,21 +962,30 @@ export function QuizStudentView() {
               }}
               key={currentSlideIndex}
             >
-              {/* Question */}
-              <div className="flex-1 flex flex-col items-center justify-center p-4 md:p-8">
-                <h1 className="text-xl sm:text-2xl md:text-4xl lg:text-5xl font-bold text-[#4E5871] text-center leading-tight break-words max-w-full overflow-hidden">
-                  <MathText>{(currentSlide as any).question || (currentSlide as any).title || 'Otázka'}</MathText>
-                </h1>
-                
-                {/* Question image */}
-                {(currentSlide as any).media?.url && (currentSlide as any).media?.type === 'image' && (
-                  <img 
-                    src={(currentSlide as any).media.url} 
-                    alt="Obrázek k otázce"
-                    className="mt-4 max-w-full max-h-48 md:max-h-64 rounded-xl shadow-lg object-contain"
-                  />
-                )}
-              </div>
+              {/* Info slide with block layout - render ONLY BlockLayoutView */}
+              {currentSlide.type === 'info' && (currentSlide as InfoSlide).layout && (currentSlide as InfoSlide).layout!.blocks.length > 0 ? (
+                <div className="flex-1 flex flex-col" style={{ minHeight: 0 }}>
+                  <BlockLayoutView slide={currentSlide as InfoSlide} />
+                </div>
+              ) : (
+                <>
+                  {/* Question - only for activity slides */}
+                  {currentSlide.type === 'activity' && (
+                    <div className="flex-1 flex flex-col items-center justify-center p-4 md:p-8">
+                      <h1 className="text-xl sm:text-2xl md:text-4xl lg:text-5xl font-bold text-[#4E5871] text-center leading-tight break-words max-w-full overflow-hidden">
+                        <MathText>{(currentSlide as any).question || (currentSlide as any).title || 'Otázka'}</MathText>
+                      </h1>
+                      
+                      {/* Question image */}
+                      {(currentSlide as any).media?.url && (currentSlide as any).media?.type === 'image' && (
+                        <img 
+                          src={(currentSlide as any).media.url} 
+                          alt="Obrázek k otázce"
+                          className="mt-4 max-w-full max-h-48 md:max-h-64 rounded-xl shadow-lg object-contain"
+                        />
+                      )}
+                    </div>
+                  )}
               
               {/* ABC Options */}
               {currentSlide.type === 'activity' && (currentSlide as any).activityType === 'abc' && (
@@ -1121,25 +1130,22 @@ export function QuizStudentView() {
                 </div>
               )}
               
-              {/* Info slide */}
-              {currentSlide.type === 'info' && (
-                <div className="flex-1 flex flex-col" style={{ minHeight: 0 }}>
-                  {(currentSlide as InfoSlide).layout && (currentSlide as InfoSlide).layout!.blocks.length > 0 ? (
-                    <BlockLayoutView slide={currentSlide as InfoSlide} />
-                  ) : (currentSlide as any).content ? (
-                    <div className="flex-1 flex items-center justify-center p-8">
-                      <div 
-                        className="prose prose-lg max-w-3xl text-center text-slate-600"
-                        dangerouslySetInnerHTML={{ __html: (currentSlide as any).content }}
-                      />
-                    </div>
-                  ) : null}
+              {/* Legacy info slide (without block layout) */}
+              {currentSlide.type === 'info' && (!(currentSlide as InfoSlide).layout || (currentSlide as InfoSlide).layout!.blocks.length === 0) && (
+                <div className="flex-1 flex items-center justify-center p-8">
+                  {(currentSlide as any).content && (
+                    <div 
+                      className="prose prose-lg max-w-3xl text-center text-slate-600"
+                      dangerouslySetInnerHTML={{ __html: (currentSlide as any).content }}
+                    />
+                  )}
                 </div>
               )}
               
-              {/* Submit button */}
+              {/* Submit button - only for activity slides */}
+              {currentSlide.type === 'activity' && (
               <div className="flex justify-center py-6 md:py-10">
-                {!hasAnswered && currentSlide.type === 'activity' ? (
+                {!hasAnswered ? (
                   <button
                     ref={answerButtonRef}
                     onClick={submitAnswer}
@@ -1174,6 +1180,9 @@ export function QuizStudentView() {
                   </button>
                 )}
               </div>
+              )}
+              </>
+              )}
             </div>
           </div>
           
