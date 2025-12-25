@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   ArrowLeft, 
   ChevronDown, 
@@ -24,6 +24,47 @@ interface PageSettingsPanelProps {
 }
 
 type SectionId = 'type' | 'template' | 'layout' | 'background' | 'chapter' | 'note';
+
+// AccordionSection moved outside to prevent re-creation on each render
+interface AccordionSectionProps {
+  id: SectionId;
+  icon: React.ElementType;
+  title: string;
+  value: React.ReactNode;
+  children: React.ReactNode;
+  isExpanded: boolean;
+  onToggle: (id: SectionId) => void;
+}
+
+function AccordionSection({ id, icon: Icon, title, value, children, isExpanded, onToggle }: AccordionSectionProps) {
+  return (
+    <div className="border-b border-slate-100 last:border-b-0">
+      <button
+        onClick={() => onToggle(id)}
+        className="w-full flex items-center justify-between px-5 py-4 hover:bg-slate-50 transition-colors"
+      >
+        <div className="flex items-center gap-3">
+          <Icon className="w-5 h-5 text-slate-500" />
+          <span className="font-medium text-slate-700">{title}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-slate-500">{value}</span>
+          {isExpanded ? (
+            <ChevronDown className="w-4 h-4 text-slate-400" />
+          ) : (
+            <ChevronRight className="w-4 h-4 text-slate-400" />
+          )}
+        </div>
+      </button>
+      
+      {isExpanded && (
+        <div className="px-5 pb-4 bg-slate-50/50">
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
 
 const SLIDE_TYPES = [
   { id: 'info', label: 'Informace', icon: Info, description: 'Informační slide s textem a obrázky' },
@@ -115,6 +156,13 @@ const LAYOUTS = [
 export function PageSettingsPanel({ slide, onClose, onUpdate, initialSection }: PageSettingsPanelProps) {
   const [expandedSection, setExpandedSection] = useState<SectionId | null>(initialSection || null);
 
+  // Update expanded section when initialSection changes
+  useEffect(() => {
+    if (initialSection) {
+      setExpandedSection(initialSection);
+    }
+  }, [initialSection]);
+
   const toggleSection = (sectionId: SectionId) => {
     setExpandedSection(prev => prev === sectionId ? null : sectionId);
   };
@@ -163,51 +211,6 @@ export function PageSettingsPanel({ slide, onClose, onUpdate, initialSection }: 
     return getTemplateById(templateId);
   };
 
-  // Accordion Section Component
-  const AccordionSection = ({ 
-    id, 
-    icon: Icon, 
-    title, 
-    value, 
-    children 
-  }: { 
-    id: SectionId; 
-    icon: React.ElementType; 
-    title: string; 
-    value: React.ReactNode; 
-    children: React.ReactNode;
-  }) => {
-    const isExpanded = expandedSection === id;
-    
-    return (
-      <div className="border-b border-slate-100 last:border-b-0">
-        <button
-          onClick={() => toggleSection(id)}
-          className="w-full flex items-center justify-between px-5 py-4 hover:bg-slate-50 transition-colors"
-        >
-          <div className="flex items-center gap-3">
-            <Icon className="w-5 h-5 text-slate-500" />
-            <span className="font-medium text-slate-700">{title}</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-slate-500">{value}</span>
-            {isExpanded ? (
-              <ChevronDown className="w-4 h-4 text-slate-400" />
-            ) : (
-              <ChevronRight className="w-4 h-4 text-slate-400" />
-            )}
-          </div>
-        </button>
-        
-        {isExpanded && (
-          <div className="px-5 pb-4 bg-slate-50/50">
-            {children}
-          </div>
-        )}
-      </div>
-    );
-  };
-
   return (
     <div 
       className="fixed top-0 left-0 h-full bg-white shadow-2xl z-40 flex flex-col overflow-hidden"
@@ -232,6 +235,8 @@ export function PageSettingsPanel({ slide, onClose, onUpdate, initialSection }: 
           icon={FileText} 
           title="Typ stránky" 
           value={getSlideTypeName()}
+          isExpanded={expandedSection === 'type'}
+          onToggle={toggleSection}
         >
           <div className="space-y-2 pt-2">
             {SLIDE_TYPES.map((type) => (
@@ -276,6 +281,8 @@ export function PageSettingsPanel({ slide, onClose, onUpdate, initialSection }: 
                 <span>{getTemplateName()}</span>
               </div>
             }
+            isExpanded={expandedSection === 'template'}
+            onToggle={toggleSection}
           >
             <div className="space-y-2 pt-2">
               {/* No template option */}
@@ -341,6 +348,8 @@ export function PageSettingsPanel({ slide, onClose, onUpdate, initialSection }: 
             icon={SlidersHorizontal} 
             title="Rozložení" 
             value={getLayoutName()}
+            isExpanded={expandedSection === 'layout'}
+            onToggle={toggleSection}
           >
             <div className="space-y-4 pt-2">
               {/* Layout grid - 3 columns */}
@@ -455,6 +464,8 @@ export function PageSettingsPanel({ slide, onClose, onUpdate, initialSection }: 
           icon={Palette} 
           title="Barva pozadí" 
           value={getBackgroundPreview()}
+          isExpanded={expandedSection === 'background'}
+          onToggle={toggleSection}
         >
           <div className="pt-2">
             <BackgroundPicker
@@ -477,6 +488,8 @@ export function PageSettingsPanel({ slide, onClose, onUpdate, initialSection }: 
           icon={Bookmark} 
           title="Jméno kapitoly" 
           value={(slide as any).chapterName || '-'}
+          isExpanded={expandedSection === 'chapter'}
+          onToggle={toggleSection}
         >
           <div className="pt-2">
             <input
@@ -498,6 +511,8 @@ export function PageSettingsPanel({ slide, onClose, onUpdate, initialSection }: 
           icon={MessageSquare} 
           title="Poznámka ke stránce" 
           value={(slide as any).note ? 'Přidána' : '-'}
+          isExpanded={expandedSection === 'note'}
+          onToggle={toggleSection}
         >
           <div className="pt-2">
             <textarea
