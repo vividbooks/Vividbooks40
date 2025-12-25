@@ -1418,9 +1418,10 @@ export function QuizViewPage() {
               `}
               style={{ 
                 backgroundColor: getSlideBackground(currentSlide),
-                // Keep aspect ratio for proper proportions
-                aspectRatio: currentSlide?.type === 'info' ? '16/9' : undefined,
-                alignSelf: 'center',
+                // Fill the available height (no fixed aspect ratio for info slides)
+                flex: 1,
+                height: '100%',
+                alignSelf: 'stretch',
               }}
               key={currentSlideIndex}
             >

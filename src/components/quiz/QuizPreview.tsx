@@ -1254,11 +1254,11 @@ export function QuizPreview({ quiz, onClose, isLive = false, onComplete }: QuizP
                 display: 'flex',
                 flexDirection: 'column',
                 overflow: 'hidden',
-                // Keep aspect ratio for proper proportions, but allow full width
-                aspectRatio: !isMobile ? '16/9' : undefined,
+                // Fill the available height (no fixed aspect ratio)
+                flex: 1,
                 // On mobile, allow height to grow
-                height: isMobile ? 'auto' : undefined,
-                alignSelf: isMobile ? 'flex-start' : 'center',
+                height: isMobile ? 'auto' : '100%',
+                alignSelf: 'stretch',
               }}
               key={currentSlideIndex}
             >

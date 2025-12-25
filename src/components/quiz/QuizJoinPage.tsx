@@ -1221,11 +1221,11 @@ export function QuizJoinPage() {
                 ${currentSlideIndex < prevSlideIndex && isAnimating ? 'animate-slide-in-left' : ''}
               `}
               style={{
-                // Keep aspect ratio for proper proportions on desktop
-                aspectRatio: currentSlide?.type === 'info' && !isMobile ? '16/9' : undefined,
+                // Fill the available height (no fixed aspect ratio)
+                flex: 1,
                 // On mobile: auto height for scrolling
-                height: isMobile ? 'auto' : undefined,
-                alignSelf: isMobile ? 'flex-start' : 'center',
+                height: isMobile ? 'auto' : '100%',
+                alignSelf: 'stretch',
               }}
               key={currentSlideIndex}
             >
