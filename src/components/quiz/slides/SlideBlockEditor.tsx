@@ -156,14 +156,15 @@ export function SlideBlockEditor({
     onUpdate({ type: newType, content: '' });
   };
 
-  // Use exact pixel values for consistent sizing between editor and preview
+  // Use cqw (container query width) for consistent sizing relative to container
+  // Falls back to vw for browsers without container query support
   const getFontSize = (): string => {
     switch (block.fontSize) {
-      case 'small': return '14px';
-      case 'medium': return '18px';
-      case 'large': return '24px';
-      case 'xlarge': return '32px';
-      default: return '18px';
+      case 'small': return 'clamp(12px, 1.4cqw, 14px)';
+      case 'medium': return 'clamp(14px, 1.8cqw, 20px)';
+      case 'large': return 'clamp(18px, 2.4cqw, 28px)';
+      case 'xlarge': return 'clamp(24px, 3.2cqw, 38px)';
+      default: return 'clamp(14px, 1.8cqw, 20px)';
     }
   };
 

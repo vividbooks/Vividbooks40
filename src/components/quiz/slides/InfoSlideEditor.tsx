@@ -496,6 +496,7 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick, onBlockSettings
       className="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden cursor-pointer"
       style={{ 
         aspectRatio: '4/3', 
+        containerType: 'inline-size',
         ...getSlideBackgroundStyle(),
         fontFamily: getFontFamily(),
       }}

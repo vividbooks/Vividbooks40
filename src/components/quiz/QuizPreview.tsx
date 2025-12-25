@@ -491,10 +491,10 @@ function BlockLayoutView({ slide }: { slide: InfoSlide }) {
     }
 
     const textAlignClass = block.textAlign === 'center' ? 'text-center' : block.textAlign === 'right' ? 'text-right' : 'text-left';
-    // Use exact pixel values for consistent sizing between editor and preview
-    const fontSize = block.fontSize === 'xlarge' ? '32px' : 
-                     block.fontSize === 'large' ? '24px' : 
-                     block.fontSize === 'small' ? '14px' : '18px';
+    // Use cqw (container query width) for consistent sizing relative to container
+    const fontSize = block.fontSize === 'xlarge' ? 'clamp(24px, 3.2cqw, 38px)' : 
+                     block.fontSize === 'large' ? 'clamp(18px, 2.4cqw, 28px)' : 
+                     block.fontSize === 'small' ? 'clamp(12px, 1.4cqw, 14px)' : 'clamp(14px, 1.8cqw, 20px)';
     const fontWeightClass = block.fontWeight === 'bold' ? 'font-bold' : 'font-normal';
     const fontStyleClass = block.fontStyle === 'italic' ? 'italic' : '';
     const textDecorationClass = block.textDecoration === 'underline' ? 'underline' : '';
@@ -529,7 +529,7 @@ function BlockLayoutView({ slide }: { slide: InfoSlide }) {
     
     return (
       <div 
-        className={`h-full p-4 ${textAlignClass} ${fontWeightClass} ${fontStyleClass} ${textDecorationClass}`} 
+        className={`h-full p-4 flex flex-col justify-center ${textAlignClass} ${fontWeightClass} ${fontStyleClass} ${textDecorationClass}`} 
         style={textStyle}
       >
         <MathText>{block.content}</MathText>
@@ -624,6 +624,7 @@ function BlockLayoutView({ slide }: { slide: InfoSlide }) {
         ...getSlideBackgroundStyle(), 
         padding: blockGap > 0 ? blockGap : 0,
         fontFamily,
+        containerType: 'inline-size',
       }}
     >
       {renderLayout()}
