@@ -38,7 +38,7 @@ import {
   Unlock,
   AlertTriangle,
 } from 'lucide-react';
-import { Quiz, QuizSlide, ABCActivitySlide, OpenActivitySlide, ExampleActivitySlide, InfoSlide, LiveQuizSession, SlideResponse } from '../../types/quiz';
+import { Quiz, QuizSlide, ABCActivitySlide, OpenActivitySlide, ExampleActivitySlide, InfoSlide, LiveQuizSession, SlideResponse, SlideBlock, getTemplateById } from '../../types/quiz';
 import { getQuiz } from '../../utils/quiz-storage';
 import * as storage from '../../utils/profile-storage';
 import { database } from '../../utils/firebase-config';
@@ -47,6 +47,294 @@ import { boardToWorksheet, getConversionSummary } from '../../utils/content-conv
 import { saveWorksheet } from '../../utils/worksheet-storage';
 import { MathText } from '../math/MathText';
 import { QRCodeSVG } from 'qrcode.react';
+
+// ============================================
+// IMAGE BLOCK PREVIEW (for galleries and images)
+// ============================================
+function ImageBlockPreview({ block, borderRadius }: { block: SlideBlock; borderRadius: number }) {
+  const [currentIndex, setCurrentIndex] = useState(block.galleryIndex || 0);
+  const [showSolution, setShowSolution] = useState(false);
+
+  const images = block.gallery && block.gallery.length > 0 ? block.gallery : (block.content ? [block.content] : []);
+  const currentImage = images[currentIndex];
+  const hasSolution = images.length > 1 && block.galleryNavType === 'solution';
+  const hasMultiple = images.length > 1;
+  const navType = block.galleryNavType || 'dots';
+
+  if (!currentImage) return null;
+
+  const imageStyle: React.CSSProperties = {
+    width: '100%',
+    height: '100%',
+    objectFit: (block.imageScale && block.imageScale > 100) ? 'cover' : 'contain',
+    objectPosition: `${block.imagePositionX ?? 50}% ${block.imagePositionY ?? 50}%`,
+    transform: block.imageScale ? `scale(${block.imageScale / 100})` : undefined,
+    borderRadius,
+  };
+
+  return (
+    <div className="relative h-full w-full flex items-center justify-center">
+      <img src={currentImage} alt="" style={imageStyle} />
+      
+      {hasSolution && (
+        <button
+          onClick={() => {
+            setShowSolution(!showSolution);
+            setCurrentIndex(showSolution ? 0 : 1);
+          }}
+          className="absolute bottom-2 left-1/2 -translate-x-1/2 px-4 py-2 rounded-full text-sm font-medium shadow-lg"
+          style={{ backgroundColor: showSolution ? '#ef4444' : '#10b981', color: 'white' }}
+        >
+          {showSolution ? 'Skrýt řešení' : 'Zobrazit řešení'}
+        </button>
+      )}
+      
+      {hasMultiple && navType === 'dots' && !hasSolution && (
+        <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-2">
+          {images.map((_, i) => (
+            <button
+              key={i}
+              onClick={() => setCurrentIndex(i)}
+              className={`w-3 h-3 rounded-full transition-colors ${i === currentIndex ? 'bg-indigo-600' : 'bg-white/70'}`}
+            />
+          ))}
+        </div>
+      )}
+      
+      {hasMultiple && navType === 'arrows' && (
+        <>
+          <button
+            onClick={() => setCurrentIndex(Math.max(0, currentIndex - 1))}
+            disabled={currentIndex === 0}
+            className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-white/80 flex items-center justify-center disabled:opacity-30"
+          >
+            ←
+          </button>
+          <button
+            onClick={() => setCurrentIndex(Math.min(images.length - 1, currentIndex + 1))}
+            disabled={currentIndex === images.length - 1}
+            className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-white/80 flex items-center justify-center disabled:opacity-30"
+          >
+            →
+          </button>
+        </>
+      )}
+
+      {block.imageCaption && (
+        <div className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-sm p-2 text-center">
+          {block.imageCaption}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================
+// BLOCK LAYOUT VIEW (for new block-based info slides)
+// ============================================
+function BlockLayoutView({ slide }: { slide: InfoSlide }) {
+  const layout = slide.layout!;
+  const blocks = layout.blocks;
+  const titleHeight = layout.titleHeight || 15;
+  const columnRatios = layout.columnRatios || [50, 50];
+  const splitRatio = layout.splitRatio || 50;
+
+  // Detect mobile screen
+  const [isMobile, setIsMobile] = useState(false);
+  
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth < 768);
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
+  // Get template settings
+  const template = slide.templateId ? getTemplateById(slide.templateId) : undefined;
+  const blockGap = slide.blockGap ?? template?.defaultGap ?? 11;
+  const blockRadius = slide.blockRadius ?? template?.defaultRadius ?? 8;
+  const blockColors = template?.blockColors || [];
+  const fontFamily = template?.font ? (template.font.includes(' ') ? `"${template.font}", sans-serif` : `${template.font}, sans-serif`) : 'inherit';
+
+  // Get background style for slide
+  const getSlideBackgroundStyle = (): React.CSSProperties => {
+    if (!slide.slideBackground) return {};
+    const bg = slide.slideBackground;
+    if (bg.type === 'color' && bg.color) {
+      return { backgroundColor: bg.color === 'transparent' ? 'transparent' : bg.color };
+    }
+    if (bg.type === 'image' && bg.imageUrl) {
+      return {
+        backgroundImage: `url(${bg.imageUrl})`,
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+      };
+    }
+    return {};
+  };
+
+  // Render a single block
+  const renderBlock = (block: SlideBlock, blockIndex: number) => {
+    const bgStyle: React.CSSProperties = { borderRadius: blockRadius };
+    
+    if (block.background?.type === 'color' && block.background.color) {
+      bgStyle.backgroundColor = block.background.color === 'transparent' ? 'transparent' : block.background.color;
+    } else if (blockColors[blockIndex % blockColors.length]) {
+      bgStyle.backgroundColor = blockColors[blockIndex % blockColors.length];
+    }
+
+    const textAlignClass = block.textAlign === 'center' ? 'text-center' : block.textAlign === 'right' ? 'text-right' : 'text-left';
+    const fontSize = block.fontSize === 'xlarge' ? 'clamp(24px, 3.2cqw, 38px)' : 
+                     block.fontSize === 'large' ? 'clamp(18px, 2.4cqw, 28px)' : 
+                     block.fontSize === 'small' ? 'clamp(12px, 1.4cqw, 14px)' : 'clamp(14px, 1.8cqw, 20px)';
+    const fontWeightClass = block.fontWeight === 'bold' ? 'font-bold' : 'font-normal';
+    const fontStyleClass = block.fontStyle === 'italic' ? 'italic' : '';
+    const textDecorationClass = block.textDecoration === 'underline' ? 'underline' : '';
+
+    if (block.type === 'image' && (block.content || (block.gallery && block.gallery.length > 0))) {
+      return (
+        <div className="h-full w-full overflow-hidden relative" style={bgStyle}>
+          <ImageBlockPreview block={block} borderRadius={Math.max(0, blockRadius - 4)} />
+        </div>
+      );
+    }
+
+    // Text block
+    const blockBgColor = block.highlightColor && block.highlightColor !== 'transparent' 
+      ? block.highlightColor 
+      : bgStyle.backgroundColor;
+    
+    const mobileFontSize = block.fontSize === 'xlarge' ? '24px' : 
+                           block.fontSize === 'large' ? '20px' : 
+                           block.fontSize === 'small' ? '14px' : '17px';
+
+    return (
+      <div 
+        className={`w-full ${textAlignClass} ${fontWeightClass} ${fontStyleClass} ${textDecorationClass}`} 
+        style={{
+          ...bgStyle,
+          backgroundColor: blockBgColor,
+          fontSize: isMobile ? mobileFontSize : fontSize,
+          color: block.textColor || '#1e293b',
+          whiteSpace: 'pre-wrap',
+          wordWrap: 'break-word',
+          lineHeight: 1.5,
+          padding: '16px',
+          height: isMobile ? 'auto' : '100%',
+        }}
+      >
+        <MathText>{block.content}</MathText>
+      </div>
+    );
+  };
+
+  // DESKTOP LAYOUT
+  const renderDesktopLayout = () => {
+    const gapStyle = { gap: blockGap };
+    
+    switch (layout.type) {
+      case 'title-content':
+        return (
+          <div style={{ height: '100%', display: 'flex', flexDirection: 'column', ...gapStyle }}>
+            <div style={{ flex: `0 0 ${titleHeight}%`, minHeight: 60 }}>{renderBlock(blocks[0], 0)}</div>
+            <div style={{ flex: 1, minHeight: 0 }}>{renderBlock(blocks[1], 1)}</div>
+          </div>
+        );
+
+      case 'title-2cols':
+        return (
+          <div style={{ height: '100%', display: 'flex', flexDirection: 'column', ...gapStyle }}>
+            <div style={{ flex: `0 0 ${titleHeight}%`, minHeight: 60 }}>{renderBlock(blocks[0], 0)}</div>
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'row', minHeight: 0, ...gapStyle }}>
+              <div style={{ flex: `0 0 ${columnRatios[0]}%`, minWidth: 0 }}>{renderBlock(blocks[1], 1)}</div>
+              <div style={{ flex: 1, minWidth: 0 }}>{renderBlock(blocks[2], 2)}</div>
+            </div>
+          </div>
+        );
+
+      case 'title-3cols':
+        return (
+          <div style={{ height: '100%', display: 'flex', flexDirection: 'column', ...gapStyle }}>
+            <div style={{ flex: `0 0 ${titleHeight}%`, minHeight: 60 }}>{renderBlock(blocks[0], 0)}</div>
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'row', minHeight: 0, ...gapStyle }}>
+              <div style={{ flex: `0 0 ${columnRatios[0]}%`, minWidth: 0 }}>{renderBlock(blocks[1], 1)}</div>
+              <div style={{ flex: `0 0 ${columnRatios[1]}%`, minWidth: 0 }}>{renderBlock(blocks[2], 2)}</div>
+              <div style={{ flex: 1, minWidth: 0 }}>{renderBlock(blocks[3], 3)}</div>
+            </div>
+          </div>
+        );
+
+      case '2cols':
+        return (
+          <div style={{ height: '100%', display: 'flex', flexDirection: 'row', ...gapStyle }}>
+            <div style={{ flex: `0 0 ${columnRatios[0]}%`, minWidth: 0 }}>{renderBlock(blocks[0], 0)}</div>
+            <div style={{ flex: 1, minWidth: 0 }}>{renderBlock(blocks[1], 1)}</div>
+          </div>
+        );
+
+      case '3cols':
+        return (
+          <div style={{ height: '100%', display: 'flex', flexDirection: 'row', ...gapStyle }}>
+            <div style={{ flex: `0 0 ${columnRatios[0]}%`, minWidth: 0 }}>{renderBlock(blocks[0], 0)}</div>
+            <div style={{ flex: `0 0 ${columnRatios[1]}%`, minWidth: 0 }}>{renderBlock(blocks[1], 1)}</div>
+            <div style={{ flex: 1, minWidth: 0 }}>{renderBlock(blocks[2], 2)}</div>
+          </div>
+        );
+
+      case 'left-large-right-split':
+        return (
+          <div style={{ height: '100%', display: 'flex', flexDirection: 'row', ...gapStyle }}>
+            <div style={{ flex: `0 0 ${columnRatios[0]}%`, minWidth: 0 }}>{renderBlock(blocks[0], 0)}</div>
+            <div style={{ flex: `0 0 ${columnRatios[1]}%`, display: 'flex', flexDirection: 'column', minWidth: 0, ...gapStyle }}>
+              <div style={{ flex: `0 0 ${splitRatio}%`, minHeight: 0 }}>{renderBlock(blocks[1], 1)}</div>
+              <div style={{ flex: 1, minHeight: 0 }}>{renderBlock(blocks[2], 2)}</div>
+            </div>
+          </div>
+        );
+
+      case 'right-large-left-split':
+        return (
+          <div style={{ height: '100%', display: 'flex', flexDirection: 'row', ...gapStyle }}>
+            <div style={{ flex: `0 0 ${columnRatios[0]}%`, display: 'flex', flexDirection: 'column', minWidth: 0, ...gapStyle }}>
+              <div style={{ flex: `0 0 ${splitRatio}%`, minHeight: 0 }}>{renderBlock(blocks[0], 0)}</div>
+              <div style={{ flex: 1, minHeight: 0 }}>{renderBlock(blocks[1], 1)}</div>
+            </div>
+            <div style={{ flex: `0 0 ${columnRatios[1]}%`, minWidth: 0 }}>{renderBlock(blocks[2], 2)}</div>
+          </div>
+        );
+
+      default:
+        return null;
+    }
+  };
+
+  // MOBILE LAYOUT - simple vertical stack
+  const renderMobileLayout = () => {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: blockGap }}>
+        {blocks.map((block, index) => (
+          <div key={index} style={{ minHeight: block.type === 'image' ? 200 : 'auto' }}>
+            {renderBlock(block, index)}
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  if (isMobile) {
+    return (
+      <div style={{ ...getSlideBackgroundStyle(), padding: blockGap > 0 ? blockGap : 0, fontFamily }}>
+        {renderMobileLayout()}
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ ...getSlideBackgroundStyle(), padding: blockGap > 0 ? blockGap : 0, fontFamily, containerType: 'inline-size', height: '100%' }}>
+      {renderDesktopLayout()}
+    </div>
+  );
+}
 
 // Toggle switch component - simple working version
 const ToggleSwitch = ({ enabled, onChange, label }: { enabled: boolean; onChange: (v: boolean) => void; label: string }) => {
@@ -277,6 +565,16 @@ function ExampleSlideView({ slide }: { slide: ExampleActivitySlide }) {
 }
 
 function InfoSlideView({ slide }: { slide: InfoSlide }) {
+  // If slide has new block-based layout, render it
+  if (slide.layout && slide.layout.blocks.length > 0) {
+    return (
+      <div className="flex-1 h-full">
+        <BlockLayoutView slide={slide} />
+      </div>
+    );
+  }
+
+  // Fallback to legacy format
   return (
     <div className="flex flex-col h-full items-center justify-center p-8">
       {slide.title && (
