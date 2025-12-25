@@ -176,6 +176,16 @@ export function QuizStudentView() {
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [isReconnecting, setIsReconnecting] = useState(false);
   
+  // Mobile detection
+  const [isMobile, setIsMobile] = useState(false);
+  
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth < 768);
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+  
   // Loading state
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -950,7 +960,14 @@ export function QuizStudentView() {
           </div>
           
           {/* Slide card */}
-          <div className="flex-1 flex items-stretch px-4">
+          <div 
+            className="flex-1 flex items-stretch px-4"
+            style={{
+              overflowY: isMobile ? 'auto' : 'hidden',
+              overflowX: 'hidden',
+              WebkitOverflowScrolling: 'touch',
+            }}
+          >
             <div 
               className={`
                 w-full max-w-5xl mx-auto rounded-3xl shadow-2xl overflow-hidden flex flex-col bg-white
@@ -958,7 +975,11 @@ export function QuizStudentView() {
                 ${currentSlideIndex < prevSlideIndex && isAnimating ? 'animate-slide-in-left' : ''}
               `}
               style={{
-                aspectRatio: currentSlide?.type === 'info' ? '4/3' : undefined,
+                // On mobile: no aspect ratio, auto height for scrolling
+                // On desktop: 4:3 aspect ratio for info slides
+                aspectRatio: currentSlide?.type === 'info' && !isMobile ? '4/3' : undefined,
+                height: isMobile ? 'auto' : undefined,
+                alignSelf: isMobile ? 'flex-start' : 'stretch',
               }}
               key={currentSlideIndex}
             >
