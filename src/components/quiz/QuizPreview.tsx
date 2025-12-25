@@ -451,7 +451,7 @@ function ImageBlockPreview({ block, borderRadius }: { block: any; borderRadius: 
 }
 
 // Block-based layout renderer for new info slides
-function BlockLayoutView({ slide }: { slide: InfoSlide }) {
+export function BlockLayoutView({ slide }: { slide: InfoSlide }) {
   const layout = slide.layout!;
   const blocks = layout.blocks;
   const titleHeight = layout.titleHeight || 15;
