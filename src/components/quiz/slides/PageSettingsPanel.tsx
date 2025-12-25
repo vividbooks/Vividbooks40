@@ -343,19 +343,23 @@ export function PageSettingsPanel({ slide, onClose, onUpdate }: PageSettingsPane
           >
             <div className="space-y-4 pt-2">
               {/* Layout grid - 3 columns */}
-              <div className="grid grid-cols-3 gap-2">
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
                 {LAYOUTS.map((layoutOption) => (
                   <button
                     key={layoutOption.id}
                     onClick={() => {
                       const currentSlide = slide as InfoSlide;
                       const oldBlocks = currentSlide.layout?.blocks || [];
+                      const savedBlocks = currentSlide.savedBlocks || [];
                       const newLayout = createSlideLayout(layoutOption.id as SlideLayoutType);
+                      
+                      // Combine old blocks with saved blocks for maximum content preservation
+                      const allOldBlocks = [...oldBlocks, ...savedBlocks];
                       
                       // Preserve content from old blocks
                       const updatedBlocks = newLayout.blocks.map((newBlock, index) => {
-                        const oldBlock = oldBlocks[index];
-                        if (oldBlock) {
+                        const oldBlock = allOldBlocks[index];
+                        if (oldBlock && (oldBlock.content || oldBlock.gallery?.length)) {
                           return {
                             ...newBlock,
                             type: oldBlock.type,
@@ -384,16 +388,24 @@ export function PageSettingsPanel({ slide, onClose, onUpdate }: PageSettingsPane
                         return newBlock;
                       });
                       
-                      onUpdate({ layout: { ...newLayout, blocks: updatedBlocks } } as any);
+                      // Save blocks that don't fit in new layout
+                      const newSavedBlocks = allOldBlocks
+                        .slice(newLayout.blocks.length)
+                        .filter(b => b.content || b.gallery?.length);
+                      
+                      onUpdate({ 
+                        layout: { ...newLayout, blocks: updatedBlocks },
+                        savedBlocks: newSavedBlocks.length > 0 ? newSavedBlocks : undefined
+                      } as any);
                     }}
-                    className={`p-2 rounded-xl border-2 flex flex-col items-center transition-all ${
+                    className={`p-2 rounded-lg border-2 flex flex-col items-center transition-all ${
                       (slide as InfoSlide).layout?.type === layoutOption.id
                         ? 'border-indigo-500 bg-indigo-50'
                         : 'border-slate-200 hover:border-slate-300 hover:bg-white'
                     }`}
                   >
                     <LayoutIcon type={layoutOption.id} />
-                    <span className="text-[10px] font-medium text-slate-600 mt-1 text-center leading-tight">{layoutOption.label}</span>
+                    <span className="text-[9px] font-medium text-slate-600 mt-0.5 text-center leading-tight">{layoutOption.label}</span>
                   </button>
                 ))}
               </div>

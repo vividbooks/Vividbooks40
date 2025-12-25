@@ -234,6 +234,8 @@ export interface InfoSlide extends BaseSlide {
   // New block-based layout system
   layout?: SlideLayout;
   slideBackground?: BackgroundSettings;
+  // Saved blocks when switching to layout with fewer blocks
+  savedBlocks?: SlideBlock[];
 }
 
 /**
