@@ -529,7 +529,7 @@ function BlockLayoutView({ slide }: { slide: InfoSlide }) {
     
     return (
       <div 
-        className={`h-full p-4 flex flex-col justify-center ${textAlignClass} ${fontWeightClass} ${fontStyleClass} ${textDecorationClass}`} 
+        className={`h-full p-4 flex flex-col justify-center whitespace-pre-wrap ${textAlignClass} ${fontWeightClass} ${fontStyleClass} ${textDecorationClass}`} 
         style={textStyle}
       >
         <MathText>{block.content}</MathText>
