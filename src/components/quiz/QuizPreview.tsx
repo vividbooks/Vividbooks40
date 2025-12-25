@@ -599,10 +599,17 @@ function BlockLayoutView({ slide }: { slide: InfoSlide }) {
       return (
         <div 
           ref={containerRef}
-          className={`h-full p-4 flex flex-col ${block.textOverflow === 'scroll' ? 'overflow-y-auto' : ''} ${block.textOverflow === 'fit' ? '' : 'justify-center'} whitespace-pre-wrap ${textAlignClass} ${fontWeightClass} ${fontStyleClass} ${textDecorationClass}`} 
+          className={`h-full p-4 flex flex-col ${
+            block.textOverflow === 'scroll' ? 'overflow-y-auto' : 
+            block.textOverflow === 'fit' ? 'overflow-hidden' : 
+            'overflow-y-auto'
+          } ${block.textOverflow === 'fit' ? '' : 'justify-center'} ${textAlignClass} ${fontWeightClass} ${fontStyleClass} ${textDecorationClass}`} 
           style={{
             ...textStyle,
             fontSize: block.textOverflow === 'fit' && fitFontSize ? `${fitFontSize}px` : textStyle.fontSize,
+            whiteSpace: 'pre-wrap',
+            wordWrap: 'break-word',
+            lineHeight: 1.4,
           }}
         >
           <MathText>{block.content}</MathText>
