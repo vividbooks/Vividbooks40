@@ -630,23 +630,23 @@ function BlockLayoutView({ slide }: { slide: InfoSlide }) {
 
   // Render based on layout type - RESPONSIVE version
   // On mobile (< lg): blocks stack vertically
-  // On desktop (lg+): original layout preserved
+  // On desktop (lg+): original layout preserved with h-full
   const renderLayout = () => {
     const gapStyle = { gap: blockGap };
     
     switch (layout.type) {
       case 'title-content':
         return (
-          <div className="flex flex-col" style={gapStyle}>
-            <div className="min-h-[60px]">{renderBlock(blocks[0], 0)}</div>
-            <div className="flex-1 min-h-[200px]">{renderBlock(blocks[1], 1)}</div>
+          <div className="h-full flex flex-col" style={gapStyle}>
+            <div className="min-h-[60px] lg:h-auto" style={{ height: `${titleHeight}%`, minHeight: 60 }}>{renderBlock(blocks[0], 0)}</div>
+            <div className="flex-1 min-h-[200px] lg:min-h-0">{renderBlock(blocks[1], 1)}</div>
           </div>
         );
 
       case 'title-2cols':
         return (
-          <div className="flex flex-col" style={gapStyle}>
-            <div className="min-h-[60px]">{renderBlock(blocks[0], 0)}</div>
+          <div className="h-full flex flex-col" style={gapStyle}>
+            <div className="min-h-[60px] lg:h-auto" style={{ height: `${titleHeight}%`, minHeight: 60 }}>{renderBlock(blocks[0], 0)}</div>
             <div className="flex-1 flex flex-col lg:flex-row" style={gapStyle}>
               <div className="flex-1 min-h-[150px] lg:min-h-0">{renderBlock(blocks[1], 1)}</div>
               <div className="flex-1 min-h-[150px] lg:min-h-0">{renderBlock(blocks[2], 2)}</div>
@@ -656,8 +656,8 @@ function BlockLayoutView({ slide }: { slide: InfoSlide }) {
 
       case 'title-3cols':
         return (
-          <div className="flex flex-col" style={gapStyle}>
-            <div className="min-h-[60px]">{renderBlock(blocks[0], 0)}</div>
+          <div className="h-full flex flex-col" style={gapStyle}>
+            <div className="min-h-[60px] lg:h-auto" style={{ height: `${titleHeight}%`, minHeight: 60 }}>{renderBlock(blocks[0], 0)}</div>
             <div className="flex-1 flex flex-col lg:flex-row" style={gapStyle}>
               <div className="flex-1 min-h-[120px] lg:min-h-0">{renderBlock(blocks[1], 1)}</div>
               <div className="flex-1 min-h-[120px] lg:min-h-0">{renderBlock(blocks[2], 2)}</div>
@@ -668,7 +668,7 @@ function BlockLayoutView({ slide }: { slide: InfoSlide }) {
 
       case '2cols':
         return (
-          <div className="flex flex-col lg:flex-row" style={gapStyle}>
+          <div className="h-full flex flex-col lg:flex-row" style={gapStyle}>
             <div className="flex-1 min-h-[200px] lg:min-h-0">{renderBlock(blocks[0], 0)}</div>
             <div className="flex-1 min-h-[200px] lg:min-h-0">{renderBlock(blocks[1], 1)}</div>
           </div>
@@ -676,7 +676,7 @@ function BlockLayoutView({ slide }: { slide: InfoSlide }) {
 
       case '3cols':
         return (
-          <div className="flex flex-col lg:flex-row" style={gapStyle}>
+          <div className="h-full flex flex-col lg:flex-row" style={gapStyle}>
             <div className="flex-1 min-h-[150px] lg:min-h-0">{renderBlock(blocks[0], 0)}</div>
             <div className="flex-1 min-h-[150px] lg:min-h-0">{renderBlock(blocks[1], 1)}</div>
             <div className="flex-1 min-h-[150px] lg:min-h-0">{renderBlock(blocks[2], 2)}</div>
@@ -685,7 +685,7 @@ function BlockLayoutView({ slide }: { slide: InfoSlide }) {
 
       case 'left-large-right-split':
         return (
-          <div className="flex flex-col lg:flex-row" style={gapStyle}>
+          <div className="h-full flex flex-col lg:flex-row" style={gapStyle}>
             <div className="flex-1 min-h-[200px] lg:min-h-0 lg:flex-[2]">{renderBlock(blocks[0], 0)}</div>
             <div className="flex flex-col lg:flex-1" style={gapStyle}>
               <div className="flex-1 min-h-[100px] lg:min-h-0">{renderBlock(blocks[1], 1)}</div>
@@ -696,7 +696,7 @@ function BlockLayoutView({ slide }: { slide: InfoSlide }) {
 
       case 'right-large-left-split':
         return (
-          <div className="flex flex-col-reverse lg:flex-row" style={gapStyle}>
+          <div className="h-full flex flex-col-reverse lg:flex-row" style={gapStyle}>
             <div className="flex flex-col lg:flex-1" style={gapStyle}>
               <div className="flex-1 min-h-[100px] lg:min-h-0">{renderBlock(blocks[0], 0)}</div>
               <div className="flex-1 min-h-[100px] lg:min-h-0">{renderBlock(blocks[1], 1)}</div>
@@ -1162,9 +1162,10 @@ export function QuizPreview({ quiz, onClose, isLive = false, onComplete }: QuizP
                 currentSlideIndex > prevSlideIndex && isAnimating ? 'animate-slide-in' : ''
               } ${
                 currentSlideIndex < prevSlideIndex && isAnimating ? 'animate-slide-in-left' : ''
-              } ${
-                currentSlide?.type === 'info' ? 'lg:aspect-[4/3] h-auto' : ''
               }`}
+              style={{ 
+                aspectRatio: currentSlide?.type === 'info' ? '4/3' : undefined,
+              }}
               key={currentSlideIndex}
             >
               {currentSlide ? (
