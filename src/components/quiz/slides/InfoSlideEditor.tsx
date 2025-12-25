@@ -271,7 +271,7 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick, onBlockSettings
             
             {/* Two columns */}
             <div className="flex" style={{ flex: 1, minHeight: 0, gap: getBlockGap() }}>
-              <div style={{ width: `${columnRatios[0]}%` }}>
+              <div style={{ flex: `0 0 ${columnRatios[0]}%`, minWidth: 0 }}>
                 {renderBlockEditor(1, "Levý sloupec...")}
               </div>
               
@@ -283,7 +283,7 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick, onBlockSettings
                 max={75}
               />
               
-              <div style={{ width: `${columnRatios[1]}%` }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
                 {renderBlockEditor(2, "Pravý sloupec...")}
               </div>
             </div>
@@ -308,7 +308,7 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick, onBlockSettings
             
             {/* Three columns */}
             <div className="flex" style={{ flex: 1, minHeight: 0, gap: getBlockGap() }}>
-              <div style={{ width: `${columnRatios[0]}%` }}>
+              <div style={{ flex: `0 0 ${columnRatios[0]}%`, minWidth: 0 }}>
                 {renderBlockEditor(1, "Sloupec 1...")}
               </div>
               
@@ -320,7 +320,7 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick, onBlockSettings
                 max={50}
               />
               
-              <div style={{ width: `${columnRatios[1]}%` }}>
+              <div style={{ flex: `0 0 ${columnRatios[1]}%`, minWidth: 0 }}>
                 {renderBlockEditor(2, "Sloupec 2...")}
               </div>
               
@@ -332,7 +332,7 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick, onBlockSettings
                 max={80}
               />
               
-              <div style={{ width: `${columnRatios[2]}%` }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
                 {renderBlockEditor(3, "Sloupec 3...")}
               </div>
             </div>
@@ -340,9 +340,9 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick, onBlockSettings
         );
 
       case '2cols':
-        return (
+  return (
           <div className="h-full flex" style={{ gap: getBlockGap() }}>
-            <div style={{ width: `${columnRatios[0]}%` }}>
+            <div style={{ flex: `0 0 ${columnRatios[0]}%`, minWidth: 0 }}>
               {renderBlockEditor(0, "Levý sloupec...")}
             </div>
             
@@ -354,19 +354,19 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick, onBlockSettings
               max={75}
             />
             
-            <div style={{ width: `${columnRatios[1]}%` }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
               {renderBlockEditor(1, "Pravý sloupec...")}
             </div>
-          </div>
+        </div>
         );
 
       case '3cols':
-  return (
+        return (
           <div className="h-full flex" style={{ gap: getBlockGap() }}>
-            <div style={{ width: `${columnRatios[0]}%` }}>
+            <div style={{ flex: `0 0 ${columnRatios[0]}%`, minWidth: 0 }}>
               {renderBlockEditor(0, "Sloupec 1...")}
-            </div>
-            
+      </div>
+      
             <BlockResizer
               direction="horizontal"
               value={columnRatios[0]}
@@ -375,10 +375,10 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick, onBlockSettings
               max={50}
             />
             
-            <div style={{ width: `${columnRatios[1]}%` }}>
+            <div style={{ flex: `0 0 ${columnRatios[1]}%`, minWidth: 0 }}>
               {renderBlockEditor(1, "Sloupec 2...")}
-            </div>
-            
+      </div>
+      
             <BlockResizer
               direction="horizontal"
               value={columnRatios[0] + columnRatios[1]}
@@ -387,20 +387,20 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick, onBlockSettings
               max={80}
             />
             
-            <div style={{ width: `${columnRatios[2]}%` }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
               {renderBlockEditor(2, "Sloupec 3...")}
-            </div>
         </div>
+          </div>
         );
 
       case 'left-large-right-split':
         return (
           <div className="h-full flex" style={{ gap: getBlockGap() }}>
             {/* Left large column */}
-            <div style={{ width: `${columnRatios[0]}%` }}>
+            <div style={{ flex: `0 0 ${columnRatios[0]}%`, minWidth: 0 }}>
               {renderBlockEditor(0, "Hlavní obsah...")}
-      </div>
-      
+            </div>
+            
             <BlockResizer
               direction="horizontal"
               value={columnRatios[0]}
@@ -410,8 +410,8 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick, onBlockSettings
             />
             
             {/* Right split column */}
-            <div style={{ width: `${columnRatios[1]}%`, gap: getBlockGap() }} className="flex flex-col">
-              <div style={{ height: `${splitRatio}%` }}>
+            <div style={{ flex: `0 0 ${columnRatios[1]}%`, minWidth: 0, gap: getBlockGap() }} className="flex flex-col">
+              <div style={{ flex: `0 0 ${splitRatio}%`, minHeight: 0 }}>
                 {renderBlockEditor(1, "Horní...")}
       </div>
       
@@ -423,10 +423,10 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick, onBlockSettings
                 max={75}
               />
               
-              <div style={{ height: `${100 - splitRatio}%` }}>
+              <div style={{ flex: 1, minHeight: 0 }}>
                 {renderBlockEditor(2, "Dolní...")}
               </div>
-        </div>
+            </div>
           </div>
         );
 
@@ -434,11 +434,11 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick, onBlockSettings
         return (
           <div className="h-full flex" style={{ gap: getBlockGap() }}>
             {/* Left split column */}
-            <div style={{ width: `${columnRatios[0]}%`, gap: getBlockGap() }} className="flex flex-col">
-              <div style={{ height: `${splitRatio}%` }}>
+            <div style={{ flex: `0 0 ${columnRatios[0]}%`, minWidth: 0, gap: getBlockGap() }} className="flex flex-col">
+              <div style={{ flex: `0 0 ${splitRatio}%`, minHeight: 0 }}>
                 {renderBlockEditor(0, "Horní...")}
-      </div>
-      
+              </div>
+              
               <BlockResizer
                 direction="vertical"
                 value={splitRatio}
@@ -447,7 +447,7 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick, onBlockSettings
                 max={75}
               />
               
-              <div style={{ height: `${100 - splitRatio}%` }}>
+              <div style={{ flex: 1, minHeight: 0 }}>
                 {renderBlockEditor(1, "Dolní...")}
               </div>
             </div>
@@ -461,7 +461,7 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick, onBlockSettings
             />
             
             {/* Right large column */}
-            <div style={{ width: `${columnRatios[1]}%` }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
               {renderBlockEditor(2, "Hlavní obsah...")}
             </div>
           </div>
