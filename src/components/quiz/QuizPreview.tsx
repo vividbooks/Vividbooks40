@@ -690,8 +690,8 @@ function BlockLayoutView({ slide }: { slide: InfoSlide }) {
       case 'left-large-right-split':
         return (
           <div className="h-full flex flex-col lg:flex-row" style={gapStyle}>
-            <div className="lg:flex-[2]" style={{ flex: 1, minHeight: 0 }}>{renderBlock(blocks[0], 0)}</div>
-            <div className="flex flex-col lg:flex-1" style={{ ...gapStyle, minHeight: 0 }}>
+            <div className="flex-[2]" style={{ minHeight: 0 }}>{renderBlock(blocks[0], 0)}</div>
+            <div className="flex-1 flex flex-col" style={{ ...gapStyle, minHeight: 0 }}>
               <div className="flex-1" style={{ minHeight: 0 }}>{renderBlock(blocks[1], 1)}</div>
               <div className="flex-1" style={{ minHeight: 0 }}>{renderBlock(blocks[2], 2)}</div>
             </div>
@@ -700,12 +700,12 @@ function BlockLayoutView({ slide }: { slide: InfoSlide }) {
 
       case 'right-large-left-split':
         return (
-          <div className="h-full flex flex-col-reverse lg:flex-row" style={gapStyle}>
-            <div className="flex flex-col lg:flex-1" style={{ ...gapStyle, minHeight: 0 }}>
+          <div className="h-full flex flex-col lg:flex-row" style={gapStyle}>
+            <div className="flex-1 flex flex-col" style={{ ...gapStyle, minHeight: 0 }}>
               <div className="flex-1" style={{ minHeight: 0 }}>{renderBlock(blocks[0], 0)}</div>
               <div className="flex-1" style={{ minHeight: 0 }}>{renderBlock(blocks[1], 1)}</div>
             </div>
-            <div className="lg:flex-[2]" style={{ flex: 1, minHeight: 0 }}>{renderBlock(blocks[2], 2)}</div>
+            <div className="flex-[2]" style={{ minHeight: 0 }}>{renderBlock(blocks[2], 2)}</div>
           </div>
         );
 
