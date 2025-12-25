@@ -993,11 +993,69 @@ export function QuizPreview({ quiz, onClose, isLive = false, onComplete }: QuizP
   }
   
   return (
-    <div className="fixed inset-0 flex flex-col z-50" style={{ backgroundColor: bgColor }}>
-      {/* Desktop: Top bar with X and chapter menu */}
-      <div className="hidden lg:flex absolute top-0 left-0 right-0 z-20 items-center justify-between px-4 py-3">
-        <div className="flex items-center gap-2">
-          {onClose && (
+    <div className="fixed inset-0 flex z-50" style={{ backgroundColor: bgColor }}>
+      {/* Chapter Sidebar - Desktop */}
+      {showChapterMenu && chapters.length > 0 && (
+        <div className="hidden lg:flex flex-col w-64 flex-shrink-0 bg-white/95 backdrop-blur-sm border-r border-slate-200 z-30">
+          {/* Sidebar header with close */}
+          <div className="p-4 flex flex-col gap-2">
+            {onClose && (
+              <button
+                onClick={onClose}
+                className="w-10 h-10 rounded-full backdrop-blur shadow-sm flex items-center justify-center transition-colors bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-slate-700"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            )}
+            <button
+              onClick={() => {
+                if (!isAnimating && currentSlideIndex > 0) {
+                  setIsAnimating(true);
+                  setPrevSlideIndex(currentSlideIndex);
+                  setCurrentSlideIndex(0);
+                  setTimeout(() => setIsAnimating(false), 400);
+                }
+              }}
+              className="w-10 h-10 rounded-full backdrop-blur shadow-sm flex items-center justify-center transition-colors bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-slate-700"
+              title="Na začátek"
+            >
+              <ArrowLeft className="w-5 h-5" />
+            </button>
+          </div>
+          
+          {/* Chapter list */}
+          <div className="flex-1 overflow-y-auto px-4 pb-4">
+            {chapters.map((chapter, idx) => (
+              <button
+                key={chapter.index}
+                onClick={() => {
+                  if (!isAnimating) {
+                    setIsAnimating(true);
+                    setPrevSlideIndex(currentSlideIndex);
+                    setCurrentSlideIndex(chapter.index);
+                    setTimeout(() => setIsAnimating(false), 400);
+                  }
+                }}
+                className={`w-full text-left py-2 transition-colors ${
+                  currentSlideIndex >= chapter.index && 
+                  (idx === chapters.length - 1 || currentSlideIndex < chapters[idx + 1].index)
+                    ? 'font-semibold text-slate-800' 
+                    : 'text-slate-600 hover:text-slate-800'
+                }`}
+              >
+                <span className="text-slate-400 mr-2">{idx + 1}.</span>
+                {chapter.name}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      
+      {/* Main content */}
+      <div className="flex-1 flex flex-col">
+        {/* Desktop: Top bar with X and chapter menu */}
+        <div className="hidden lg:flex absolute top-0 left-0 z-20 flex-col gap-2 p-4">
+          {!showChapterMenu && onClose && (
             <button
               onClick={onClose}
               className="w-10 h-10 rounded-full backdrop-blur shadow-sm flex items-center justify-center transition-colors bg-white/80 text-slate-500 hover:bg-white hover:text-slate-700"
@@ -1008,49 +1066,18 @@ export function QuizPreview({ quiz, onClose, isLive = false, onComplete }: QuizP
           
           {/* Chapter menu button */}
           {chapters.length > 0 && (
-            <div className="relative">
-              <button
-                onClick={() => setShowChapterMenu(!showChapterMenu)}
-                className="w-10 h-10 rounded-full backdrop-blur shadow-sm flex items-center justify-center transition-colors bg-white/80 text-slate-500 hover:bg-white hover:text-slate-700"
-              >
-                <Menu className="w-5 h-5" />
-              </button>
-              
-              {/* Chapter dropdown */}
-              {showChapterMenu && (
-                <div className="absolute top-12 left-0 bg-white rounded-xl shadow-2xl border border-slate-200 py-2 min-w-[200px] z-50">
-                  <div className="px-4 py-2 border-b border-slate-100">
-                    <h3 className="text-sm font-semibold text-slate-700">Kapitoly</h3>
-                  </div>
-                  {chapters.map((chapter, idx) => (
-                    <button
-                      key={chapter.index}
-                      onClick={() => {
-                        if (!isAnimating) {
-                          setIsAnimating(true);
-                          setPrevSlideIndex(currentSlideIndex);
-                          setCurrentSlideIndex(chapter.index);
-                          setTimeout(() => setIsAnimating(false), 400);
-                        }
-                        setShowChapterMenu(false);
-                      }}
-                      className={`w-full text-left px-4 py-2 hover:bg-slate-50 transition-colors ${
-                        currentSlideIndex === chapter.index ? 'bg-indigo-50 text-indigo-700' : 'text-slate-700'
-                      }`}
-                    >
-                      <span className="text-xs text-slate-400 mr-2">{idx + 1}.</span>
-                      {chapter.name}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+            <button
+              onClick={() => setShowChapterMenu(!showChapterMenu)}
+              className="w-10 h-10 rounded-full backdrop-blur shadow-sm flex items-center justify-center transition-colors bg-white/80 text-slate-500 hover:bg-white hover:text-slate-700"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
           )}
         </div>
         
-        {/* Score */}
+        {/* Score - Desktop */}
         {quiz.settings.showScore && (
-          <div className="flex items-center gap-4 ml-auto">
+          <div className="hidden lg:flex absolute top-0 right-0 z-20 items-center gap-4 p-4">
             <div className="flex items-center gap-1 text-red-500">
               <XCircle className="w-5 h-5" />
               <span className="font-bold">{score.incorrectCount}</span>
@@ -1061,52 +1088,20 @@ export function QuizPreview({ quiz, onClose, isLive = false, onComplete }: QuizP
             </div>
           </div>
         )}
-      </div>
       
-      {/* Mobile: Top navigation with arrows and progress bar */}
-      <div className="flex lg:hidden items-center gap-3 px-4 py-4" style={{ backgroundColor: bgColor }}>
-        {/* Menu button for chapters */}
-        {chapters.length > 0 && (
-          <div className="relative">
+        {/* Mobile: Top navigation with arrows and progress bar */}
+        <div className="flex lg:hidden items-center gap-3 px-4 py-4" style={{ backgroundColor: bgColor }}>
+          {/* Menu button for chapters */}
+          {chapters.length > 0 && (
             <button
               onClick={() => setShowChapterMenu(!showChapterMenu)}
               className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 bg-[#CBD5E1] text-slate-600"
             >
               <Menu className="w-5 h-5" />
             </button>
-            
-            {/* Chapter dropdown (mobile) */}
-            {showChapterMenu && (
-              <div className="absolute top-12 left-0 bg-white rounded-xl shadow-2xl border border-slate-200 py-2 min-w-[200px] z-50">
-                <div className="px-4 py-2 border-b border-slate-100">
-                  <h3 className="text-sm font-semibold text-slate-700">Kapitoly</h3>
-                </div>
-                {chapters.map((chapter, idx) => (
-                  <button
-                    key={chapter.index}
-                    onClick={() => {
-                      if (!isAnimating) {
-                        setIsAnimating(true);
-                        setPrevSlideIndex(currentSlideIndex);
-                        setCurrentSlideIndex(chapter.index);
-                        setTimeout(() => setIsAnimating(false), 400);
-                      }
-                      setShowChapterMenu(false);
-                    }}
-                    className={`w-full text-left px-4 py-2 hover:bg-slate-50 transition-colors ${
-                      currentSlideIndex === chapter.index ? 'bg-indigo-50 text-indigo-700' : 'text-slate-700'
-                    }`}
-                  >
-                    <span className="text-xs text-slate-400 mr-2">{idx + 1}.</span>
-                    {chapter.name}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
+          )}
       
-        {/* Left arrow */}
+          {/* Left arrow */}
         <button
           onClick={goToPrevSlide}
           disabled={currentSlideIndex === 0 || !quiz.settings.allowBack}
@@ -1221,6 +1216,59 @@ export function QuizPreview({ quiz, onClose, isLive = false, onComplete }: QuizP
           </div>
         </div>
       </div>
+      </div> {/* End of Main content wrapper */}
+      
+      {/* Mobile Chapter Sidebar - overlay */}
+      {showChapterMenu && chapters.length > 0 && (
+        <div className="lg:hidden fixed inset-0 z-50 flex">
+          {/* Backdrop */}
+          <div 
+            className="absolute inset-0 bg-black/20"
+            onClick={() => setShowChapterMenu(false)}
+          />
+          
+          {/* Sidebar */}
+          <div className="relative w-64 bg-white shadow-2xl flex flex-col">
+            {/* Header */}
+            <div className="p-4 flex items-center gap-3 border-b border-slate-100">
+              <button
+                onClick={() => setShowChapterMenu(false)}
+                className="w-10 h-10 rounded-full flex items-center justify-center bg-slate-100 text-slate-500"
+              >
+                <X className="w-5 h-5" />
+              </button>
+              <span className="font-semibold text-slate-700">Kapitoly</span>
+            </div>
+            
+            {/* Chapter list */}
+            <div className="flex-1 overflow-y-auto p-4">
+              {chapters.map((chapter, idx) => (
+                <button
+                  key={chapter.index}
+                  onClick={() => {
+                    if (!isAnimating) {
+                      setIsAnimating(true);
+                      setPrevSlideIndex(currentSlideIndex);
+                      setCurrentSlideIndex(chapter.index);
+                      setTimeout(() => setIsAnimating(false), 400);
+                    }
+                    setShowChapterMenu(false);
+                  }}
+                  className={`w-full text-left py-2 transition-colors ${
+                    currentSlideIndex >= chapter.index && 
+                    (idx === chapters.length - 1 || currentSlideIndex < chapters[idx + 1].index)
+                      ? 'font-semibold text-slate-800' 
+                      : 'text-slate-600'
+                  }`}
+                >
+                  <span className="text-slate-400 mr-2">{idx + 1}.</span>
+                  {chapter.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
