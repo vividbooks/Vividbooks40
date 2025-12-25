@@ -979,9 +979,11 @@ export function QuizStudentView() {
                 ${currentSlideIndex < prevSlideIndex && isAnimating ? 'animate-slide-in-left' : ''}
               `}
               style={{
+                // Keep aspect ratio for proper proportions on desktop
+                aspectRatio: currentSlide?.type === 'info' && !isMobile ? '16/9' : undefined,
                 // On mobile: auto height for scrolling
                 height: isMobile ? 'auto' : undefined,
-                alignSelf: isMobile ? 'flex-start' : 'stretch',
+                alignSelf: isMobile ? 'flex-start' : 'center',
               }}
               key={currentSlideIndex}
             >

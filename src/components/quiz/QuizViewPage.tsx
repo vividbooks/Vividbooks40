@@ -1418,6 +1418,9 @@ export function QuizViewPage() {
               `}
               style={{ 
                 backgroundColor: getSlideBackground(currentSlide),
+                // Keep aspect ratio for proper proportions
+                aspectRatio: currentSlide?.type === 'info' ? '16/9' : undefined,
+                alignSelf: 'center',
               }}
               key={currentSlideIndex}
             >
