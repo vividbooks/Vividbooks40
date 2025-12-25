@@ -1372,14 +1372,36 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
                     <div className="absolute top-0 left-0 z-50">
                       <SlideTextToolbar
                         isBold={selectedSlide.layout.blocks[editingTextBlockIndex]?.fontWeight === 'bold'}
+                        isItalic={selectedSlide.layout.blocks[editingTextBlockIndex]?.fontStyle === 'italic'}
+                        isUnderline={selectedSlide.layout.blocks[editingTextBlockIndex]?.textDecoration === 'underline'}
                         textAlign={selectedSlide.layout.blocks[editingTextBlockIndex]?.textAlign || 'left'}
                         fontSize={selectedSlide.layout.blocks[editingTextBlockIndex]?.fontSize || 'medium'}
+                        textColor={selectedSlide.layout.blocks[editingTextBlockIndex]?.textColor || '#000000'}
+                        highlightColor={selectedSlide.layout.blocks[editingTextBlockIndex]?.highlightColor || 'transparent'}
                         onBoldToggle={() => {
                           const block = selectedSlide.layout!.blocks[editingTextBlockIndex];
                           const newBlocks = [...selectedSlide.layout!.blocks];
                           newBlocks[editingTextBlockIndex] = { 
                             ...block, 
                             fontWeight: block.fontWeight === 'bold' ? 'normal' : 'bold' 
+                          };
+                          updateSlide(selectedSlide.id, { layout: { ...selectedSlide.layout!, blocks: newBlocks } });
+                        }}
+                        onItalicToggle={() => {
+                          const block = selectedSlide.layout!.blocks[editingTextBlockIndex];
+                          const newBlocks = [...selectedSlide.layout!.blocks];
+                          newBlocks[editingTextBlockIndex] = { 
+                            ...block, 
+                            fontStyle: block.fontStyle === 'italic' ? 'normal' : 'italic' 
+                          };
+                          updateSlide(selectedSlide.id, { layout: { ...selectedSlide.layout!, blocks: newBlocks } });
+                        }}
+                        onUnderlineToggle={() => {
+                          const block = selectedSlide.layout!.blocks[editingTextBlockIndex];
+                          const newBlocks = [...selectedSlide.layout!.blocks];
+                          newBlocks[editingTextBlockIndex] = { 
+                            ...block, 
+                            textDecoration: block.textDecoration === 'underline' ? 'none' : 'underline' 
                           };
                           updateSlide(selectedSlide.id, { layout: { ...selectedSlide.layout!, blocks: newBlocks } });
                         }}
@@ -1396,6 +1418,22 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
                           newBlocks[editingTextBlockIndex] = { 
                             ...newBlocks[editingTextBlockIndex], 
                             fontSize: size 
+                          };
+                          updateSlide(selectedSlide.id, { layout: { ...selectedSlide.layout!, blocks: newBlocks } });
+                        }}
+                        onTextColorChange={(color) => {
+                          const newBlocks = [...selectedSlide.layout!.blocks];
+                          newBlocks[editingTextBlockIndex] = { 
+                            ...newBlocks[editingTextBlockIndex], 
+                            textColor: color 
+                          };
+                          updateSlide(selectedSlide.id, { layout: { ...selectedSlide.layout!, blocks: newBlocks } });
+                        }}
+                        onHighlightColorChange={(color) => {
+                          const newBlocks = [...selectedSlide.layout!.blocks];
+                          newBlocks[editingTextBlockIndex] = { 
+                            ...newBlocks[editingTextBlockIndex], 
+                            highlightColor: color 
                           };
                           updateSlide(selectedSlide.id, { layout: { ...selectedSlide.layout!, blocks: newBlocks } });
                         }}

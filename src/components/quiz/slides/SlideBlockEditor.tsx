@@ -313,7 +313,13 @@ export function SlideBlockEditor({
                   w-full bg-transparent outline-none resize-none
                   ${getFontSizeClass()} ${getTextAlignClass()}
                   ${block.fontWeight === 'bold' ? 'font-bold' : 'font-normal'}
+                  ${block.fontStyle === 'italic' ? 'italic' : ''}
+                  ${block.textDecoration === 'underline' ? 'underline' : ''}
                 `}
+                style={{
+                  color: block.textColor || 'inherit',
+                  backgroundColor: block.highlightColor && block.highlightColor !== 'transparent' ? block.highlightColor : 'transparent',
+                }}
                 placeholder={placeholder}
               />
             ) : (
@@ -322,8 +328,14 @@ export function SlideBlockEditor({
                   w-full whitespace-pre-wrap
                   ${getFontSizeClass()} ${getTextAlignClass()}
                   ${block.fontWeight === 'bold' ? 'font-bold' : 'font-normal'}
-                  ${!block.content ? 'text-slate-400' : 'text-slate-800'}
+                  ${block.fontStyle === 'italic' ? 'italic' : ''}
+                  ${block.textDecoration === 'underline' ? 'underline' : ''}
+                  ${!block.content ? 'text-slate-400' : ''}
                 `}
+                style={{
+                  color: block.content ? (block.textColor || '#1e293b') : undefined,
+                  backgroundColor: block.highlightColor && block.highlightColor !== 'transparent' ? block.highlightColor : 'transparent',
+                }}
               >
                 {block.content || placeholder}
               </div>

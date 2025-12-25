@@ -54,6 +54,10 @@ export interface SlideBlock {
   textAlign?: 'left' | 'center' | 'right';
   fontSize?: 'small' | 'medium' | 'large' | 'xlarge';
   fontWeight?: 'normal' | 'bold';
+  fontStyle?: 'normal' | 'italic';
+  textDecoration?: 'none' | 'underline';
+  textColor?: string; // Text color
+  highlightColor?: string; // Background highlight color
   // Image settings
   imageFit?: 'contain' | 'cover'; // contain = show slider, cover = fill block
   imageScale?: number; // 10-300, percentage of image size
