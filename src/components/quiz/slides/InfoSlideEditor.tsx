@@ -232,7 +232,7 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick, onBlockSettings
         return (
           <div className="h-full flex flex-col" style={{ gap: getBlockGap() }}>
             {/* Title block */}
-            <div style={{ height: `${titleHeight}%`, minHeight: 60 }}>
+            <div style={{ flex: `0 0 ${titleHeight}%`, minHeight: 60 }}>
               {renderBlockEditor(0, "Nadpis...")}
             </div>
             
@@ -247,7 +247,7 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick, onBlockSettings
             />
             
             {/* Content block */}
-            <div className="flex-1" style={{ minHeight: 100 }}>
+            <div style={{ flex: 1, minHeight: 0 }}>
               {renderBlockEditor(1, "Obsah...")}
             </div>
           </div>
@@ -257,7 +257,7 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick, onBlockSettings
         return (
           <div className="h-full flex flex-col" style={{ gap: getBlockGap() }}>
             {/* Title block */}
-            <div style={{ height: `${titleHeight}%`, minHeight: 60 }}>
+            <div style={{ flex: `0 0 ${titleHeight}%`, minHeight: 60 }}>
               {renderBlockEditor(0, "Nadpis...")}
             </div>
             
@@ -270,7 +270,7 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick, onBlockSettings
             />
             
             {/* Two columns */}
-            <div className="flex-1 flex" style={{ minHeight: 100, gap: getBlockGap() }}>
+            <div className="flex" style={{ flex: 1, minHeight: 0, gap: getBlockGap() }}>
               <div style={{ width: `${columnRatios[0]}%` }}>
                 {renderBlockEditor(1, "Levý sloupec...")}
               </div>
@@ -294,7 +294,7 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick, onBlockSettings
         return (
           <div className="h-full flex flex-col" style={{ gap: getBlockGap() }}>
             {/* Title block */}
-            <div style={{ height: `${titleHeight}%`, minHeight: 60 }}>
+            <div style={{ flex: `0 0 ${titleHeight}%`, minHeight: 60 }}>
               {renderBlockEditor(0, "Nadpis...")}
             </div>
             
@@ -307,7 +307,7 @@ export function InfoSlideEditor({ slide, onUpdate, onSlideClick, onBlockSettings
             />
             
             {/* Three columns */}
-            <div className="flex-1 flex" style={{ minHeight: 100, gap: getBlockGap() }}>
+            <div className="flex" style={{ flex: 1, minHeight: 0, gap: getBlockGap() }}>
               <div style={{ width: `${columnRatios[0]}%` }}>
                 {renderBlockEditor(1, "Sloupec 1...")}
               </div>
