@@ -29,14 +29,86 @@ const SLIDE_TYPES = [
   { id: 'activity', label: 'Aktivita', icon: Zap, description: 'Interaktivní úkol pro studenty' },
 ];
 
+// SVG Layout Icons
+const LayoutIcon = ({ type }: { type: string }) => {
+  const colors = {
+    title: '#c7d2fe',   // light indigo
+    block1: '#a5b4fc',  // indigo
+    block2: '#818cf8',  // darker indigo
+    block3: '#6366f1',  // even darker
+  };
+  
+  const svgProps = { width: 48, height: 36, viewBox: '0 0 48 36' };
+  
+  switch (type) {
+    case 'title-content':
+      return (
+        <svg {...svgProps}>
+          <rect x="2" y="2" width="44" height="8" rx="2" fill={colors.title} />
+          <rect x="2" y="12" width="44" height="22" rx="2" fill={colors.block1} />
+        </svg>
+      );
+    case 'title-2cols':
+      return (
+        <svg {...svgProps}>
+          <rect x="2" y="2" width="44" height="8" rx="2" fill={colors.title} />
+          <rect x="2" y="12" width="21" height="22" rx="2" fill={colors.block1} />
+          <rect x="25" y="12" width="21" height="22" rx="2" fill={colors.block2} />
+        </svg>
+      );
+    case 'title-3cols':
+      return (
+        <svg {...svgProps}>
+          <rect x="2" y="2" width="44" height="8" rx="2" fill={colors.title} />
+          <rect x="2" y="12" width="13" height="22" rx="2" fill={colors.block1} />
+          <rect x="17" y="12" width="14" height="22" rx="2" fill={colors.block2} />
+          <rect x="33" y="12" width="13" height="22" rx="2" fill={colors.block3} />
+        </svg>
+      );
+    case '2cols':
+      return (
+        <svg {...svgProps}>
+          <rect x="2" y="2" width="21" height="32" rx="2" fill={colors.block1} />
+          <rect x="25" y="2" width="21" height="32" rx="2" fill={colors.block2} />
+        </svg>
+      );
+    case '3cols':
+      return (
+        <svg {...svgProps}>
+          <rect x="2" y="2" width="13" height="32" rx="2" fill={colors.block1} />
+          <rect x="17" y="2" width="14" height="32" rx="2" fill={colors.block2} />
+          <rect x="33" y="2" width="13" height="32" rx="2" fill={colors.block3} />
+        </svg>
+      );
+    case 'left-large-right-split':
+      return (
+        <svg {...svgProps}>
+          <rect x="2" y="2" width="28" height="32" rx="2" fill={colors.block1} />
+          <rect x="32" y="2" width="14" height="15" rx="2" fill={colors.block2} />
+          <rect x="32" y="19" width="14" height="15" rx="2" fill={colors.block3} />
+        </svg>
+      );
+    case 'right-large-left-split':
+      return (
+        <svg {...svgProps}>
+          <rect x="2" y="2" width="14" height="15" rx="2" fill={colors.block1} />
+          <rect x="2" y="19" width="14" height="15" rx="2" fill={colors.block2} />
+          <rect x="18" y="2" width="28" height="32" rx="2" fill={colors.block3} />
+        </svg>
+      );
+    default:
+      return null;
+  }
+};
+
 const LAYOUTS = [
-  { id: 'title-content', label: 'Nadpis + obsah', preview: '📝' },
-  { id: 'title-2cols', label: 'Nadpis + 2 sloupce', preview: '📊' },
-  { id: 'title-3cols', label: 'Nadpis + 3 sloupce', preview: '📋' },
-  { id: '2cols', label: '2 sloupce', preview: '⬜⬜' },
-  { id: '3cols', label: '3 sloupce', preview: '⬜⬜⬜' },
-  { id: 'left-large-right-split', label: 'Levý velký', preview: '⬛⬜' },
-  { id: 'right-large-left-split', label: 'Pravý velký', preview: '⬜⬛' },
+  { id: 'title-content', label: 'Nadpis + obsah' },
+  { id: 'title-2cols', label: 'Nadpis + 2 sloupce' },
+  { id: 'title-3cols', label: 'Nadpis + 3 sloupce' },
+  { id: '2cols', label: '2 sloupce' },
+  { id: '3cols', label: '3 sloupce' },
+  { id: 'left-large-right-split', label: 'Levý velký' },
+  { id: 'right-large-left-split', label: 'Pravý velký' },
 ];
 
 export function PageSettingsPanel({ slide, onClose, onUpdate }: PageSettingsPanelProps) {
@@ -270,23 +342,58 @@ export function PageSettingsPanel({ slide, onClose, onUpdate }: PageSettingsPane
             value={getLayoutName()}
           >
             <div className="space-y-4 pt-2">
-              {/* Layout grid */}
-              <div className="grid grid-cols-2 gap-2">
+              {/* Layout grid - 3 columns */}
+              <div className="grid grid-cols-3 gap-2">
                 {LAYOUTS.map((layoutOption) => (
                   <button
                     key={layoutOption.id}
                     onClick={() => {
+                      const currentSlide = slide as InfoSlide;
+                      const oldBlocks = currentSlide.layout?.blocks || [];
                       const newLayout = createSlideLayout(layoutOption.id as SlideLayoutType);
-                      onUpdate({ layout: newLayout } as any);
+                      
+                      // Preserve content from old blocks
+                      const updatedBlocks = newLayout.blocks.map((newBlock, index) => {
+                        const oldBlock = oldBlocks[index];
+                        if (oldBlock) {
+                          return {
+                            ...newBlock,
+                            type: oldBlock.type,
+                            content: oldBlock.content,
+                            title: oldBlock.title,
+                            background: oldBlock.background,
+                            textAlign: oldBlock.textAlign,
+                            fontSize: oldBlock.fontSize,
+                            fontWeight: oldBlock.fontWeight,
+                            fontStyle: oldBlock.fontStyle,
+                            textDecoration: oldBlock.textDecoration,
+                            textColor: oldBlock.textColor,
+                            highlightColor: oldBlock.highlightColor,
+                            textOverflow: oldBlock.textOverflow,
+                            imageFit: oldBlock.imageFit,
+                            imageScale: oldBlock.imageScale,
+                            imagePositionX: oldBlock.imagePositionX,
+                            imagePositionY: oldBlock.imagePositionY,
+                            imageCaption: oldBlock.imageCaption,
+                            imageLink: oldBlock.imageLink,
+                            gallery: oldBlock.gallery,
+                            galleryIndex: oldBlock.galleryIndex,
+                            galleryNavType: oldBlock.galleryNavType,
+                          };
+                        }
+                        return newBlock;
+                      });
+                      
+                      onUpdate({ layout: { ...newLayout, blocks: updatedBlocks } } as any);
                     }}
-                    className={`p-3 rounded-xl border-2 text-left transition-all ${
+                    className={`p-2 rounded-xl border-2 flex flex-col items-center transition-all ${
                       (slide as InfoSlide).layout?.type === layoutOption.id
                         ? 'border-indigo-500 bg-indigo-50'
                         : 'border-slate-200 hover:border-slate-300 hover:bg-white'
                     }`}
                   >
-                    <span className="text-xl mb-1 block">{layoutOption.preview}</span>
-                    <span className="text-xs font-medium text-slate-700">{layoutOption.label}</span>
+                    <LayoutIcon type={layoutOption.id} />
+                    <span className="text-[10px] font-medium text-slate-600 mt-1 text-center leading-tight">{layoutOption.label}</span>
                   </button>
                 ))}
               </div>
