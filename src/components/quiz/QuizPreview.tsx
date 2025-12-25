@@ -267,7 +267,7 @@ function InfoSlideView({ slide }: { slide: InfoSlide }) {
   // If slide has new block-based layout, render it
   if (slide.layout && slide.layout.blocks.length > 0) {
     return (
-      <div className="flex-1 h-full">
+      <div className="flex-1 h-auto md:h-full">
         <BlockLayoutView slide={slide} />
       </div>
     );
@@ -543,12 +543,14 @@ function BlockLayoutView({ slide }: { slide: InfoSlide }) {
       ? block.highlightColor 
       : bgStyle.backgroundColor;
     
-    // For 'fit' mode, calculate font size based on container
+    // For 'fit' mode, calculate font size based on container (desktop only)
     const TextContent = () => {
       const containerRef = React.useRef<HTMLDivElement>(null);
       const [fitFontSize, setFitFontSize] = React.useState<number | null>(null);
 
       const calculateFitSize = React.useCallback(() => {
+        // On mobile, don't try to fit - just use a nice readable size
+        if (isMobile) return;
         if (block.textOverflow !== 'fit' || !containerRef.current || !block.content) return;
         
         const container = containerRef.current;
@@ -590,15 +592,16 @@ function BlockLayoutView({ slide }: { slide: InfoSlide }) {
 
         document.body.removeChild(measureEl);
         setFitFontSize(optimalSize);
-      }, []);
+      }, [isMobile]);
 
       // Initial calculation
       React.useEffect(() => {
         calculateFitSize();
       }, [calculateFitSize]);
 
-      // ResizeObserver for real-time updates
+      // ResizeObserver for real-time updates (desktop only)
       React.useEffect(() => {
+        if (isMobile) return;
         if (block.textOverflow !== 'fit' || !containerRef.current) return;
 
         const resizeObserver = new ResizeObserver(() => {
@@ -610,28 +613,43 @@ function BlockLayoutView({ slide }: { slide: InfoSlide }) {
         return () => {
           resizeObserver.disconnect();
         };
-      }, [calculateFitSize]);
+      }, [calculateFitSize, isMobile]);
 
-      const hasScroll = block.textOverflow === 'scroll' || !block.textOverflow;
+      // On mobile: always allow natural flow with scroll, use readable font size
+      // On desktop: use fit calculation or scroll based on setting
+      const hasScroll = isMobile || block.textOverflow === 'scroll' || !block.textOverflow;
+      
+      // Mobile font sizes - readable and consistent
+      const mobileFontSize = block.fontSize === 'xlarge' ? '24px' : 
+                             block.fontSize === 'large' ? '20px' : 
+                             block.fontSize === 'small' ? '14px' : '17px';
+      
+      const finalFontSize = isMobile 
+        ? mobileFontSize 
+        : (block.textOverflow === 'fit' && fitFontSize ? `${fitFontSize}px` : textStyle.fontSize);
       
       return (
         <div 
           ref={containerRef}
-          className={`h-full w-full ${textAlignClass} ${fontWeightClass} ${fontStyleClass} ${textDecorationClass}`} 
+          className={`w-full ${textAlignClass} ${fontWeightClass} ${fontStyleClass} ${textDecorationClass}`} 
           style={{
             ...bgStyle,
             ...textStyle,
             backgroundColor: blockBgColor,
-            fontSize: block.textOverflow === 'fit' && fitFontSize ? `${fitFontSize}px` : textStyle.fontSize,
+            fontSize: finalFontSize,
             whiteSpace: 'pre-wrap',
             wordWrap: 'break-word',
-            lineHeight: 1.4,
+            lineHeight: 1.5,
             padding: '16px',
-            overflowY: hasScroll ? 'auto' : 'hidden',
+            // On mobile: auto height, content flows naturally
+            // On desktop: fixed height with scroll or fit
+            height: isMobile ? 'auto' : '100%',
+            minHeight: isMobile ? 'auto' : undefined,
+            overflowY: isMobile ? 'visible' : (hasScroll ? 'auto' : 'hidden'),
             overflowX: 'hidden',
             // Always show scrollbar when scrollable
-            scrollbarWidth: hasScroll ? 'thin' : undefined,
-            scrollbarColor: hasScroll ? '#cbd5e1 transparent' : undefined,
+            scrollbarWidth: hasScroll && !isMobile ? 'thin' : undefined,
+            scrollbarColor: hasScroll && !isMobile ? '#cbd5e1 transparent' : undefined,
           }}
         >
           <MathText>{block.content}</MathText>
@@ -726,12 +744,15 @@ function BlockLayoutView({ slide }: { slide: InfoSlide }) {
 
   return (
     <div 
-      className="h-full" 
       style={{ 
         ...getSlideBackgroundStyle(), 
         padding: blockGap > 0 ? blockGap : 0,
         fontFamily,
         containerType: 'inline-size',
+        // On mobile: auto height for natural scrolling
+        // On desktop: full height for aspect ratio
+        height: isMobile ? 'auto' : '100%',
+        minHeight: isMobile ? 'auto' : undefined,
       }}
     >
       {renderLayout()}
@@ -753,6 +774,15 @@ export function QuizPreview({ quiz, onClose, isLive = false, onComplete }: QuizP
   const [showResult, setShowResult] = useState(false);
   const [isCompleted, setIsCompleted] = useState(false);
   const [showChapterMenu, setShowChapterMenu] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+  
+  // Detect mobile screen
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth < 768);
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
   
   const currentSlide = quiz.slides[currentSlideIndex];
   const currentResponse = responses.find(r => r.slideId === currentSlide?.id);
@@ -1170,22 +1200,24 @@ export function QuizPreview({ quiz, onClose, isLive = false, onComplete }: QuizP
           </div>
           
           {/* Slide content */}
-          <div className="flex-1 flex items-stretch px-4 overflow-auto">
+          <div className={`flex-1 flex px-4 ${isMobile ? 'overflow-y-auto items-start' : 'items-stretch overflow-auto'}`}>
             <div 
-              className={`w-full max-w-5xl mx-auto rounded-3xl shadow-2xl overflow-hidden bg-white ${
+              className={`w-full max-w-5xl mx-auto rounded-3xl shadow-2xl bg-white ${
                 currentSlideIndex > prevSlideIndex && isAnimating ? 'animate-slide-in' : ''
               } ${
                 currentSlideIndex < prevSlideIndex && isAnimating ? 'animate-slide-in-left' : ''
               }`}
               style={{ 
-                aspectRatio: currentSlide?.type === 'info' ? '4/3' : undefined,
+                // On mobile: auto height for scrolling, on desktop: 4:3 aspect ratio
+                aspectRatio: currentSlide?.type === 'info' && !isMobile ? '4/3' : undefined,
                 display: 'flex',
                 flexDirection: 'column',
+                overflow: isMobile ? 'visible' : 'hidden',
               }}
               key={currentSlideIndex}
             >
               {currentSlide ? (
-                <div className="flex-1 flex flex-col" style={{ minHeight: 0 }}>
+                <div className="flex-1 flex flex-col" style={{ minHeight: isMobile ? 'auto' : 0 }}>
                   {renderSlideView(currentSlide)}
                 </div>
               ) : (
