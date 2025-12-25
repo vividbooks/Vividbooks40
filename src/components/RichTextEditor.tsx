@@ -1337,21 +1337,21 @@ export function RichTextEditor({
         {/* Editor Content - White background */}
         <div 
           className={`bg-white overflow-hidden cursor-text relative ${compact ? 'mx-0 mb-0 rounded-b-xl' : 'mx-3 mb-3'}`}
-          style={{ borderRadius: compact ? '0 0 12px 12px' : '18px', padding: compact ? '16px 20px' : '60px', minHeight: compact ? '80px' : undefined }}
+          style={{ borderRadius: compact ? '0 0 12px 12px' : '18px', padding: compact ? '16px 20px' : '60px', minHeight: compact ? '120px' : undefined }}
           onClick={() => editor?.chain().focus().run()}
         >
           {/* Placeholder overlay for empty editor */}
           {editor && editor.isEmpty && (
             <div 
               className="absolute pointer-events-none text-gray-400"
-              style={{ top: '60px', left: '60px' }}
+              style={{ top: compact ? '16px' : '60px', left: compact ? '20px' : '60px' }}
             >
               Začněte psát...
             </div>
           )}
 
       {/* Editor Content with table buttons overlay */}
-      <div className="relative" ref={editorWrapperRef}>
+      <div className="relative [&_.ProseMirror]:min-h-[60px] [&_.ProseMirror]:outline-none [&_.ProseMirror]:focus:outline-none" ref={editorWrapperRef}>
       <EditorContent editor={editor} />
         
         {/* Table control buttons - positioned dynamically */}

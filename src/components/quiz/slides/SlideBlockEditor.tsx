@@ -298,23 +298,25 @@ export function SlideBlockEditor({
       {/* Content */}
       <div className="h-full p-4 flex flex-col justify-center">
         {block.type === 'text' && (
-          <div
+          <textarea
+            ref={textareaRef}
+            value={block.content || ''}
+            onChange={(e) => onUpdate({ content: e.target.value })}
+            onBlur={handleBlur}
+            onKeyDown={handleKeyDown}
+            placeholder={placeholder}
             className={`
-              w-full prose prose-slate max-w-none
+              w-full h-full min-h-[60px] resize-none border-0 bg-transparent
+              focus:outline-none focus:ring-0
               ${getTextAlignClass()}
-              ${!block.content ? 'text-slate-400' : 'text-slate-800'}
-              ${isEditing ? 'ring-2 ring-indigo-400 ring-offset-2 rounded-lg p-2' : ''}
+              ${getFontSizeClass()}
+              ${block.fontWeight === 'bold' ? 'font-bold' : 'font-normal'}
+              text-slate-800 placeholder:text-slate-400
             `}
-          >
-            {block.content ? (
-              <div 
-                dangerouslySetInnerHTML={{ __html: block.content }}
-                className="[&_p]:my-1 [&_h1]:my-2 [&_h2]:my-2 [&_h3]:my-2"
-              />
-            ) : (
-              <span className="text-slate-400">{placeholder}</span>
-            )}
-          </div>
+            style={{ 
+              fontFamily: 'inherit',
+            }}
+          />
         )}
 
         {block.type === 'image' && (

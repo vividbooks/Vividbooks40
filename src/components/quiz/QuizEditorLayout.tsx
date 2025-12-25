@@ -63,7 +63,7 @@ import { ABCSlideEditor } from './slides/ABCSlideEditor';
 import { OpenSlideEditor } from './slides/OpenSlideEditor';
 import { ExampleSlideEditor } from './slides/ExampleSlideEditor';
 import { InfoSlideEditor } from './slides/InfoSlideEditor';
-import { RichTextEditor } from '../RichTextEditor';
+// RichTextEditor removed - using direct textarea in blocks
 import { BackgroundPicker } from './slides/BackgroundPicker';
 import { PageSettingsPanel } from './slides/PageSettingsPanel';
 import { BlockSettingsPanel } from './slides/BlockSettingsPanel';
@@ -492,7 +492,7 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
   const [showVersionHistory, setShowVersionHistory] = useState(false);
   const [showPageSettings, setShowPageSettings] = useState(false);
   const [selectedBlockIndex, setSelectedBlockIndex] = useState<number | null>(null);
-  const [editingTextBlockIndex, setEditingTextBlockIndex] = useState<number | null>(null);
+  // Text editing now happens directly in textarea within blocks
   
   // Results state
   const [sessions, setSessions] = useState<SessionData[]>([]);
@@ -1369,26 +1369,6 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
                     </button>
                   </div>
                   
-                  {/* Rich Text Editor - shown when editing text */}
-                  {editingTextBlockIndex !== null && selectedSlide?.type === 'info' && selectedSlide.layout && (
-                    <div 
-                      className="mb-4 rounded-xl border border-slate-200 shadow-sm overflow-hidden"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <RichTextEditor
-                        content={selectedSlide.layout.blocks[editingTextBlockIndex]?.content || ''}
-                        onChange={(content) => {
-                          const newBlocks = [...selectedSlide.layout!.blocks];
-                          newBlocks[editingTextBlockIndex] = { 
-                            ...newBlocks[editingTextBlockIndex], 
-                            content: content 
-                          };
-                          updateSlide(selectedSlide.id, { layout: { ...selectedSlide.layout!, blocks: newBlocks } });
-                        }}
-                        compact={true}
-                      />
-                    </div>
-                  )}
                   
                   {/* The actual editor */}
                   <div 
