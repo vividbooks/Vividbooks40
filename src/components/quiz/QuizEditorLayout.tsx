@@ -1510,10 +1510,10 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
                         setPageSettingsSection('chapter');
                         setShowPageSettings(true);
                       }}
-                      className="flex items-center gap-2 px-4 py-2 bg-white rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300 transition-colors shadow-sm"
+                      className="flex items-center gap-2 px-2 py-1 text-slate-500 hover:text-slate-700 transition-colors"
                     >
-                      <ListOrdered className="w-4 h-4 text-indigo-500" />
-                      <span className="text-sm font-medium">
+                      <ListOrdered className="w-4 h-4" />
+                      <span className="text-sm">
                         {(selectedSlide as any).chapterName || 'Nová kapitola'}
                       </span>
                     </button>
@@ -1524,10 +1524,10 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
                         setPageSettingsSection('note');
                         setShowPageSettings(true);
                       }}
-                      className="flex items-center gap-2 px-4 py-2 bg-white rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300 transition-colors shadow-sm"
+                      className="flex items-center gap-2 px-2 py-1 text-slate-500 hover:text-slate-700 transition-colors"
                     >
-                      <MessageSquare className="w-4 h-4 text-indigo-500" />
-                      <span className="text-sm font-medium truncate max-w-[200px]">
+                      <MessageSquare className="w-4 h-4" />
+                      <span className="text-sm truncate max-w-[200px]">
                         {(selectedSlide as any).note 
                           ? ((selectedSlide as any).note.length > 30 
                               ? (selectedSlide as any).note.substring(0, 30) + '...' 
