@@ -517,14 +517,16 @@ function BlockLayoutView({ slide }: { slide: InfoSlide }) {
       );
     }
 
-    // Text block - wrap in container with fixed height for scroll to work
+    // Text block
     const textStyle: React.CSSProperties = {
       fontSize,
       color: block.textColor || '#1e293b',
-      backgroundColor: block.highlightColor && block.highlightColor !== 'transparent' 
-        ? block.highlightColor 
-        : 'transparent',
     };
+    
+    // Background: use highlight if set, otherwise block background
+    const blockBgColor = block.highlightColor && block.highlightColor !== 'transparent' 
+      ? block.highlightColor 
+      : bgStyle.backgroundColor;
     
     // For 'fit' mode, calculate font size based on container
     const TextContent = () => {
@@ -604,6 +606,7 @@ function BlockLayoutView({ slide }: { slide: InfoSlide }) {
           style={{
             ...bgStyle,
             ...textStyle,
+            backgroundColor: blockBgColor,
             fontSize: block.textOverflow === 'fit' && fitFontSize ? `${fitFontSize}px` : textStyle.fontSize,
             whiteSpace: 'pre-wrap',
             wordWrap: 'break-word',
