@@ -641,49 +641,49 @@ function BlockLayoutView({ slide }: { slide: InfoSlide }) {
     switch (layout.type) {
       case 'title-content':
         return (
-          <div className="h-full flex flex-col" style={gapStyle}>
+          <div style={{ height: '100%', display: 'flex', flexDirection: 'column', ...gapStyle }}>
             <div style={{ flex: `0 0 ${titleHeight}%`, minHeight: 60 }}>{renderBlock(blocks[0], 0)}</div>
-            <div className="flex-1" style={{ minHeight: 0 }}>{renderBlock(blocks[1], 1)}</div>
+            <div style={{ flex: 1, minHeight: 0 }}>{renderBlock(blocks[1], 1)}</div>
           </div>
         );
 
       case 'title-2cols':
         return (
-          <div className="h-full flex flex-col" style={gapStyle}>
+          <div style={{ height: '100%', display: 'flex', flexDirection: 'column', ...gapStyle }}>
             <div style={{ flex: `0 0 ${titleHeight}%`, minHeight: 60 }}>{renderBlock(blocks[0], 0)}</div>
-            <div className="flex-1 flex flex-col lg:flex-row" style={{ ...gapStyle, minHeight: 0 }}>
-              <div className="flex-1" style={{ minHeight: 0 }}>{renderBlock(blocks[1], 1)}</div>
-              <div className="flex-1" style={{ minHeight: 0 }}>{renderBlock(blocks[2], 2)}</div>
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'row', minHeight: 0, ...gapStyle }}>
+              <div style={{ flex: `0 0 ${columnRatios[0]}%`, minHeight: 0, minWidth: 0 }}>{renderBlock(blocks[1], 1)}</div>
+              <div style={{ flex: 1, minHeight: 0, minWidth: 0 }}>{renderBlock(blocks[2], 2)}</div>
             </div>
           </div>
         );
 
       case 'title-3cols':
         return (
-          <div className="h-full flex flex-col" style={gapStyle}>
+          <div style={{ height: '100%', display: 'flex', flexDirection: 'column', ...gapStyle }}>
             <div style={{ flex: `0 0 ${titleHeight}%`, minHeight: 60 }}>{renderBlock(blocks[0], 0)}</div>
-            <div className="flex-1 flex flex-col lg:flex-row" style={{ ...gapStyle, minHeight: 0 }}>
-              <div className="flex-1" style={{ minHeight: 0 }}>{renderBlock(blocks[1], 1)}</div>
-              <div className="flex-1" style={{ minHeight: 0 }}>{renderBlock(blocks[2], 2)}</div>
-              <div className="flex-1" style={{ minHeight: 0 }}>{renderBlock(blocks[3], 3)}</div>
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'row', minHeight: 0, ...gapStyle }}>
+              <div style={{ flex: `0 0 ${columnRatios[0]}%`, minHeight: 0, minWidth: 0 }}>{renderBlock(blocks[1], 1)}</div>
+              <div style={{ flex: `0 0 ${columnRatios[1]}%`, minHeight: 0, minWidth: 0 }}>{renderBlock(blocks[2], 2)}</div>
+              <div style={{ flex: 1, minHeight: 0, minWidth: 0 }}>{renderBlock(blocks[3], 3)}</div>
             </div>
           </div>
         );
 
       case '2cols':
         return (
-          <div className="h-full flex flex-col lg:flex-row" style={gapStyle}>
-            <div className="flex-1" style={{ minHeight: 0 }}>{renderBlock(blocks[0], 0)}</div>
-            <div className="flex-1" style={{ minHeight: 0 }}>{renderBlock(blocks[1], 1)}</div>
+          <div style={{ height: '100%', display: 'flex', flexDirection: 'row', ...gapStyle }}>
+            <div style={{ flex: `0 0 ${columnRatios[0]}%`, minHeight: 0, minWidth: 0 }}>{renderBlock(blocks[0], 0)}</div>
+            <div style={{ flex: 1, minHeight: 0, minWidth: 0 }}>{renderBlock(blocks[1], 1)}</div>
           </div>
         );
 
       case '3cols':
         return (
-          <div className="h-full flex flex-col lg:flex-row" style={gapStyle}>
-            <div className="flex-1" style={{ minHeight: 0 }}>{renderBlock(blocks[0], 0)}</div>
-            <div className="flex-1" style={{ minHeight: 0 }}>{renderBlock(blocks[1], 1)}</div>
-            <div className="flex-1" style={{ minHeight: 0 }}>{renderBlock(blocks[2], 2)}</div>
+          <div style={{ height: '100%', display: 'flex', flexDirection: 'row', ...gapStyle }}>
+            <div style={{ flex: `0 0 ${columnRatios[0]}%`, minHeight: 0, minWidth: 0 }}>{renderBlock(blocks[0], 0)}</div>
+            <div style={{ flex: `0 0 ${columnRatios[1]}%`, minHeight: 0, minWidth: 0 }}>{renderBlock(blocks[1], 1)}</div>
+            <div style={{ flex: 1, minHeight: 0, minWidth: 0 }}>{renderBlock(blocks[2], 2)}</div>
           </div>
         );
 
@@ -692,7 +692,7 @@ function BlockLayoutView({ slide }: { slide: InfoSlide }) {
           <div style={{ height: '100%', display: 'flex', flexDirection: 'row', ...gapStyle }}>
             <div style={{ flex: `0 0 ${columnRatios[0]}%`, minHeight: 0, minWidth: 0 }}>{renderBlock(blocks[0], 0)}</div>
             <div style={{ flex: `0 0 ${columnRatios[1]}%`, display: 'flex', flexDirection: 'column', minHeight: 0, minWidth: 0, ...gapStyle }}>
-              <div style={{ flex: 1, minHeight: 0 }}>{renderBlock(blocks[1], 1)}</div>
+              <div style={{ flex: `0 0 ${splitRatio}%`, minHeight: 0 }}>{renderBlock(blocks[1], 1)}</div>
               <div style={{ flex: 1, minHeight: 0 }}>{renderBlock(blocks[2], 2)}</div>
             </div>
           </div>
@@ -702,7 +702,7 @@ function BlockLayoutView({ slide }: { slide: InfoSlide }) {
         return (
           <div style={{ height: '100%', display: 'flex', flexDirection: 'row', ...gapStyle }}>
             <div style={{ flex: `0 0 ${columnRatios[0]}%`, display: 'flex', flexDirection: 'column', minHeight: 0, minWidth: 0, ...gapStyle }}>
-              <div style={{ flex: 1, minHeight: 0 }}>{renderBlock(blocks[0], 0)}</div>
+              <div style={{ flex: `0 0 ${splitRatio}%`, minHeight: 0 }}>{renderBlock(blocks[0], 0)}</div>
               <div style={{ flex: 1, minHeight: 0 }}>{renderBlock(blocks[1], 1)}</div>
             </div>
             <div style={{ flex: `0 0 ${columnRatios[1]}%`, minHeight: 0, minWidth: 0 }}>{renderBlock(blocks[2], 2)}</div>
