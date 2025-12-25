@@ -434,7 +434,11 @@ export function SlideBlockEditor({
       {/* Content */}
       <div 
         ref={textContainerRef}
-        className={`h-full p-4 flex flex-col ${block.textOverflow === 'scroll' ? 'overflow-y-auto' : 'overflow-hidden'} ${block.textOverflow === 'fit' ? '' : 'justify-center'}`}
+        className={`h-full p-4 flex flex-col ${
+          block.textOverflow === 'scroll' ? 'overflow-y-auto scrollbar-thin' : 
+          block.textOverflow === 'fit' ? 'overflow-hidden' : 
+          'overflow-y-auto'
+        } ${block.textOverflow === 'fit' ? '' : 'justify-center'}`}
       >
         {block.type === 'text' && (
           <>
@@ -467,7 +471,7 @@ export function SlideBlockEditor({
             ) : (
               <div
                 className={`
-                  w-full whitespace-pre-wrap
+                  w-full
                   ${getTextAlignClass()}
                   ${block.fontWeight === 'bold' ? 'font-bold' : 'font-normal'}
                   ${block.fontStyle === 'italic' ? 'italic' : ''}
@@ -479,6 +483,8 @@ export function SlideBlockEditor({
                   color: block.content ? (block.textColor || '#1e293b') : undefined,
                   backgroundColor: block.highlightColor && block.highlightColor !== 'transparent' ? block.highlightColor : 'transparent',
                   lineHeight: 1.4,
+                  whiteSpace: 'pre-wrap',
+                  wordWrap: 'break-word',
                 }}
               >
                 {block.content || placeholder}
