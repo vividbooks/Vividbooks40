@@ -1437,6 +1437,44 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
                           };
                           updateSlide(selectedSlide.id, { layout: { ...selectedSlide.layout!, blocks: newBlocks } });
                         }}
+                        listType={selectedSlide.layout.blocks[editingTextBlockIndex]?.listType || 'none'}
+                        onListTypeChange={(type) => {
+                          const newBlocks = [...selectedSlide.layout!.blocks];
+                          const block = newBlocks[editingTextBlockIndex];
+                          let content = block.content || '';
+                          
+                          // Remove existing list formatting
+                          content = content.split('\n').map(line => 
+                            line.replace(/^(\d+\.\s|•\s|☐\s|☑\s)/, '')
+                          ).join('\n');
+                          
+                          // Apply new list formatting
+                          if (type !== 'none') {
+                            content = content.split('\n').map((line, idx) => {
+                              if (!line.trim()) return line;
+                              if (type === 'numbered') return `${idx + 1}. ${line}`;
+                              if (type === 'bullet') return `• ${line}`;
+                              if (type === 'checklist') return `☐ ${line}`;
+                              return line;
+                            }).join('\n');
+                          }
+                          
+                          newBlocks[editingTextBlockIndex] = { 
+                            ...block, 
+                            listType: type,
+                            content 
+                          };
+                          updateSlide(selectedSlide.id, { layout: { ...selectedSlide.layout!, blocks: newBlocks } });
+                        }}
+                        onInsertSymbol={(symbol) => {
+                          const newBlocks = [...selectedSlide.layout!.blocks];
+                          const block = newBlocks[editingTextBlockIndex];
+                          newBlocks[editingTextBlockIndex] = { 
+                            ...block, 
+                            content: (block.content || '') + symbol 
+                          };
+                          updateSlide(selectedSlide.id, { layout: { ...selectedSlide.layout!, blocks: newBlocks } });
+                        }}
                       />
                     </div>
                   )}

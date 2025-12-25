@@ -17,6 +17,9 @@ import {
   Type,
   List,
   ListOrdered,
+  ListChecks,
+  Superscript,
+  Subscript,
 } from 'lucide-react';
 
 interface SlideTextToolbarProps {
@@ -28,6 +31,7 @@ interface SlideTextToolbarProps {
   fontSize?: 'small' | 'medium' | 'large' | 'xlarge';
   textColor?: string;
   highlightColor?: string;
+  listType?: 'none' | 'bullet' | 'numbered' | 'checklist';
   // Callbacks
   onBoldToggle?: () => void;
   onItalicToggle?: () => void;
@@ -36,6 +40,8 @@ interface SlideTextToolbarProps {
   onFontSizeChange?: (size: 'small' | 'medium' | 'large' | 'xlarge') => void;
   onTextColorChange?: (color: string) => void;
   onHighlightColorChange?: (color: string) => void;
+  onListTypeChange?: (type: 'none' | 'bullet' | 'numbered' | 'checklist') => void;
+  onInsertSymbol?: (symbol: string) => void;
 }
 
 export function SlideTextToolbar({
@@ -46,6 +52,7 @@ export function SlideTextToolbar({
   fontSize = 'medium',
   textColor = '#000000',
   highlightColor = 'transparent',
+  listType = 'none',
   onBoldToggle,
   onItalicToggle,
   onUnderlineToggle,
@@ -53,11 +60,24 @@ export function SlideTextToolbar({
   onFontSizeChange,
   onTextColorChange,
   onHighlightColorChange,
+  onListTypeChange,
+  onInsertSymbol,
 }: SlideTextToolbarProps) {
   const [showTextDropdown, setShowTextDropdown] = useState(false);
   const [showSizeDropdown, setShowSizeDropdown] = useState(false);
   const [showColorDropdown, setShowColorDropdown] = useState(false);
+  const [showListDropdown, setShowListDropdown] = useState(false);
+  const [showMathDropdown, setShowMathDropdown] = useState(false);
   const [showAlignDropdown, setShowAlignDropdown] = useState(false);
+
+  const closeAllDropdowns = () => {
+    setShowTextDropdown(false);
+    setShowSizeDropdown(false);
+    setShowColorDropdown(false);
+    setShowListDropdown(false);
+    setShowMathDropdown(false);
+    setShowAlignDropdown(false);
+  };
 
   const fontSizeLabels: Record<string, string> = {
     small: '12',
@@ -76,6 +96,72 @@ export function SlideTextToolbar({
     '#bbf7d0', '#bfdbfe', '#c4b5fd', '#fbcfe8', '#fecaca',
   ];
 
+  // Superscript/subscript Unicode mappings
+  const superscriptMap: Record<string, string> = {
+    '0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴',
+    '5': '⁵', '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹',
+    '+': '⁺', '-': '⁻', '=': '⁼', '(': '⁽', ')': '⁾',
+    'n': 'ⁿ', 'x': 'ˣ', 'y': 'ʸ',
+  };
+
+  const subscriptMap: Record<string, string> = {
+    '0': '₀', '1': '₁', '2': '₂', '3': '₃', '4': '₄',
+    '5': '₅', '6': '₆', '7': '₇', '8': '₈', '9': '₉',
+    '+': '₊', '-': '₋', '=': '₌', '(': '₍', ')': '₎',
+    'a': 'ₐ', 'e': 'ₑ', 'o': 'ₒ', 'x': 'ₓ',
+  };
+
+  const insertSuperscript = () => {
+    const input = prompt('Zadejte text pro horní index (0-9, +, -, n, x, y):', '2');
+    if (input) {
+      const converted = input.split('').map(c => superscriptMap[c] || c).join('');
+      onInsertSymbol?.(converted);
+    }
+  };
+
+  const insertSubscript = () => {
+    const input = prompt('Zadejte text pro dolní index (0-9, +, -, a, e, o, x):', '2');
+    if (input) {
+      const converted = input.split('').map(c => subscriptMap[c] || c).join('');
+      onInsertSymbol?.(converted);
+    }
+  };
+
+  const insertLatex = () => {
+    const input = prompt('Zadejte LaTeX vzorec:', 'x² + y² = r²');
+    if (input) {
+      // Convert common LaTeX to Unicode
+      let result = input
+        .replace(/\\frac\{([^}]+)\}\{([^}]+)\}/g, '$1/$2')
+        .replace(/\\sqrt\{([^}]+)\}/g, '√$1')
+        .replace(/\\pi/g, 'π')
+        .replace(/\\alpha/g, 'α')
+        .replace(/\\beta/g, 'β')
+        .replace(/\\gamma/g, 'γ')
+        .replace(/\\delta/g, 'δ')
+        .replace(/\\theta/g, 'θ')
+        .replace(/\\lambda/g, 'λ')
+        .replace(/\\mu/g, 'μ')
+        .replace(/\\sigma/g, 'σ')
+        .replace(/\\omega/g, 'ω')
+        .replace(/\\sum/g, '∑')
+        .replace(/\\int/g, '∫')
+        .replace(/\\infty/g, '∞')
+        .replace(/\\pm/g, '±')
+        .replace(/\\times/g, '×')
+        .replace(/\\div/g, '÷')
+        .replace(/\\neq/g, '≠')
+        .replace(/\\leq/g, '≤')
+        .replace(/\\geq/g, '≥')
+        .replace(/\\approx/g, '≈')
+        .replace(/\^2/g, '²')
+        .replace(/\^3/g, '³')
+        .replace(/_2/g, '₂')
+        .replace(/_3/g, '₃');
+      onInsertSymbol?.(result);
+    }
+  };
+
   return (
     <div 
       className="flex items-center gap-0.5 px-2 py-1.5 bg-white rounded-xl shadow-lg border border-slate-200"
@@ -86,10 +172,8 @@ export function SlideTextToolbar({
       <div className="relative">
         <button
           onClick={() => {
+            closeAllDropdowns();
             setShowTextDropdown(!showTextDropdown);
-            setShowSizeDropdown(false);
-            setShowColorDropdown(false);
-            setShowAlignDropdown(false);
           }}
           className="flex items-center gap-1 px-2 py-1.5 rounded-lg hover:bg-slate-100 transition-colors text-slate-700 border border-slate-200"
         >
@@ -102,37 +186,25 @@ export function SlideTextToolbar({
             <div className="fixed inset-0 z-40" onClick={() => setShowTextDropdown(false)} />
             <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-xl border border-slate-200 py-1 min-w-[120px] z-50">
               <button
-                onClick={() => {
-                  onFontSizeChange?.('medium');
-                  setShowTextDropdown(false);
-                }}
+                onClick={() => { onFontSizeChange?.('medium'); setShowTextDropdown(false); }}
                 className={`w-full px-3 py-2 text-left text-sm hover:bg-slate-50 ${fontSize === 'medium' ? 'bg-indigo-50 text-indigo-600' : ''}`}
               >
                 Text
               </button>
               <button
-                onClick={() => {
-                  onFontSizeChange?.('xlarge');
-                  setShowTextDropdown(false);
-                }}
+                onClick={() => { onFontSizeChange?.('xlarge'); setShowTextDropdown(false); }}
                 className={`w-full px-3 py-2 text-left text-lg font-semibold hover:bg-slate-50 ${fontSize === 'xlarge' ? 'bg-indigo-50 text-indigo-600' : ''}`}
               >
                 Nadpis 1
               </button>
               <button
-                onClick={() => {
-                  onFontSizeChange?.('large');
-                  setShowTextDropdown(false);
-                }}
+                onClick={() => { onFontSizeChange?.('large'); setShowTextDropdown(false); }}
                 className={`w-full px-3 py-2 text-left text-base font-semibold hover:bg-slate-50 ${fontSize === 'large' ? 'bg-indigo-50 text-indigo-600' : ''}`}
               >
                 Nadpis 2
               </button>
               <button
-                onClick={() => {
-                  onFontSizeChange?.('small');
-                  setShowTextDropdown(false);
-                }}
+                onClick={() => { onFontSizeChange?.('small'); setShowTextDropdown(false); }}
                 className={`w-full px-3 py-2 text-left text-xs hover:bg-slate-50 ${fontSize === 'small' ? 'bg-indigo-50 text-indigo-600' : ''}`}
               >
                 Malý text
@@ -146,10 +218,8 @@ export function SlideTextToolbar({
       <div className="relative">
         <button
           onClick={() => {
+            closeAllDropdowns();
             setShowSizeDropdown(!showSizeDropdown);
-            setShowTextDropdown(false);
-            setShowColorDropdown(false);
-            setShowAlignDropdown(false);
           }}
           className="flex items-center gap-1 px-2 py-1.5 rounded-lg hover:bg-slate-100 transition-colors text-slate-600"
         >
@@ -160,17 +230,12 @@ export function SlideTextToolbar({
         {showSizeDropdown && (
           <>
             <div className="fixed inset-0 z-40" onClick={() => setShowSizeDropdown(false)} />
-            <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-xl border border-slate-200 py-1 min-w-[80px] z-50 max-h-[200px] overflow-y-auto">
+            <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-xl border border-slate-200 py-1 min-w-[80px] z-50">
               {(['small', 'medium', 'large', 'xlarge'] as const).map((size) => (
                 <button
                   key={size}
-                  onClick={() => {
-                    onFontSizeChange?.(size);
-                    setShowSizeDropdown(false);
-                  }}
-                  className={`w-full px-3 py-1.5 text-center text-sm hover:bg-slate-50 ${
-                    fontSize === size ? 'bg-indigo-50 text-indigo-600 font-medium' : ''
-                  }`}
+                  onClick={() => { onFontSizeChange?.(size); setShowSizeDropdown(false); }}
+                  className={`w-full px-3 py-1.5 text-center text-sm hover:bg-slate-50 ${fontSize === size ? 'bg-indigo-50 text-indigo-600 font-medium' : ''}`}
                 >
                   {fontSizeLabels[size]}
                 </button>
@@ -185,9 +250,7 @@ export function SlideTextToolbar({
       {/* Bold */}
       <button
         onClick={onBoldToggle}
-        className={`p-2 rounded-lg transition-colors ${
-          isBold ? 'bg-slate-200 text-slate-900' : 'hover:bg-slate-100 text-slate-600'
-        }`}
+        className={`p-2 rounded-lg transition-colors ${isBold ? 'bg-slate-200 text-slate-900' : 'hover:bg-slate-100 text-slate-600'}`}
         title="Tučné"
       >
         <Bold className="w-4 h-4" strokeWidth={2.5} />
@@ -196,9 +259,7 @@ export function SlideTextToolbar({
       {/* Italic */}
       <button
         onClick={onItalicToggle}
-        className={`p-2 rounded-lg transition-colors ${
-          isItalic ? 'bg-slate-200 text-slate-900' : 'hover:bg-slate-100 text-slate-600'
-        }`}
+        className={`p-2 rounded-lg transition-colors ${isItalic ? 'bg-slate-200 text-slate-900' : 'hover:bg-slate-100 text-slate-600'}`}
         title="Kurzíva"
       >
         <Italic className="w-4 h-4" />
@@ -207,9 +268,7 @@ export function SlideTextToolbar({
       {/* Underline */}
       <button
         onClick={onUnderlineToggle}
-        className={`p-2 rounded-lg transition-colors ${
-          isUnderline ? 'bg-slate-200 text-slate-900' : 'hover:bg-slate-100 text-slate-600'
-        }`}
+        className={`p-2 rounded-lg transition-colors ${isUnderline ? 'bg-slate-200 text-slate-900' : 'hover:bg-slate-100 text-slate-600'}`}
         title="Podtržené"
       >
         <Underline className="w-4 h-4" />
@@ -221,10 +280,8 @@ export function SlideTextToolbar({
       <div className="relative">
         <button
           onClick={() => {
+            closeAllDropdowns();
             setShowColorDropdown(!showColorDropdown);
-            setShowTextDropdown(false);
-            setShowSizeDropdown(false);
-            setShowAlignDropdown(false);
           }}
           className="flex items-center gap-0.5 p-1.5 rounded-lg hover:bg-slate-100 transition-colors"
           title="Barvy"
@@ -250,12 +307,9 @@ export function SlideTextToolbar({
                 {textColors.map((color) => (
                   <button
                     key={color}
-                    onClick={() => {
-                      onTextColorChange?.(color);
-                    }}
+                    onClick={() => onTextColorChange?.(color)}
                     className="w-7 h-7 rounded-full flex items-center justify-center hover:scale-110 transition-transform"
                     style={{ backgroundColor: `${color}20` }}
-                    title={color}
                   >
                     <span style={{ color, fontWeight: 'bold', fontSize: '12px' }}>A</span>
                   </button>
@@ -267,15 +321,12 @@ export function SlideTextToolbar({
                 {highlightColors.map((color) => (
                   <button
                     key={color}
-                    onClick={() => {
-                      onHighlightColorChange?.(color);
-                    }}
+                    onClick={() => onHighlightColorChange?.(color)}
                     className="w-7 h-7 rounded-full hover:scale-110 transition-transform"
                     style={{ 
                       backgroundColor: color === 'transparent' ? 'white' : color,
                       border: color === 'transparent' ? '2px solid #e2e8f0' : '2px solid transparent'
                     }}
-                    title={color === 'transparent' ? 'Žádné' : color}
                   />
                 ))}
               </div>
@@ -286,14 +337,126 @@ export function SlideTextToolbar({
 
       <div className="w-px h-5 bg-slate-200 mx-1" />
 
+      {/* Lists Dropdown */}
+      <div className="relative">
+        <button
+          onClick={() => {
+            closeAllDropdowns();
+            setShowListDropdown(!showListDropdown);
+          }}
+          className={`flex items-center gap-0.5 p-1.5 rounded-lg hover:bg-slate-100 transition-colors ${listType !== 'none' ? 'bg-slate-200' : ''}`}
+          title="Seznamy"
+        >
+          {listType === 'numbered' ? (
+            <ListOrdered className="w-4 h-4 text-slate-600" />
+          ) : listType === 'checklist' ? (
+            <ListChecks className="w-4 h-4 text-slate-600" />
+          ) : (
+            <List className="w-4 h-4 text-slate-600" />
+          )}
+          <ChevronDown className="w-3 h-3 text-slate-400" />
+        </button>
+        
+        {showListDropdown && (
+          <>
+            <div className="fixed inset-0 z-40" onClick={() => setShowListDropdown(false)} />
+            <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-xl border border-slate-200 py-1 z-50 min-w-[180px]">
+              <button
+                onClick={() => { onListTypeChange?.('numbered'); setShowListDropdown(false); }}
+                className={`flex items-center gap-3 w-full px-3 py-2 hover:bg-slate-50 ${listType === 'numbered' ? 'bg-indigo-50 text-indigo-600' : ''}`}
+              >
+                <ListOrdered className="w-4 h-4" />
+                <span className="text-sm">Číslovaný seznam</span>
+              </button>
+              <button
+                onClick={() => { onListTypeChange?.('bullet'); setShowListDropdown(false); }}
+                className={`flex items-center gap-3 w-full px-3 py-2 hover:bg-slate-50 ${listType === 'bullet' ? 'bg-indigo-50 text-indigo-600' : ''}`}
+              >
+                <List className="w-4 h-4" />
+                <span className="text-sm">Odrážky</span>
+              </button>
+              <button
+                onClick={() => { onListTypeChange?.('checklist'); setShowListDropdown(false); }}
+                className={`flex items-center gap-3 w-full px-3 py-2 hover:bg-slate-50 ${listType === 'checklist' ? 'bg-indigo-50 text-indigo-600' : ''}`}
+              >
+                <ListChecks className="w-4 h-4" />
+                <span className="text-sm">Checklist</span>
+              </button>
+              {listType !== 'none' && (
+                <>
+                  <div className="border-t border-slate-200 my-1" />
+                  <button
+                    onClick={() => { onListTypeChange?.('none'); setShowListDropdown(false); }}
+                    className="flex items-center gap-3 w-full px-3 py-2 hover:bg-slate-50 text-slate-500"
+                  >
+                    <span className="text-sm">Zrušit seznam</span>
+                  </button>
+                </>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Math Dropdown */}
+      <div className="relative">
+        <button
+          onClick={() => {
+            closeAllDropdowns();
+            setShowMathDropdown(!showMathDropdown);
+          }}
+          className="flex items-center gap-0.5 p-1.5 rounded-lg hover:bg-slate-100 transition-colors"
+          title="Matematika"
+        >
+          <span className="text-slate-600 font-serif text-lg">∑</span>
+          <ChevronDown className="w-3 h-3 text-slate-400" />
+        </button>
+        
+        {showMathDropdown && (
+          <>
+            <div className="fixed inset-0 z-40" onClick={() => setShowMathDropdown(false)} />
+            <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-xl border border-slate-200 py-1 z-50 min-w-[200px]">
+              <button
+                onClick={() => { insertSuperscript(); setShowMathDropdown(false); }}
+                className="flex items-center justify-between w-full px-3 py-2.5 hover:bg-slate-50"
+              >
+                <div className="flex items-center gap-3">
+                  <Superscript className="w-4 h-4 text-slate-500" />
+                  <span className="text-sm">Horní index</span>
+                </div>
+                <span className="text-xs text-slate-400">x²</span>
+              </button>
+              <button
+                onClick={() => { insertSubscript(); setShowMathDropdown(false); }}
+                className="flex items-center justify-between w-full px-3 py-2.5 hover:bg-slate-50"
+              >
+                <div className="flex items-center gap-3">
+                  <Subscript className="w-4 h-4 text-slate-500" />
+                  <span className="text-sm">Dolní index</span>
+                </div>
+                <span className="text-xs text-slate-400">H₂O</span>
+              </button>
+              <button
+                onClick={() => { insertLatex(); setShowMathDropdown(false); }}
+                className="flex items-center justify-between w-full px-3 py-2.5 hover:bg-slate-50"
+              >
+                <div className="flex items-center gap-3">
+                  <span className="text-slate-500 font-serif">∑</span>
+                  <span className="text-sm">LaTeX vzorec</span>
+                </div>
+                <span className="text-xs text-slate-400">∫ ∑ √</span>
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+
       {/* Text Alignment Dropdown */}
       <div className="relative">
         <button
           onClick={() => {
+            closeAllDropdowns();
             setShowAlignDropdown(!showAlignDropdown);
-            setShowTextDropdown(false);
-            setShowSizeDropdown(false);
-            setShowColorDropdown(false);
           }}
           className="flex items-center gap-0.5 p-1.5 rounded-lg hover:bg-slate-100 transition-colors text-slate-600"
           title="Zarovnání"
@@ -313,30 +476,21 @@ export function SlideTextToolbar({
             <div className="fixed inset-0 z-40" onClick={() => setShowAlignDropdown(false)} />
             <div className="absolute top-full right-0 mt-1 bg-white rounded-lg shadow-xl border border-slate-200 py-1 z-50">
               <button
-                onClick={() => {
-                  onAlignChange?.('left');
-                  setShowAlignDropdown(false);
-                }}
+                onClick={() => { onAlignChange?.('left'); setShowAlignDropdown(false); }}
                 className={`flex items-center gap-2 w-full px-3 py-2 hover:bg-slate-50 ${textAlign === 'left' ? 'bg-indigo-50 text-indigo-600' : ''}`}
               >
                 <AlignLeft className="w-4 h-4" />
                 <span className="text-sm">Vlevo</span>
               </button>
               <button
-                onClick={() => {
-                  onAlignChange?.('center');
-                  setShowAlignDropdown(false);
-                }}
+                onClick={() => { onAlignChange?.('center'); setShowAlignDropdown(false); }}
                 className={`flex items-center gap-2 w-full px-3 py-2 hover:bg-slate-50 ${textAlign === 'center' ? 'bg-indigo-50 text-indigo-600' : ''}`}
               >
                 <AlignCenter className="w-4 h-4" />
                 <span className="text-sm">Na střed</span>
               </button>
               <button
-                onClick={() => {
-                  onAlignChange?.('right');
-                  setShowAlignDropdown(false);
-                }}
+                onClick={() => { onAlignChange?.('right'); setShowAlignDropdown(false); }}
                 className={`flex items-center gap-2 w-full px-3 py-2 hover:bg-slate-50 ${textAlign === 'right' ? 'bg-indigo-50 text-indigo-600' : ''}`}
               >
                 <AlignRight className="w-4 h-4" />
