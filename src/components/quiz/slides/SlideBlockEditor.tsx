@@ -51,6 +51,7 @@ export function SlideBlockEditor({
   const [showSolution, setShowSolution] = useState(false);
   const [showOverflowDialog, setShowOverflowDialog] = useState(false);
   const [isOverflowing, setIsOverflowing] = useState(false);
+  const [fitFontSize, setFitFontSize] = useState<number | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const textContainerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -82,8 +83,9 @@ export function SlideBlockEditor({
   }, [isEditing, block.content, block.type, block.textOverflow]);
 
   // Auto-fit font size calculation - runs on content change and container resize
+  // Note: We calculate even when editing to keep consistent size
   const calculateFitFontSize = React.useCallback(() => {
-    if (block.textOverflow !== 'fit' || !textContainerRef.current || !block.content || isEditing) return;
+    if (block.textOverflow !== 'fit' || !textContainerRef.current || !block.content) return;
     
     const container = textContainerRef.current;
     const targetHeight = container.clientHeight * 0.9; // 90% of block height
@@ -125,14 +127,23 @@ export function SlideBlockEditor({
 
     document.body.removeChild(measureEl);
     
-    // Apply the calculated font size via CSS variable
-    container.style.setProperty('--fit-font-size', `${optimalSize}px`);
-  }, [block.textOverflow, block.content, block.fontWeight, block.fontStyle, isEditing]);
+    // Store in state so it's available for both display and editing
+    setFitFontSize(optimalSize);
+  }, [block.textOverflow, block.content, block.fontWeight, block.fontStyle]);
 
-  // Run calculation on content/settings change
+  // Run calculation on content/settings change (but not during active typing)
   useEffect(() => {
-    calculateFitFontSize();
-  }, [calculateFitFontSize]);
+    if (!isEditing) {
+      calculateFitFontSize();
+    }
+  }, [calculateFitFontSize, isEditing]);
+
+  // Initial calculation when switching to fit mode
+  useEffect(() => {
+    if (block.textOverflow === 'fit' && !fitFontSize) {
+      calculateFitFontSize();
+    }
+  }, [block.textOverflow, fitFontSize, calculateFitFontSize]);
 
   // Use ResizeObserver to recalculate when block size changes
   useEffect(() => {
@@ -446,9 +457,10 @@ export function SlideBlockEditor({
                   ${block.textDecoration === 'underline' ? 'underline' : ''}
                 `}
                 style={{
-                  fontSize: getFontSize(),
+                  fontSize: block.textOverflow === 'fit' && fitFontSize ? `${fitFontSize}px` : getFontSize(),
                   color: block.textColor || 'inherit',
                   backgroundColor: block.highlightColor && block.highlightColor !== 'transparent' ? block.highlightColor : 'transparent',
+                  lineHeight: 1.4,
                 }}
                 placeholder={placeholder}
               />
@@ -463,9 +475,10 @@ export function SlideBlockEditor({
                   ${!block.content ? 'text-slate-400' : ''}
                 `}
                 style={{
-                  fontSize: block.textOverflow === 'fit' ? 'var(--fit-font-size, ' + getFontSize() + ')' : getFontSize(),
+                  fontSize: block.textOverflow === 'fit' && fitFontSize ? `${fitFontSize}px` : getFontSize(),
                   color: block.content ? (block.textColor || '#1e293b') : undefined,
                   backgroundColor: block.highlightColor && block.highlightColor !== 'transparent' ? block.highlightColor : 'transparent',
+                  lineHeight: 1.4,
                 }}
               >
                 {block.content || placeholder}
