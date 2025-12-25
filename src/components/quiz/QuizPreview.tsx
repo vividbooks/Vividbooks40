@@ -491,9 +491,10 @@ function BlockLayoutView({ slide }: { slide: InfoSlide }) {
     }
 
     const textAlignClass = block.textAlign === 'center' ? 'text-center' : block.textAlign === 'right' ? 'text-right' : 'text-left';
-    const fontSizeClass = block.fontSize === 'xlarge' ? 'text-3xl' : 
-                          block.fontSize === 'large' ? 'text-xl' : 
-                          block.fontSize === 'small' ? 'text-sm' : 'text-base';
+    // Use exact pixel values for consistent sizing between editor and preview
+    const fontSize = block.fontSize === 'xlarge' ? '32px' : 
+                     block.fontSize === 'large' ? '24px' : 
+                     block.fontSize === 'small' ? '14px' : '18px';
     const fontWeightClass = block.fontWeight === 'bold' ? 'font-bold' : 'font-normal';
     const fontStyleClass = block.fontStyle === 'italic' ? 'italic' : '';
     const textDecorationClass = block.textDecoration === 'underline' ? 'underline' : '';
@@ -519,6 +520,7 @@ function BlockLayoutView({ slide }: { slide: InfoSlide }) {
     // Text block
     const textStyle: React.CSSProperties = {
       ...bgStyle,
+      fontSize,
       color: block.textColor || '#1e293b',
       backgroundColor: block.highlightColor && block.highlightColor !== 'transparent' 
         ? block.highlightColor 
@@ -527,7 +529,7 @@ function BlockLayoutView({ slide }: { slide: InfoSlide }) {
     
     return (
       <div 
-        className={`h-full p-4 ${textAlignClass} ${fontSizeClass} ${fontWeightClass} ${fontStyleClass} ${textDecorationClass}`} 
+        className={`h-full p-4 ${textAlignClass} ${fontWeightClass} ${fontStyleClass} ${textDecorationClass}`} 
         style={textStyle}
       >
         <MathText>{block.content}</MathText>

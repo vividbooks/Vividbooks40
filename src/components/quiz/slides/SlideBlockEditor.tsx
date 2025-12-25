@@ -156,13 +156,14 @@ export function SlideBlockEditor({
     onUpdate({ type: newType, content: '' });
   };
 
-  const getFontSizeClass = () => {
+  // Use exact pixel values for consistent sizing between editor and preview
+  const getFontSize = (): string => {
     switch (block.fontSize) {
-      case 'small': return 'text-sm';
-      case 'medium': return 'text-base';
-      case 'large': return 'text-xl';
-      case 'xlarge': return 'text-3xl';
-      default: return 'text-base';
+      case 'small': return '14px';
+      case 'medium': return '18px';
+      case 'large': return '24px';
+      case 'xlarge': return '32px';
+      default: return '18px';
     }
   };
 
@@ -311,12 +312,13 @@ export function SlideBlockEditor({
                 onInput={autoResize}
                 className={`
                   w-full bg-transparent outline-none resize-none
-                  ${getFontSizeClass()} ${getTextAlignClass()}
+                  ${getTextAlignClass()}
                   ${block.fontWeight === 'bold' ? 'font-bold' : 'font-normal'}
                   ${block.fontStyle === 'italic' ? 'italic' : ''}
                   ${block.textDecoration === 'underline' ? 'underline' : ''}
                 `}
                 style={{
+                  fontSize: getFontSize(),
                   color: block.textColor || 'inherit',
                   backgroundColor: block.highlightColor && block.highlightColor !== 'transparent' ? block.highlightColor : 'transparent',
                 }}
@@ -326,13 +328,14 @@ export function SlideBlockEditor({
               <div
                 className={`
                   w-full whitespace-pre-wrap
-                  ${getFontSizeClass()} ${getTextAlignClass()}
+                  ${getTextAlignClass()}
                   ${block.fontWeight === 'bold' ? 'font-bold' : 'font-normal'}
                   ${block.fontStyle === 'italic' ? 'italic' : ''}
                   ${block.textDecoration === 'underline' ? 'underline' : ''}
                   ${!block.content ? 'text-slate-400' : ''}
                 `}
                 style={{
+                  fontSize: getFontSize(),
                   color: block.content ? (block.textColor || '#1e293b') : undefined,
                   backgroundColor: block.highlightColor && block.highlightColor !== 'transparent' ? block.highlightColor : 'transparent',
                 }}
