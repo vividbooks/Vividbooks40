@@ -745,7 +745,15 @@ export function BlockLayoutView({ slide }: { slide: InfoSlide }) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: blockGap }}>
         {blocks.map((block, index) => (
-          <div key={index} style={{ minHeight: block.type === 'image' ? 200 : 'auto' }}>
+          <div 
+            key={index} 
+            style={{ 
+              // For images: explicit height so h-full works inside
+              // For text: auto height to fit content
+              height: block.type === 'image' ? 250 : 'auto',
+              minHeight: block.type === 'text' ? 60 : undefined,
+            }}
+          >
             {renderBlock(block, index)}
           </div>
         ))}

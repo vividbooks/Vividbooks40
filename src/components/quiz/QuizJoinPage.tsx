@@ -1148,46 +1148,28 @@ export function QuizJoinPage() {
         </div>
       </div>
       
-      {/* Navigation arrows for unlocked mode - hidden */}
-      <div className="hidden">
-        {canNavigate ? (
-          <div className="flex items-center gap-3">
-            <button
-              onClick={goToPrevSlide}
-              disabled={currentSlideIndex === 0}
-              className={`w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 ${currentSlideIndex === 0 ? 'opacity-30 cursor-not-allowed' : ''} bg-[#CBD5E1] text-slate-600`}
-            >
-              <ArrowLeft className="w-5 h-5" />
-            </button>
-            <div className="flex-1 flex items-center gap-1.5">
-              {renderProgressBar()}
-            </div>
-            <button
-              onClick={() => (currentSlideIndex < quiz.slides.length - 1 && canProceed) ? goToNextSlide() : (!canProceed ? triggerWiggle() : null)}
-              className={`w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 transition-all duration-300 ${(currentSlideIndex === quiz.slides.length - 1 || !canProceed) ? 'bg-slate-300 text-slate-400' : 'text-white'}`}
-              style={{ backgroundColor: (currentSlideIndex < quiz.slides.length - 1 && canProceed) ? '#7C3AED' : undefined }}
-            >
-              <ArrowRight className="w-5 h-5" />
-            </button>
+      {/* Mobile: Navigation arrows for unlocked mode */}
+      {canNavigate && (
+        <div className="flex lg:hidden items-center gap-3 px-4 py-2">
+          <button
+            onClick={goToPrevSlide}
+            disabled={currentSlideIndex === 0}
+            className={`w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 ${currentSlideIndex === 0 ? 'opacity-30 cursor-not-allowed' : ''} bg-[#CBD5E1] text-slate-600`}
+          >
+            <ArrowLeft className="w-5 h-5" />
+          </button>
+          <div className="flex-1 flex items-center gap-1.5">
+            {renderProgressBar()}
           </div>
-        ) : (
-          <div className="grid" style={{ gridTemplateColumns: '1fr auto' }}>
-            <div className="flex items-center gap-1.5 pr-4">
-              {renderProgressBar()}
-            </div>
-            <div className="flex items-center gap-3 flex-shrink-0">
-              <div className="flex items-center gap-1 text-emerald-600">
-                <CheckCircle className="w-4 h-4" />
-                <span className="font-bold text-sm">{correctCount}</span>
-              </div>
-              <div className="flex items-center gap-1 text-red-500">
-                <XCircle className="w-4 h-4" />
-                <span className="font-bold text-sm">{wrongCount}</span>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
+          <button
+            onClick={() => (currentSlideIndex < quiz.slides.length - 1 && canProceed) ? goToNextSlide() : (!canProceed ? triggerWiggle() : null)}
+            className={`w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 transition-all duration-300 ${(currentSlideIndex === quiz.slides.length - 1 || !canProceed) ? 'bg-slate-300 text-slate-400' : 'text-white'}`}
+            style={{ backgroundColor: (currentSlideIndex < quiz.slides.length - 1 && canProceed) ? '#7C3AED' : undefined }}
+          >
+            <ArrowRight className="w-5 h-5" />
+          </button>
+        </div>
+      )}
       
       {/* Main content area */}
       <div className="flex-1 flex flex-col pb-4 lg:pt-4 lg:pb-4" style={{ backgroundColor: '#F0F1F8' }}>
