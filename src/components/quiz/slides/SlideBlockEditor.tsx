@@ -434,11 +434,16 @@ export function SlideBlockEditor({
       {/* Content */}
       <div 
         ref={textContainerRef}
-        className={`h-full p-4 flex flex-col ${
-          block.textOverflow === 'scroll' ? 'overflow-y-auto scrollbar-thin' : 
+        className={`h-full flex flex-col ${
+          block.textOverflow === 'scroll' ? 'overflow-y-scroll' : 
           block.textOverflow === 'fit' ? 'overflow-hidden' : 
-          'overflow-y-auto'
-        } ${block.textOverflow === 'fit' ? '' : 'justify-center'}`}
+          'overflow-y-scroll'
+        } ${block.textOverflow === 'fit' ? '' : ''}`}
+        style={{
+          padding: '16px',
+          scrollbarWidth: (block.textOverflow === 'scroll' || !block.textOverflow) ? 'thin' : undefined,
+          scrollbarColor: (block.textOverflow === 'scroll' || !block.textOverflow) ? '#cbd5e1 transparent' : undefined,
+        }}
       >
         {block.type === 'text' && (
           <>

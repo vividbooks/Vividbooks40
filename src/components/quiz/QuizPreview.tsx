@@ -595,20 +595,27 @@ function BlockLayoutView({ slide }: { slide: InfoSlide }) {
         };
       }, [calculateFitSize]);
 
+      const hasScroll = block.textOverflow === 'scroll' || !block.textOverflow;
+      
       return (
         <div 
           ref={containerRef}
           className={`h-full p-4 flex flex-col ${
-            block.textOverflow === 'scroll' ? 'overflow-y-auto' : 
+            block.textOverflow === 'scroll' ? 'overflow-y-scroll' : 
             block.textOverflow === 'fit' ? 'overflow-hidden' : 
-            'overflow-y-auto'
-          } ${block.textOverflow === 'fit' ? '' : 'justify-center'} ${textAlignClass} ${fontWeightClass} ${fontStyleClass} ${textDecorationClass}`} 
+            'overflow-y-scroll'
+          } ${block.textOverflow === 'fit' ? '' : ''} ${textAlignClass} ${fontWeightClass} ${fontStyleClass} ${textDecorationClass}`} 
           style={{
             ...textStyle,
             fontSize: block.textOverflow === 'fit' && fitFontSize ? `${fitFontSize}px` : textStyle.fontSize,
             whiteSpace: 'pre-wrap',
             wordWrap: 'break-word',
             lineHeight: 1.4,
+            paddingTop: '16px',
+            paddingBottom: '16px',
+            // Always show scrollbar when scrollable
+            scrollbarWidth: hasScroll ? 'thin' : undefined,
+            scrollbarColor: hasScroll ? '#cbd5e1 transparent' : undefined,
           }}
         >
           <MathText>{block.content}</MathText>
