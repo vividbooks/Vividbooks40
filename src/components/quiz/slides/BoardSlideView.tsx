@@ -189,7 +189,7 @@ function PostCard({
   );
 }
 
-// New post form component
+// New post form component - Padlet style when media is allowed
 function NewPostForm({
   allowMedia,
   onSubmit,
@@ -204,12 +204,13 @@ function NewPostForm({
   const [text, setText] = useState('');
   const [mediaUrl, setMediaUrl] = useState('');
   const [mediaType, setMediaType] = useState<'image' | 'youtube' | null>(null);
-  const [showMediaInput, setShowMediaInput] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
   
   const canPost = maxPosts === undefined || maxPosts === 0 || currentPostCount < maxPosts;
+  const youtubeId = mediaType === 'youtube' && mediaUrl ? getYouTubeId(mediaUrl) : null;
   
   const handleSubmit = () => {
-    if (!text.trim()) return;
+    if (!text.trim() && !mediaUrl.trim()) return;
     onSubmit(
       text.trim(), 
       mediaUrl.trim() || undefined, 
@@ -218,7 +219,13 @@ function NewPostForm({
     setText('');
     setMediaUrl('');
     setMediaType(null);
-    setShowMediaInput(false);
+    setIsExpanded(false);
+  };
+
+  const handleClear = () => {
+    setText('');
+    setMediaUrl('');
+    setMediaType(null);
   };
   
   if (!canPost) {
@@ -229,94 +236,180 @@ function NewPostForm({
       </div>
     );
   }
-  
+
+  // Simple form for text-only posts
+  if (!allowMedia) {
+    return (
+      <div 
+        className="bg-white rounded-2xl shadow-lg border border-slate-200 p-4 mx-auto"
+        style={{ width: '100%', maxWidth: '550px' }}
+      >
+        <textarea
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder="Napiš svůj příspěvek... ✨"
+          className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-pink-400 focus:ring-2 focus:ring-pink-400/20 outline-none resize-none text-[#4E5871] bg-slate-50 placeholder:text-slate-400"
+          rows={2}
+        />
+        <div className="flex justify-end mt-3">
+          <button
+            onClick={handleSubmit}
+            disabled={!text.trim()}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm transition-all hover:scale-105 active:scale-95"
+            style={{
+              background: text.trim() ? 'linear-gradient(to right, #ec4899, #f43f5e)' : '#e2e8f0',
+              color: text.trim() ? 'white' : '#94a3b8',
+              boxShadow: text.trim() ? '0 10px 15px -3px rgba(236, 72, 153, 0.3)' : 'none',
+              cursor: text.trim() ? 'pointer' : 'not-allowed',
+            }}
+          >
+            <Send className="w-4 h-4" />
+            Odeslat
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Padlet-style form for posts with media
   return (
     <div 
-      className="bg-white rounded-2xl shadow-lg border border-slate-200 p-4 mx-auto"
+      className="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden mx-auto"
       style={{ width: '100%', maxWidth: '550px' }}
     >
-      <textarea
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        placeholder="Napiš svůj příspěvek... ✨"
-        className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-pink-400 focus:ring-2 focus:ring-pink-400/20 outline-none resize-none text-[#4E5871] bg-slate-50 placeholder:text-slate-400"
-        rows={2}
-      />
-      
-      {/* Media input */}
-      {allowMedia && showMediaInput && (
-        <div className="mt-3 space-y-2">
-          <div className="flex gap-2">
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+        <button
+          onClick={handleClear}
+          className="text-sm font-medium text-slate-600 hover:text-slate-800 transition-colors"
+        >
+          Vymazat
+        </button>
+        <button
+          onClick={handleSubmit}
+          disabled={!text.trim() && !mediaUrl.trim()}
+          className="px-4 py-1.5 rounded-lg font-bold text-sm transition-all"
+          style={{
+            background: (text.trim() || mediaUrl.trim()) 
+              ? 'linear-gradient(to right, #ec4899, #f43f5e)' 
+              : '#f1f5f9',
+            color: (text.trim() || mediaUrl.trim()) ? 'white' : '#94a3b8',
+            cursor: (text.trim() || mediaUrl.trim()) ? 'pointer' : 'not-allowed',
+          }}
+        >
+          Odeslat
+        </button>
+      </div>
+
+      {/* Media upload area */}
+      <div 
+        className="relative border-2 border-dashed border-slate-200 m-4 rounded-xl overflow-hidden"
+        style={{
+          background: 'linear-gradient(135deg, #fdf2f8 0%, #fce7f3 50%, #fbcfe8 100%)',
+          minHeight: mediaUrl ? 'auto' : '120px',
+        }}
+      >
+        {/* Media preview */}
+        {mediaUrl && mediaType === 'image' && (
+          <div className="relative">
+            <img 
+              src={mediaUrl} 
+              alt="Náhled" 
+              className="w-full h-48 object-cover"
+              onError={() => setMediaUrl('')}
+            />
             <button
-              onClick={() => setMediaType('image')}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
-                mediaType === 'image' 
-                  ? 'bg-gradient-to-r from-pink-500 to-rose-500 text-white shadow-md' 
-                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-              }`}
+              onClick={() => { setMediaUrl(''); setMediaType(null); }}
+              className="absolute top-2 right-2 p-1.5 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors shadow-lg"
             >
-              <ImageIcon className="w-4 h-4" />
-              Obrázek
-            </button>
-            <button
-              onClick={() => setMediaType('youtube')}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
-                mediaType === 'youtube' 
-                  ? 'bg-gradient-to-r from-pink-500 to-rose-500 text-white shadow-md' 
-                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-              }`}
-            >
-              <Youtube className="w-4 h-4" />
-              YouTube
+              <Trash2 className="w-4 h-4" />
             </button>
           </div>
-          {mediaType && (
+        )}
+        
+        {mediaUrl && mediaType === 'youtube' && youtubeId && (
+          <div className="relative">
+            <div className="w-full h-48">
+              <iframe
+                src={`https://www.youtube.com/embed/${youtubeId}`}
+                className="w-full h-full"
+                frameBorder="0"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowFullScreen
+              />
+            </div>
+            <button
+              onClick={() => { setMediaUrl(''); setMediaType(null); }}
+              className="absolute top-2 right-2 p-1.5 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors shadow-lg"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
+        {/* Media type selector */}
+        {!mediaUrl && (
+          <div className="flex items-center justify-center gap-3 py-8">
+            <button
+              onClick={() => { setMediaType('image'); setIsExpanded(true); }}
+              className="flex flex-col items-center gap-2 p-4 rounded-xl hover:bg-white/50 transition-colors group"
+            >
+              <div 
+                className="w-12 h-12 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110"
+                style={{ background: 'linear-gradient(135deg, #818cf8, #6366f1)' }}
+              >
+                <ImageIcon className="w-6 h-6 text-white" />
+              </div>
+              <span className="text-xs font-medium text-slate-600">Obrázek</span>
+            </button>
+            
+            <button
+              onClick={() => { setMediaType('youtube'); setIsExpanded(true); }}
+              className="flex flex-col items-center gap-2 p-4 rounded-xl hover:bg-white/50 transition-colors group"
+            >
+              <div 
+                className="w-12 h-12 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110"
+                style={{ background: 'linear-gradient(135deg, #f43f5e, #e11d48)' }}
+              >
+                <Youtube className="w-6 h-6 text-white" />
+              </div>
+              <span className="text-xs font-medium text-slate-600">YouTube</span>
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* URL input when media type is selected but no URL yet */}
+      {mediaType && !mediaUrl && isExpanded && (
+        <div className="px-4 pb-4">
+          <div className="flex gap-2">
             <input
               type="text"
               value={mediaUrl}
               onChange={(e) => setMediaUrl(e.target.value)}
-              placeholder={mediaType === 'image' ? 'URL obrázku...' : 'URL YouTube videa...'}
-              className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:border-pink-400 focus:ring-2 focus:ring-pink-400/20 outline-none text-sm bg-slate-50"
+              placeholder={mediaType === 'image' ? 'Vlož URL obrázku...' : 'Vlož URL YouTube videa...'}
+              className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 focus:border-pink-400 focus:ring-2 focus:ring-pink-400/20 outline-none text-sm bg-slate-50"
+              autoFocus
             />
-          )}
+            <button
+              onClick={() => { setMediaType(null); setIsExpanded(false); }}
+              className="px-3 py-2 text-slate-400 hover:text-slate-600 transition-colors"
+            >
+              Zrušit
+            </button>
+          </div>
         </div>
       )}
-      
-      {/* Actions */}
-      <div className="flex items-center justify-between mt-3">
-        <div className="flex items-center gap-2">
-          {allowMedia && (
-            <button
-              onClick={() => setShowMediaInput(!showMediaInput)}
-              className={`p-2 rounded-xl transition-all ${
-                showMediaInput 
-                  ? 'bg-gradient-to-r from-pink-500 to-rose-500 text-white shadow-md' 
-                  : 'text-slate-400 hover:text-pink-500 hover:bg-pink-50 border border-transparent hover:border-pink-200'
-              }`}
-            >
-              <ImageIcon className="w-5 h-5" />
-            </button>
-          )}
-        </div>
-        
-        <button
-          onClick={handleSubmit}
-          disabled={!text.trim()}
-          className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm transition-all hover:scale-105 active:scale-95"
-          style={{
-            background: text.trim() 
-              ? 'linear-gradient(to right, #ec4899, #f43f5e)' 
-              : '#e2e8f0',
-            color: text.trim() ? 'white' : '#94a3b8',
-            boxShadow: text.trim() 
-              ? '0 10px 15px -3px rgba(236, 72, 153, 0.3)' 
-              : 'none',
-            cursor: text.trim() ? 'pointer' : 'not-allowed',
-          }}
-        >
-          <Send className="w-4 h-4" />
-          Odeslat
-        </button>
+
+      {/* Text input */}
+      <div className="px-4 pb-4">
+        <textarea
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder="Napiš něco úžasného... ✨"
+          className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-pink-400 focus:ring-2 focus:ring-pink-400/20 outline-none resize-none text-[#4E5871] bg-slate-50 placeholder:text-slate-400"
+          rows={3}
+        />
       </div>
     </div>
   );
