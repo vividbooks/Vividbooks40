@@ -1129,12 +1129,12 @@ export function QuizJoinPage() {
     <div className="flex flex-col h-screen" style={{ backgroundColor: '#F0F1F8' }}>
       {renderConnectionBanner()}
       
-      {/* Progress bar header - height 40px on desktop to match margin requirement, hidden on mobile when canNavigate */}
+      {/* Progress bar header - height 40px on desktop, hidden on mobile (use lg: breakpoint consistently) */}
       <div 
-        className={`items-center justify-center px-4 ${canNavigate && isMobile ? 'hidden' : 'flex'} ${isMobile ? 'py-2' : ''}`} 
+        className="hidden lg:flex items-center justify-center px-4" 
         style={{ 
           backgroundColor: '#F0F1F8',
-          height: isMobile ? 'auto' : 40,
+          height: 40,
         }}
       >
         {/* Progress bar - centered with max width */}
@@ -1153,6 +1153,25 @@ export function QuizJoinPage() {
           </div>
         </div>
       </div>
+      
+      {/* Mobile: Progress bar only (locked mode) */}
+      {!canNavigate && (
+        <div className="flex lg:hidden items-center justify-center gap-3 px-4 py-2">
+          <div className="flex-1 flex items-center gap-1.5" style={{ maxWidth: '300px' }}>
+            {renderProgressBar()}
+          </div>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <div className="flex items-center gap-1 text-emerald-600">
+              <CheckCircle className="w-4 h-4" />
+              <span className="font-semibold text-sm">{correctCount}</span>
+            </div>
+            <div className="flex items-center gap-1 text-red-500">
+              <XCircle className="w-4 h-4" />
+              <span className="font-semibold text-sm">{wrongCount}</span>
+            </div>
+          </div>
+        </div>
+      )}
       
       {/* Mobile: Navigation arrows for unlocked mode */}
       {canNavigate && (
