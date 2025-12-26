@@ -553,9 +553,8 @@ export function BoardSlideView({
         ) : null}
       </div>
 
-      {/* Navigation */}
-      {totalSlides > 1 && (
-        <div className="flex-shrink-0 flex items-center justify-center gap-4 px-6 py-4 bg-white/80 backdrop-blur-sm border-t border-slate-100">
+      {/* Navigation - always visible */}
+      <div className="flex-shrink-0 flex items-center justify-center gap-4 px-6 py-4 bg-white/80 backdrop-blur-sm border-t border-slate-100">
           <button
             onClick={goToPrevSlide}
             disabled={currentSlideIndex === 0}
@@ -596,8 +595,7 @@ export function BoardSlideView({
           <div className="text-sm text-slate-500 font-medium ml-4">
             {currentSlideIndex + 1} / {totalSlides}
           </div>
-        </div>
-      )}
+      </div>
 
       {/* Add post modal */}
       {showAddModal && (

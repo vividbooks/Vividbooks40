@@ -11,9 +11,10 @@ import {
   Trash2,
   Users,
   Heart,
-  Video,
   EyeOff,
   Hash,
+  FileText,
+  Presentation,
 } from 'lucide-react';
 import { BoardActivitySlide } from '../../../types/quiz';
 
@@ -36,6 +37,88 @@ export function BoardSlideEditor({ slide, onUpdate }: BoardSlideEditorProps) {
           <span>Nástěnka</span>
         </div>
         <h2 className="text-white font-bold text-lg">Žáci sdílí příspěvky</h2>
+      </div>
+
+      {/* Board Type Selector */}
+      <div className="p-6 border-b border-slate-100">
+        <label className="block text-sm font-medium text-slate-700 mb-3">
+          Typ nástěnky
+        </label>
+        <div className="grid grid-cols-2 gap-3">
+          {/* Text posts option */}
+          <button
+            onClick={() => onUpdate(slide.id, { allowMedia: false })}
+            className="relative p-4 rounded-xl border-2 transition-all text-left"
+            style={{
+              borderColor: !slide.allowMedia ? '#ec4899' : '#e2e8f0',
+              backgroundColor: !slide.allowMedia ? '#fdf2f8' : '#ffffff',
+            }}
+          >
+            <div className="flex items-center gap-3 mb-2">
+              <div 
+                className="w-10 h-10 rounded-lg flex items-center justify-center"
+                style={{ 
+                  background: !slide.allowMedia 
+                    ? 'linear-gradient(135deg, #ec4899, #f43f5e)' 
+                    : '#f1f5f9' 
+                }}
+              >
+                <FileText className={`w-5 h-5 ${!slide.allowMedia ? 'text-white' : 'text-slate-400'}`} />
+              </div>
+              <div>
+                <h4 className="font-semibold text-slate-800">Textové příspěvky</h4>
+                <p className="text-xs text-slate-500">Jednoduché textové odpovědi</p>
+              </div>
+            </div>
+            {!slide.allowMedia && (
+              <div 
+                className="absolute top-2 right-2 w-5 h-5 rounded-full flex items-center justify-center"
+                style={{ background: 'linear-gradient(135deg, #ec4899, #f43f5e)' }}
+              >
+                <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+            )}
+          </button>
+
+          {/* Presentation option */}
+          <button
+            onClick={() => onUpdate(slide.id, { allowMedia: true })}
+            className="relative p-4 rounded-xl border-2 transition-all text-left"
+            style={{
+              borderColor: slide.allowMedia ? '#ec4899' : '#e2e8f0',
+              backgroundColor: slide.allowMedia ? '#fdf2f8' : '#ffffff',
+            }}
+          >
+            <div className="flex items-center gap-3 mb-2">
+              <div 
+                className="w-10 h-10 rounded-lg flex items-center justify-center"
+                style={{ 
+                  background: slide.allowMedia 
+                    ? 'linear-gradient(135deg, #ec4899, #f43f5e)' 
+                    : '#f1f5f9' 
+                }}
+              >
+                <Presentation className={`w-5 h-5 ${slide.allowMedia ? 'text-white' : 'text-slate-400'}`} />
+              </div>
+              <div>
+                <h4 className="font-semibold text-slate-800">Společná prezentace</h4>
+                <p className="text-xs text-slate-500">S obrázky a videi (Padlet)</p>
+              </div>
+            </div>
+            {slide.allowMedia && (
+              <div 
+                className="absolute top-2 right-2 w-5 h-5 rounded-full flex items-center justify-center"
+                style={{ background: 'linear-gradient(135deg, #ec4899, #f43f5e)' }}
+              >
+                <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+            )}
+          </button>
+        </div>
       </div>
       
       {/* Question input */}
@@ -126,35 +209,7 @@ export function BoardSlideEditor({ slide, onUpdate }: BoardSlideEditorProps) {
       
       {/* Settings */}
       <div className="p-6 space-y-4">
-        <h3 className="text-sm font-medium text-slate-700 mb-3">Nastavení nástěnky</h3>
-        
-        {/* Allow media toggle */}
-        <label className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 cursor-pointer hover:bg-slate-50 transition-colors">
-          <div 
-            className="w-12 h-7 rounded-full transition-all duration-200 relative flex-shrink-0"
-            style={{ backgroundColor: slide.allowMedia ? '#ec4899' : '#cbd5e1' }}
-          >
-            <div 
-              className="absolute top-1 w-5 h-5 rounded-full bg-white shadow-md transition-all duration-200"
-              style={{ left: slide.allowMedia ? '26px' : '4px' }}
-            />
-          </div>
-          <div className="flex-1">
-            <div className="flex items-center gap-2">
-              <Video className="w-4 h-4 text-slate-500" />
-              <span className="font-medium text-slate-700">Povolit média v příspěvcích</span>
-            </div>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Žáci mohou přidat obrázek nebo YouTube video (jako Padlet)
-            </p>
-          </div>
-          <input
-            type="checkbox"
-            checked={slide.allowMedia}
-            onChange={(e) => onUpdate(slide.id, { allowMedia: e.target.checked })}
-            className="sr-only"
-          />
-        </label>
+        <h3 className="text-sm font-medium text-slate-700 mb-3">Další nastavení</h3>
         
         {/* Allow anonymous toggle */}
         <label className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 cursor-pointer hover:bg-slate-50 transition-colors">
@@ -212,11 +267,14 @@ export function BoardSlideEditor({ slide, onUpdate }: BoardSlideEditorProps) {
               <Users className="w-5 h-5 text-pink-600" />
             </div>
             <div>
-              <h4 className="font-medium text-pink-900">Jak to funguje</h4>
+              <h4 className="font-medium text-pink-900">
+                {slide.allowMedia ? 'Společná prezentace' : 'Textové příspěvky'}
+              </h4>
               <p className="text-sm text-pink-700 mt-1">
-                Žáci uvidí otázku a mohou přidávat příspěvky v reálném čase. 
-                Každý může lajkovat příspěvky ostatních. 
-                {slide.allowMedia && ' Příspěvky mohou obsahovat obrázky nebo videa.'}
+                {slide.allowMedia 
+                  ? 'Žáci vytvoří prezentaci společně. Každý příspěvek je jeden slide s textem a médiem.'
+                  : 'Žáci odpovídají krátkými textovými příspěvky. Všechny příspěvky se zobrazí v seznamu.'
+                }
               </p>
               <div className="flex items-center gap-4 mt-3 text-xs text-pink-600">
                 <span className="flex items-center gap-1">
@@ -240,4 +298,3 @@ export function BoardSlideEditor({ slide, onUpdate }: BoardSlideEditorProps) {
 }
 
 export default BoardSlideEditor;
-
