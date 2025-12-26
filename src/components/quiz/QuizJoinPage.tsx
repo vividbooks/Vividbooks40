@@ -1187,15 +1187,16 @@ export function QuizJoinPage() {
       
       {/* Main content area */}
       <div 
-        className="flex-1 flex flex-col" 
+        className="flex-1 flex flex-col overflow-hidden" 
         style={{ 
           backgroundColor: '#F0F1F8',
           // Desktop: exact margins - top: 40px, bottom: 5px
           paddingTop: isMobile ? 16 : 40,
           paddingBottom: isMobile ? 16 : 5,
+          minHeight: 0,
         }}
       >
-        <div className="flex-1 flex items-stretch">
+        <div className="flex-1 flex items-stretch overflow-hidden" style={{ minHeight: 0 }}>
           {/* Desktop: Left arrow */}
           <div className="hidden lg:flex flex-shrink-0 items-center justify-center" style={{ width: 65 }}>
             {canNavigate && (
@@ -1211,8 +1212,9 @@ export function QuizJoinPage() {
           
           {/* Slide card - fills remaining space */}
           <div 
-            className="flex-1 flex"
+            className="flex-1 overflow-hidden"
             style={{
+              minHeight: 0,
               overflowY: isMobile ? 'auto' : 'hidden',
               overflowX: 'hidden',
               WebkitOverflowScrolling: 'touch',
@@ -1226,7 +1228,7 @@ export function QuizJoinPage() {
                 ${currentSlideIndex < prevSlideIndex && isAnimating ? 'animate-slide-in-left' : ''}
               `}
               style={{
-                // NO fixed aspect ratio - fill available space
+                // Fill available space exactly - no growing beyond
                 height: isMobile ? 'auto' : '100%',
               }}
               key={currentSlideIndex}

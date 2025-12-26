@@ -1374,12 +1374,13 @@ export function QuizViewPage() {
         
         {/* Main content area with arrows */}
         <div 
-          className="flex-1 flex flex-col" 
+          className="flex-1 flex flex-col overflow-hidden" 
           style={{ 
             backgroundColor: bgColor,
             // Desktop: exact margins - top: 40px, bottom: 5px
             paddingTop: 40,
             paddingBottom: 5,
+            minHeight: 0,
           }}
         >
           {/* Desktop: Segmented progress bar - positioned absolutely */}
@@ -1390,7 +1391,7 @@ export function QuizViewPage() {
           </div>
           
           {/* Content with arrows */}
-          <div className="flex-1 flex items-stretch">
+          <div className="flex-1 flex items-stretch overflow-hidden" style={{ minHeight: 0 }}>
           {/* Desktop: Left arrow */}
           <div className="hidden lg:flex flex-shrink-0 items-center justify-center" style={{ width: 65 }}>
             <button
@@ -1410,7 +1411,8 @@ export function QuizViewPage() {
           
           {/* Slide content - fills remaining space */}
           <div 
-            className="flex-1 flex overflow-hidden"
+            className="flex-1 overflow-hidden"
+            style={{ minHeight: 0 }}
           >
             <div 
               className={`
@@ -1421,7 +1423,7 @@ export function QuizViewPage() {
               `}
               style={{ 
                 backgroundColor: getSlideBackground(currentSlide),
-                // NO fixed aspect ratio - fill available space
+                // Fill available space exactly - no growing beyond
                 height: '100%',
               }}
               key={currentSlideIndex}
