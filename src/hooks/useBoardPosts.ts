@@ -92,15 +92,22 @@ export function useBoardPosts({
       const postsRef = ref(database, `${QUIZ_SESSIONS_PATH}/${sessionId}/boardPosts/${slideId}`);
       const newPostRef = push(postsRef);
       
-      const newPost: Omit<BoardPost, 'id' | 'likes'> & { likes: Record<string, boolean> } = {
+      // Build post object without undefined values (Firebase doesn't allow undefined)
+      const newPost: Record<string, any> = {
         text,
-        mediaUrl: mediaUrl || undefined,
-        mediaType: mediaType || undefined,
         authorName: currentUserName || 'Anonym',
         authorId: currentUserId,
         createdAt: Date.now(),
         likes: {},
       };
+      
+      // Only add media fields if they have values
+      if (mediaUrl) {
+        newPost.mediaUrl = mediaUrl;
+      }
+      if (mediaType) {
+        newPost.mediaType = mediaType;
+      }
       
       await update(newPostRef, newPost);
     } catch (err) {
