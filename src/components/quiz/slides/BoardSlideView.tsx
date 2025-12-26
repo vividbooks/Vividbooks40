@@ -498,10 +498,10 @@ export function BoardSlideView({
   
   // Layout without image: question centered at top, posts below
   return (
-    <div className="w-full h-full bg-gradient-to-br from-slate-50 via-white to-pink-50/30 rounded-3xl overflow-hidden flex flex-col">
+    <div className="w-full h-full bg-gradient-to-br from-slate-50 via-white to-pink-50/30 rounded-3xl overflow-auto">
       {/* Header: Question centered */}
       <div 
-        className="flex-shrink-0 px-8 text-center border-b border-slate-100"
+        className="px-8 text-center border-b border-slate-100"
         style={{ paddingTop: '120px', paddingBottom: '40px' }}
       >
         <h2 
@@ -526,7 +526,7 @@ export function BoardSlideView({
       
       {/* New post form */}
       {!readOnly && onAddPost && (
-        <div className="flex-shrink-0 px-8 py-4">
+        <div className="px-8 py-6">
           <NewPostForm
             allowMedia={slide.allowMedia}
             onSubmit={onAddPost}
@@ -536,8 +536,8 @@ export function BoardSlideView({
         </div>
       )}
       
-        {/* Posts grid */}
-      <div className="flex-1 overflow-auto px-4 sm:px-8 py-4">
+      {/* Posts grid */}
+      <div className="px-4 sm:px-8 py-4">
         {currentPosts.length > 0 ? (
           <div className="flex flex-col items-center gap-4">
             {currentPosts.map((post) => (
@@ -553,7 +553,7 @@ export function BoardSlideView({
             ))}
           </div>
         ) : (
-          <div className="flex items-center justify-center text-slate-400 h-full">
+          <div className="flex items-center justify-center text-slate-400 py-16">
             <div className="text-center">
               <MessageSquare className="w-16 h-16 mx-auto mb-4 opacity-40" />
               <p className="font-medium text-lg">Zatím žádné příspěvky</p>
@@ -565,7 +565,7 @@ export function BoardSlideView({
       
       {/* Pagination */}
       {totalPages > 1 && (
-        <div className="flex-shrink-0 flex items-center justify-center gap-2 px-8 py-4 border-t border-slate-100 bg-white/50">
+        <div className="flex items-center justify-center gap-2 px-8 py-6 border-t border-slate-100 bg-white/50">
           <button
             onClick={() => setCurrentPage(p => Math.max(0, p - 1))}
             disabled={currentPage === 0}
