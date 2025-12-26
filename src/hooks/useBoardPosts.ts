@@ -82,7 +82,8 @@ export function useBoardPosts({
     text: string, 
     mediaUrl?: string, 
     mediaType?: 'image' | 'youtube',
-    backgroundColor?: string
+    backgroundColor?: string,
+    column?: 'left' | 'right'
   ) => {
     if (!sessionId || !slideId || !currentUserId) {
       console.error('Cannot add post: missing sessionId, slideId, or userId');
@@ -111,6 +112,9 @@ export function useBoardPosts({
       }
       if (backgroundColor) {
         newPost.backgroundColor = backgroundColor;
+      }
+      if (column) {
+        newPost.column = column;
       }
       
       await update(newPostRef, newPost);

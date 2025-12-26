@@ -17,6 +17,11 @@ export type ActivityType = 'abc' | 'open' | 'example' | 'true-false' | 'matching
 // =============================================
 
 /**
+ * Board type - determines the layout and features
+ */
+export type BoardType = 'text' | 'presentation' | 'pros-cons';
+
+/**
  * A single post on the board
  */
 export interface BoardPost {
@@ -29,6 +34,7 @@ export interface BoardPost {
   likes: string[]; // Array of user IDs who liked this post
   createdAt: number; // timestamp
   backgroundColor?: string; // Optional background color for the post
+  column?: 'left' | 'right'; // For pros-cons board: which column the post belongs to
 }
 
 /**
@@ -37,12 +43,16 @@ export interface BoardPost {
 export interface BoardActivitySlide extends BaseSlide {
   type: 'activity';
   activityType: 'board';
+  boardType?: BoardType; // Type of board: text, presentation, or pros-cons
   question: string; // The prompt/question for the board
   questionImage?: string; // Optional image for the question
   allowMedia: boolean; // If true, posts can include images/videos (Padlet-like)
   allowAnonymous?: boolean; // If true, students can post anonymously
   maxPosts?: number; // Max posts per student (optional)
   posts?: BoardPost[]; // Posts are stored here in the quiz data, but live posts are in Firebase
+  // For pros-cons board type:
+  leftColumnLabel?: string; // Label for left column (default: "Pro")
+  rightColumnLabel?: string; // Label for right column (default: "Proti")
 }
 
 /**

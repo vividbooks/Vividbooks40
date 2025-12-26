@@ -28,7 +28,7 @@ interface BoardSlideViewProps {
   currentUserId?: string;
   currentUserName?: string;
   isTeacher?: boolean;
-  onAddPost?: (text: string, mediaUrl?: string, mediaType?: 'image' | 'youtube', backgroundColor?: string) => void;
+  onAddPost?: (text: string, mediaUrl?: string, mediaType?: 'image' | 'youtube', backgroundColor?: string, column?: 'left' | 'right') => void;
   onLikePost?: (postId: string) => void;
   onDeletePost?: (postId: string) => void;
   readOnly?: boolean;
@@ -479,6 +479,233 @@ function PostSlide({
   );
 }
 
+// Simple post card for pros-cons view
+function SimplePostCard({
+  post,
+  currentUserId,
+  isAnonymous,
+  onLike,
+  onDelete,
+  isTeacher,
+}: {
+  post: BoardPost;
+  currentUserId?: string;
+  isAnonymous?: boolean;
+  onLike?: () => void;
+  onDelete?: () => void;
+  isTeacher?: boolean;
+}) {
+  const hasLiked = currentUserId ? post.likes.includes(currentUserId) : false;
+
+  return (
+    <div className="bg-white rounded-xl p-4 shadow-sm border border-slate-100">
+      <p className="text-[#4E5871] text-sm mb-3">{post.text}</p>
+      <div className="flex items-center justify-between">
+        <span className="text-xs text-slate-400">
+          {isAnonymous ? 'Anonym' : post.authorName}
+        </span>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={onLike}
+            className="flex items-center gap-1 text-xs px-2 py-1 rounded-full transition-all"
+            style={{
+              background: hasLiked ? '#fce7f3' : '#f8fafc',
+              color: hasLiked ? '#ec4899' : '#64748b',
+            }}
+          >
+            <Heart className="w-3 h-3" style={{ fill: hasLiked ? '#ec4899' : 'none' }} />
+            {post.likes.length}
+          </button>
+          {(currentUserId === post.authorId || isTeacher) && onDelete && (
+            <button
+              onClick={onDelete}
+              className="p-1 text-slate-300 hover:text-red-500 transition-colors"
+            >
+              <Trash2 className="w-3 h-3" />
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Pros and Cons View
+function ProsConsView({
+  slide,
+  posts,
+  currentUserId,
+  isAnonymous,
+  readOnly,
+  canAddPost,
+  onAddPost,
+  onLikePost,
+  onDeletePost,
+  isTeacher,
+}: {
+  slide: BoardActivitySlide;
+  posts: BoardPost[];
+  currentUserId?: string;
+  isAnonymous?: boolean;
+  readOnly: boolean;
+  canAddPost: boolean;
+  onAddPost: (text: string, column: 'left' | 'right') => void;
+  onLikePost?: (postId: string) => void;
+  onDeletePost?: (postId: string) => void;
+  isTeacher?: boolean;
+}) {
+  const [leftInput, setLeftInput] = useState('');
+  const [rightInput, setRightInput] = useState('');
+  
+  const leftPosts = posts.filter(p => p.column === 'left');
+  const rightPosts = posts.filter(p => p.column === 'right');
+  const questionFontSize = getQuestionFontSize(slide.question || '');
+
+  const handleSubmitLeft = () => {
+    if (!leftInput.trim()) return;
+    onAddPost(leftInput.trim(), 'left');
+    setLeftInput('');
+  };
+
+  const handleSubmitRight = () => {
+    if (!rightInput.trim()) return;
+    onAddPost(rightInput.trim(), 'right');
+    setRightInput('');
+  };
+
+  return (
+    <div className="w-full h-full bg-gradient-to-br from-slate-50 via-white to-pink-50/30 rounded-3xl overflow-auto flex flex-col">
+      {/* Question header */}
+      <div 
+        className="text-center px-8 border-b border-slate-100"
+        style={{ paddingTop: '60px', paddingBottom: '30px' }}
+      >
+        <h2 
+          className="font-bold text-[#4E5871] leading-tight"
+          style={{ fontSize: questionFontSize }}
+        >
+          {slide.question || 'Téma diskuze...'}
+        </h2>
+      </div>
+
+      {/* Two columns */}
+      <div className="flex-1 flex">
+        {/* Left column (Pro) */}
+        <div className="w-1/2 p-6 border-r border-slate-100" style={{ backgroundColor: 'rgba(34, 197, 94, 0.05)' }}>
+          <div className="flex items-center gap-2 mb-4">
+            <div 
+              className="w-8 h-8 rounded-lg flex items-center justify-center"
+              style={{ background: 'linear-gradient(135deg, #22c55e, #16a34a)' }}
+            >
+              <span className="text-white font-bold text-sm">+</span>
+            </div>
+            <h3 className="font-bold text-green-700 text-lg">{slide.leftColumnLabel || 'Pro'}</h3>
+            <span className="text-sm text-green-600 ml-auto">{leftPosts.length}</span>
+          </div>
+
+          {/* Add input */}
+          {!readOnly && canAddPost && (
+            <div className="mb-4">
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={leftInput}
+                  onChange={(e) => setLeftInput(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleSubmitLeft()}
+                  placeholder="Přidej argument..."
+                  className="flex-1 px-3 py-2 rounded-lg border border-green-200 focus:border-green-500 focus:ring-2 focus:ring-green-500/20 outline-none text-sm bg-white"
+                />
+                <button
+                  onClick={handleSubmitLeft}
+                  disabled={!leftInput.trim()}
+                  className="px-3 py-2 rounded-lg font-medium text-sm transition-all"
+                  style={{
+                    background: leftInput.trim() ? 'linear-gradient(135deg, #22c55e, #16a34a)' : '#e2e8f0',
+                    color: leftInput.trim() ? 'white' : '#94a3b8',
+                  }}
+                >
+                  <Plus className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Posts */}
+          <div className="space-y-3 overflow-auto max-h-[400px]">
+            {leftPosts.map(post => (
+              <SimplePostCard
+                key={post.id}
+                post={post}
+                currentUserId={currentUserId}
+                isAnonymous={isAnonymous}
+                onLike={onLikePost ? () => onLikePost(post.id) : undefined}
+                onDelete={onDeletePost ? () => onDeletePost(post.id) : undefined}
+                isTeacher={isTeacher}
+              />
+            ))}
+          </div>
+        </div>
+
+        {/* Right column (Proti) */}
+        <div className="w-1/2 p-6" style={{ backgroundColor: 'rgba(239, 68, 68, 0.05)' }}>
+          <div className="flex items-center gap-2 mb-4">
+            <div 
+              className="w-8 h-8 rounded-lg flex items-center justify-center"
+              style={{ background: 'linear-gradient(135deg, #ef4444, #dc2626)' }}
+            >
+              <span className="text-white font-bold text-sm">−</span>
+            </div>
+            <h3 className="font-bold text-red-700 text-lg">{slide.rightColumnLabel || 'Proti'}</h3>
+            <span className="text-sm text-red-600 ml-auto">{rightPosts.length}</span>
+          </div>
+
+          {/* Add input */}
+          {!readOnly && canAddPost && (
+            <div className="mb-4">
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={rightInput}
+                  onChange={(e) => setRightInput(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleSubmitRight()}
+                  placeholder="Přidej argument..."
+                  className="flex-1 px-3 py-2 rounded-lg border border-red-200 focus:border-red-500 focus:ring-2 focus:ring-red-500/20 outline-none text-sm bg-white"
+                />
+                <button
+                  onClick={handleSubmitRight}
+                  disabled={!rightInput.trim()}
+                  className="px-3 py-2 rounded-lg font-medium text-sm transition-all"
+                  style={{
+                    background: rightInput.trim() ? 'linear-gradient(135deg, #ef4444, #dc2626)' : '#e2e8f0',
+                    color: rightInput.trim() ? 'white' : '#94a3b8',
+                  }}
+                >
+                  <Plus className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Posts */}
+          <div className="space-y-3 overflow-auto max-h-[400px]">
+            {rightPosts.map(post => (
+              <SimplePostCard
+                key={post.id}
+                post={post}
+                currentUserId={currentUserId}
+                isAnonymous={isAnonymous}
+                onLike={onLikePost ? () => onLikePost(post.id) : undefined}
+                onDelete={onDeletePost ? () => onDeletePost(post.id) : undefined}
+                isTeacher={isTeacher}
+              />
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function BoardSlideView({
   slide,
   posts,
@@ -492,6 +719,9 @@ export function BoardSlideView({
 }: BoardSlideViewProps) {
   const [currentSlideIndex, setCurrentSlideIndex] = useState(0); // 0 = question slide
   const [showAddModal, setShowAddModal] = useState(false);
+
+  // Determine board type
+  const boardType = slide.boardType || (slide.allowMedia ? 'presentation' : 'text');
   
   // Sort posts by likes (most liked first), then by date
   const sortedPosts = useMemo(() => {
@@ -514,8 +744,8 @@ export function BoardSlideView({
   const maxPosts = slide.maxPosts;
   const canAddPost = maxPosts === undefined || maxPosts === 0 || userPostCount < maxPosts;
 
-  const handleAddPost = (text: string, mediaUrl?: string, mediaType?: 'image' | 'youtube', backgroundColor?: string) => {
-    onAddPost?.(text, mediaUrl, mediaType, backgroundColor);
+  const handleAddPost = (text: string, mediaUrl?: string, mediaType?: 'image' | 'youtube', backgroundColor?: string, column?: 'left' | 'right') => {
+    onAddPost?.(text, mediaUrl, mediaType, backgroundColor, column);
     setShowAddModal(false);
   };
 
@@ -530,6 +760,25 @@ export function BoardSlideView({
   // Current post (if not on question slide)
   const currentPost = currentSlideIndex > 0 ? sortedPosts[currentSlideIndex - 1] : null;
 
+  // Render Pros-Cons view
+  if (boardType === 'pros-cons') {
+    return (
+      <ProsConsView
+        slide={slide}
+        posts={posts}
+        currentUserId={currentUserId}
+        isAnonymous={slide.allowAnonymous}
+        readOnly={readOnly}
+        canAddPost={canAddPost}
+        onAddPost={(text, column) => handleAddPost(text, undefined, undefined, undefined, column)}
+        onLikePost={onLikePost}
+        onDeletePost={onDeletePost}
+        isTeacher={isTeacher}
+      />
+    );
+  }
+
+  // Render Text or Presentation view (slider)
   return (
     <div className="w-full h-full bg-gradient-to-br from-slate-50 via-white to-pink-50/30 rounded-3xl overflow-hidden flex flex-col">
       {/* Main content area */}
