@@ -1316,6 +1316,48 @@ export function QuizViewPage() {
       })}
     </>
   );
+  
+  // ============================================
+  // RENDER SLIDE VIEW (inside component for access to boardPosts and profile)
+  // ============================================
+  
+  const renderSlideView = (slide: QuizSlide): React.ReactNode => {
+    switch (slide.type) {
+      case 'info':
+        return <InfoSlideView slide={slide as InfoSlide} />;
+      case 'activity':
+        switch ((slide as any).activityType) {
+          case 'abc':
+            return (
+              <ABCSlideView 
+                slide={slide as ABCActivitySlide} 
+                showHint={false}
+                showSolution={false}
+              />
+            );
+          case 'open':
+            return <OpenSlideView slide={slide as OpenActivitySlide} />;
+          case 'example':
+            return <ExampleSlideView slide={slide as ExampleActivitySlide} />;
+          case 'board':
+            return (
+              <BoardSlideView 
+                slide={slide as BoardActivitySlide}
+                posts={boardPosts.posts}
+                currentUserId={profile?.id}
+                currentUserName={profile?.name}
+                isTeacher={true}
+                onDeletePost={boardPosts.deletePost}
+                readOnly={false}
+              />
+            );
+          default:
+            return <div className="text-slate-500 text-center">Nepodporovaný typ aktivity</div>;
+        }
+      default:
+        return <div className="text-slate-500 text-center">Nepodporovaný typ slidu</div>;
+    }
+  };
 
   // Background color based on session state
   const bgColor = sessionId ? '#1e2533' : '#F0F1F8';
@@ -1492,48 +1534,6 @@ export function QuizViewPage() {
       </div>
     </div>
   );
-}
-
-// ============================================
-// RENDER HELPERS
-// ============================================
-
-function renderSlideView(slide: QuizSlide): React.ReactNode {
-  switch (slide.type) {
-    case 'info':
-      return <InfoSlideView slide={slide as InfoSlide} />;
-    case 'activity':
-      switch ((slide as any).activityType) {
-        case 'abc':
-          return (
-            <ABCSlideView 
-              slide={slide as ABCActivitySlide} 
-              showHint={false}
-              showSolution={false}
-            />
-          );
-        case 'open':
-          return <OpenSlideView slide={slide as OpenActivitySlide} />;
-        case 'example':
-          return <ExampleSlideView slide={slide as ExampleActivitySlide} />;
-        case 'board':
-          return (
-            <BoardSlideView 
-              slide={slide as BoardActivitySlide}
-              posts={boardPosts.posts}
-              currentUserId={profile?.id}
-              currentUserName={profile?.name}
-              isTeacher={true}
-              onDeletePost={boardPosts.deletePost}
-              readOnly={false}
-            />
-          );
-        default:
-          return <div className="text-slate-500 text-center">Nepodporovaný typ aktivity</div>;
-      }
-    default:
-      return <div className="text-slate-500 text-center">Nepodporovaný typ slidu</div>;
-  }
 }
 
 export default QuizViewPage;
