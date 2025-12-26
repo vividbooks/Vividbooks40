@@ -395,8 +395,11 @@ function PostSlide({
     >
       {showHearts && <FloatingHearts count={5} />}
       
-      {/* Left side: Text */}
-      <div className={`${hasMedia ? 'lg:w-1/2' : 'w-full'} p-8 lg:p-12 flex flex-col`}>
+      {/* Left side: Text - exactly 50% when media exists */}
+      <div 
+        className="flex flex-col p-8 lg:p-10"
+        style={{ width: hasMedia ? '50%' : '100%' }}
+      >
         {/* Author */}
         <div className="flex items-center gap-3 mb-8">
           <div 
@@ -448,9 +451,12 @@ function PostSlide({
         </div>
       </div>
 
-      {/* Right side: Media */}
+      {/* Right side: Media - exactly 50% */}
       {hasMedia && (
-        <div className="lg:w-1/2 bg-slate-900 flex items-center justify-center">
+        <div 
+          className="bg-slate-900 flex items-center justify-center"
+          style={{ width: '50%' }}
+        >
           {post.mediaType === 'image' && (
             <img 
               src={post.mediaUrl} 
