@@ -94,7 +94,7 @@ function PostCard({
   }, [hasLiked, onLike]);
   
   return (
-    <div className="w-[280px] bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden hover:shadow-lg hover:scale-[1.02] transition-all duration-200 relative flex-shrink-0">
+    <div className="w-full sm:w-[550px] bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden hover:shadow-lg hover:scale-[1.02] transition-all duration-200 relative flex-shrink-0">
       {/* Floating hearts animation */}
       {showHearts && <FloatingHearts count={5} />}
       
@@ -215,7 +215,7 @@ function NewPostForm({
   }
   
   return (
-    <div className="bg-white rounded-2xl shadow-lg border border-slate-200 p-4 w-full max-w-md mx-auto">
+    <div className="bg-white rounded-2xl shadow-lg border border-slate-200 p-4 w-full sm:w-[550px] mx-auto">
       <textarea
         value={text}
         onChange={(e) => setText(e.target.value)}
@@ -303,6 +303,17 @@ function NewPostForm({
   );
 }
 
+// Calculate dynamic font size based on question length
+function getQuestionFontSize(text: string): string {
+  const length = text.length;
+  if (length < 20) return '2.5rem';      // Very short - extra large
+  if (length < 40) return '2rem';        // Short - large
+  if (length < 80) return '1.75rem';     // Medium - medium-large
+  if (length < 120) return '1.5rem';     // Long - medium
+  if (length < 200) return '1.25rem';    // Very long - small
+  return '1.125rem';                      // Extra long - smallest
+}
+
 export function BoardSlideView({
   slide,
   posts,
@@ -318,6 +329,7 @@ export function BoardSlideView({
   const postsPerPage = 6;
   
   const hasImage = !!slide.questionImage;
+  const questionFontSize = getQuestionFontSize(slide.question || '');
   
   // Sort posts by likes (most liked first), then by date
   const sortedPosts = useMemo(() => {
@@ -352,8 +364,11 @@ export function BoardSlideView({
         {/* Left column: Question + Image */}
         <div className="w-2/5 p-8 flex flex-col border-r border-slate-100">
           {/* Question */}
-          <div className="mb-6">
-            <h2 className="text-2xl font-bold text-[#4E5871] leading-tight">
+          <div className="mb-8">
+            <h2 
+              className="font-bold text-[#4E5871] leading-tight"
+              style={{ fontSize: questionFontSize }}
+            >
               {slide.question || 'Téma diskuze...'}
             </h2>
           </div>
@@ -397,7 +412,7 @@ export function BoardSlideView({
           {/* Posts */}
           <div className="flex-1 overflow-auto">
             {currentPosts.length > 0 ? (
-              <div className="flex flex-wrap gap-4 justify-center">
+              <div className="flex flex-col items-center gap-4">
                 {currentPosts.map((post) => (
                   <PostCard
                     key={post.id}
@@ -466,8 +481,11 @@ export function BoardSlideView({
   return (
     <div className="w-full h-full bg-gradient-to-br from-slate-50 via-white to-pink-50/30 rounded-3xl overflow-hidden flex flex-col">
       {/* Header: Question centered */}
-      <div className="flex-shrink-0 px-8 pt-8 pb-4 text-center border-b border-slate-100">
-        <h2 className="text-2xl lg:text-3xl font-bold text-[#4E5871] leading-tight mb-3">
+      <div className="flex-shrink-0 px-8 pt-10 pb-6 text-center border-b border-slate-100">
+        <h2 
+          className="font-bold text-[#4E5871] leading-tight mb-4"
+          style={{ fontSize: questionFontSize }}
+        >
           {slide.question || 'Téma diskuze...'}
         </h2>
         
@@ -496,10 +514,10 @@ export function BoardSlideView({
         </div>
       )}
       
-      {/* Posts grid */}
-      <div className="flex-1 overflow-auto px-8 py-4">
+        {/* Posts grid */}
+      <div className="flex-1 overflow-auto px-4 sm:px-8 py-4">
         {currentPosts.length > 0 ? (
-          <div className="flex flex-wrap gap-4 justify-center">
+          <div className="flex flex-col items-center gap-4">
             {currentPosts.map((post) => (
               <PostCard
                 key={post.id}
