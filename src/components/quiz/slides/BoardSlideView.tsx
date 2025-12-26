@@ -500,7 +500,10 @@ export function BoardSlideView({
   return (
     <div className="w-full h-full bg-gradient-to-br from-slate-50 via-white to-pink-50/30 rounded-3xl overflow-hidden flex flex-col">
       {/* Header: Question centered */}
-      <div className="flex-shrink-0 px-8 pt-24 pb-10 text-center border-b border-slate-100">
+      <div 
+        className="flex-shrink-0 px-8 text-center border-b border-slate-100"
+        style={{ paddingTop: '120px', paddingBottom: '40px' }}
+      >
         <h2 
           className="font-bold text-[#4E5871] leading-tight mb-4"
           style={{ fontSize: questionFontSize }}
