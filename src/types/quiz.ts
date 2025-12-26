@@ -10,7 +10,39 @@ export type SlideType = 'info' | 'activity' | 'tools';
 /**
  * Activity types for activity slides
  */
-export type ActivityType = 'abc' | 'open' | 'example' | 'true-false' | 'matching' | 'ordering';
+export type ActivityType = 'abc' | 'open' | 'example' | 'true-false' | 'matching' | 'ordering' | 'board';
+
+// =============================================
+// BOARD (NÁSTĚNKA) TYPES
+// =============================================
+
+/**
+ * A single post on the board
+ */
+export interface BoardPost {
+  id: string;
+  text: string;
+  mediaUrl?: string;
+  mediaType?: 'image' | 'youtube';
+  authorName: string;
+  authorId: string;
+  likes: string[]; // Array of user IDs who liked this post
+  createdAt: number; // timestamp
+}
+
+/**
+ * Board activity slide - students can post and like
+ */
+export interface BoardActivitySlide extends BaseSlide {
+  type: 'activity';
+  activityType: 'board';
+  question: string; // The prompt/question for the board
+  questionImage?: string; // Optional image for the question
+  allowMedia: boolean; // If true, posts can include images/videos (Padlet-like)
+  allowAnonymous?: boolean; // If true, students can post anonymously
+  maxPosts?: number; // Max posts per student (optional)
+  posts?: BoardPost[]; // Posts are stored here in the quiz data, but live posts are in Firebase
+}
 
 /**
  * Base slide interface
@@ -336,6 +368,7 @@ export type QuizSlide =
   | OpenActivitySlide 
   | ExampleActivitySlide 
   | TrueFalseActivitySlide
+  | BoardActivitySlide
   | ToolsSlide;
 
 /**
@@ -345,7 +378,8 @@ export type ActivitySlide =
   | ABCActivitySlide 
   | OpenActivitySlide 
   | ExampleActivitySlide 
-  | TrueFalseActivitySlide;
+  | TrueFalseActivitySlide
+  | BoardActivitySlide;
 
 /**
  * Quiz/Test definition
@@ -618,6 +652,22 @@ export function createExampleSlide(order: number): ExampleActivitySlide {
     problem: '',
     steps: [],
     finalAnswer: '',
+  };
+}
+
+/**
+ * Create Board (Nástěnka) slide
+ */
+export function createBoardSlide(order: number): BoardActivitySlide {
+  return {
+    id: `slide-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    type: 'activity',
+    activityType: 'board',
+    order,
+    question: '',
+    allowMedia: false,
+    allowAnonymous: false,
+    posts: [],
   };
 }
 

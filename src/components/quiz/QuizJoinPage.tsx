@@ -1209,16 +1209,16 @@ export function QuizJoinPage() {
       
       {/* Main content area */}
       <div 
-        className="flex-1 flex flex-col" 
+        className="flex-1 flex flex-col overflow-hidden" 
         style={{ 
           backgroundColor: '#F0F1F8',
           minHeight: 0,
         }}
       >
-        {/* Content with arrows - with padding for shadow (shadow-2xl needs ~30px) */}
-        <div className="flex-1 flex items-stretch" style={{ minHeight: 0, padding: isMobile ? 12 : 30, paddingTop: 0 }}>
-          {/* Desktop: Left arrow - 35px + 30px padding = 65px total */}
-          <div className="hidden lg:flex flex-shrink-0 items-center justify-center" style={{ width: 35 }}>
+        {/* Content with arrows - bottom padding 5px */}
+        <div className="flex-1 flex items-stretch overflow-hidden" style={{ minHeight: 0, paddingBottom: isMobile ? 16 : 5 }}>
+          {/* Desktop: Left arrow */}
+          <div className="hidden lg:flex flex-shrink-0 items-center justify-center" style={{ width: 65 }}>
             {canNavigate && (
               <button
                 onClick={goToPrevSlide}
@@ -1238,6 +1238,8 @@ export function QuizJoinPage() {
               overflowY: isMobile ? 'auto' : 'hidden',
               overflowX: 'hidden',
               WebkitOverflowScrolling: 'touch',
+              // Padding for shadow visibility
+              padding: 16,
             }}
           >
             <div 
@@ -1496,8 +1498,8 @@ export function QuizJoinPage() {
             </div>
           </div>
           
-          {/* Desktop: Right arrow - 35px + 30px padding = 65px total */}
-          <div className="hidden lg:flex flex-shrink-0 items-center justify-center" style={{ width: 35 }}>
+          {/* Desktop: Right arrow */}
+          <div className="hidden lg:flex flex-shrink-0 items-center justify-center" style={{ width: 65 }}>
             {canNavigate && (
               <button
                 onClick={() => (currentSlideIndex < quiz.slides.length - 1 && canProceed) ? goToNextSlide() : (!canProceed ? triggerWiggle() : null)}

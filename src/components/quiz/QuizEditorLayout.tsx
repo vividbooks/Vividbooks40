@@ -43,6 +43,7 @@ import {
   ArrowLeft,
   Palette,
   History,
+  LayoutGrid,
 } from 'lucide-react';
 import { useVersionHistory } from '../../hooks/useVersionHistory';
 import { VersionHistoryPanel } from '../shared/VersionHistoryPanel';
@@ -58,11 +59,13 @@ import {
   createOpenSlide,
   createExampleSlide,
   createInfoSlide,
+  createBoardSlide,
 } from '../../types/quiz';
 import { ABCSlideEditor } from './slides/ABCSlideEditor';
 import { OpenSlideEditor } from './slides/OpenSlideEditor';
 import { ExampleSlideEditor } from './slides/ExampleSlideEditor';
 import { InfoSlideEditor } from './slides/InfoSlideEditor';
+import { BoardSlideEditor } from './slides/BoardSlideEditor';
 import { SlideTextToolbar } from './slides/SlideTextToolbar';
 import { BackgroundPicker } from './slides/BackgroundPicker';
 import { PageSettingsPanel } from './slides/PageSettingsPanel';
@@ -345,6 +348,15 @@ const SLIDE_TYPES: SlideTypeOption[] = [
     icon: <Lightbulb className="w-5 h-5" />,
     color: '#8b5cf6',
     description: 'Řešený příklad',
+  },
+  {
+    id: 'board',
+    type: 'activity',
+    activityType: 'board',
+    label: 'Nástěnka',
+    icon: <LayoutGrid className="w-5 h-5" />,
+    color: '#ec4899',
+    description: 'Sdílené příspěvky',
   },
   // Tools slides (future)
   {
@@ -670,6 +682,9 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
         break;
       case 'example':
         newSlide = createExampleSlide(order);
+        break;
+      case 'board':
+        newSlide = createBoardSlide(order);
         break;
       case 'info':
       default:
@@ -1359,13 +1374,13 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
                     </div>
 
                     {/* Page Settings Button */}
-                    <button
+                      <button
                       onClick={() => setShowPageSettings(true)}
-                      className="flex items-center gap-2 px-3 py-1.5 bg-white rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors"
+                        className="flex items-center gap-2 px-3 py-1.5 bg-white rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors"
                       title="Nastavení stránky"
                     >
                       <Settings className="w-4 h-4" />
-                    </button>
+                      </button>
                   </div>
                   
                   {/* Text Toolbar - shown when editing text, overlays the navigation */}
@@ -1477,9 +1492,9 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
                           updateSlide(selectedSlide.id, { layout: { ...selectedSlide.layout!, blocks: newBlocks } });
                         }}
                       />
-                    </div>
-                  )}
-
+                            </div>
+                      )}
+                  
                   {/* The actual editor */}
                   <div 
                     className="rounded-xl shadow-sm border border-slate-200 transition-colors duration-300"
@@ -1670,6 +1685,8 @@ function renderSlideEditor(
           return <OpenSlideEditor slide={slide as any} onUpdate={onUpdate} />;
         case 'example':
           return <ExampleSlideEditor slide={slide as any} onUpdate={onUpdate} />;
+        case 'board':
+          return <BoardSlideEditor slide={slide as any} onUpdate={onUpdate} />;
         default:
           return <div>Nepodporovaný typ aktivity</div>;
       }

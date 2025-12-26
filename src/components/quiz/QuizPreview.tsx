@@ -1208,7 +1208,7 @@ export function QuizPreview({ quiz, onClose, isLive = false, onComplete }: QuizP
       
       {/* Main content area with arrows */}
       <div 
-        className="flex-1 flex flex-col" 
+        className="flex-1 flex flex-col overflow-hidden" 
         style={{ 
           backgroundColor: bgColor,
           minHeight: 0,
@@ -1224,12 +1224,12 @@ export function QuizPreview({ quiz, onClose, isLive = false, onComplete }: QuizP
           </div>
         </div>
         
-        {/* Content with arrows - with padding for shadow (shadow-2xl needs ~30px) */}
-        <div className="flex-1 flex items-stretch" style={{ minHeight: 0, padding: isMobile ? 12 : 30, paddingTop: 0 }}>
-          {/* Desktop: Left arrow - 35px + 30px padding = 65px total */}
+        {/* Content with arrows - with bottom padding */}
+        <div className="flex-1 flex items-stretch overflow-hidden" style={{ minHeight: 0, paddingBottom: isMobile ? 16 : 5 }}>
+          {/* Desktop: Left arrow */}
           <div 
             className="hidden lg:flex flex-shrink-0 items-center justify-center"
-            style={{ width: 35 }}
+            style={{ width: 65 }}
           >
             <button
               onClick={goToPrevSlide}
@@ -1250,6 +1250,8 @@ export function QuizPreview({ quiz, onClose, isLive = false, onComplete }: QuizP
               overflowY: isMobile ? 'auto' : 'hidden',
               overflowX: 'hidden',
               WebkitOverflowScrolling: 'touch',
+              // Padding for shadow visibility
+              padding: 16,
             }}
           >
             <div 
@@ -1293,8 +1295,8 @@ export function QuizPreview({ quiz, onClose, isLive = false, onComplete }: QuizP
             </div>
           </div>
           
-          {/* Desktop: Right arrow - 35px + 30px padding = 65px total */}
-          <div className="hidden lg:flex flex-shrink-0 items-center justify-center" style={{ width: 35 }}>
+          {/* Desktop: Right arrow */}
+          <div className="hidden lg:flex flex-shrink-0 items-center justify-center" style={{ width: 65 }}>
             <button
               onClick={() => {
                 if (hasAnswered || currentSlide?.type !== 'activity') {
