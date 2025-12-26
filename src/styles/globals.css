@@ -1043,6 +1043,25 @@ div[class*="tiptap"] li,
   animation: slide-in-left 0.2s ease-out forwards;
 }
 
+/* Floating hearts animation for board likes */
+@keyframes float-up {
+  0% {
+    transform: translateY(0) scale(1) rotate(0deg);
+    opacity: 1;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(-120px) scale(0.5) rotate(20deg);
+    opacity: 0;
+  }
+}
+
+.animate-float-up {
+  animation: float-up 0.8s ease-out forwards;
+}
+
 /* ============================================
    PDF Export / Print styles for html2pdf.js
    ============================================ */

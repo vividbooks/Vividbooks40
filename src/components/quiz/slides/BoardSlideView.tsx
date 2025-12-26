@@ -2,10 +2,10 @@
  * Board (Nástěnka) Slide View
  * 
  * Display component for board activities in preview/playback mode
- * Shows the question on the left and posts on the right
+ * Shows the question at the top and posts below in a grid
  */
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import {
   Heart,
   MessageSquare,
@@ -16,6 +16,7 @@ import {
   ChevronRight,
   User,
   Trash2,
+  Sparkles,
 } from 'lucide-react';
 import { BoardActivitySlide, BoardPost } from '../../../types/quiz';
 
@@ -38,6 +39,28 @@ function getYouTubeId(url: string): string | null {
   return (match && match[2].length === 11) ? match[2] : null;
 }
 
+// Floating hearts animation component
+function FloatingHearts({ count }: { count: number }) {
+  return (
+    <div className="absolute inset-0 pointer-events-none overflow-hidden">
+      {Array.from({ length: count }).map((_, i) => (
+        <Heart
+          key={i}
+          className="absolute text-pink-500 fill-pink-500 animate-float-up"
+          style={{
+            left: `${20 + Math.random() * 60}%`,
+            bottom: '-20px',
+            animationDelay: `${i * 0.1}s`,
+            fontSize: `${12 + Math.random() * 8}px`,
+            width: `${16 + Math.random() * 8}px`,
+            height: `${16 + Math.random() * 8}px`,
+          }}
+        />
+      ))}
+    </div>
+  );
+}
+
 // Single post card component
 function PostCard({ 
   post, 
@@ -54,32 +77,48 @@ function PostCard({
   onDelete?: () => void;
   isTeacher?: boolean;
 }) {
+  const [showHearts, setShowHearts] = useState(false);
+  const [isAnimating, setIsAnimating] = useState(false);
   const hasLiked = currentUserId ? post.likes.includes(currentUserId) : false;
   const youtubeId = post.mediaType === 'youtube' && post.mediaUrl ? getYouTubeId(post.mediaUrl) : null;
   
+  const handleLike = useCallback(() => {
+    if (!hasLiked) {
+      // Show floating hearts animation
+      setShowHearts(true);
+      setIsAnimating(true);
+      setTimeout(() => setShowHearts(false), 1000);
+      setTimeout(() => setIsAnimating(false), 300);
+    }
+    onLike?.();
+  }, [hasLiked, onLike]);
+  
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden hover:shadow-md transition-shadow">
+    <div className="w-[280px] bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden hover:shadow-lg hover:scale-[1.02] transition-all duration-200 relative flex-shrink-0">
+      {/* Floating hearts animation */}
+      {showHearts && <FloatingHearts count={5} />}
+      
       {/* Post content */}
       <div className="p-4">
-        <div className="flex gap-4">
+        <div className="flex gap-3">
           {/* Text column */}
           <div className="flex-1 min-w-0">
-            <p className="text-[#4E5871] whitespace-pre-wrap break-words">
+            <p className="text-[#4E5871] whitespace-pre-wrap break-words text-sm leading-relaxed">
               {post.text}
             </p>
           </div>
           
           {/* Media column (if present) */}
           {post.mediaUrl && (
-            <div className="w-32 flex-shrink-0">
+            <div className="w-24 flex-shrink-0">
               {post.mediaType === 'image' ? (
                 <img 
                   src={post.mediaUrl} 
                   alt="Příloha"
-                  className="w-full h-24 object-cover rounded-lg"
+                  className="w-full h-20 object-cover rounded-lg"
                 />
               ) : youtubeId ? (
-                <div className="w-full h-24 rounded-lg overflow-hidden bg-slate-900">
+                <div className="w-full h-20 rounded-lg overflow-hidden bg-slate-900">
                   <iframe
                     src={`https://www.youtube.com/embed/${youtubeId}`}
                     className="w-full h-full"
@@ -95,25 +134,27 @@ function PostCard({
       </div>
       
       {/* Footer: author + actions */}
-      <div className="px-4 py-2 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
+      <div className="px-4 py-2.5 bg-gradient-to-r from-slate-50 to-pink-50/30 border-t border-slate-100 flex items-center justify-between">
         {/* Author */}
-        <div className="flex items-center gap-2 text-sm text-slate-500">
-          <User className="w-4 h-4" />
-          <span>{isAnonymous ? 'Anonym' : post.authorName}</span>
+        <div className="flex items-center gap-2 text-xs text-slate-500">
+          <div className="w-5 h-5 rounded-full bg-gradient-to-br from-pink-400 to-rose-500 flex items-center justify-center">
+            <User className="w-3 h-3 text-white" />
+          </div>
+          <span className="font-medium">{isAnonymous ? 'Anonym' : post.authorName}</span>
         </div>
         
         {/* Actions */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
           {/* Like button */}
           <button
-            onClick={onLike}
-            className={`flex items-center gap-1 px-2 py-1 rounded-lg text-sm transition-colors ${
+            onClick={handleLike}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition-all duration-200 ${
               hasLiked 
-                ? 'bg-pink-100 text-pink-600' 
-                : 'hover:bg-slate-200 text-slate-500'
-            }`}
+                ? 'bg-gradient-to-r from-pink-500 to-rose-500 text-white shadow-md shadow-pink-500/30' 
+                : 'bg-white border border-slate-200 text-slate-500 hover:border-pink-300 hover:text-pink-500 hover:bg-pink-50'
+            } ${isAnimating ? 'scale-110' : ''}`}
           >
-            <Heart className={`w-4 h-4 ${hasLiked ? 'fill-current' : ''}`} />
+            <Heart className={`w-4 h-4 transition-transform ${hasLiked ? 'fill-current' : ''} ${isAnimating ? 'animate-bounce' : ''}`} />
             <span>{post.likes.length}</span>
           </button>
           
@@ -121,7 +162,7 @@ function PostCard({
           {(currentUserId === post.authorId || isTeacher) && onDelete && (
             <button
               onClick={onDelete}
-              className="p-1 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+              className="p-1.5 rounded-full text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors"
             >
               <Trash2 className="w-4 h-4" />
             </button>
@@ -149,7 +190,7 @@ function NewPostForm({
   const [mediaType, setMediaType] = useState<'image' | 'youtube' | null>(null);
   const [showMediaInput, setShowMediaInput] = useState(false);
   
-  const canPost = maxPosts === undefined || currentPostCount < maxPosts;
+  const canPost = maxPosts === undefined || maxPosts === 0 || currentPostCount < maxPosts;
   
   const handleSubmit = () => {
     if (!text.trim()) return;
@@ -166,20 +207,21 @@ function NewPostForm({
   
   if (!canPost) {
     return (
-      <div className="bg-slate-100 rounded-xl p-4 text-center text-slate-500 text-sm">
+      <div className="bg-gradient-to-r from-slate-100 to-pink-50 rounded-2xl p-4 text-center text-slate-500 text-sm border border-slate-200">
+        <Sparkles className="w-5 h-5 mx-auto mb-2 text-pink-400" />
         Dosáhl/a jsi maximálního počtu příspěvků ({maxPosts})
       </div>
     );
   }
   
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+    <div className="bg-white rounded-2xl shadow-lg border border-slate-200 p-4 w-full max-w-md mx-auto">
       <textarea
         value={text}
         onChange={(e) => setText(e.target.value)}
-        placeholder="Napiš svůj příspěvek..."
-        className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:border-pink-500 focus:ring-2 focus:ring-pink-500/20 outline-none resize-none text-[#4E5871]"
-        rows={3}
+        placeholder="Napiš svůj příspěvek... ✨"
+        className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-pink-400 focus:ring-2 focus:ring-pink-400/20 outline-none resize-none text-[#4E5871] bg-slate-50 placeholder:text-slate-400"
+        rows={2}
       />
       
       {/* Media input */}
@@ -188,9 +230,9 @@ function NewPostForm({
           <div className="flex gap-2">
             <button
               onClick={() => setMediaType('image')}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors ${
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
                 mediaType === 'image' 
-                  ? 'bg-pink-100 text-pink-600 border border-pink-300' 
+                  ? 'bg-gradient-to-r from-pink-500 to-rose-500 text-white shadow-md' 
                   : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
               }`}
             >
@@ -199,9 +241,9 @@ function NewPostForm({
             </button>
             <button
               onClick={() => setMediaType('youtube')}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors ${
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
                 mediaType === 'youtube' 
-                  ? 'bg-pink-100 text-pink-600 border border-pink-300' 
+                  ? 'bg-gradient-to-r from-pink-500 to-rose-500 text-white shadow-md' 
                   : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
               }`}
             >
@@ -215,7 +257,7 @@ function NewPostForm({
               value={mediaUrl}
               onChange={(e) => setMediaUrl(e.target.value)}
               placeholder={mediaType === 'image' ? 'URL obrázku...' : 'URL YouTube videa...'}
-              className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:border-pink-500 focus:ring-2 focus:ring-pink-500/20 outline-none text-sm"
+              className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:border-pink-400 focus:ring-2 focus:ring-pink-400/20 outline-none text-sm bg-slate-50"
             />
           )}
         </div>
@@ -227,10 +269,10 @@ function NewPostForm({
           {allowMedia && (
             <button
               onClick={() => setShowMediaInput(!showMediaInput)}
-              className={`p-2 rounded-lg transition-colors ${
+              className={`p-2 rounded-xl transition-all ${
                 showMediaInput 
-                  ? 'bg-pink-100 text-pink-600' 
-                  : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'
+                  ? 'bg-gradient-to-r from-pink-500 to-rose-500 text-white shadow-md' 
+                  : 'text-slate-400 hover:text-pink-500 hover:bg-pink-50 border border-transparent hover:border-pink-200'
               }`}
             >
               <ImageIcon className="w-5 h-5" />
@@ -241,9 +283,9 @@ function NewPostForm({
         <button
           onClick={handleSubmit}
           disabled={!text.trim()}
-          className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors ${
+          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm transition-all ${
             text.trim()
-              ? 'bg-pink-500 text-white hover:bg-pink-600'
+              ? 'bg-gradient-to-r from-pink-500 to-rose-500 text-white shadow-lg shadow-pink-500/30 hover:shadow-xl hover:shadow-pink-500/40 hover:scale-105 active:scale-95'
               : 'bg-slate-200 text-slate-400 cursor-not-allowed'
           }`}
         >
@@ -269,6 +311,8 @@ export function BoardSlideView({
   const [currentPage, setCurrentPage] = useState(0);
   const postsPerPage = 6;
   
+  const hasImage = !!slide.questionImage;
+  
   // Sort posts by likes (most liked first), then by date
   const sortedPosts = useMemo(() => {
     return [...posts].sort((a, b) => {
@@ -293,124 +337,224 @@ export function BoardSlideView({
     ? posts.filter(p => p.authorId === currentUserId).length 
     : 0;
   
-  return (
-    <div className="h-full flex flex-col lg:flex-row">
-      {/* Left column: Question + optional image */}
-      <div className="lg:w-2/5 p-6 flex flex-col">
-        {/* Question */}
-        <div className="mb-6">
-          <h2 className="text-2xl lg:text-3xl font-bold text-[#4E5871] leading-tight">
-            {slide.question || 'Téma diskuze...'}
-          </h2>
-        </div>
-        
-        {/* Question image (if present) */}
-        {slide.questionImage && (
-          <div className="flex-1 flex items-center justify-center mb-6">
+  const totalLikes = posts.reduce((sum, p) => sum + p.likes.length, 0);
+
+  // Layout with image: two columns
+  if (hasImage) {
+    return (
+      <div className="w-full h-full bg-gradient-to-br from-slate-50 via-white to-pink-50/30 rounded-3xl overflow-hidden flex">
+        {/* Left column: Question + Image */}
+        <div className="w-2/5 p-8 flex flex-col border-r border-slate-100">
+          {/* Question */}
+          <div className="mb-6">
+            <h2 className="text-2xl font-bold text-[#4E5871] leading-tight">
+              {slide.question || 'Téma diskuze...'}
+            </h2>
+          </div>
+          
+          {/* Image */}
+          <div className="flex-1 flex items-center justify-center">
             <img
               src={slide.questionImage}
               alt="Obrázek k tématu"
-              className="max-w-full max-h-64 lg:max-h-96 rounded-xl shadow-lg object-contain"
+              className="max-w-full max-h-full rounded-2xl shadow-xl object-contain"
             />
           </div>
-        )}
+          
+          {/* Stats */}
+          <div className="flex items-center gap-4 text-sm text-slate-500 mt-6">
+            <div className="flex items-center gap-1.5 bg-white px-3 py-1.5 rounded-full shadow-sm">
+              <MessageSquare className="w-4 h-4 text-pink-500" />
+              <span className="font-medium">{posts.length} příspěvků</span>
+            </div>
+            <div className="flex items-center gap-1.5 bg-white px-3 py-1.5 rounded-full shadow-sm">
+              <Heart className="w-4 h-4 text-pink-500 fill-pink-500" />
+              <span className="font-medium">{totalLikes} lajků</span>
+            </div>
+          </div>
+        </div>
+        
+        {/* Right column: Posts */}
+        <div className="w-3/5 p-6 flex flex-col overflow-hidden bg-gradient-to-b from-transparent to-pink-50/20">
+          {/* New post form */}
+          {!readOnly && onAddPost && (
+            <div className="mb-5 flex-shrink-0">
+              <NewPostForm
+                allowMedia={slide.allowMedia}
+                onSubmit={onAddPost}
+                maxPosts={slide.maxPosts}
+                currentPostCount={userPostCount}
+              />
+            </div>
+          )}
+          
+          {/* Posts */}
+          <div className="flex-1 overflow-auto">
+            {currentPosts.length > 0 ? (
+              <div className="flex flex-wrap gap-4 justify-center">
+                {currentPosts.map((post) => (
+                  <PostCard
+                    key={post.id}
+                    post={post}
+                    currentUserId={currentUserId}
+                    isAnonymous={slide.allowAnonymous}
+                    onLike={onLikePost ? () => onLikePost(post.id) : undefined}
+                    onDelete={onDeletePost ? () => onDeletePost(post.id) : undefined}
+                    isTeacher={isTeacher}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="flex-1 flex items-center justify-center text-slate-400 h-full">
+                <div className="text-center">
+                  <MessageSquare className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                  <p className="font-medium">Zatím žádné příspěvky</p>
+                  {!readOnly && <p className="text-sm mt-1">Buď první kdo něco napíše! ✨</p>}
+                </div>
+              </div>
+            )}
+          </div>
+          
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-center gap-2 mt-4 pt-4 border-t border-slate-200/50">
+              <button
+                onClick={() => setCurrentPage(p => Math.max(0, p - 1))}
+                disabled={currentPage === 0}
+                className="p-2 rounded-xl bg-white shadow-sm hover:shadow-md disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+              >
+                <ChevronLeft className="w-5 h-5 text-slate-600" />
+              </button>
+              
+              <div className="flex items-center gap-1">
+                {Array.from({ length: totalPages }, (_, i) => (
+                  <button
+                    key={i}
+                    onClick={() => setCurrentPage(i)}
+                    className={`w-8 h-8 rounded-full text-sm font-bold transition-all ${
+                      currentPage === i
+                        ? 'bg-gradient-to-r from-pink-500 to-rose-500 text-white shadow-lg shadow-pink-500/30'
+                        : 'bg-white shadow-sm hover:shadow-md text-slate-600'
+                    }`}
+                  >
+                    {i + 1}
+                  </button>
+                ))}
+              </div>
+              
+              <button
+                onClick={() => setCurrentPage(p => Math.min(totalPages - 1, p + 1))}
+                disabled={currentPage === totalPages - 1}
+                className="p-2 rounded-xl bg-white shadow-sm hover:shadow-md disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+              >
+                <ChevronRight className="w-5 h-5 text-slate-600" />
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+  
+  // Layout without image: question centered at top, posts below
+  return (
+    <div className="w-full h-full bg-gradient-to-br from-slate-50 via-white to-pink-50/30 rounded-3xl overflow-hidden flex flex-col">
+      {/* Header: Question centered */}
+      <div className="flex-shrink-0 px-8 pt-8 pb-4 text-center border-b border-slate-100">
+        <h2 className="text-2xl lg:text-3xl font-bold text-[#4E5871] leading-tight mb-3">
+          {slide.question || 'Téma diskuze...'}
+        </h2>
         
         {/* Stats */}
-        <div className="flex items-center gap-4 text-sm text-slate-500">
-          <div className="flex items-center gap-1">
-            <MessageSquare className="w-4 h-4" />
-            <span>{posts.length} příspěvků</span>
+        <div className="flex items-center justify-center gap-4 text-sm text-slate-500">
+          <div className="flex items-center gap-1.5 bg-white px-3 py-1.5 rounded-full shadow-sm">
+            <MessageSquare className="w-4 h-4 text-pink-500" />
+            <span className="font-medium">{posts.length} příspěvků</span>
           </div>
-          <div className="flex items-center gap-1">
-            <Heart className="w-4 h-4" />
-            <span>{posts.reduce((sum, p) => sum + p.likes.length, 0)} lajků</span>
+          <div className="flex items-center gap-1.5 bg-white px-3 py-1.5 rounded-full shadow-sm">
+            <Heart className="w-4 h-4 text-pink-500 fill-pink-500" />
+            <span className="font-medium">{totalLikes} lajků</span>
           </div>
         </div>
       </div>
       
-      {/* Right column: Posts */}
-      <div className="lg:w-3/5 p-6 bg-slate-50 flex flex-col overflow-hidden">
-        {/* New post form (if not read-only) */}
-        {!readOnly && onAddPost && (
-          <div className="mb-4 flex-shrink-0">
-            <NewPostForm
-              allowMedia={slide.allowMedia}
-              onSubmit={(text, mediaUrl, mediaType) => {
-                onAddPost(text, mediaUrl, mediaType);
-              }}
-              maxPosts={slide.maxPosts}
-              currentPostCount={userPostCount}
-            />
-          </div>
-        )}
-        
-        {/* Posts grid */}
-        <div className="flex-1 overflow-auto">
-          {currentPosts.length > 0 ? (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              {currentPosts.map((post) => (
-                <PostCard
-                  key={post.id}
-                  post={post}
-                  currentUserId={currentUserId}
-                  isAnonymous={slide.allowAnonymous}
-                  onLike={onLikePost ? () => onLikePost(post.id) : undefined}
-                  onDelete={onDeletePost ? () => onDeletePost(post.id) : undefined}
-                  isTeacher={isTeacher}
-                />
-              ))}
-            </div>
-          ) : (
-            <div className="flex-1 flex items-center justify-center text-slate-400">
-              <div className="text-center">
-                <MessageSquare className="w-12 h-12 mx-auto mb-3 opacity-50" />
-                <p>Zatím žádné příspěvky</p>
-                {!readOnly && <p className="text-sm mt-1">Buď první kdo něco napíše!</p>}
-              </div>
-            </div>
-          )}
+      {/* New post form */}
+      {!readOnly && onAddPost && (
+        <div className="flex-shrink-0 px-8 py-4">
+          <NewPostForm
+            allowMedia={slide.allowMedia}
+            onSubmit={onAddPost}
+            maxPosts={slide.maxPosts}
+            currentPostCount={userPostCount}
+          />
         </div>
-        
-        {/* Pagination */}
-        {totalPages > 1 && (
-          <div className="flex items-center justify-center gap-2 mt-4 pt-4 border-t border-slate-200">
-            <button
-              onClick={() => setCurrentPage(p => Math.max(0, p - 1))}
-              disabled={currentPage === 0}
-              className="p-2 rounded-lg hover:bg-slate-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-            >
-              <ChevronLeft className="w-5 h-5" />
-            </button>
-            
-            <div className="flex items-center gap-1">
-              {Array.from({ length: totalPages }, (_, i) => (
-                <button
-                  key={i}
-                  onClick={() => setCurrentPage(i)}
-                  className={`w-8 h-8 rounded-full text-sm font-medium transition-colors ${
-                    currentPage === i
-                      ? 'bg-pink-500 text-white'
-                      : 'hover:bg-slate-200 text-slate-600'
-                  }`}
-                >
-                  {i + 1}
-                </button>
-              ))}
+      )}
+      
+      {/* Posts grid */}
+      <div className="flex-1 overflow-auto px-8 py-4">
+        {currentPosts.length > 0 ? (
+          <div className="flex flex-wrap gap-4 justify-center">
+            {currentPosts.map((post) => (
+              <PostCard
+                key={post.id}
+                post={post}
+                currentUserId={currentUserId}
+                isAnonymous={slide.allowAnonymous}
+                onLike={onLikePost ? () => onLikePost(post.id) : undefined}
+                onDelete={onDeletePost ? () => onDeletePost(post.id) : undefined}
+                isTeacher={isTeacher}
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="flex items-center justify-center text-slate-400 h-full">
+            <div className="text-center">
+              <MessageSquare className="w-16 h-16 mx-auto mb-4 opacity-40" />
+              <p className="font-medium text-lg">Zatím žádné příspěvky</p>
+              {!readOnly && <p className="text-sm mt-2">Buď první kdo něco napíše! ✨</p>}
             </div>
-            
-            <button
-              onClick={() => setCurrentPage(p => Math.min(totalPages - 1, p + 1))}
-              disabled={currentPage === totalPages - 1}
-              className="p-2 rounded-lg hover:bg-slate-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-            >
-              <ChevronRight className="w-5 h-5" />
-            </button>
           </div>
         )}
       </div>
+      
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex-shrink-0 flex items-center justify-center gap-2 px-8 py-4 border-t border-slate-100 bg-white/50">
+          <button
+            onClick={() => setCurrentPage(p => Math.max(0, p - 1))}
+            disabled={currentPage === 0}
+            className="p-2 rounded-xl bg-white shadow-sm hover:shadow-md disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+          >
+            <ChevronLeft className="w-5 h-5 text-slate-600" />
+          </button>
+          
+          <div className="flex items-center gap-1.5">
+            {Array.from({ length: totalPages }, (_, i) => (
+              <button
+                key={i}
+                onClick={() => setCurrentPage(i)}
+                className={`w-9 h-9 rounded-full text-sm font-bold transition-all ${
+                  currentPage === i
+                    ? 'bg-gradient-to-r from-pink-500 to-rose-500 text-white shadow-lg shadow-pink-500/30 scale-110'
+                    : 'bg-white shadow-sm hover:shadow-md text-slate-600'
+                }`}
+              >
+                {i + 1}
+              </button>
+            ))}
+          </div>
+          
+          <button
+            onClick={() => setCurrentPage(p => Math.min(totalPages - 1, p + 1))}
+            disabled={currentPage === totalPages - 1}
+            className="p-2 rounded-xl bg-white shadow-sm hover:shadow-md disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+          >
+            <ChevronRight className="w-5 h-5 text-slate-600" />
+          </button>
+        </div>
+      )}
     </div>
   );
 }
 
 export default BoardSlideView;
-
