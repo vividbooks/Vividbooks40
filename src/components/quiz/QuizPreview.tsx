@@ -1207,18 +1207,29 @@ export function QuizPreview({ quiz, onClose, isLive = false, onComplete }: QuizP
       </div>
       
       {/* Main content area with arrows */}
-      <div className="flex-1 flex flex-col pt-4 pb-4 lg:pt-16 lg:pb-4" style={{ backgroundColor: bgColor }}>
-        {/* Desktop: Segmented progress bar */}
-        <div className="hidden lg:flex items-center justify-center pb-3">
+      <div 
+        className="flex-1 flex flex-col" 
+        style={{ 
+          backgroundColor: bgColor,
+          // Desktop: exact margins - top: 40px, bottom: 5px
+          paddingTop: isMobile ? 16 : 40,
+          paddingBottom: isMobile ? 16 : 5,
+        }}
+      >
+        {/* Desktop: Segmented progress bar - positioned absolutely */}
+        <div className="hidden lg:flex items-center justify-center absolute top-2 left-0 right-0 z-10">
           <div className="w-1/2 max-w-xl flex items-center gap-1.5">
             {renderProgressBar()}
           </div>
         </div>
         
         {/* Content with arrows */}
-        <div className="flex-1 flex items-center">
+        <div className="flex-1 flex items-stretch">
           {/* Desktop: Left arrow */}
-          <div className="hidden lg:flex w-16 flex-shrink-0 items-center justify-center">
+          <div 
+            className="hidden lg:flex flex-shrink-0 items-center justify-center"
+            style={{ width: 65 }}
+          >
             <button
               onClick={goToPrevSlide}
               disabled={currentSlideIndex === 0 || !quiz.settings.allowBack}
@@ -1230,20 +1241,17 @@ export function QuizPreview({ quiz, onClose, isLive = false, onComplete }: QuizP
             </button>
           </div>
           
-          {/* Slide content */}
+          {/* Slide content - fills remaining space */}
           <div 
-            className="flex-1 flex items-center justify-center"
+            className="flex-1 flex"
             style={{ 
               overflowY: isMobile ? 'auto' : 'hidden',
               overflowX: 'hidden',
               WebkitOverflowScrolling: 'touch',
-              // Info slides fill width with small padding, activity slides centered with max width
-              paddingLeft: currentSlide?.type === 'info' ? 16 : 16,
-              paddingRight: currentSlide?.type === 'info' ? 16 : 16,
             }}
           >
             <div 
-              className={`w-full rounded-3xl shadow-2xl bg-white ${
+              className={`w-full h-full rounded-3xl shadow-2xl bg-white ${
                 currentSlide?.type !== 'info' ? 'max-w-5xl mx-auto' : ''
               } ${
                 currentSlideIndex > prevSlideIndex && isAnimating ? 'animate-slide-in' : ''
@@ -1254,12 +1262,9 @@ export function QuizPreview({ quiz, onClose, isLive = false, onComplete }: QuizP
                 display: 'flex',
                 flexDirection: 'column',
                 overflow: 'hidden',
-                // Use 4:3 aspect ratio (editor format) and center vertically
-                aspectRatio: !isMobile ? '4/3' : undefined,
-                maxHeight: !isMobile ? '100%' : undefined,
+                // NO fixed aspect ratio - fill available space
                 // On mobile, allow height to grow
-                height: isMobile ? 'auto' : undefined,
-                alignSelf: 'center',
+                height: isMobile ? 'auto' : '100%',
               }}
               key={currentSlideIndex}
             >
@@ -1288,7 +1293,7 @@ export function QuizPreview({ quiz, onClose, isLive = false, onComplete }: QuizP
           </div>
           
           {/* Desktop: Right arrow */}
-          <div className="hidden lg:flex w-16 flex-shrink-0 items-center justify-center">
+          <div className="hidden lg:flex flex-shrink-0 items-center justify-center" style={{ width: 65 }}>
             <button
               onClick={() => {
                 if (hasAnswered || currentSlide?.type !== 'activity') {

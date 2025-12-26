@@ -1373,18 +1373,26 @@ export function QuizViewPage() {
         </div>
         
         {/* Main content area with arrows */}
-        <div className="flex-1 flex flex-col pt-4 pb-4 lg:pt-16 lg:pb-4" style={{ backgroundColor: bgColor }}>
-          {/* Desktop: Segmented progress bar - above content */}
-          <div className="hidden lg:flex items-center justify-center pb-3">
+        <div 
+          className="flex-1 flex flex-col" 
+          style={{ 
+            backgroundColor: bgColor,
+            // Desktop: exact margins - top: 40px, bottom: 5px
+            paddingTop: 40,
+            paddingBottom: 5,
+          }}
+        >
+          {/* Desktop: Segmented progress bar - positioned absolutely */}
+          <div className="hidden lg:flex items-center justify-center absolute top-2 left-0 right-0 z-10">
             <div className="w-1/2 max-w-xl flex items-center gap-1.5">
               {renderProgressBar()}
             </div>
           </div>
           
           {/* Content with arrows */}
-          <div className="flex-1 flex items-center">
+          <div className="flex-1 flex items-stretch">
           {/* Desktop: Left arrow */}
-          <div className="hidden lg:flex w-16 flex-shrink-0 items-center justify-center">
+          <div className="hidden lg:flex flex-shrink-0 items-center justify-center" style={{ width: 65 }}>
             <button
               onClick={goToPrevSlide}
               disabled={currentSlideIndex === 0}
@@ -1400,28 +1408,21 @@ export function QuizViewPage() {
             </button>
           </div>
           
-          {/* Slide content */}
+          {/* Slide content - fills remaining space */}
           <div 
-            className="flex-1 flex items-center justify-center overflow-hidden"
-            style={{
-              // Info slides fill width, activity slides centered with max width
-              paddingLeft: currentSlide?.type === 'info' ? 0 : 16,
-              paddingRight: currentSlide?.type === 'info' ? 0 : 16,
-            }}
+            className="flex-1 flex overflow-hidden"
           >
             <div 
               className={`
-                w-full rounded-3xl shadow-2xl overflow-hidden flex flex-col
+                w-full h-full rounded-3xl shadow-2xl overflow-hidden flex flex-col
                 ${currentSlide?.type !== 'info' ? 'max-w-5xl mx-auto' : ''}
                 ${currentSlideIndex > prevSlideIndex && isAnimating ? 'animate-slide-in' : ''}
                 ${currentSlideIndex < prevSlideIndex && isAnimating ? 'animate-slide-in-left' : ''}
               `}
               style={{ 
                 backgroundColor: getSlideBackground(currentSlide),
-                // Use 4:3 aspect ratio (editor format) and center vertically
-                aspectRatio: '4/3',
-                maxHeight: '100%',
-                alignSelf: 'center',
+                // NO fixed aspect ratio - fill available space
+                height: '100%',
               }}
               key={currentSlideIndex}
             >
@@ -1438,7 +1439,7 @@ export function QuizViewPage() {
           </div>
           
           {/* Desktop: Right arrow */}
-          <div className="hidden lg:flex w-16 flex-shrink-0 items-center justify-center">
+          <div className="hidden lg:flex flex-shrink-0 items-center justify-center" style={{ width: 65 }}>
             <button
               onClick={goToNextSlide}
               disabled={currentSlideIndex === quiz.slides.length - 1}
