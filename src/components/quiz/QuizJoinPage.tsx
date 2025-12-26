@@ -843,7 +843,7 @@ export function QuizJoinPage() {
     sessionId: sessionId,
     slideId: currentSlideId,
     currentUserId: studentId || undefined,
-    currentUserName: studentName || undefined,
+    currentUserName: name || undefined,
   });
   // Only count responses where isCorrect has been set by teacher (not null/undefined)
   const correctCount = responses.filter(function(r) { return r.isCorrect === true; }).length;
@@ -1466,7 +1466,7 @@ export function QuizJoinPage() {
                     slide={currentSlide as BoardActivitySlide}
                     posts={boardPosts.posts}
                     currentUserId={studentId || undefined}
-                    currentUserName={studentName || undefined}
+                    currentUserName={name || undefined}
                     isTeacher={false}
                     onAddPost={boardPosts.addPost}
                     onLikePost={boardPosts.likePost}
