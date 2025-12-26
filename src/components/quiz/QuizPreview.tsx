@@ -1224,12 +1224,12 @@ export function QuizPreview({ quiz, onClose, isLive = false, onComplete }: QuizP
           </div>
         </div>
         
-        {/* Content with arrows - with padding for shadow */}
-        <div className="flex-1 flex items-stretch" style={{ minHeight: 0, padding: isMobile ? 8 : 16, paddingTop: 0 }}>
-          {/* Desktop: Left arrow - 49px + 16px padding = 65px total */}
+        {/* Content with arrows - with padding for shadow (shadow-2xl needs ~30px) */}
+        <div className="flex-1 flex items-stretch" style={{ minHeight: 0, padding: isMobile ? 12 : 30, paddingTop: 0 }}>
+          {/* Desktop: Left arrow - 35px + 30px padding = 65px total */}
           <div 
             className="hidden lg:flex flex-shrink-0 items-center justify-center"
-            style={{ width: 49 }}
+            style={{ width: 35 }}
           >
             <button
               onClick={goToPrevSlide}
@@ -1293,8 +1293,8 @@ export function QuizPreview({ quiz, onClose, isLive = false, onComplete }: QuizP
             </div>
           </div>
           
-          {/* Desktop: Right arrow - 49px + 16px padding = 65px total */}
-          <div className="hidden lg:flex flex-shrink-0 items-center justify-center" style={{ width: 49 }}>
+          {/* Desktop: Right arrow - 35px + 30px padding = 65px total */}
+          <div className="hidden lg:flex flex-shrink-0 items-center justify-center" style={{ width: 35 }}>
             <button
               onClick={() => {
                 if (hasAnswered || currentSlide?.type !== 'activity') {
