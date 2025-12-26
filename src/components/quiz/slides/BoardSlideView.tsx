@@ -42,18 +42,20 @@ function getYouTubeId(url: string): string | null {
 // Floating hearts animation component
 function FloatingHearts({ count }: { count: number }) {
   return (
-    <div className="absolute inset-0 pointer-events-none overflow-hidden">
+    <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', overflow: 'visible', zIndex: 50 }}>
       {Array.from({ length: count }).map((_, i) => (
         <Heart
           key={i}
-          className="absolute text-pink-500 fill-pink-500 animate-float-up"
           style={{
+            position: 'absolute',
             left: `${20 + Math.random() * 60}%`,
-            bottom: '-20px',
-            animationDelay: `${i * 0.1}s`,
-            fontSize: `${12 + Math.random() * 8}px`,
-            width: `${16 + Math.random() * 8}px`,
-            height: `${16 + Math.random() * 8}px`,
+            bottom: '0px',
+            color: '#ec4899',
+            fill: '#ec4899',
+            width: `${18 + Math.random() * 10}px`,
+            height: `${18 + Math.random() * 10}px`,
+            animation: `float-up 1s ease-out forwards`,
+            animationDelay: `${i * 0.08}s`,
           }}
         />
       ))}
@@ -151,13 +153,24 @@ function PostCard({
           {/* Like button */}
           <button
             onClick={handleLike}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition-all duration-200 ${
-              hasLiked 
-                ? 'bg-gradient-to-r from-pink-500 to-rose-500 text-white shadow-md shadow-pink-500/30' 
-                : 'bg-white border border-slate-200 text-slate-500 hover:border-pink-300 hover:text-pink-500 hover:bg-pink-50'
-            } ${isAnimating ? 'scale-110' : ''}`}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition-all duration-200"
+            style={{
+              background: hasLiked 
+                ? 'linear-gradient(to right, #ec4899, #f43f5e)' 
+                : '#ffffff',
+              color: hasLiked ? '#ffffff' : '#64748b',
+              border: hasLiked ? 'none' : '1px solid #e2e8f0',
+              boxShadow: hasLiked ? '0 4px 6px -1px rgba(236, 72, 153, 0.3)' : 'none',
+              transform: isAnimating ? 'scale(1.15)' : 'scale(1)',
+            }}
           >
-            <Heart className={`w-4 h-4 transition-transform ${hasLiked ? 'fill-current' : ''} ${isAnimating ? 'animate-bounce' : ''}`} />
+            <Heart 
+              className="w-4 h-4 transition-transform"
+              style={{ 
+                fill: hasLiked ? '#ffffff' : 'none',
+                animation: isAnimating ? 'bounce 0.3s ease' : 'none',
+              }}
+            />
             <span>{post.likes.length}</span>
           </button>
           
