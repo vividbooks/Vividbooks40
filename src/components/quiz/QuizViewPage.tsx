@@ -357,6 +357,18 @@ export function QuizViewPage() {
   // Get current user
   const profile = storage.getCurrentUserProfile();
   
+  // Current slide for board posts hook (must be called unconditionally)
+  const currentSlideForBoard = quiz?.slides?.[currentSlideIndex];
+  
+  // Board posts for current slide (if it's a board activity)
+  // Must be called before any early returns to satisfy React hooks rules
+  const boardPosts = useBoardPosts({
+    sessionId: sessionId,
+    slideId: currentSlideForBoard?.id || '',
+    currentUserId: profile?.id,
+    currentUserName: profile?.name,
+  });
+  
   // Load quiz
   useEffect(() => {
     if (!id) {
@@ -549,14 +561,6 @@ export function QuizViewPage() {
   
   const currentSlide = quiz.slides[currentSlideIndex];
   const progress = quiz.slides.length > 0 ? ((currentSlideIndex + 1) / quiz.slides.length) * 100 : 0;
-  
-  // Board posts for current slide (if it's a board activity)
-  const boardPosts = useBoardPosts({
-    sessionId: sessionId,
-    slideId: currentSlide?.id || '',
-    currentUserId: profile?.id,
-    currentUserName: profile?.name,
-  });
   
   const getSlideBackground = (slide: QuizSlide) => {
     return slide?.backgroundColor || '#ffffff';
