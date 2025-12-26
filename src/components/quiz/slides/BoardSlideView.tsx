@@ -1,14 +1,15 @@
 /**
  * Board (Nástěnka) Slide View
  * 
- * Padlet-style board where each post is a slide in a slider
+ * Padlet-style board where:
+ * - First slide shows the question + image + add button
+ * - Each subsequent slide is a single post
  */
 
 import React, { useState, useMemo, useCallback } from 'react';
 import {
   Heart,
   MessageSquare,
-  Send,
   Image as ImageIcon,
   Youtube,
   ChevronLeft,
@@ -27,7 +28,7 @@ interface BoardSlideViewProps {
   currentUserId?: string;
   currentUserName?: string;
   isTeacher?: boolean;
-  onAddPost?: (text: string, mediaUrl?: string, mediaType?: 'image' | 'youtube') => void;
+  onAddPost?: (text: string, mediaUrl?: string, mediaType?: 'image' | 'youtube', backgroundColor?: string) => void;
   onLikePost?: (postId: string) => void;
   onDeletePost?: (postId: string) => void;
   readOnly?: boolean;
@@ -75,6 +76,18 @@ function getQuestionFontSize(text: string): string {
   return '1.125rem';
 }
 
+// Color options for posts
+const POST_COLORS = [
+  { name: 'Bílá', value: '#ffffff' },
+  { name: 'Růžová', value: '#fce7f3' },
+  { name: 'Fialová', value: '#ede9fe' },
+  { name: 'Modrá', value: '#dbeafe' },
+  { name: 'Zelená', value: '#dcfce7' },
+  { name: 'Žlutá', value: '#fef9c3' },
+  { name: 'Oranžová', value: '#ffedd5' },
+  { name: 'Šedá', value: '#f1f5f9' },
+];
+
 // Modal for adding new post (Padlet-style)
 function AddPostModal({
   allowMedia,
@@ -82,45 +95,47 @@ function AddPostModal({
   onClose,
 }: {
   allowMedia: boolean;
-  onSubmit: (text: string, mediaUrl?: string, mediaType?: 'image' | 'youtube') => void;
+  onSubmit: (text: string, mediaUrl?: string, mediaType?: 'image' | 'youtube', backgroundColor?: string) => void;
   onClose: () => void;
 }) {
   const [text, setText] = useState('');
   const [mediaUrl, setMediaUrl] = useState('');
   const [mediaType, setMediaType] = useState<'image' | 'youtube' | null>(null);
+  const [backgroundColor, setBackgroundColor] = useState('#ffffff');
   
   const youtubeId = mediaType === 'youtube' && mediaUrl ? getYouTubeId(mediaUrl) : null;
   const canSubmit = text.trim() || mediaUrl.trim();
 
   const handleSubmit = () => {
     if (!canSubmit) return;
-    onSubmit(text.trim(), mediaUrl.trim() || undefined, mediaType || undefined);
+    onSubmit(text.trim(), mediaUrl.trim() || undefined, mediaType || undefined, backgroundColor);
     onClose();
   };
 
   return (
     <div 
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}
+      style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}
       onClick={onClose}
     >
       <div 
-        className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden"
+        className="bg-white rounded-2xl shadow-2xl overflow-hidden"
+        style={{ width: '600px', maxWidth: '100%', maxHeight: '90vh', overflowY: 'auto' }}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
           <button
             onClick={onClose}
-            className="text-sm font-medium text-slate-500 hover:text-slate-700 transition-colors"
+            className="p-2 rounded-full hover:bg-slate-100 transition-colors"
           >
-            Zrušit
+            <X className="w-5 h-5 text-slate-500" />
           </button>
-          <h3 className="font-bold text-slate-800">Nový příspěvek</h3>
+          <h3 className="font-bold text-slate-800 text-lg">Nový příspěvek</h3>
           <button
             onClick={handleSubmit}
             disabled={!canSubmit}
-            className="px-4 py-1.5 rounded-lg font-bold text-sm transition-all"
+            className="px-5 py-2 rounded-xl font-bold text-sm transition-all"
             style={{
               background: canSubmit ? 'linear-gradient(to right, #ec4899, #f43f5e)' : '#f1f5f9',
               color: canSubmit ? 'white' : '#94a3b8',
@@ -137,7 +152,7 @@ function AddPostModal({
             className="relative border-2 border-dashed border-slate-200 m-4 rounded-xl overflow-hidden"
             style={{
               background: 'linear-gradient(135deg, #fdf2f8 0%, #fce7f3 50%, #fbcfe8 100%)',
-              minHeight: mediaUrl ? 'auto' : '140px',
+              minHeight: mediaUrl ? 'auto' : '160px',
             }}
           >
             {/* Media preview */}
@@ -146,21 +161,21 @@ function AddPostModal({
                 <img 
                   src={mediaUrl} 
                   alt="Náhled" 
-                  className="w-full h-56 object-cover"
+                  className="w-full h-64 object-cover"
                   onError={() => setMediaUrl('')}
                 />
                 <button
                   onClick={() => { setMediaUrl(''); setMediaType(null); }}
-                  className="absolute top-2 right-2 p-1.5 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors shadow-lg"
+                  className="absolute top-3 right-3 p-2 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors shadow-lg"
                 >
-                  <Trash2 className="w-4 h-4" />
+                  <Trash2 className="w-5 h-5" />
                 </button>
               </div>
             )}
             
             {mediaUrl && mediaType === 'youtube' && youtubeId && (
               <div className="relative">
-                <div className="w-full h-56">
+                <div className="w-full h-64">
                   <iframe
                     src={`https://www.youtube.com/embed/${youtubeId}`}
                     className="w-full h-full"
@@ -171,38 +186,38 @@ function AddPostModal({
                 </div>
                 <button
                   onClick={() => { setMediaUrl(''); setMediaType(null); }}
-                  className="absolute top-2 right-2 p-1.5 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors shadow-lg"
+                  className="absolute top-3 right-3 p-2 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors shadow-lg"
                 >
-                  <Trash2 className="w-4 h-4" />
+                  <Trash2 className="w-5 h-5" />
                 </button>
               </div>
             )}
 
             {/* Media type selector */}
             {!mediaUrl && (
-              <div className="flex items-center justify-center gap-4 py-10">
+              <div className="flex items-center justify-center gap-6 py-12">
                 <button
                   onClick={() => setMediaType('image')}
-                  className="flex flex-col items-center gap-2 p-4 rounded-xl hover:bg-white/50 transition-colors group"
+                  className="flex flex-col items-center gap-3 p-5 rounded-2xl hover:bg-white/50 transition-colors group"
                 >
                   <div 
-                    className="w-14 h-14 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110 shadow-lg"
+                    className="w-16 h-16 rounded-2xl flex items-center justify-center transition-transform group-hover:scale-110 shadow-lg"
                     style={{ background: 'linear-gradient(135deg, #818cf8, #6366f1)' }}
                   >
-                    <ImageIcon className="w-7 h-7 text-white" />
+                    <ImageIcon className="w-8 h-8 text-white" />
                   </div>
                   <span className="text-sm font-medium text-slate-600">Obrázek</span>
                 </button>
                 
                 <button
                   onClick={() => setMediaType('youtube')}
-                  className="flex flex-col items-center gap-2 p-4 rounded-xl hover:bg-white/50 transition-colors group"
+                  className="flex flex-col items-center gap-3 p-5 rounded-2xl hover:bg-white/50 transition-colors group"
                 >
                   <div 
-                    className="w-14 h-14 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110 shadow-lg"
+                    className="w-16 h-16 rounded-2xl flex items-center justify-center transition-transform group-hover:scale-110 shadow-lg"
                     style={{ background: 'linear-gradient(135deg, #f43f5e, #e11d48)' }}
                   >
-                    <Youtube className="w-7 h-7 text-white" />
+                    <Youtube className="w-8 h-8 text-white" />
                   </div>
                   <span className="text-sm font-medium text-slate-600">YouTube</span>
                 </button>
@@ -213,7 +228,7 @@ function AddPostModal({
 
         {/* URL input when media type is selected */}
         {allowMedia && mediaType && !mediaUrl && (
-          <div className="px-4 pb-2">
+          <div className="px-4 pb-3">
             <input
               type="text"
               value={mediaUrl}
@@ -231,12 +246,111 @@ function AddPostModal({
             value={text}
             onChange={(e) => setText(e.target.value)}
             placeholder="Napiš něco úžasného... ✨"
-            className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-pink-400 focus:ring-2 focus:ring-pink-400/20 outline-none resize-none text-[#4E5871] bg-slate-50 placeholder:text-slate-400"
+            className="w-full px-4 py-4 rounded-xl border border-slate-200 focus:border-pink-400 focus:ring-2 focus:ring-pink-400/20 outline-none resize-none text-[#4E5871] bg-slate-50 placeholder:text-slate-400 text-lg"
             rows={4}
             autoFocus={!allowMedia}
           />
         </div>
+
+        {/* Color picker */}
+        <div className="px-4 pb-5 border-t border-slate-100 pt-4">
+          <p className="text-sm font-medium text-slate-600 mb-3">Barva pozadí</p>
+          <div className="flex flex-wrap gap-2">
+            {POST_COLORS.map((color) => (
+              <button
+                key={color.value}
+                onClick={() => setBackgroundColor(color.value)}
+                className="w-8 h-8 rounded-full border-2 transition-transform hover:scale-110"
+                style={{
+                  backgroundColor: color.value,
+                  borderColor: backgroundColor === color.value ? '#ec4899' : '#e2e8f0',
+                  boxShadow: backgroundColor === color.value ? '0 0 0 2px rgba(236, 72, 153, 0.3)' : 'none',
+                }}
+                title={color.name}
+              />
+            ))}
+          </div>
+        </div>
       </div>
+    </div>
+  );
+}
+
+// Question slide (first slide)
+function QuestionSlide({
+  slide,
+  totalPosts,
+  totalLikes,
+  canAddPost,
+  readOnly,
+  onAddPost,
+}: {
+  slide: BoardActivitySlide;
+  totalPosts: number;
+  totalLikes: number;
+  canAddPost: boolean;
+  readOnly: boolean;
+  onAddPost: () => void;
+}) {
+  const questionFontSize = getQuestionFontSize(slide.question || '');
+  const hasImage = !!slide.questionImage;
+
+  return (
+    <div className="h-full w-full flex flex-col lg:flex-row">
+      {/* Left side or full width: Question */}
+      <div className={`${hasImage ? 'lg:w-1/2' : 'w-full'} p-8 lg:p-12 flex flex-col items-center justify-center text-center`}>
+        <h2 
+          className="font-bold text-[#4E5871] leading-tight mb-6"
+          style={{ fontSize: questionFontSize }}
+        >
+          {slide.question || 'Téma diskuze...'}
+        </h2>
+        
+        {/* Stats */}
+        <div className="flex items-center justify-center gap-4 text-sm text-slate-500 mb-8">
+          <div className="flex items-center gap-2 bg-white px-4 py-2 rounded-full shadow-sm">
+            <MessageSquare className="w-5 h-5 text-pink-500" />
+            <span className="font-medium">{totalPosts} příspěvků</span>
+          </div>
+          <div className="flex items-center gap-2 bg-white px-4 py-2 rounded-full shadow-sm">
+            <Heart className="w-5 h-5 text-pink-500" style={{ fill: '#ec4899' }} />
+            <span className="font-medium">{totalLikes} lajků</span>
+          </div>
+        </div>
+
+        {/* Add post button */}
+        {!readOnly && canAddPost && (
+          <button
+            onClick={onAddPost}
+            className="flex items-center gap-3 px-8 py-4 rounded-2xl font-bold text-lg text-white transition-all hover:scale-105 active:scale-95 shadow-xl"
+            style={{
+              background: 'linear-gradient(to right, #ec4899, #f43f5e)',
+              boxShadow: '0 15px 30px -5px rgba(236, 72, 153, 0.4)',
+            }}
+          >
+            <Plus className="w-6 h-6" />
+            Přidat příspěvek
+          </button>
+        )}
+
+        {!canAddPost && !readOnly && (
+          <div className="text-center text-sm text-slate-500 bg-slate-100 rounded-xl py-3 px-6">
+            <Sparkles className="w-5 h-5 inline mr-2 text-pink-400" />
+            Dosáhl/a jsi maximálního počtu příspěvků
+          </div>
+        )}
+      </div>
+
+      {/* Right side: Image */}
+      {hasImage && (
+        <div className="lg:w-1/2 p-8 flex items-center justify-center bg-slate-50">
+          <img
+            src={slide.questionImage}
+            alt="Obrázek k tématu"
+            className="max-w-full max-h-full rounded-2xl shadow-xl object-contain"
+          />
+        </div>
+      )}
     </div>
   );
 }
@@ -262,6 +376,7 @@ function PostSlide({
   const hasLiked = currentUserId ? post.likes.includes(currentUserId) : false;
   const youtubeId = post.mediaType === 'youtube' && post.mediaUrl ? getYouTubeId(post.mediaUrl) : null;
   const hasMedia = !!post.mediaUrl;
+  const bgColor = post.backgroundColor || '#ffffff';
 
   const handleLike = useCallback(() => {
     if (!hasLiked) {
@@ -274,41 +389,44 @@ function PostSlide({
   }, [hasLiked, onLike]);
 
   return (
-    <div className="h-full w-full flex flex-col lg:flex-row bg-white rounded-2xl shadow-lg overflow-hidden relative">
+    <div 
+      className="h-full w-full flex flex-col lg:flex-row rounded-2xl shadow-lg overflow-hidden relative"
+      style={{ backgroundColor: bgColor }}
+    >
       {showHearts && <FloatingHearts count={5} />}
       
       {/* Left side: Text */}
-      <div className={`${hasMedia ? 'lg:w-1/2' : 'w-full'} p-8 flex flex-col`}>
+      <div className={`${hasMedia ? 'lg:w-1/2' : 'w-full'} p-8 lg:p-12 flex flex-col`}>
         {/* Author */}
-        <div className="flex items-center gap-3 mb-6">
+        <div className="flex items-center gap-3 mb-8">
           <div 
-            className="w-10 h-10 rounded-full flex items-center justify-center"
+            className="w-12 h-12 rounded-full flex items-center justify-center shadow-md"
             style={{ background: 'linear-gradient(135deg, #ec4899, #f43f5e)' }}
           >
-            <User className="w-5 h-5 text-white" />
+            <User className="w-6 h-6 text-white" />
           </div>
-          <span className="font-medium text-slate-700">
+          <span className="font-semibold text-lg text-slate-700">
             {isAnonymous ? 'Anonymní' : post.authorName}
           </span>
         </div>
 
         {/* Text content */}
         <div className="flex-1">
-          <p className="text-xl text-[#4E5871] leading-relaxed whitespace-pre-wrap">
+          <p className="text-2xl text-[#4E5871] leading-relaxed whitespace-pre-wrap">
             {post.text}
           </p>
         </div>
 
         {/* Actions */}
-        <div className="flex items-center gap-3 mt-6 pt-6 border-t border-slate-100">
+        <div className="flex items-center gap-4 mt-8 pt-6 border-t" style={{ borderColor: 'rgba(0,0,0,0.1)' }}>
           <button
             onClick={handleLike}
-            className="flex items-center gap-2 px-4 py-2 rounded-full font-medium transition-all duration-200"
+            className="flex items-center gap-2 px-5 py-2.5 rounded-full font-bold transition-all duration-200"
             style={{
-              background: hasLiked ? 'linear-gradient(to right, #ec4899, #f43f5e)' : '#f8fafc',
+              background: hasLiked ? 'linear-gradient(to right, #ec4899, #f43f5e)' : 'rgba(255,255,255,0.8)',
               color: hasLiked ? '#ffffff' : '#64748b',
-              border: hasLiked ? 'none' : '1px solid #e2e8f0',
-              boxShadow: hasLiked ? '0 4px 6px -1px rgba(236, 72, 153, 0.3)' : 'none',
+              border: hasLiked ? 'none' : '1px solid rgba(0,0,0,0.1)',
+              boxShadow: hasLiked ? '0 4px 12px rgba(236, 72, 153, 0.4)' : '0 2px 4px rgba(0,0,0,0.05)',
               transform: isAnimating ? 'scale(1.1)' : 'scale(1)',
             }}
           >
@@ -322,7 +440,7 @@ function PostSlide({
           {(currentUserId === post.authorId || isTeacher) && onDelete && (
             <button
               onClick={onDelete}
-              className="p-2 rounded-full text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+              className="p-2.5 rounded-full text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors"
             >
               <Trash2 className="w-5 h-5" />
             </button>
@@ -332,7 +450,7 @@ function PostSlide({
 
       {/* Right side: Media */}
       {hasMedia && (
-        <div className="lg:w-1/2 bg-slate-100 flex items-center justify-center">
+        <div className="lg:w-1/2 bg-slate-900 flex items-center justify-center">
           {post.mediaType === 'image' && (
             <img 
               src={post.mediaUrl} 
@@ -366,11 +484,8 @@ export function BoardSlideView({
   onDeletePost,
   readOnly = false,
 }: BoardSlideViewProps) {
-  const [currentPostIndex, setCurrentPostIndex] = useState(0);
+  const [currentSlideIndex, setCurrentSlideIndex] = useState(0); // 0 = question slide
   const [showAddModal, setShowAddModal] = useState(false);
-
-  const hasImage = !!slide.questionImage;
-  const questionFontSize = getQuestionFontSize(slide.question || '');
   
   // Sort posts by likes (most liked first), then by date
   const sortedPosts = useMemo(() => {
@@ -382,8 +497,8 @@ export function BoardSlideView({
     });
   }, [posts]);
 
-  const currentPost = sortedPosts[currentPostIndex];
   const totalPosts = sortedPosts.length;
+  const totalSlides = totalPosts + 1; // +1 for question slide
   const totalLikes = posts.reduce((sum, p) => sum + p.likes.length, 0);
 
   // Count current user's posts
@@ -393,152 +508,96 @@ export function BoardSlideView({
   const maxPosts = slide.maxPosts;
   const canAddPost = maxPosts === undefined || maxPosts === 0 || userPostCount < maxPosts;
 
-  const handleAddPost = (text: string, mediaUrl?: string, mediaType?: 'image' | 'youtube') => {
-    onAddPost?.(text, mediaUrl, mediaType);
+  const handleAddPost = (text: string, mediaUrl?: string, mediaType?: 'image' | 'youtube', backgroundColor?: string) => {
+    onAddPost?.(text, mediaUrl, mediaType, backgroundColor);
     setShowAddModal(false);
   };
 
-  const goToPrevPost = () => {
-    setCurrentPostIndex(prev => Math.max(0, prev - 1));
+  const goToPrevSlide = () => {
+    setCurrentSlideIndex(prev => Math.max(0, prev - 1));
   };
 
-  const goToNextPost = () => {
-    setCurrentPostIndex(prev => Math.min(totalPosts - 1, prev + 1));
+  const goToNextSlide = () => {
+    setCurrentSlideIndex(prev => Math.min(totalSlides - 1, prev + 1));
   };
+
+  // Current post (if not on question slide)
+  const currentPost = currentSlideIndex > 0 ? sortedPosts[currentSlideIndex - 1] : null;
 
   return (
-    <div className="w-full h-full bg-gradient-to-br from-slate-50 via-white to-pink-50/30 rounded-3xl overflow-hidden flex flex-col lg:flex-row">
-      {/* Left side: Question + Image + Add button */}
-      <div 
-        className={`${hasImage ? 'lg:w-2/5' : 'lg:w-1/3'} p-8 flex flex-col border-b lg:border-b-0 lg:border-r border-slate-100`}
-      >
-        {/* Question */}
-        <div 
-          className="text-center lg:text-left mb-6"
-          style={{ paddingTop: hasImage ? '20px' : '40px' }}
-        >
-          <h2 
-            className="font-bold text-[#4E5871] leading-tight mb-4"
-            style={{ fontSize: questionFontSize }}
-          >
-            {slide.question || 'Téma diskuze...'}
-          </h2>
-          
-          {/* Stats */}
-          <div className="flex items-center justify-center lg:justify-start gap-3 text-sm text-slate-500">
-            <div className="flex items-center gap-1.5 bg-white px-3 py-1.5 rounded-full shadow-sm">
-              <MessageSquare className="w-4 h-4 text-pink-500" />
-              <span className="font-medium">{totalPosts}</span>
-            </div>
-            <div className="flex items-center gap-1.5 bg-white px-3 py-1.5 rounded-full shadow-sm">
-              <Heart className="w-4 h-4 text-pink-500" style={{ fill: '#ec4899' }} />
-              <span className="font-medium">{totalLikes}</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Image */}
-        {hasImage && (
-          <div className="flex-1 flex items-center justify-center mb-6">
-            <img
-              src={slide.questionImage}
-              alt="Obrázek k tématu"
-              className="max-w-full max-h-64 lg:max-h-80 rounded-2xl shadow-xl object-contain"
+    <div className="w-full h-full bg-gradient-to-br from-slate-50 via-white to-pink-50/30 rounded-3xl overflow-hidden flex flex-col">
+      {/* Main content area */}
+      <div className="flex-1 min-h-0 p-6">
+        {currentSlideIndex === 0 ? (
+          // Question slide
+          <div className="h-full bg-white rounded-2xl shadow-lg overflow-hidden">
+            <QuestionSlide
+              slide={slide}
+              totalPosts={totalPosts}
+              totalLikes={totalLikes}
+              canAddPost={canAddPost}
+              readOnly={readOnly}
+              onAddPost={() => setShowAddModal(true)}
             />
           </div>
-        )}
+        ) : currentPost ? (
+          // Post slide
+          <PostSlide
+            post={currentPost}
+            currentUserId={currentUserId}
+            isAnonymous={slide.allowAnonymous}
+            onLike={onLikePost ? () => onLikePost(currentPost.id) : undefined}
+            onDelete={onDeletePost ? () => onDeletePost(currentPost.id) : undefined}
+            isTeacher={isTeacher}
+          />
+        ) : null}
+      </div>
 
-        {/* Add post button */}
-        {!readOnly && onAddPost && canAddPost && (
+      {/* Navigation */}
+      {totalSlides > 1 && (
+        <div className="flex-shrink-0 flex items-center justify-center gap-4 px-6 py-4 bg-white/80 backdrop-blur-sm border-t border-slate-100">
           <button
-            onClick={() => setShowAddModal(true)}
-            className="mt-auto flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-bold text-white transition-all hover:scale-105 active:scale-95 shadow-lg"
-            style={{
-              background: 'linear-gradient(to right, #ec4899, #f43f5e)',
-              boxShadow: '0 10px 25px -5px rgba(236, 72, 153, 0.4)',
-            }}
+            onClick={goToPrevSlide}
+            disabled={currentSlideIndex === 0}
+            className="p-3 rounded-full bg-white shadow-md hover:shadow-lg disabled:opacity-30 disabled:cursor-not-allowed transition-all"
           >
-            <Plus className="w-5 h-5" />
-            Přidat příspěvek
+            <ChevronLeft className="w-6 h-6 text-slate-600" />
           </button>
-        )}
 
-        {!canAddPost && (
-          <div className="mt-auto text-center text-sm text-slate-500 bg-slate-100 rounded-xl py-3 px-4">
-            <Sparkles className="w-4 h-4 inline mr-2 text-pink-400" />
-            Dosáhl/a jsi maximálního počtu příspěvků
+          {/* Dots */}
+          <div className="flex items-center gap-2">
+            {Array.from({ length: totalSlides }).map((_, index) => (
+              <button
+                key={index}
+                onClick={() => setCurrentSlideIndex(index)}
+                className="transition-all"
+                style={{
+                  width: currentSlideIndex === index ? '28px' : '12px',
+                  height: '12px',
+                  borderRadius: '6px',
+                  background: index === 0 
+                    ? (currentSlideIndex === 0 ? '#4E5871' : '#cbd5e1')
+                    : (currentSlideIndex === index ? 'linear-gradient(to right, #ec4899, #f43f5e)' : '#cbd5e1'),
+                }}
+                title={index === 0 ? 'Otázka' : `Příspěvek ${index}`}
+              />
+            ))}
           </div>
-        )}
-      </div>
 
-      {/* Right side: Posts slider */}
-      <div className={`${hasImage ? 'lg:w-3/5' : 'lg:w-2/3'} flex flex-col p-6`}>
-        {totalPosts > 0 ? (
-          <>
-            {/* Current post */}
-            <div className="flex-1 min-h-0">
-              {currentPost && (
-                <PostSlide
-                  post={currentPost}
-                  currentUserId={currentUserId}
-                  isAnonymous={slide.allowAnonymous}
-                  onLike={onLikePost ? () => onLikePost(currentPost.id) : undefined}
-                  onDelete={onDeletePost ? () => onDeletePost(currentPost.id) : undefined}
-                  isTeacher={isTeacher}
-                />
-              )}
-            </div>
+          <button
+            onClick={goToNextSlide}
+            disabled={currentSlideIndex === totalSlides - 1}
+            className="p-3 rounded-full bg-white shadow-md hover:shadow-lg disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+          >
+            <ChevronRight className="w-6 h-6 text-slate-600" />
+          </button>
 
-            {/* Navigation */}
-            {totalPosts > 1 && (
-              <div className="flex items-center justify-center gap-4 mt-6">
-                <button
-                  onClick={goToPrevPost}
-                  disabled={currentPostIndex === 0}
-                  className="p-3 rounded-full bg-white shadow-md hover:shadow-lg disabled:opacity-30 disabled:cursor-not-allowed transition-all"
-                >
-                  <ChevronLeft className="w-6 h-6 text-slate-600" />
-                </button>
-
-                {/* Dots */}
-                <div className="flex items-center gap-2">
-                  {sortedPosts.map((_, index) => (
-                    <button
-                      key={index}
-                      onClick={() => setCurrentPostIndex(index)}
-                      className="transition-all"
-                      style={{
-                        width: currentPostIndex === index ? '24px' : '10px',
-                        height: '10px',
-                        borderRadius: '5px',
-                        background: currentPostIndex === index 
-                          ? 'linear-gradient(to right, #ec4899, #f43f5e)' 
-                          : '#cbd5e1',
-                      }}
-                    />
-                  ))}
-                </div>
-
-                <button
-                  onClick={goToNextPost}
-                  disabled={currentPostIndex === totalPosts - 1}
-                  className="p-3 rounded-full bg-white shadow-md hover:shadow-lg disabled:opacity-30 disabled:cursor-not-allowed transition-all"
-                >
-                  <ChevronRight className="w-6 h-6 text-slate-600" />
-                </button>
-              </div>
-            )}
-          </>
-        ) : (
-          <div className="flex-1 flex items-center justify-center text-slate-400">
-            <div className="text-center">
-              <MessageSquare className="w-20 h-20 mx-auto mb-4 opacity-30" />
-              <p className="font-medium text-xl mb-2">Zatím žádné příspěvky</p>
-              {!readOnly && <p className="text-sm">Buď první kdo něco napíše! ✨</p>}
-            </div>
+          {/* Slide counter */}
+          <div className="text-sm text-slate-500 font-medium ml-4">
+            {currentSlideIndex + 1} / {totalSlides}
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Add post modal */}
       {showAddModal && (

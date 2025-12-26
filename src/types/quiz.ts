@@ -28,6 +28,7 @@ export interface BoardPost {
   authorId: string;
   likes: string[]; // Array of user IDs who liked this post
   createdAt: number; // timestamp
+  backgroundColor?: string; // Optional background color for the post
 }
 
 /**

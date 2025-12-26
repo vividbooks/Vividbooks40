@@ -81,7 +81,8 @@ export function useBoardPosts({
   const addPost = useCallback(async (
     text: string, 
     mediaUrl?: string, 
-    mediaType?: 'image' | 'youtube'
+    mediaType?: 'image' | 'youtube',
+    backgroundColor?: string
   ) => {
     if (!sessionId || !slideId || !currentUserId) {
       console.error('Cannot add post: missing sessionId, slideId, or userId');
@@ -107,6 +108,9 @@ export function useBoardPosts({
       }
       if (mediaType) {
         newPost.mediaType = mediaType;
+      }
+      if (backgroundColor) {
+        newPost.backgroundColor = backgroundColor;
       }
       
       await update(newPostRef, newPost);
