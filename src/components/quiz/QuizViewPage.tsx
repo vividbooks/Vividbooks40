@@ -1377,21 +1377,21 @@ export function QuizViewPage() {
           className="flex-1 flex flex-col overflow-hidden" 
           style={{ 
             backgroundColor: bgColor,
-            // Desktop: exact margins - top: 40px, bottom: 5px
-            paddingTop: 40,
-            paddingBottom: 5,
             minHeight: 0,
           }}
         >
-          {/* Desktop: Segmented progress bar - positioned absolutely */}
-          <div className="hidden lg:flex items-center justify-center absolute top-2 left-0 right-0 z-10">
+          {/* Desktop: Segmented progress bar - above slide, within 40px top margin */}
+          <div 
+            className="hidden lg:flex items-end justify-center flex-shrink-0"
+            style={{ height: 40, paddingBottom: 8 }}
+          >
             <div className="w-1/2 max-w-xl flex items-center gap-1.5">
               {renderProgressBar()}
             </div>
           </div>
           
-          {/* Content with arrows */}
-          <div className="flex-1 flex items-stretch overflow-hidden" style={{ minHeight: 0 }}>
+          {/* Content with arrows - with bottom padding */}
+          <div className="flex-1 flex items-stretch overflow-hidden" style={{ minHeight: 0, paddingBottom: 5 }}>
           {/* Desktop: Left arrow */}
           <div className="hidden lg:flex flex-shrink-0 items-center justify-center" style={{ width: 65 }}>
             <button

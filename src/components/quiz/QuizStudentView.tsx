@@ -901,8 +901,16 @@ export function QuizStudentView() {
     <div className="flex flex-col h-screen" style={{ backgroundColor: '#F0F1F8' }}>
       {renderConnectionBanner()}
       
-      {/* Desktop: Top bar - using grid for proper layout */}
-      <div className="hidden lg:grid px-6 py-4" style={{ backgroundColor: '#F0F1F8', gridTemplateColumns: '1fr auto 1fr' }}>
+      {/* Desktop: Top bar - height 40px to match margin requirement */}
+      <div 
+        className="hidden lg:grid px-6" 
+        style={{ 
+          backgroundColor: '#F0F1F8', 
+          gridTemplateColumns: '1fr auto 1fr',
+          height: 40,
+          alignItems: 'center',
+        }}
+      >
         {/* Left spacer */}
         <div />
         {/* Center: Progress bar */}
@@ -950,13 +958,11 @@ export function QuizStudentView() {
         className="flex-1 flex flex-col overflow-hidden" 
         style={{ 
           backgroundColor: '#F0F1F8',
-          // Desktop: exact margins - top: 40px, bottom: 5px
-          paddingTop: isMobile ? 16 : 40,
-          paddingBottom: isMobile ? 16 : 5,
           minHeight: 0,
         }}
       >
-        <div className="flex-1 flex items-stretch overflow-hidden" style={{ minHeight: 0 }}>
+        {/* Content with arrows - bottom padding 5px */}
+        <div className="flex-1 flex items-stretch overflow-hidden" style={{ minHeight: 0, paddingBottom: isMobile ? 16 : 5 }}>
           {/* Desktop: Left arrow */}
           <div className="hidden lg:flex flex-shrink-0 items-center justify-center" style={{ width: 65 }}>
             <button

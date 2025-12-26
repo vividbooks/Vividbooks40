@@ -1129,10 +1129,13 @@ export function QuizJoinPage() {
     <div className="flex flex-col h-screen" style={{ backgroundColor: '#F0F1F8' }}>
       {renderConnectionBanner()}
       
-      {/* Progress bar header - hidden on mobile when canNavigate (arrows have their own progress bar) */}
+      {/* Progress bar header - height 40px on desktop to match margin requirement, hidden on mobile when canNavigate */}
       <div 
-        className={`flex items-center justify-center px-4 py-2 ${canNavigate && isMobile ? 'hidden' : ''}`} 
-        style={{ backgroundColor: '#F0F1F8' }}
+        className={`items-center justify-center px-4 ${canNavigate && isMobile ? 'hidden' : 'flex'} ${isMobile ? 'py-2' : ''}`} 
+        style={{ 
+          backgroundColor: '#F0F1F8',
+          height: isMobile ? 'auto' : 40,
+        }}
       >
         {/* Progress bar - centered with max width */}
         <div className="flex items-center gap-1.5" style={{ width: '300px', maxWidth: '50%' }}>
@@ -1190,13 +1193,11 @@ export function QuizJoinPage() {
         className="flex-1 flex flex-col overflow-hidden" 
         style={{ 
           backgroundColor: '#F0F1F8',
-          // Desktop: exact margins - top: 40px, bottom: 5px
-          paddingTop: isMobile ? 16 : 40,
-          paddingBottom: isMobile ? 16 : 5,
           minHeight: 0,
         }}
       >
-        <div className="flex-1 flex items-stretch overflow-hidden" style={{ minHeight: 0 }}>
+        {/* Content with arrows - bottom padding 5px */}
+        <div className="flex-1 flex items-stretch overflow-hidden" style={{ minHeight: 0, paddingBottom: isMobile ? 16 : 5 }}>
           {/* Desktop: Left arrow */}
           <div className="hidden lg:flex flex-shrink-0 items-center justify-center" style={{ width: 65 }}>
             {canNavigate && (
