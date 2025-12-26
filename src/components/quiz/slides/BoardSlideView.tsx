@@ -376,49 +376,52 @@ export function BoardSlideView({
   
   const totalLikes = posts.reduce((sum, p) => sum + p.likes.length, 0);
 
-  // Layout with image: two columns
+  // Layout with image: two columns 50/50
   if (hasImage) {
     return (
       <div className="w-full h-full bg-gradient-to-br from-slate-50 via-white to-pink-50/30 rounded-3xl overflow-hidden flex">
-        {/* Left column: Question + Image */}
-        <div className="w-2/5 p-8 flex flex-col border-r border-slate-100">
+        {/* Left column: Question + Image (50%) */}
+        <div className="w-1/2 p-8 flex flex-col border-r border-slate-100 overflow-auto">
           {/* Question */}
-          <div className="mb-8">
+          <div 
+            className="text-center mb-8"
+            style={{ paddingTop: '60px' }}
+          >
             <h2 
-              className="font-bold text-[#4E5871] leading-tight"
+              className="font-bold text-[#4E5871] leading-tight mb-4"
               style={{ fontSize: questionFontSize }}
             >
               {slide.question || 'Téma diskuze...'}
             </h2>
+            
+            {/* Stats */}
+            <div className="flex items-center justify-center gap-4 text-sm text-slate-500">
+              <div className="flex items-center gap-1.5 bg-white px-3 py-1.5 rounded-full shadow-sm">
+                <MessageSquare className="w-4 h-4 text-pink-500" />
+                <span className="font-medium">{posts.length} příspěvků</span>
+              </div>
+              <div className="flex items-center gap-1.5 bg-white px-3 py-1.5 rounded-full shadow-sm">
+                <Heart className="w-4 h-4 text-pink-500 fill-pink-500" />
+                <span className="font-medium">{totalLikes} lajků</span>
+              </div>
+            </div>
           </div>
           
           {/* Image */}
-          <div className="flex-1 flex items-center justify-center">
+          <div className="flex-1 flex items-center justify-center pb-8">
             <img
               src={slide.questionImage}
               alt="Obrázek k tématu"
               className="max-w-full max-h-full rounded-2xl shadow-xl object-contain"
             />
           </div>
-          
-          {/* Stats */}
-          <div className="flex items-center gap-4 text-sm text-slate-500 mt-6">
-            <div className="flex items-center gap-1.5 bg-white px-3 py-1.5 rounded-full shadow-sm">
-              <MessageSquare className="w-4 h-4 text-pink-500" />
-              <span className="font-medium">{posts.length} příspěvků</span>
-            </div>
-            <div className="flex items-center gap-1.5 bg-white px-3 py-1.5 rounded-full shadow-sm">
-              <Heart className="w-4 h-4 text-pink-500 fill-pink-500" />
-              <span className="font-medium">{totalLikes} lajků</span>
-            </div>
-          </div>
         </div>
         
-        {/* Right column: Posts */}
-        <div className="w-3/5 p-6 flex flex-col overflow-hidden bg-gradient-to-b from-transparent to-pink-50/20">
+        {/* Right column: Posts (50%) */}
+        <div className="w-1/2 flex flex-col overflow-hidden bg-gradient-to-b from-transparent to-pink-50/20">
           {/* New post form */}
           {!readOnly && onAddPost && (
-            <div className="mb-5 flex-shrink-0">
+            <div className="p-6 flex-shrink-0">
               <NewPostForm
                 allowMedia={slide.allowMedia}
                 onSubmit={onAddPost}
@@ -429,7 +432,7 @@ export function BoardSlideView({
           )}
           
           {/* Posts */}
-          <div className="flex-1 overflow-auto">
+          <div className="flex-1 overflow-auto px-6 pb-6">
             {currentPosts.length > 0 ? (
               <div className="flex flex-col items-center gap-4">
                 {currentPosts.map((post) => (
@@ -457,7 +460,7 @@ export function BoardSlideView({
           
           {/* Pagination */}
           {totalPages > 1 && (
-            <div className="flex items-center justify-center gap-2 mt-4 pt-4 border-t border-slate-200/50">
+            <div className="flex-shrink-0 flex items-center justify-center gap-2 px-6 py-4 border-t border-slate-200/50 bg-white/50">
               <button
                 onClick={() => setCurrentPage(p => Math.max(0, p - 1))}
                 disabled={currentPage === 0}
