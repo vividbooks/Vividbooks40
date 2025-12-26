@@ -34,10 +34,13 @@ import {
   QuizSlide, 
   ABCActivitySlide, 
   OpenActivitySlide, 
+  BoardActivitySlide,
   SlideResponse,
   InfoSlide 
 } from '../../types/quiz';
 import { BlockLayoutView } from './QuizPreview';
+import { BoardSlideView } from './slides/BoardSlideView';
+import { useBoardPosts } from '../../hooks/useBoardPosts';
 
 // ============================================
 // CONSTANTS
@@ -654,6 +657,14 @@ export function QuizStudentView() {
   const currentSlide = quiz && quiz.slides ? quiz.slides[currentSlideIndex] : undefined;
   const currentResponse = currentSlide && responses ? responses[currentSlide.id] : undefined;
   const hasAnswered = !!currentResponse;
+  
+  // Board posts for current slide (if it's a board activity)
+  const boardPosts = useBoardPosts({
+    sessionId: shareId || null,
+    slideId: currentSlide?.id || '',
+    currentUserId: studentId || undefined,
+    currentUserName: studentName || undefined,
+  });
   const responsesArray = responses ? Object.values(responses) : [];
   const correctCount = responsesArray.filter(function(r) { return r && r.isCorrect; }).length;
   const wrongCount = responsesArray.filter(function(r) { return r && !r.isCorrect; }).length;
@@ -1006,8 +1017,8 @@ export function QuizStudentView() {
                 </div>
               ) : (
                 <>
-                  {/* Question - only for activity slides */}
-                  {currentSlide.type === 'activity' && (
+                  {/* Question - only for activity slides (except board) */}
+                  {currentSlide.type === 'activity' && currentSlide.activityType !== 'board' && (
                     <div className="flex-1 flex flex-col items-center justify-center p-4 md:p-8">
                       <h1 className="text-xl sm:text-2xl md:text-4xl lg:text-5xl font-bold text-[#4E5871] text-center leading-tight break-words max-w-full overflow-hidden">
                         <MathText>{(currentSlide as any).question || (currentSlide as any).title || 'Otázka'}</MathText>
@@ -1167,6 +1178,23 @@ export function QuizStudentView() {
                 </div>
               )}
               
+              {/* Board activity */}
+              {currentSlide.type === 'activity' && currentSlide.activityType === 'board' && (
+                <div className="flex-1 overflow-hidden">
+                  <BoardSlideView 
+                    slide={currentSlide as BoardActivitySlide}
+                    posts={boardPosts.posts}
+                    currentUserId={studentId || undefined}
+                    currentUserName={studentName || undefined}
+                    isTeacher={false}
+                    onAddPost={boardPosts.addPost}
+                    onLikePost={boardPosts.likePost}
+                    onDeletePost={boardPosts.deletePost}
+                    readOnly={false}
+                  />
+                </div>
+              )}
+              
               {/* Legacy info slide (without block layout) */}
               {currentSlide.type === 'info' && (!(currentSlide as InfoSlide).layout || (currentSlide as InfoSlide).layout!.blocks.length === 0) && (
                 <div className="flex-1 flex items-center justify-center p-8">
@@ -1179,8 +1207,8 @@ export function QuizStudentView() {
                 </div>
               )}
               
-              {/* Submit button - only for activity slides */}
-              {currentSlide.type === 'activity' && (
+              {/* Submit button - only for activity slides (except board) */}
+              {currentSlide.type === 'activity' && currentSlide.activityType !== 'board' && (
               <div className="flex justify-center py-6 md:py-10">
                 {!hasAnswered ? (
                   <button

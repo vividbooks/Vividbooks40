@@ -38,7 +38,9 @@ import {
   Unlock,
   AlertTriangle,
 } from 'lucide-react';
-import { Quiz, QuizSlide, ABCActivitySlide, OpenActivitySlide, ExampleActivitySlide, InfoSlide, LiveQuizSession, SlideResponse } from '../../types/quiz';
+import { Quiz, QuizSlide, ABCActivitySlide, OpenActivitySlide, ExampleActivitySlide, BoardActivitySlide, InfoSlide, LiveQuizSession, SlideResponse } from '../../types/quiz';
+import { BoardSlideView } from './slides/BoardSlideView';
+import { useBoardPosts } from '../../hooks/useBoardPosts';
 import { getQuiz } from '../../utils/quiz-storage';
 import * as storage from '../../utils/profile-storage';
 import { database } from '../../utils/firebase-config';
@@ -547,6 +549,14 @@ export function QuizViewPage() {
   
   const currentSlide = quiz.slides[currentSlideIndex];
   const progress = quiz.slides.length > 0 ? ((currentSlideIndex + 1) / quiz.slides.length) * 100 : 0;
+  
+  // Board posts for current slide (if it's a board activity)
+  const boardPosts = useBoardPosts({
+    sessionId: sessionId,
+    slideId: currentSlide?.id || '',
+    currentUserId: profile?.id,
+    currentUserName: profile?.name,
+  });
   
   const getSlideBackground = (slide: QuizSlide) => {
     return slide?.backgroundColor || '#ffffff';
@@ -1502,6 +1512,18 @@ function renderSlideView(slide: QuizSlide): React.ReactNode {
           return <OpenSlideView slide={slide as OpenActivitySlide} />;
         case 'example':
           return <ExampleSlideView slide={slide as ExampleActivitySlide} />;
+        case 'board':
+          return (
+            <BoardSlideView 
+              slide={slide as BoardActivitySlide}
+              posts={boardPosts.posts}
+              currentUserId={profile?.id}
+              currentUserName={profile?.name}
+              isTeacher={true}
+              onDeletePost={boardPosts.deletePost}
+              readOnly={false}
+            />
+          );
         default:
           return <div className="text-slate-500 text-center">Nepodporovaný typ aktivity</div>;
       }

@@ -22,12 +22,14 @@ import {
   ABCActivitySlide,
   OpenActivitySlide,
   ExampleActivitySlide,
+  BoardActivitySlide,
   InfoSlide,
   SlideResponse,
   calculateQuizScore,
   getTemplateById,
 } from '../../types/quiz';
 import { MathText } from '../math/MathText';
+import { BoardSlideView } from './slides/BoardSlideView';
 
 interface QuizPreviewProps {
   quiz: Quiz;
@@ -996,6 +998,15 @@ export function QuizPreview({ quiz, onClose, isLive = false, onComplete }: QuizP
             );
           case 'example':
             return <ExampleSlideView slide={slide as ExampleActivitySlide} />;
+          case 'board':
+            return (
+              <BoardSlideView 
+                slide={slide as BoardActivitySlide}
+                posts={[]} // Preview mode - no live posts
+                readOnly={true}
+                isTeacher={true}
+              />
+            );
           default:
             return <div className="text-slate-500 text-center">Nepodporovaný typ aktivity</div>;
         }

@@ -35,11 +35,14 @@ import {
   QuizSlide,
   ABCActivitySlide,
   OpenActivitySlide,
+  BoardActivitySlide,
   SlideResponse,
   LiveQuizSession,
   InfoSlide,
 } from '../../types/quiz';
 import { BlockLayoutView } from './QuizPreview';
+import { BoardSlideView } from './slides/BoardSlideView';
+import { useBoardPosts } from '../../hooks/useBoardPosts';
 
 // ============================================
 // CONSTANTS
@@ -834,6 +837,14 @@ export function QuizJoinPage() {
   const currentSlideId = currentSlide ? currentSlide.id : '';
   const hasAnswered = responses.some(function(r) { return r.slideId === currentSlideId; });
   const currentResponse = responses.find(function(r) { return r.slideId === currentSlideId; });
+  
+  // Board posts for current slide (if it's a board activity)
+  const boardPosts = useBoardPosts({
+    sessionId: sessionId,
+    slideId: currentSlideId,
+    currentUserId: studentId || undefined,
+    currentUserName: studentName || undefined,
+  });
   // Only count responses where isCorrect has been set by teacher (not null/undefined)
   const correctCount = responses.filter(function(r) { return r.isCorrect === true; }).length;
   const wrongCount = responses.filter(function(r) { return r.isCorrect === false; }).length;
@@ -1262,8 +1273,8 @@ export function QuizJoinPage() {
                 </div>
               ) : (
                 <>
-                  {/* Question - only for activity slides or legacy info slides */}
-                  {currentSlide.type === 'activity' && (
+                  {/* Question - only for activity slides (except board) or legacy info slides */}
+                  {currentSlide.type === 'activity' && currentSlide.activityType !== 'board' && (
                     <div className="flex-1 flex flex-col items-center justify-center p-4 md:p-8">
                       <h1 className="text-xl sm:text-2xl md:text-4xl lg:text-5xl font-bold text-[#4E5871] text-center leading-tight break-words max-w-full overflow-hidden">
                         <MathText>{(currentSlide as any).question || (currentSlide as any).title || 'Otázka'}</MathText>
@@ -1448,6 +1459,23 @@ export function QuizJoinPage() {
                 </div>
               )}
               
+              {/* Board activity */}
+              {currentSlide.type === 'activity' && currentSlide.activityType === 'board' && (
+                <div className="flex-1 overflow-hidden">
+                  <BoardSlideView 
+                    slide={currentSlide as BoardActivitySlide}
+                    posts={boardPosts.posts}
+                    currentUserId={studentId || undefined}
+                    currentUserName={studentName || undefined}
+                    isTeacher={false}
+                    onAddPost={boardPosts.addPost}
+                    onLikePost={boardPosts.likePost}
+                    onDeletePost={boardPosts.deletePost}
+                    readOnly={false}
+                  />
+                </div>
+              )}
+              
               {/* Legacy info slide (without block layout) */}
               {currentSlide.type === 'info' && (!(currentSlide as InfoSlide).layout || (currentSlide as InfoSlide).layout!.blocks.length === 0) && (
                 <div className="flex-1 flex items-center justify-center p-8">
@@ -1460,8 +1488,8 @@ export function QuizJoinPage() {
                 </div>
               )}
               
-              {/* Submit button or waiting indicator - only for activity slides */}
-              {currentSlide.type === 'activity' && (
+              {/* Submit button or waiting indicator - only for activity slides (except board) */}
+              {currentSlide.type === 'activity' && currentSlide.activityType !== 'board' && (
               <div className="flex justify-center py-6 md:py-10">
                 {!hasAnswered && !showResult && currentSlide.type === 'activity' ? (
                   <button
