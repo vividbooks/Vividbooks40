@@ -1209,16 +1209,16 @@ export function QuizJoinPage() {
       
       {/* Main content area */}
       <div 
-        className="flex-1 flex flex-col overflow-hidden" 
+        className="flex-1 flex flex-col" 
         style={{ 
           backgroundColor: '#F0F1F8',
           minHeight: 0,
         }}
       >
-        {/* Content with arrows - bottom padding 5px */}
-        <div className="flex-1 flex items-stretch overflow-hidden" style={{ minHeight: 0, paddingBottom: isMobile ? 16 : 5 }}>
-          {/* Desktop: Left arrow */}
-          <div className="hidden lg:flex flex-shrink-0 items-center justify-center" style={{ width: 65 }}>
+        {/* Content with arrows - with padding for shadow */}
+        <div className="flex-1 flex items-stretch" style={{ minHeight: 0, padding: isMobile ? 8 : 16, paddingTop: 0 }}>
+          {/* Desktop: Left arrow - 49px + 16px padding = 65px total */}
+          <div className="hidden lg:flex flex-shrink-0 items-center justify-center" style={{ width: 49 }}>
             {canNavigate && (
               <button
                 onClick={goToPrevSlide}
@@ -1238,8 +1238,6 @@ export function QuizJoinPage() {
               overflowY: isMobile ? 'auto' : 'hidden',
               overflowX: 'hidden',
               WebkitOverflowScrolling: 'touch',
-              // Padding for shadow visibility
-              padding: 16,
             }}
           >
             <div 
@@ -1498,8 +1496,8 @@ export function QuizJoinPage() {
             </div>
           </div>
           
-          {/* Desktop: Right arrow */}
-          <div className="hidden lg:flex flex-shrink-0 items-center justify-center" style={{ width: 65 }}>
+          {/* Desktop: Right arrow - 49px + 16px padding = 65px total */}
+          <div className="hidden lg:flex flex-shrink-0 items-center justify-center" style={{ width: 49 }}>
             {canNavigate && (
               <button
                 onClick={() => (currentSlideIndex < quiz.slides.length - 1 && canProceed) ? goToNextSlide() : (!canProceed ? triggerWiggle() : null)}
