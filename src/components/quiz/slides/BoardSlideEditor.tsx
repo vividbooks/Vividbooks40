@@ -130,8 +130,14 @@ export function BoardSlideEditor({ slide, onUpdate }: BoardSlideEditorProps) {
         
         {/* Allow media toggle */}
         <label className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 cursor-pointer hover:bg-slate-50 transition-colors">
-          <div className={`w-10 h-6 rounded-full transition-colors relative ${slide.allowMedia ? 'bg-pink-500' : 'bg-slate-300'}`}>
-            <div className={`absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-transform ${slide.allowMedia ? 'left-5' : 'left-1'}`} />
+          <div 
+            className="w-12 h-7 rounded-full transition-all duration-200 relative flex-shrink-0"
+            style={{ backgroundColor: slide.allowMedia ? '#ec4899' : '#cbd5e1' }}
+          >
+            <div 
+              className="absolute top-1 w-5 h-5 rounded-full bg-white shadow-md transition-all duration-200"
+              style={{ left: slide.allowMedia ? '26px' : '4px' }}
+            />
           </div>
           <div className="flex-1">
             <div className="flex items-center gap-2">
@@ -152,8 +158,14 @@ export function BoardSlideEditor({ slide, onUpdate }: BoardSlideEditorProps) {
         
         {/* Allow anonymous toggle */}
         <label className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 cursor-pointer hover:bg-slate-50 transition-colors">
-          <div className={`w-10 h-6 rounded-full transition-colors relative ${slide.allowAnonymous ? 'bg-pink-500' : 'bg-slate-300'}`}>
-            <div className={`absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-transform ${slide.allowAnonymous ? 'left-5' : 'left-1'}`} />
+          <div 
+            className="w-12 h-7 rounded-full transition-all duration-200 relative flex-shrink-0"
+            style={{ backgroundColor: slide.allowAnonymous ? '#ec4899' : '#cbd5e1' }}
+          >
+            <div 
+              className="absolute top-1 w-5 h-5 rounded-full bg-white shadow-md transition-all duration-200"
+              style={{ left: slide.allowAnonymous ? '26px' : '4px' }}
+            />
           </div>
           <div className="flex-1">
             <div className="flex items-center gap-2">

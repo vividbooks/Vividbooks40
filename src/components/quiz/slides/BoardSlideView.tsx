@@ -283,11 +283,17 @@ function NewPostForm({
         <button
           onClick={handleSubmit}
           disabled={!text.trim()}
-          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm transition-all ${
-            text.trim()
-              ? 'bg-gradient-to-r from-pink-500 to-rose-500 text-white shadow-lg shadow-pink-500/30 hover:shadow-xl hover:shadow-pink-500/40 hover:scale-105 active:scale-95'
-              : 'bg-slate-200 text-slate-400 cursor-not-allowed'
-          }`}
+          className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm transition-all hover:scale-105 active:scale-95"
+          style={{
+            background: text.trim() 
+              ? 'linear-gradient(to right, #ec4899, #f43f5e)' 
+              : '#e2e8f0',
+            color: text.trim() ? 'white' : '#94a3b8',
+            boxShadow: text.trim() 
+              ? '0 10px 15px -3px rgba(236, 72, 153, 0.3)' 
+              : 'none',
+            cursor: text.trim() ? 'pointer' : 'not-allowed',
+          }}
         >
           <Send className="w-4 h-4" />
           Odeslat
