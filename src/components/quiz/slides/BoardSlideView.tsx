@@ -94,7 +94,10 @@ function PostCard({
   }, [hasLiked, onLike]);
   
   return (
-    <div className="w-full sm:w-[550px] bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden hover:shadow-lg hover:scale-[1.02] transition-all duration-200 relative flex-shrink-0">
+    <div 
+      className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden hover:shadow-lg hover:scale-[1.02] transition-all duration-200 relative flex-shrink-0"
+      style={{ width: '100%', maxWidth: '550px' }}
+    >
       {/* Floating hearts animation */}
       {showHearts && <FloatingHearts count={5} />}
       
@@ -215,7 +218,10 @@ function NewPostForm({
   }
   
   return (
-    <div className="bg-white rounded-2xl shadow-lg border border-slate-200 p-4 w-full sm:w-[550px] mx-auto">
+    <div 
+      className="bg-white rounded-2xl shadow-lg border border-slate-200 p-4 mx-auto"
+      style={{ width: '100%', maxWidth: '550px' }}
+    >
       <textarea
         value={text}
         onChange={(e) => setText(e.target.value)}
@@ -481,7 +487,7 @@ export function BoardSlideView({
   return (
     <div className="w-full h-full bg-gradient-to-br from-slate-50 via-white to-pink-50/30 rounded-3xl overflow-hidden flex flex-col">
       {/* Header: Question centered */}
-      <div className="flex-shrink-0 px-8 pt-10 pb-6 text-center border-b border-slate-100">
+      <div className="flex-shrink-0 px-8 pt-16 pb-8 text-center border-b border-slate-100">
         <h2 
           className="font-bold text-[#4E5871] leading-tight mb-4"
           style={{ fontSize: questionFontSize }}
