@@ -947,7 +947,7 @@ export function QuizStudentView() {
       
       {/* Main content */}
       <div className="flex-1 flex flex-col pb-4 lg:pt-4 lg:pb-4" style={{ backgroundColor: '#F0F1F8' }}>
-        <div className="flex-1 flex items-stretch">
+        <div className="flex-1 flex items-center">
           {/* Desktop: Left arrow */}
           <div className="hidden lg:flex w-16 flex-shrink-0 items-center justify-center">
             <button
@@ -961,7 +961,7 @@ export function QuizStudentView() {
           
           {/* Slide card */}
           <div 
-            className="flex-1 flex items-stretch"
+            className="flex-1 flex items-center justify-center"
             style={{
               overflowY: isMobile ? 'auto' : 'hidden',
               overflowX: 'hidden',
@@ -979,11 +979,12 @@ export function QuizStudentView() {
                 ${currentSlideIndex < prevSlideIndex && isAnimating ? 'animate-slide-in-left' : ''}
               `}
               style={{
-                // Fill the available height (no fixed aspect ratio)
-                flex: 1,
+                // Use 4:3 aspect ratio (editor format) and center vertically
+                aspectRatio: !isMobile ? '4/3' : undefined,
+                maxHeight: !isMobile ? '100%' : undefined,
                 // On mobile: auto height for scrolling
-                height: isMobile ? 'auto' : '100%',
-                alignSelf: 'stretch',
+                height: isMobile ? 'auto' : undefined,
+                alignSelf: 'center',
               }}
               key={currentSlideIndex}
             >

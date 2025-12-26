@@ -1216,7 +1216,7 @@ export function QuizPreview({ quiz, onClose, isLive = false, onComplete }: QuizP
         </div>
         
         {/* Content with arrows */}
-        <div className="flex-1 flex items-stretch">
+        <div className="flex-1 flex items-center">
           {/* Desktop: Left arrow */}
           <div className="hidden lg:flex w-16 flex-shrink-0 items-center justify-center">
             <button
@@ -1232,14 +1232,14 @@ export function QuizPreview({ quiz, onClose, isLive = false, onComplete }: QuizP
           
           {/* Slide content */}
           <div 
-            className="flex-1 flex items-stretch"
+            className="flex-1 flex items-center justify-center"
             style={{ 
               overflowY: isMobile ? 'auto' : 'hidden',
               overflowX: 'hidden',
               WebkitOverflowScrolling: 'touch',
               // Info slides fill width with small padding, activity slides centered with max width
-              paddingLeft: currentSlide?.type === 'info' ? 0 : 16,
-              paddingRight: currentSlide?.type === 'info' ? 0 : 16,
+              paddingLeft: currentSlide?.type === 'info' ? 16 : 16,
+              paddingRight: currentSlide?.type === 'info' ? 16 : 16,
             }}
           >
             <div 
@@ -1254,11 +1254,12 @@ export function QuizPreview({ quiz, onClose, isLive = false, onComplete }: QuizP
                 display: 'flex',
                 flexDirection: 'column',
                 overflow: 'hidden',
-                // Fill the available height (no fixed aspect ratio)
-                flex: 1,
+                // Use 4:3 aspect ratio (editor format) and center vertically
+                aspectRatio: !isMobile ? '4/3' : undefined,
+                maxHeight: !isMobile ? '100%' : undefined,
                 // On mobile, allow height to grow
-                height: isMobile ? 'auto' : '100%',
-                alignSelf: 'stretch',
+                height: isMobile ? 'auto' : undefined,
+                alignSelf: 'center',
               }}
               key={currentSlideIndex}
             >

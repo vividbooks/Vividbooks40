@@ -1382,7 +1382,7 @@ export function QuizViewPage() {
           </div>
           
           {/* Content with arrows */}
-          <div className="flex-1 flex items-stretch">
+          <div className="flex-1 flex items-center">
           {/* Desktop: Left arrow */}
           <div className="hidden lg:flex w-16 flex-shrink-0 items-center justify-center">
             <button
@@ -1402,7 +1402,7 @@ export function QuizViewPage() {
           
           {/* Slide content */}
           <div 
-            className="flex-1 flex items-stretch overflow-hidden"
+            className="flex-1 flex items-center justify-center overflow-hidden"
             style={{
               // Info slides fill width, activity slides centered with max width
               paddingLeft: currentSlide?.type === 'info' ? 0 : 16,
@@ -1418,10 +1418,10 @@ export function QuizViewPage() {
               `}
               style={{ 
                 backgroundColor: getSlideBackground(currentSlide),
-                // Fill the available height (no fixed aspect ratio for info slides)
-                flex: 1,
-                height: '100%',
-                alignSelf: 'stretch',
+                // Use 4:3 aspect ratio (editor format) and center vertically
+                aspectRatio: '4/3',
+                maxHeight: '100%',
+                alignSelf: 'center',
               }}
               key={currentSlideIndex}
             >
