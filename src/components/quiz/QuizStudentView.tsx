@@ -976,12 +976,14 @@ export function QuizStudentView() {
           
           {/* Slide card - fills remaining space */}
           <div 
-            className="flex-1 overflow-hidden"
+            className="flex-1"
             style={{
               minHeight: 0,
               overflowY: isMobile ? 'auto' : 'hidden',
               overflowX: 'hidden',
               WebkitOverflowScrolling: 'touch',
+              // Padding for shadow visibility
+              padding: 16,
             }}
           >
             <div 
