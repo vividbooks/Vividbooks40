@@ -836,8 +836,7 @@ const FolderSection = ({
                         item={item}
                         onClick={() => {
                            if (['practice', 'test', 'exam'].includes(item.type || '') && item.externalUrl) {
-                              window.open(item.externalUrl, '_blank');
-                              return;
+                              if (handleExternalUrl(item.externalUrl, navigate)) return;
                            }
 
                            if (item.slug) {
@@ -1222,10 +1221,9 @@ export function CategoryOverview({ category, isAdmin = false, folderSlug, viewMo
                               key={item.id}
                               item={item}
                               onClick={() => {
-                                 if (['practice', 'test', 'exam'].includes(item.type || '') && item.externalUrl) {
-                                    window.open(item.externalUrl, '_blank');
-                                    return;
-                                 }
+if (['practice', 'test', 'exam'].includes(item.type || '') && item.externalUrl) {
+                                 if (handleExternalUrl(item.externalUrl, navigate)) return;
+                              }
                                  if (item.slug) {
                                     navigate(`${basePath}/${category}/${parentPath}${item.slug}`);
                                  }
@@ -1255,8 +1253,7 @@ export function CategoryOverview({ category, isAdmin = false, folderSlug, viewMo
                                  if (matches.length === 1) {
                                     const match = matches[0];
                                     if (['practice', 'test', 'exam'].includes(match.type || '') && match.externalUrl) {
-                                        window.open(match.externalUrl, '_blank');
-                                        return;
+                                        if (handleExternalUrl(match.externalUrl, navigate)) return;
                                     }
                                     const pathSegments = findPathToItem(item.children || [], match.id);
                                     if (pathSegments) {
@@ -1383,10 +1380,9 @@ export function CategoryOverview({ category, isAdmin = false, folderSlug, viewMo
                                     onClick={() => {
                                       const basePath = isAdmin ? '/admin' : '/docs';
                                       
-                                      if (['practice', 'test', 'exam'].includes(item.type || '') && item.externalUrl) {
-                                        window.open(item.externalUrl, '_blank');
-                                        return;
-                                      }
+if (['practice', 'test', 'exam'].includes(item.type || '') && item.externalUrl) {
+                                 if (handleExternalUrl(item.externalUrl, navigate)) return;
+                              }
 
                                       const target = item.slug || item.id;
                                       if (target) {
@@ -1421,10 +1417,9 @@ export function CategoryOverview({ category, isAdmin = false, folderSlug, viewMo
                             key={item.id}
                             item={item}
                             onClick={() => {
-                               if (['practice', 'test', 'exam'].includes(item.type || '') && item.externalUrl) {
-                                  window.open(item.externalUrl, '_blank');
-                                  return;
-                               }
+if (['practice', 'test', 'exam'].includes(item.type || '') && item.externalUrl) {
+                                 if (handleExternalUrl(item.externalUrl, navigate)) return;
+                              }
 
                                if (item.slug) {
                                   navigate(`${basePath}/${category}/${parentPath}${item.slug}`);
@@ -1444,10 +1439,9 @@ export function CategoryOverview({ category, isAdmin = false, folderSlug, viewMo
                             item={item} 
                             inheritedColor={inheritedColor}
                             onClick={() => {
-                               if (['practice', 'test', 'exam'].includes(item.type || '') && item.externalUrl) {
-                                  window.open(item.externalUrl, '_blank');
-                                  return;
-                               }
+if (['practice', 'test', 'exam'].includes(item.type || '') && item.externalUrl) {
+                                 if (handleExternalUrl(item.externalUrl, navigate)) return;
+                              }
 
                                const target = item.slug || item.id;
                                if (target) {
@@ -1465,8 +1459,7 @@ export function CategoryOverview({ category, isAdmin = false, folderSlug, viewMo
 
                                   // Check for external link
                                   if (['practice', 'test', 'exam'].includes(match.type || '') && match.externalUrl) {
-                                      window.open(match.externalUrl, '_blank');
-                                      return;
+                                      if (handleExternalUrl(match.externalUrl, navigate)) return;
                                   }
                                }
 
