@@ -36,6 +36,22 @@ interface MenuItem {
   externalUrl?: string;
 }
 
+// Helper function to handle external URLs including board:// protocol
+const handleExternalUrl = (externalUrl: string, navigate: (path: string) => void): boolean => {
+  if (!externalUrl) return false;
+  
+  // Handle board:// URLs - navigate to Vividboard view
+  if (externalUrl.startsWith('board://')) {
+    const boardId = externalUrl.replace('board://', '');
+    navigate(`/quiz/view/${boardId}`);
+    return true;
+  }
+  
+  // Handle regular external URLs
+  window.open(externalUrl, '_blank');
+  return true;
+};
+
 interface CategoryOverviewProps {
   category: string;
   isAdmin?: boolean;
@@ -734,8 +750,7 @@ const FolderSection = ({
                       item={item}
                       onClick={() => {
                          if (['practice', 'test', 'exam'].includes(item.type || '') && item.externalUrl) {
-                            window.open(item.externalUrl, '_blank');
-                            return;
+                            if (handleExternalUrl(item.externalUrl, navigate)) return;
                          }
 
                          if (item.slug) {
@@ -757,8 +772,7 @@ const FolderSection = ({
                       inheritedColor={inheritedColor}
                       onClick={() => {
                          if (['practice', 'test', 'exam'].includes(item.type || '') && item.externalUrl) {
-                            window.open(item.externalUrl, '_blank');
-                            return;
+                            if (handleExternalUrl(item.externalUrl, navigate)) return;
                          }
 
                          const target = item.slug || item.id;
@@ -797,8 +811,7 @@ const FolderSection = ({
                       item={item}
                       onClick={() => {
                          if (['practice', 'test', 'exam'].includes(item.type || '') && item.externalUrl) {
-                            window.open(item.externalUrl, '_blank');
-                            return;
+                            if (handleExternalUrl(item.externalUrl, navigate)) return;
                          }
 
                          if (item.slug) {
@@ -1169,8 +1182,7 @@ export function CategoryOverview({ category, isAdmin = false, folderSlug, viewMo
                        if (matches.length === 1) {
                           const match = matches[0];
                           if (['practice', 'test', 'exam'].includes(match.type || '') && match.externalUrl) {
-                              window.open(match.externalUrl, '_blank');
-                              return;
+                              if (handleExternalUrl(match.externalUrl, navigate)) return;
                           }
                           const pathSegments = findPathToItem(item.children || [], match.id);
                           if (pathSegments) {

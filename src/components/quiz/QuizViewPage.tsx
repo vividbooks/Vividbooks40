@@ -49,7 +49,7 @@ import { ImageHotspotsView } from './slides/ImageHotspotsView';
 import { VideoQuizView } from './slides/VideoQuizView';
 import { useBoardPosts } from '../../hooks/useBoardPosts';
 import { useVoting } from '../../hooks/useVoting';
-import { getQuiz } from '../../utils/quiz-storage';
+import { getQuiz, saveQuiz, duplicateQuiz } from '../../utils/quiz-storage';
 import * as storage from '../../utils/profile-storage';
 import { database } from '../../utils/firebase-config';
 import { ref, set, onValue, off, update } from 'firebase/database';
@@ -1325,11 +1325,34 @@ export function QuizViewPage() {
           {/* Results */}
           <button 
             onClick={() => navigate(`/quiz/edit/${quiz.id}?tab=results`)}
-            className="w-full flex items-center gap-4 px-5 py-4 rounded-xl text-white font-medium hover:bg-white/20 transition-colors"
+            className="w-full flex items-center gap-4 px-5 py-4 rounded-xl text-white font-medium hover:bg-white/20 transition-colors mb-3"
             style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}
           >
             <BarChart2 className="w-6 h-6 text-slate-400" />
             <span>Výsledky</span>
+          </button>
+          
+          {/* Copy to my content */}
+          <button 
+            onClick={() => {
+              if (!quiz) return;
+              // Create a duplicate with new ID
+              const newQuiz = {
+                ...quiz,
+                id: crypto.randomUUID(),
+                title: `${quiz.title || 'Board'} (kopie)`,
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+              };
+              saveQuiz(newQuiz);
+              // Navigate to the new board in editor
+              navigate(`/quiz/edit/${newQuiz.id}`);
+            }}
+            className="w-full flex items-center gap-4 px-5 py-4 rounded-xl text-white font-medium hover:bg-white/20 transition-colors"
+            style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}
+          >
+            <Copy className="w-6 h-6 text-slate-400" />
+            <span>Kopírovat k sobě</span>
           </button>
           
           {/* Spacer */}
