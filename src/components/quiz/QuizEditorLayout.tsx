@@ -689,6 +689,9 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   
+  // Get returnUrl from search params (for admin navigation)
+  const returnUrl = searchParams.get('returnUrl');
+  
   // Quiz state
   const [quiz, setQuiz] = useState<Quiz | null>(null);
   const [selectedSlideId, setSelectedSlideId] = useState<string | null>(null);
@@ -1208,7 +1211,7 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
         {/* Back button */}
         <button
           type="button"
-          onClick={() => navigate('/library/my-content')}
+          onClick={() => navigate(returnUrl || '/library/my-content')}
           style={{
             display: 'flex',
             alignItems: 'center',

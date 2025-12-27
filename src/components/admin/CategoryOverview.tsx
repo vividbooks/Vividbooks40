@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import Lottie from "lottie-react";
 import { projectId, publicAnonKey } from '../../utils/supabase/info.tsx';
 import { DOCUMENT_TYPES } from '../../types/document-types';
+import * as quizStorage from '../../utils/quiz-storage';
 import { 
   BookOpen, List, FileText, ArrowLeft, Filter, 
   LayoutGrid, ChevronDown,
@@ -50,6 +51,22 @@ const handleExternalUrl = (externalUrl: string, navigate: (path: string) => void
   // Handle regular external URLs
   window.open(externalUrl, '_blank');
   return true;
+};
+
+// Helper function to check if a board exists for an item and navigate to it
+const tryNavigateToBoard = (itemSlug: string | undefined, navigate: (path: string) => void): boolean => {
+  if (!itemSlug) return false;
+  
+  // Check for board with standard ID pattern (board_{slug})
+  const expectedBoardId = `board_${itemSlug}`;
+  const quiz = quizStorage.getQuiz(expectedBoardId);
+  
+  if (quiz) {
+    navigate(`/quiz/view/${expectedBoardId}`);
+    return true;
+  }
+  
+  return false;
 };
 
 interface CategoryOverviewProps {
@@ -749,8 +766,9 @@ const FolderSection = ({
                       key={item.id}
                       item={item}
                       onClick={() => {
-                         if (['practice', 'test', 'exam'].includes(item.type || '') && item.externalUrl) {
-                            if (handleExternalUrl(item.externalUrl, navigate)) return;
+                         if (['practice', 'test', 'exam'].includes(item.type || '')) {
+                            if (item.externalUrl && handleExternalUrl(item.externalUrl, navigate)) return;
+                            if (tryNavigateToBoard(item.slug, navigate)) return;
                          }
 
                          if (item.slug) {
@@ -771,8 +789,9 @@ const FolderSection = ({
                       item={item} 
                       inheritedColor={inheritedColor}
                       onClick={() => {
-                         if (['practice', 'test', 'exam'].includes(item.type || '') && item.externalUrl) {
-                            if (handleExternalUrl(item.externalUrl, navigate)) return;
+                         if (['practice', 'test', 'exam'].includes(item.type || '')) {
+                            if (item.externalUrl && handleExternalUrl(item.externalUrl, navigate)) return;
+                            if (tryNavigateToBoard(item.slug, navigate)) return;
                          }
 
                          const target = item.slug || item.id;
@@ -810,8 +829,9 @@ const FolderSection = ({
                       key={item.id}
                       item={item}
                       onClick={() => {
-                         if (['practice', 'test', 'exam'].includes(item.type || '') && item.externalUrl) {
-                            if (handleExternalUrl(item.externalUrl, navigate)) return;
+                         if (['practice', 'test', 'exam'].includes(item.type || '')) {
+                            if (item.externalUrl && handleExternalUrl(item.externalUrl, navigate)) return;
+                            if (tryNavigateToBoard(item.slug, navigate)) return;
                          }
 
                          if (item.slug) {
@@ -835,8 +855,9 @@ const FolderSection = ({
                         key={item.id}
                         item={item}
                         onClick={() => {
-                           if (['practice', 'test', 'exam'].includes(item.type || '') && item.externalUrl) {
-                              if (handleExternalUrl(item.externalUrl, navigate)) return;
+                           if (['practice', 'test', 'exam'].includes(item.type || '')) {
+                              if (item.externalUrl && handleExternalUrl(item.externalUrl, navigate)) return;
+                              if (tryNavigateToBoard(item.slug, navigate)) return;
                            }
 
                            if (item.slug) {
@@ -1180,8 +1201,9 @@ export function CategoryOverview({ category, isAdmin = false, folderSlug, viewMo
                        
                        if (matches.length === 1) {
                           const match = matches[0];
-                          if (['practice', 'test', 'exam'].includes(match.type || '') && match.externalUrl) {
-                              if (handleExternalUrl(match.externalUrl, navigate)) return;
+                          if (['practice', 'test', 'exam'].includes(match.type || '')) {
+                              if (match.externalUrl && handleExternalUrl(match.externalUrl, navigate)) return;
+                              if (tryNavigateToBoard(match.slug, navigate)) return;
                           }
                           const pathSegments = findPathToItem(item.children || [], match.id);
                           if (pathSegments) {
@@ -1221,9 +1243,10 @@ export function CategoryOverview({ category, isAdmin = false, folderSlug, viewMo
                               key={item.id}
                               item={item}
                               onClick={() => {
-if (['practice', 'test', 'exam'].includes(item.type || '') && item.externalUrl) {
-                                 if (handleExternalUrl(item.externalUrl, navigate)) return;
-                              }
+                                 if (['practice', 'test', 'exam'].includes(item.type || '')) {
+                                    if (item.externalUrl && handleExternalUrl(item.externalUrl, navigate)) return;
+                                    if (tryNavigateToBoard(item.slug, navigate)) return;
+                                 }
                                  if (item.slug) {
                                     navigate(`${basePath}/${category}/${parentPath}${item.slug}`);
                                  }
@@ -1252,8 +1275,9 @@ if (['practice', 'test', 'exam'].includes(item.type || '') && item.externalUrl) 
                                  
                                  if (matches.length === 1) {
                                     const match = matches[0];
-                                    if (['practice', 'test', 'exam'].includes(match.type || '') && match.externalUrl) {
-                                        if (handleExternalUrl(match.externalUrl, navigate)) return;
+                                    if (['practice', 'test', 'exam'].includes(match.type || '')) {
+                                        if (match.externalUrl && handleExternalUrl(match.externalUrl, navigate)) return;
+                                        if (tryNavigateToBoard(match.slug, navigate)) return;
                                     }
                                     const pathSegments = findPathToItem(item.children || [], match.id);
                                     if (pathSegments) {
@@ -1380,9 +1404,10 @@ if (['practice', 'test', 'exam'].includes(item.type || '') && item.externalUrl) 
                                     onClick={() => {
                                       const basePath = isAdmin ? '/admin' : '/docs';
                                       
-if (['practice', 'test', 'exam'].includes(item.type || '') && item.externalUrl) {
-                                 if (handleExternalUrl(item.externalUrl, navigate)) return;
-                              }
+                                      if (['practice', 'test', 'exam'].includes(item.type || '')) {
+                                        if (item.externalUrl && handleExternalUrl(item.externalUrl, navigate)) return;
+                                        if (tryNavigateToBoard(item.slug, navigate)) return;
+                                      }
 
                                       const target = item.slug || item.id;
                                       if (target) {
@@ -1417,9 +1442,10 @@ if (['practice', 'test', 'exam'].includes(item.type || '') && item.externalUrl) 
                             key={item.id}
                             item={item}
                             onClick={() => {
-if (['practice', 'test', 'exam'].includes(item.type || '') && item.externalUrl) {
-                                 if (handleExternalUrl(item.externalUrl, navigate)) return;
-                              }
+                               if (['practice', 'test', 'exam'].includes(item.type || '')) {
+                                  if (item.externalUrl && handleExternalUrl(item.externalUrl, navigate)) return;
+                                  if (tryNavigateToBoard(item.slug, navigate)) return;
+                               }
 
                                if (item.slug) {
                                   navigate(`${basePath}/${category}/${parentPath}${item.slug}`);
@@ -1439,9 +1465,10 @@ if (['practice', 'test', 'exam'].includes(item.type || '') && item.externalUrl) 
                             item={item} 
                             inheritedColor={inheritedColor}
                             onClick={() => {
-if (['practice', 'test', 'exam'].includes(item.type || '') && item.externalUrl) {
-                                 if (handleExternalUrl(item.externalUrl, navigate)) return;
-                              }
+                               if (['practice', 'test', 'exam'].includes(item.type || '')) {
+                                  if (item.externalUrl && handleExternalUrl(item.externalUrl, navigate)) return;
+                                  if (tryNavigateToBoard(item.slug, navigate)) return;
+                               }
 
                                const target = item.slug || item.id;
                                if (target) {
@@ -1457,9 +1484,10 @@ if (['practice', 'test', 'exam'].includes(item.type || '') && item.externalUrl) 
                                if (matches.length === 1) {
                                   const match = matches[0];
 
-                                  // Check for external link
-                                  if (['practice', 'test', 'exam'].includes(match.type || '') && match.externalUrl) {
-                                      if (handleExternalUrl(match.externalUrl, navigate)) return;
+                                  // Check for external link or board
+                                  if (['practice', 'test', 'exam'].includes(match.type || '')) {
+                                      if (match.externalUrl && handleExternalUrl(match.externalUrl, navigate)) return;
+                                      if (tryNavigateToBoard(match.slug, navigate)) return;
                                   }
                                }
 

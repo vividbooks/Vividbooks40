@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { LogOut, Moon, Sun, Save, BookOpen, CheckCircle2, Loader2, ChevronDown, ChevronUp, Settings, User, GraduationCap, ExternalLink, BarChart3, Play, Pencil, Plus } from 'lucide-react';
 import { AdminSidebar } from './AdminSidebar';
 import { CategoryOverview } from './admin/CategoryOverview';
@@ -103,7 +103,11 @@ export function NewAdminLayout({ theme, toggleTheme, onLogout }: AdminLayoutProp
   const category = params.category;
   const slug = params['*'];
   const navigate = useNavigate();
+  const location = useLocation();
   const searchParams = new URLSearchParams(window.location.search);
+  
+  // Build current admin URL for returnUrl parameter
+  const currentAdminUrl = location.pathname;
   
   const [currentPage, setCurrentPage] = useState<Page | null>(null);
   const [title, setTitle] = useState('');
@@ -775,7 +779,7 @@ export function NewAdminLayout({ theme, toggleTheme, onLogout }: AdminLayoutProp
                             </div>
                             <div className="flex gap-2">
                               <button
-                                onClick={() => navigate(`/quiz/edit/${boardId}`)}
+                                onClick={() => navigate(`/quiz/edit/${boardId}?returnUrl=${encodeURIComponent(currentAdminUrl)}`)}
                                 className="flex items-center gap-2 px-4 py-2 bg-white border border-green-300 rounded-lg hover:bg-green-50 transition-colors"
                               >
                                 <Pencil className="w-4 h-4" />
@@ -818,8 +822,8 @@ export function NewAdminLayout({ theme, toggleTheme, onLogout }: AdminLayoutProp
                               // Store boardId in externalUrl for persistence
                               setExternalUrl(`board://${newBoardId}`);
                               
-                              // Navigate to the editor
-                              navigate(`/quiz/edit/${newBoardId}`);
+                              // Navigate to the editor with returnUrl
+                              navigate(`/quiz/edit/${newBoardId}?returnUrl=${encodeURIComponent(currentAdminUrl)}`);
                             }}
                             className="inline-flex items-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium"
                           >
