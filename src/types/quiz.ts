@@ -10,7 +10,19 @@ export type SlideType = 'info' | 'activity' | 'tools';
 /**
  * Activity types for activity slides
  */
-export type ActivityType = 'abc' | 'open' | 'example' | 'true-false' | 'matching' | 'ordering' | 'board';
+export type ActivityType = 
+  | 'abc' 
+  | 'open' 
+  | 'example' 
+  | 'true-false' 
+  | 'matching' 
+  | 'ordering' 
+  | 'board' 
+  | 'voting'
+  | 'fill-blanks'      // Doplňování - drag and drop words into sentences
+  | 'image-hotspots'   // Poznávačka - identify points on an image
+  | 'connect-pairs'    // Spojovačka - connect matching pairs
+  | 'video-quiz';      // Otázky ve videu - questions at specific video timestamps
 
 // =============================================
 // BOARD (NÁSTĚNKA) TYPES
@@ -285,7 +297,7 @@ export interface InfoSlide extends BaseSlide {
 }
 
 /**
- * ABC Question - Multiple choice with one correct answer
+ * ABC Question - Multiple choice with one or more correct answers
  */
 export interface ABCOption {
   id: string;
@@ -299,6 +311,7 @@ export interface ABCActivitySlide extends BaseSlide {
   activityType: 'abc';
   question: string; // Can include LaTeX math
   options: ABCOption[];
+  allowMultipleCorrect?: boolean; // If true, multiple options can be marked as correct and student can select multiple
   explanation?: string; // Shown after answering
   points: number;
   timeLimit?: number; // seconds, optional
@@ -361,6 +374,55 @@ export interface TrueFalseActivitySlide extends BaseSlide {
   timeLimit?: number;
 }
 
+// =============================================
+// VOTING (HLASOVÁNÍ) TYPES
+// =============================================
+
+/**
+ * Voting type - determines the UI and chart type
+ */
+export type VotingType = 'single' | 'multiple' | 'scale' | 'feedback';
+
+/**
+ * Feedback style for feedback voting type
+ */
+export type FeedbackStyle = 'emoji' | 'hearts';
+
+/**
+ * Voting option - similar to ABC but no correct/incorrect
+ */
+export interface VotingOption {
+  id: string;
+  label: string; // A, B, C, D... or number for scale
+  content: string; // Text content for the option
+  color?: string; // Optional color for the option in charts
+  emoji?: string; // For feedback type with emoji
+}
+
+/**
+ * Voting Activity - Students vote, teacher sees results in chart
+ */
+export interface VotingActivitySlide extends BaseSlide {
+  type: 'activity';
+  activityType: 'voting';
+  votingType: VotingType; // Type of voting: single, multiple, scale, or feedback
+  question: string;
+  options: VotingOption[];
+  allowMultiple: boolean; // Legacy: If true, students can select multiple options (bar chart)
+  showResultsToStudents: boolean; // If true, students can see results after voting
+  media?: {
+    type: 'image' | 'video' | 'lottie';
+    url: string;
+  };
+  // Scale (od-do) settings
+  scaleMin?: number; // Minimum value (default: 1)
+  scaleMax?: number; // Maximum value (default: 10)
+  scaleMinLabel?: string; // Label for minimum (e.g., "Určitě ne")
+  scaleMaxLabel?: string; // Label for maximum (e.g., "Určitě ano")
+  // Feedback settings
+  feedbackStyle?: FeedbackStyle; // 'emoji' or 'hearts'
+}
+
 /**
  * Tools slide - Interactive tools (calculator, drawing, etc.)
  */
@@ -368,6 +430,138 @@ export interface ToolsSlide extends BaseSlide {
   type: 'tools';
   toolType: 'calculator' | 'drawing' | 'graph' | 'timer' | 'random';
   config?: Record<string, unknown>;
+}
+
+// =============================================
+// MULTI-STEP ACTIVITY TYPES
+// =============================================
+
+/**
+ * Blank item for fill-in-the-blanks activity
+ */
+export interface BlankItem {
+  id: string;
+  text: string; // The correct answer
+  position: number; // Position in the sentence (character index)
+}
+
+/**
+ * Fill-in-the-Blanks Activity (Doplňování)
+ * Drag and drop words into sentences
+ */
+export interface FillBlanksActivitySlide extends BaseSlide {
+  type: 'activity';
+  activityType: 'fill-blanks';
+  instruction?: string; // Optional instruction text
+  sentences: {
+    id: string;
+    text: string; // Full text with blanks marked as [blank_id]
+    blanks: BlankItem[];
+  }[];
+  distractors: string[]; // Wrong answer options
+  countAsMultiple: boolean; // If true, each blank counts as 1 point
+  shuffleOptions: boolean; // If true, shuffle the draggable options
+}
+
+/**
+ * Hotspot marker style
+ */
+export type HotspotMarkerStyle = 
+  | 'empty-square'      // Prázdný čtverec
+  | 'circle-small'      // Malý kulatý bod
+  | 'circle-medium'     // Střední kulatý bod  
+  | 'circle-large'      // Velký kulatý bod
+  | 'pin'               // Pin jako na mapě
+  | 'question-mark';    // Bílý čtverec s fialovým otazníkem
+
+/**
+ * Single hotspot on an image
+ */
+export interface ImageHotspot {
+  id: string;
+  x: number; // Percentage position (0-100)
+  y: number; // Percentage position (0-100)
+  label: string; // The correct answer (e.g., "Praha", "Biceps")
+  markerStyle: HotspotMarkerStyle;
+}
+
+/**
+ * Image Hotspots Activity (Poznávačka)
+ * Identify points on an image with ABC questions
+ */
+export interface ImageHotspotsActivitySlide extends BaseSlide {
+  type: 'activity';
+  activityType: 'image-hotspots';
+  instruction?: string;
+  imageUrl: string;
+  hotspots: ImageHotspot[];
+  countAsMultiple: boolean; // If true, each hotspot counts as 1 point
+  randomizeOrder: boolean; // If true, ask about hotspots in random order
+  showAllHotspots: boolean; // If true, show all hotspots at once, else show one at a time
+  markerStyle: HotspotMarkerStyle; // Global marker style for all hotspots
+  markerSize: number; // Size multiplier (0.5 to 2.0, default 1.0)
+  answerType: 'abc' | 'numeric' | 'text'; // abc = multiple choice, numeric = number keypad, text = text input
+}
+
+/**
+ * Connect Pairs Item (can be text or image)
+ */
+export interface ConnectPairItem {
+  id: string;
+  type: 'text' | 'image';
+  content: string; // Text content or image URL
+}
+
+/**
+ * A pair to connect
+ */
+export interface ConnectPair {
+  id: string;
+  left: ConnectPairItem;
+  right: ConnectPairItem;
+}
+
+/**
+ * Connect Pairs Activity (Spojovačka)
+ * Connect matching pairs with lines
+ */
+export interface ConnectPairsActivitySlide extends BaseSlide {
+  type: 'activity';
+  activityType: 'connect-pairs';
+  instruction?: string;
+  pairs: ConnectPair[];
+  countAsMultiple: boolean; // If true, each pair counts as 1 point
+  shuffleSides: boolean; // If true, shuffle left and right sides independently
+}
+
+/**
+ * Video question at a specific timestamp
+ */
+export interface VideoQuestion {
+  id: string;
+  timestamp: number; // Seconds from start
+  question: string;
+  options: {
+    id: string;
+    label: string; // A, B, C, D
+    content: string;
+    isCorrect: boolean;
+  }[];
+}
+
+/**
+ * Video Quiz Activity (Otázky ve videu)
+ * ABC questions at specific video timestamps
+ */
+export interface VideoQuizActivitySlide extends BaseSlide {
+  type: 'activity';
+  activityType: 'video-quiz';
+  instruction?: string;
+  videoUrl: string; // YouTube URL
+  videoId?: string; // Extracted YouTube video ID
+  questions: VideoQuestion[];
+  countAsMultiple: boolean; // If true, each question counts as 1 point
+  mustAnswerToProgress: boolean; // If true, video pauses until question is answered
 }
 
 /**
@@ -380,6 +574,11 @@ export type QuizSlide =
   | ExampleActivitySlide 
   | TrueFalseActivitySlide
   | BoardActivitySlide
+  | VotingActivitySlide
+  | FillBlanksActivitySlide
+  | ImageHotspotsActivitySlide
+  | ConnectPairsActivitySlide
+  | VideoQuizActivitySlide
   | ToolsSlide;
 
 /**
@@ -390,7 +589,12 @@ export type ActivitySlide =
   | OpenActivitySlide 
   | ExampleActivitySlide 
   | TrueFalseActivitySlide
-  | BoardActivitySlide;
+  | BoardActivitySlide
+  | VotingActivitySlide
+  | FillBlanksActivitySlide
+  | ImageHotspotsActivitySlide
+  | ConnectPairsActivitySlide
+  | VideoQuizActivitySlide;
 
 /**
  * Quiz/Test definition
@@ -679,6 +883,170 @@ export function createBoardSlide(order: number): BoardActivitySlide {
     allowMedia: false,
     allowAnonymous: false,
     posts: [],
+  };
+}
+
+/**
+ * Create Voting slide
+ */
+export function createVotingSlide(order: number, votingType: VotingType = 'single'): VotingActivitySlide {
+  // Generate options based on voting type
+  let options: VotingOption[] = [];
+  
+  if (votingType === 'scale') {
+    // Generate 1-10 scale options
+    options = Array.from({ length: 10 }, (_, i) => ({
+      id: `scale-${i + 1}`,
+      label: String(i + 1),
+      content: String(i + 1),
+      color: getScaleColor(i, 10),
+    }));
+  } else if (votingType === 'feedback') {
+    // Default emoji feedback options
+    options = [
+      { id: 'feedback-1', label: '1', content: '😢', emoji: '😢' },
+      { id: 'feedback-2', label: '2', content: '😟', emoji: '😟' },
+      { id: 'feedback-3', label: '3', content: '😐', emoji: '😐' },
+      { id: 'feedback-4', label: '4', content: '😊', emoji: '😊' },
+      { id: 'feedback-5', label: '5', content: '🥳', emoji: '🥳' },
+    ];
+  } else {
+    // Single or multiple choice - default ABC options
+    options = [
+      { id: 'a', label: 'A', content: '' },
+      { id: 'b', label: 'B', content: '' },
+      { id: 'c', label: 'C', content: '' },
+    ];
+  }
+  
+  return {
+    id: `slide-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    type: 'activity',
+    activityType: 'voting',
+    votingType,
+    order,
+    question: '',
+    options,
+    allowMultiple: votingType === 'multiple',
+    showResultsToStudents: true,
+    // Scale defaults
+    scaleMin: 1,
+    scaleMax: 10,
+    scaleMinLabel: 'Určitě ne',
+    scaleMaxLabel: 'Určitě ano',
+    // Feedback defaults
+    feedbackStyle: 'emoji',
+  };
+}
+
+/**
+ * Generate color for scale based on position (orange to blue gradient)
+ */
+function getScaleColor(index: number, total: number): string {
+  const colors = [
+    '#f97316', // orange (1)
+    '#f97316', // orange (2)
+    '#c084fc', // purple-light (3)
+    '#a855f7', // purple (4)
+    '#8b5cf6', // violet (5)
+    '#7c3aed', // violet-dark (6)
+    '#6366f1', // indigo (7)
+    '#4f46e5', // indigo-dark (8)
+    '#4338ca', // indigo-darker (9)
+    '#4f46e5', // indigo (10)
+  ];
+  return colors[index] || colors[0];
+}
+
+// =============================================
+// MULTI-STEP ACTIVITY FACTORY FUNCTIONS
+// =============================================
+
+/**
+ * Create Fill-in-the-Blanks slide (Doplňování)
+ */
+export function createFillBlanksSlide(order: number): FillBlanksActivitySlide {
+  return {
+    id: `slide-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    type: 'activity',
+    activityType: 'fill-blanks',
+    order,
+    instruction: 'Doplň chybějící slova',
+    sentences: [
+      {
+        id: 'sentence-1',
+        text: '',
+        blanks: [],
+      },
+    ],
+    distractors: [],
+    countAsMultiple: true,
+    shuffleOptions: true,
+  };
+}
+
+/**
+ * Create Image Hotspots slide (Poznávačka)
+ */
+export function createImageHotspotsSlide(order: number): ImageHotspotsActivitySlide {
+  return {
+    id: `slide-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    type: 'activity',
+    activityType: 'image-hotspots',
+    order,
+    instruction: 'Označ správné místo na obrázku',
+    imageUrl: '',
+    hotspots: [],
+    countAsMultiple: true,
+    randomizeOrder: true,
+    showAllHotspots: true,
+    markerStyle: 'circle-medium',
+    markerSize: 1.0,
+    answerType: 'abc',
+  };
+}
+
+/**
+ * Create Connect Pairs slide (Spojovačka)
+ */
+export function createConnectPairsSlide(order: number): ConnectPairsActivitySlide {
+  return {
+    id: `slide-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    type: 'activity',
+    activityType: 'connect-pairs',
+    order,
+    instruction: 'Spoj správné dvojice',
+    pairs: [
+      {
+        id: 'pair-1',
+        left: { id: 'left-1', type: 'text', content: '' },
+        right: { id: 'right-1', type: 'text', content: '' },
+      },
+      {
+        id: 'pair-2',
+        left: { id: 'left-2', type: 'text', content: '' },
+        right: { id: 'right-2', type: 'text', content: '' },
+      },
+    ],
+    countAsMultiple: true,
+    shuffleSides: true,
+  };
+}
+
+/**
+ * Create Video Quiz slide (Otázky ve videu)
+ */
+export function createVideoQuizSlide(order: number): VideoQuizActivitySlide {
+  return {
+    id: `slide-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    type: 'activity',
+    activityType: 'video-quiz',
+    order,
+    instruction: 'Sleduj video a odpovídej na otázky',
+    videoUrl: '',
+    questions: [],
+    countAsMultiple: true,
+    mustAnswerToProgress: true,
   };
 }
 

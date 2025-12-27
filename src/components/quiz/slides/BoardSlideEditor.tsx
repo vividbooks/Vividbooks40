@@ -306,15 +306,6 @@ export function BoardSlideEditor({ slide, onUpdate }: BoardSlideEditorProps) {
         
         {/* Allow anonymous toggle */}
         <label className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 cursor-pointer hover:bg-slate-50 transition-colors">
-          <div 
-            className="w-12 h-7 rounded-full transition-all duration-200 relative flex-shrink-0"
-            style={{ backgroundColor: slide.allowAnonymous ? '#ec4899' : '#cbd5e1' }}
-          >
-            <div 
-              className="absolute top-1 w-5 h-5 rounded-full bg-white shadow-md transition-all duration-200"
-              style={{ left: slide.allowAnonymous ? '26px' : '4px' }}
-            />
-          </div>
           <div className="flex-1">
             <div className="flex items-center gap-2">
               <EyeOff className="w-4 h-4 text-slate-500" />
@@ -323,6 +314,31 @@ export function BoardSlideEditor({ slide, onUpdate }: BoardSlideEditorProps) {
             <p className="text-xs text-slate-500 mt-0.5">
               Jména autorů nebudou viditelná
             </p>
+          </div>
+          <div 
+            className="relative flex-shrink-0"
+            style={{ 
+              width: '52px', 
+              height: '28px', 
+              borderRadius: '14px',
+              backgroundColor: slide.allowAnonymous ? '#ec4899' : '#94a3b8',
+              transition: 'background-color 0.2s ease',
+              boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.2)'
+            }}
+          >
+            <div 
+              style={{ 
+                position: 'absolute',
+                top: '2px',
+                left: slide.allowAnonymous ? '26px' : '2px',
+                width: '24px', 
+                height: '24px', 
+                borderRadius: '12px',
+                backgroundColor: '#ffffff',
+                boxShadow: '0 2px 4px rgba(0,0,0,0.2), 0 1px 2px rgba(0,0,0,0.1)',
+                transition: 'left 0.2s ease'
+              }}
+            />
           </div>
           <input
             type="checkbox"

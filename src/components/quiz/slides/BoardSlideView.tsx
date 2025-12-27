@@ -91,24 +91,37 @@ const POST_COLORS = [
 // Modal for adding new post (Padlet-style)
 function AddPostModal({
   allowMedia,
+  showColumnSelector,
+  leftColumnLabel,
+  rightColumnLabel,
   onSubmit,
   onClose,
 }: {
   allowMedia: boolean;
-  onSubmit: (text: string, mediaUrl?: string, mediaType?: 'image' | 'youtube', backgroundColor?: string) => void;
+  showColumnSelector?: boolean;
+  leftColumnLabel?: string;
+  rightColumnLabel?: string;
+  onSubmit: (text: string, mediaUrl?: string, mediaType?: 'image' | 'youtube', backgroundColor?: string, column?: 'left' | 'right') => void;
   onClose: () => void;
 }) {
   const [text, setText] = useState('');
   const [mediaUrl, setMediaUrl] = useState('');
   const [mediaType, setMediaType] = useState<'image' | 'youtube' | null>(null);
   const [backgroundColor, setBackgroundColor] = useState('#ffffff');
+  const [selectedColumn, setSelectedColumn] = useState<'left' | 'right'>('left');
   
   const youtubeId = mediaType === 'youtube' && mediaUrl ? getYouTubeId(mediaUrl) : null;
   const canSubmit = text.trim() || mediaUrl.trim();
 
   const handleSubmit = () => {
     if (!canSubmit) return;
-    onSubmit(text.trim(), mediaUrl.trim() || undefined, mediaType || undefined, backgroundColor);
+    onSubmit(
+      text.trim(), 
+      mediaUrl.trim() || undefined, 
+      mediaType || undefined, 
+      backgroundColor,
+      showColumnSelector ? selectedColumn : undefined
+    );
     onClose();
   };
 
@@ -131,19 +144,10 @@ function AddPostModal({
           >
             <X className="w-5 h-5 text-slate-500" />
           </button>
-          <h3 className="font-bold text-slate-800 text-lg">Nový příspěvek</h3>
-          <button
-            onClick={handleSubmit}
-            disabled={!canSubmit}
-            className="px-5 py-2 rounded-xl font-bold text-sm transition-all"
-            style={{
-              background: canSubmit ? 'linear-gradient(to right, #ec4899, #f43f5e)' : '#f1f5f9',
-              color: canSubmit ? 'white' : '#94a3b8',
-              cursor: canSubmit ? 'pointer' : 'not-allowed',
-            }}
-          >
-            Odeslat
-          </button>
+          <h3 className="font-bold text-slate-800 text-lg">
+            {showColumnSelector ? 'Nový argument' : 'Nový příspěvek'}
+          </h3>
+          <div style={{ width: '40px' }} /> {/* Spacer for centering */}
         </div>
 
         {/* Media upload area */}
@@ -245,31 +249,95 @@ function AddPostModal({
           <textarea
             value={text}
             onChange={(e) => setText(e.target.value)}
-            placeholder="Napiš něco úžasného... ✨"
+            placeholder={showColumnSelector ? "Napiš svůj argument..." : "Napiš něco úžasného... ✨"}
             className="w-full px-4 py-4 rounded-xl border border-slate-200 focus:border-pink-400 focus:ring-2 focus:ring-pink-400/20 outline-none resize-none text-[#4E5871] bg-slate-50 placeholder:text-slate-400 text-lg"
             rows={4}
             autoFocus={!allowMedia}
           />
         </div>
 
-        {/* Color picker */}
-        <div className="px-4 pb-5 border-t border-slate-100 pt-4">
-          <p className="text-sm font-medium text-slate-600 mb-3">Barva pozadí</p>
-          <div className="flex flex-wrap gap-2">
-            {POST_COLORS.map((color) => (
-              <button
-                key={color.value}
-                onClick={() => setBackgroundColor(color.value)}
-                className="w-8 h-8 rounded-full border-2 transition-transform hover:scale-110"
-                style={{
-                  backgroundColor: color.value,
-                  borderColor: backgroundColor === color.value ? '#ec4899' : '#e2e8f0',
-                  boxShadow: backgroundColor === color.value ? '0 0 0 2px rgba(236, 72, 153, 0.3)' : 'none',
-                }}
-                title={color.name}
-              />
-            ))}
+        {/* Color picker - only for non-column posts */}
+        {!showColumnSelector && (
+          <div className="px-4 pb-5 border-t border-slate-100 pt-4">
+            <p className="text-sm font-medium text-slate-600 mb-3">Barva pozadí</p>
+            <div className="flex flex-wrap gap-2">
+              {POST_COLORS.map((color) => (
+                <button
+                  key={color.value}
+                  onClick={() => setBackgroundColor(color.value)}
+                  className="w-8 h-8 rounded-full border-2 transition-transform hover:scale-110"
+                  style={{
+                    backgroundColor: color.value,
+                    borderColor: backgroundColor === color.value ? '#ec4899' : '#e2e8f0',
+                    boxShadow: backgroundColor === color.value ? '0 0 0 2px rgba(236, 72, 153, 0.3)' : 'none',
+                  }}
+                  title={color.name}
+                />
+              ))}
+            </div>
           </div>
+        )}
+
+        {/* Column selector and Submit button */}
+        <div className="px-4 pb-5 border-t border-slate-100 pt-4">
+          <div className="flex items-center gap-3">
+            {/* Column dropdown for pros-cons */}
+            {showColumnSelector && (
+              <div className="flex-1">
+                <label className="block text-sm font-medium text-slate-600 mb-2">Kam odeslat?</label>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setSelectedColumn('left')}
+                    className="flex-1 py-3 px-4 rounded-xl font-medium text-sm transition-all border-2"
+                    style={{
+                      backgroundColor: selectedColumn === 'left' ? 'rgba(34, 197, 94, 0.1)' : '#ffffff',
+                      borderColor: selectedColumn === 'left' ? '#22c55e' : '#e2e8f0',
+                      color: selectedColumn === 'left' ? '#15803d' : '#64748b',
+                    }}
+                  >
+                    <span className="mr-2">+</span>
+                    {leftColumnLabel || 'Pro'}
+                  </button>
+                  <button
+                    onClick={() => setSelectedColumn('right')}
+                    className="flex-1 py-3 px-4 rounded-xl font-medium text-sm transition-all border-2"
+                    style={{
+                      backgroundColor: selectedColumn === 'right' ? 'rgba(239, 68, 68, 0.1)' : '#ffffff',
+                      borderColor: selectedColumn === 'right' ? '#ef4444' : '#e2e8f0',
+                      color: selectedColumn === 'right' ? '#b91c1c' : '#64748b',
+                    }}
+                  >
+                    <span className="mr-2">−</span>
+                    {rightColumnLabel || 'Proti'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+          
+          {/* Submit button */}
+          <button
+            onClick={handleSubmit}
+            disabled={!canSubmit}
+            className="w-full mt-4 py-3 rounded-xl font-bold text-base transition-all flex items-center justify-center gap-2"
+            style={{
+              background: canSubmit 
+                ? (showColumnSelector 
+                    ? (selectedColumn === 'left' ? 'linear-gradient(135deg, #22c55e, #16a34a)' : 'linear-gradient(135deg, #ef4444, #dc2626)')
+                    : 'linear-gradient(to right, #ec4899, #f43f5e)')
+                : '#f1f5f9',
+              color: canSubmit ? 'white' : '#94a3b8',
+              cursor: canSubmit ? 'pointer' : 'not-allowed',
+              boxShadow: canSubmit ? '0 4px 12px rgba(0,0,0,0.15)' : 'none',
+            }}
+          >
+            Odeslat
+            {showColumnSelector && (
+              <span className="opacity-80">
+                → {selectedColumn === 'left' ? (leftColumnLabel || 'Pro') : (rightColumnLabel || 'Proti')}
+              </span>
+            )}
+          </button>
         </div>
       </div>
     </div>
@@ -296,9 +364,12 @@ function QuestionSlide({
   const hasImage = !!slide.questionImage;
 
   return (
-    <div className="h-full w-full flex flex-col lg:flex-row">
+    <div className="h-full w-full flex flex-col lg:flex-row overflow-hidden">
       {/* Left side or full width: Question */}
-      <div className={`${hasImage ? 'lg:w-1/2' : 'w-full'} p-8 lg:p-12 flex flex-col items-center justify-center text-center`}>
+      <div 
+        className={`${hasImage ? 'lg:w-1/2' : 'w-full'} flex flex-col items-center justify-center text-center overflow-auto`}
+        style={{ padding: '32px' }}
+      >
         <h2 
           className="font-bold text-[#4E5871] leading-tight mb-6"
           style={{ fontSize: questionFontSize }}
@@ -322,7 +393,7 @@ function QuestionSlide({
         {!readOnly && canAddPost && (
           <button
             onClick={onAddPost}
-            className="flex items-center gap-3 px-8 py-4 rounded-2xl font-bold text-lg text-white transition-all hover:scale-105 active:scale-95 shadow-xl"
+            className="flex items-center gap-3 px-8 py-4 rounded-2xl font-bold text-lg text-white transition-all hover:scale-105 active:scale-95 shadow-xl flex-shrink-0"
             style={{
               background: 'linear-gradient(to right, #ec4899, #f43f5e)',
               boxShadow: '0 15px 30px -5px rgba(236, 72, 153, 0.4)',
@@ -334,20 +405,28 @@ function QuestionSlide({
         )}
 
         {!canAddPost && !readOnly && (
-          <div className="text-center text-sm text-slate-500 bg-slate-100 rounded-xl py-3 px-6">
+          <div className="text-center text-sm text-slate-500 bg-slate-100 rounded-xl py-3 px-6 flex-shrink-0">
             <Sparkles className="w-5 h-5 inline mr-2 text-pink-400" />
             Dosáhl/a jsi maximálního počtu příspěvků
           </div>
         )}
       </div>
 
-      {/* Right side: Image */}
+      {/* Right side: Image - with constrained height */}
       {hasImage && (
-        <div className="lg:w-1/2 p-8 flex items-center justify-center bg-slate-50">
+        <div 
+          className="lg:w-1/2 flex items-center justify-center bg-slate-50 overflow-hidden"
+          style={{ padding: '24px' }}
+        >
           <img
             src={slide.questionImage}
             alt="Obrázek k tématu"
-            className="max-w-full max-h-full rounded-2xl shadow-xl object-contain"
+            className="rounded-2xl shadow-xl"
+            style={{ 
+              maxWidth: '100%', 
+              maxHeight: '100%', 
+              objectFit: 'contain' 
+            }}
           />
         </div>
       )}
@@ -397,13 +476,16 @@ function PostSlide({
       
       {/* Left side: Text - exactly 50% when media exists */}
       <div 
-        className="flex flex-col p-8 lg:p-10"
-        style={{ width: hasMedia ? '50%' : '100%' }}
+        className="flex flex-col overflow-hidden"
+        style={{ 
+          width: hasMedia ? '50%' : '100%',
+          padding: '32px',
+        }}
       >
-        {/* Author */}
-        <div className="flex items-center gap-3 mb-8">
+        {/* Author - fixed height */}
+        <div className="flex items-center gap-3 mb-6 flex-shrink-0">
           <div 
-            className="w-12 h-12 rounded-full flex items-center justify-center shadow-md"
+            className="w-12 h-12 rounded-full flex items-center justify-center shadow-md flex-shrink-0"
             style={{ background: 'linear-gradient(135deg, #ec4899, #f43f5e)' }}
           >
             <User className="w-6 h-6 text-white" />
@@ -413,15 +495,15 @@ function PostSlide({
           </span>
         </div>
 
-        {/* Text content */}
-        <div className="flex-1">
+        {/* Text content - scrollable */}
+        <div className="flex-1 min-h-0 overflow-auto">
           <p className="text-2xl text-[#4E5871] leading-relaxed whitespace-pre-wrap">
             {post.text}
           </p>
         </div>
 
-        {/* Actions */}
-        <div className="flex items-center gap-4 mt-8 pt-6 border-t" style={{ borderColor: 'rgba(0,0,0,0.1)' }}>
+        {/* Actions - fixed height */}
+        <div className="flex items-center gap-4 mt-6 pt-6 border-t flex-shrink-0" style={{ borderColor: 'rgba(0,0,0,0.1)' }}>
           <button
             onClick={handleLike}
             className="flex items-center gap-2 px-5 py-2.5 rounded-full font-bold transition-all duration-200"
@@ -451,23 +533,31 @@ function PostSlide({
         </div>
       </div>
 
-      {/* Right side: Media - exactly 50% */}
+      {/* Right side: Media - exactly 50%, height constrained */}
       {hasMedia && (
         <div 
-          className="bg-slate-900 flex items-center justify-center"
-          style={{ width: '50%' }}
+          className="flex items-center justify-center overflow-hidden"
+          style={{ 
+            width: '50%', 
+            height: '100%',
+            backgroundColor: '#0f172a' 
+          }}
         >
           {post.mediaType === 'image' && (
             <img 
               src={post.mediaUrl} 
               alt="Příloha"
-              className="w-full h-full object-cover"
+              style={{ 
+                width: '100%', 
+                height: '100%', 
+                objectFit: 'contain' 
+              }}
             />
           )}
           {post.mediaType === 'youtube' && youtubeId && (
             <iframe
               src={`https://www.youtube.com/embed/${youtubeId}`}
-              className="w-full h-full min-h-[300px]"
+              style={{ width: '100%', height: '100%' }}
               frameBorder="0"
               allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
               allowFullScreen
@@ -479,7 +569,7 @@ function PostSlide({
   );
 }
 
-// Simple post card for pros-cons view
+// Simple post card for text board and pros-cons view
 function SimplePostCard({
   post,
   currentUserId,
@@ -487,6 +577,7 @@ function SimplePostCard({
   onLike,
   onDelete,
   isTeacher,
+  size = 'small',
 }: {
   post: BoardPost;
   currentUserId?: string;
@@ -494,37 +585,267 @@ function SimplePostCard({
   onLike?: () => void;
   onDelete?: () => void;
   isTeacher?: boolean;
+  size?: 'small' | 'medium';
 }) {
+  const [showHearts, setShowHearts] = useState(false);
+  const [isAnimating, setIsAnimating] = useState(false);
   const hasLiked = currentUserId ? post.likes.includes(currentUserId) : false;
 
+  const handleLike = useCallback(() => {
+    if (!hasLiked) {
+      setShowHearts(true);
+      setIsAnimating(true);
+      setTimeout(() => setShowHearts(false), 1000);
+      setTimeout(() => setIsAnimating(false), 300);
+    }
+    onLike?.();
+  }, [hasLiked, onLike]);
+
+  const isSmall = size === 'small';
+
   return (
-    <div className="bg-white rounded-xl p-4 shadow-sm border border-slate-100">
-      <p className="text-[#4E5871] text-sm mb-3">{post.text}</p>
+    <div 
+      className="bg-white rounded-xl shadow-sm border border-slate-100 relative"
+      style={{ padding: isSmall ? '16px' : '20px' }}
+    >
+      {showHearts && <FloatingHearts count={3} />}
+      <p 
+        className="text-[#4E5871] mb-3 whitespace-pre-wrap"
+        style={{ fontSize: isSmall ? '14px' : '16px', lineHeight: '1.5' }}
+      >
+        {post.text}
+      </p>
       <div className="flex items-center justify-between">
-        <span className="text-xs text-slate-400">
+        <span className="text-xs text-slate-400 flex items-center gap-1.5">
+          <User className="w-3 h-3" />
           {isAnonymous ? 'Anonym' : post.authorName}
         </span>
         <div className="flex items-center gap-2">
           <button
-            onClick={onLike}
-            className="flex items-center gap-1 text-xs px-2 py-1 rounded-full transition-all"
+            onClick={handleLike}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full transition-all"
             style={{
-              background: hasLiked ? '#fce7f3' : '#f8fafc',
-              color: hasLiked ? '#ec4899' : '#64748b',
+              background: hasLiked ? 'linear-gradient(to right, #ec4899, #f43f5e)' : '#f8fafc',
+              color: hasLiked ? '#ffffff' : '#64748b',
+              fontSize: isSmall ? '12px' : '13px',
+              transform: isAnimating ? 'scale(1.1)' : 'scale(1)',
+              boxShadow: hasLiked ? '0 2px 8px rgba(236, 72, 153, 0.3)' : 'none',
             }}
           >
-            <Heart className="w-3 h-3" style={{ fill: hasLiked ? '#ec4899' : 'none' }} />
+            <Heart 
+              className="w-3.5 h-3.5" 
+              style={{ fill: hasLiked ? '#ffffff' : 'none' }} 
+            />
             {post.likes.length}
           </button>
           {(currentUserId === post.authorId || isTeacher) && onDelete && (
             <button
               onClick={onDelete}
-              className="p-1 text-slate-300 hover:text-red-500 transition-colors"
+              className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors"
             >
-              <Trash2 className="w-3 h-3" />
+              <Trash2 className="w-3.5 h-3.5" />
             </button>
           )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+// Text Board View - classic list of posts
+function TextBoardView({
+  slide,
+  posts,
+  currentUserId,
+  isAnonymous,
+  readOnly,
+  canAddPost,
+  onOpenAddModal,
+  onLikePost,
+  onDeletePost,
+  isTeacher,
+}: {
+  slide: BoardActivitySlide;
+  posts: BoardPost[];
+  currentUserId?: string;
+  isAnonymous?: boolean;
+  readOnly: boolean;
+  canAddPost: boolean;
+  onOpenAddModal: () => void;
+  onLikePost?: (postId: string) => void;
+  onDeletePost?: (postId: string) => void;
+  isTeacher?: boolean;
+}) {
+  const questionFontSize = getQuestionFontSize(slide.question || '');
+  const totalLikes = posts.reduce((sum, p) => sum + p.likes.length, 0);
+  const hasImage = !!slide.questionImage;
+
+  // Sort posts by likes (most liked first), then by date
+  const sortedPosts = useMemo(() => {
+    return [...posts].sort((a, b) => {
+      if (b.likes.length !== a.likes.length) {
+        return b.likes.length - a.likes.length;
+      }
+      return b.createdAt - a.createdAt;
+    });
+  }, [posts]);
+
+  // Two-column layout when there's an image
+  if (hasImage) {
+    return (
+      <div className="w-full h-full bg-gradient-to-br from-slate-50 via-white to-pink-50/30 rounded-3xl overflow-hidden flex flex-col lg:flex-row">
+        {/* Left column: Question + Image - flexible */}
+        <div 
+          className="flex flex-col overflow-auto flex-1"
+          style={{ padding: '32px', minWidth: 0 }}
+        >
+          {/* Question */}
+          <div style={{ paddingTop: '60px' }}>
+            <h2 
+              className="font-bold text-[#4E5871] leading-tight mb-6"
+              style={{ fontSize: questionFontSize }}
+            >
+              {slide.question || 'Téma diskuze...'}
+            </h2>
+            
+            {/* Stats */}
+            <div className="flex items-center gap-4 text-sm text-slate-500 mb-6">
+              <div className="flex items-center gap-2 bg-white px-4 py-2 rounded-full shadow-sm">
+                <MessageSquare className="w-4 h-4 text-pink-500" />
+                <span className="font-medium">{posts.length} příspěvků</span>
+              </div>
+              <div className="flex items-center gap-2 bg-white px-4 py-2 rounded-full shadow-sm">
+                <Heart className="w-4 h-4 text-pink-500" style={{ fill: '#ec4899' }} />
+                <span className="font-medium">{totalLikes} lajků</span>
+              </div>
+            </div>
+
+            {/* Add post button */}
+            {!readOnly && canAddPost && (
+              <button
+                onClick={onOpenAddModal}
+                className="flex items-center gap-3 px-6 py-3 rounded-xl font-bold text-base text-white transition-all hover:scale-105 active:scale-95 shadow-lg mb-8"
+                style={{
+                  background: 'linear-gradient(to right, #ec4899, #f43f5e)',
+                  boxShadow: '0 10px 25px -5px rgba(236, 72, 153, 0.4)',
+                }}
+              >
+                <Plus className="w-5 h-5" />
+                Přidat příspěvek
+              </button>
+            )}
+          </div>
+
+          {/* Image below question */}
+          <div className="flex-1 flex items-start justify-center">
+            <img
+              src={slide.questionImage}
+              alt="Obrázek k tématu"
+              className="max-w-full max-h-80 rounded-2xl shadow-lg object-contain"
+            />
+          </div>
+        </div>
+
+        {/* Right column: Posts - fixed width for consistent post size */}
+        <div 
+          className="overflow-auto bg-white/50 flex-shrink-0"
+          style={{ padding: '32px', paddingTop: '60px', width: '550px' }}
+        >
+          <div className="space-y-4">
+            {sortedPosts.length === 0 ? (
+              <div className="text-center py-12 text-slate-400">
+                <MessageSquare className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                <p>Zatím žádné příspěvky</p>
+                <p className="text-sm mt-1">Buď první, kdo něco napíše!</p>
+              </div>
+            ) : (
+              sortedPosts.map(post => (
+                <SimplePostCard
+                  key={post.id}
+                  post={post}
+                  currentUserId={currentUserId}
+                  isAnonymous={isAnonymous}
+                  onLike={onLikePost ? () => onLikePost(post.id) : undefined}
+                  onDelete={onDeletePost ? () => onDeletePost(post.id) : undefined}
+                  isTeacher={isTeacher}
+                  size="medium"
+                />
+              ))
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Single column layout when no image
+  return (
+    <div className="w-full h-full bg-gradient-to-br from-slate-50 via-white to-pink-50/30 rounded-3xl overflow-auto">
+      {/* Question section - centered */}
+      <div 
+        className="text-center max-w-3xl mx-auto"
+        style={{ paddingTop: '80px', paddingBottom: '32px', paddingLeft: '32px', paddingRight: '32px' }}
+      >
+        <h2 
+          className="font-bold text-[#4E5871] leading-tight mb-6"
+          style={{ fontSize: questionFontSize }}
+        >
+          {slide.question || 'Téma diskuze...'}
+        </h2>
+        
+        {/* Stats */}
+        <div className="flex items-center justify-center gap-4 text-sm text-slate-500 mb-6">
+          <div className="flex items-center gap-2 bg-white px-4 py-2 rounded-full shadow-sm">
+            <MessageSquare className="w-4 h-4 text-pink-500" />
+            <span className="font-medium">{posts.length} příspěvků</span>
+          </div>
+          <div className="flex items-center gap-2 bg-white px-4 py-2 rounded-full shadow-sm">
+            <Heart className="w-4 h-4 text-pink-500" style={{ fill: '#ec4899' }} />
+            <span className="font-medium">{totalLikes} lajků</span>
+          </div>
+        </div>
+
+        {/* Add post button */}
+        {!readOnly && canAddPost && (
+          <button
+            onClick={onOpenAddModal}
+            className="flex items-center gap-3 px-6 py-3 rounded-xl font-bold text-base text-white transition-all hover:scale-105 active:scale-95 shadow-lg mx-auto"
+            style={{
+              background: 'linear-gradient(to right, #ec4899, #f43f5e)',
+              boxShadow: '0 10px 25px -5px rgba(236, 72, 153, 0.4)',
+            }}
+          >
+            <Plus className="w-5 h-5" />
+            Přidat příspěvek
+          </button>
+        )}
+      </div>
+
+      {/* Posts list - centered, same width as with image */}
+      <div 
+        className="mx-auto space-y-4"
+        style={{ paddingBottom: '48px', paddingLeft: '24px', paddingRight: '24px', maxWidth: '550px' }}
+      >
+        {sortedPosts.length === 0 ? (
+          <div className="text-center py-12 text-slate-400">
+            <MessageSquare className="w-12 h-12 mx-auto mb-3 opacity-30" />
+            <p>Zatím žádné příspěvky</p>
+            <p className="text-sm mt-1">Buď první, kdo něco napíše!</p>
+          </div>
+        ) : (
+          sortedPosts.map(post => (
+            <SimplePostCard
+              key={post.id}
+              post={post}
+              currentUserId={currentUserId}
+              isAnonymous={isAnonymous}
+              onLike={onLikePost ? () => onLikePost(post.id) : undefined}
+              onDelete={onDeletePost ? () => onDeletePost(post.id) : undefined}
+              isTeacher={isTeacher}
+              size="medium"
+            />
+          ))
+        )}
       </div>
     </div>
   );
@@ -538,7 +859,7 @@ function ProsConsView({
   isAnonymous,
   readOnly,
   canAddPost,
-  onAddPost,
+  onOpenAddModal,
   onLikePost,
   onDeletePost,
   isTeacher,
@@ -549,50 +870,53 @@ function ProsConsView({
   isAnonymous?: boolean;
   readOnly: boolean;
   canAddPost: boolean;
-  onAddPost: (text: string, column: 'left' | 'right') => void;
+  onOpenAddModal: () => void;
   onLikePost?: (postId: string) => void;
   onDeletePost?: (postId: string) => void;
   isTeacher?: boolean;
 }) {
-  const [leftInput, setLeftInput] = useState('');
-  const [rightInput, setRightInput] = useState('');
-  
   const leftPosts = posts.filter(p => p.column === 'left');
   const rightPosts = posts.filter(p => p.column === 'right');
   const questionFontSize = getQuestionFontSize(slide.question || '');
 
-  const handleSubmitLeft = () => {
-    if (!leftInput.trim()) return;
-    onAddPost(leftInput.trim(), 'left');
-    setLeftInput('');
-  };
-
-  const handleSubmitRight = () => {
-    if (!rightInput.trim()) return;
-    onAddPost(rightInput.trim(), 'right');
-    setRightInput('');
-  };
-
   return (
-    <div className="w-full h-full bg-gradient-to-br from-slate-50 via-white to-pink-50/30 rounded-3xl overflow-auto flex flex-col">
-      {/* Question header */}
+    <div className="w-full h-full bg-gradient-to-br from-slate-50 via-white to-pink-50/30 rounded-3xl overflow-hidden flex flex-col">
+      {/* Question header with Add button */}
       <div 
-        className="text-center px-8 border-b border-slate-100"
-        style={{ paddingTop: '60px', paddingBottom: '30px' }}
+        className="text-center px-8 border-b border-slate-100 flex-shrink-0"
+        style={{ paddingTop: '40px', paddingBottom: '24px' }}
       >
         <h2 
-          className="font-bold text-[#4E5871] leading-tight"
+          className="font-bold text-[#4E5871] leading-tight mb-6"
           style={{ fontSize: questionFontSize }}
         >
           {slide.question || 'Téma diskuze...'}
         </h2>
+        
+        {/* Add post button */}
+        {!readOnly && canAddPost && (
+          <button
+            onClick={onOpenAddModal}
+            className="inline-flex items-center gap-3 px-6 py-3 rounded-xl font-bold text-base text-white transition-all hover:scale-105 active:scale-95 shadow-lg"
+            style={{
+              background: 'linear-gradient(to right, #ec4899, #f43f5e)',
+              boxShadow: '0 10px 25px -5px rgba(236, 72, 153, 0.4)',
+            }}
+          >
+            <Plus className="w-5 h-5" />
+            Přidat argument
+          </button>
+        )}
       </div>
 
       {/* Two columns */}
-      <div className="flex-1 flex">
+      <div className="flex-1 flex min-h-0 overflow-hidden">
         {/* Left column (Pro) */}
-        <div className="w-1/2 p-6 border-r border-slate-100" style={{ backgroundColor: 'rgba(34, 197, 94, 0.05)' }}>
-          <div className="flex items-center gap-2 mb-4">
+        <div 
+          className="w-1/2 p-6 border-r border-slate-100 flex flex-col overflow-hidden" 
+          style={{ backgroundColor: 'rgba(34, 197, 94, 0.05)' }}
+        >
+          <div className="flex items-center gap-2 mb-4 flex-shrink-0">
             <div 
               className="w-8 h-8 rounded-lg flex items-center justify-center"
               style={{ background: 'linear-gradient(135deg, #22c55e, #16a34a)' }}
@@ -600,55 +924,37 @@ function ProsConsView({
               <span className="text-white font-bold text-sm">+</span>
             </div>
             <h3 className="font-bold text-green-700 text-lg">{slide.leftColumnLabel || 'Pro'}</h3>
-            <span className="text-sm text-green-600 ml-auto">{leftPosts.length}</span>
+            <span className="text-sm text-green-600 ml-auto bg-green-100 px-2 py-0.5 rounded-full">{leftPosts.length}</span>
           </div>
 
-          {/* Add input */}
-          {!readOnly && canAddPost && (
-            <div className="mb-4">
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={leftInput}
-                  onChange={(e) => setLeftInput(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleSubmitLeft()}
-                  placeholder="Přidej argument..."
-                  className="flex-1 px-3 py-2 rounded-lg border border-green-200 focus:border-green-500 focus:ring-2 focus:ring-green-500/20 outline-none text-sm bg-white"
-                />
-                <button
-                  onClick={handleSubmitLeft}
-                  disabled={!leftInput.trim()}
-                  className="px-3 py-2 rounded-lg font-medium text-sm transition-all"
-                  style={{
-                    background: leftInput.trim() ? 'linear-gradient(135deg, #22c55e, #16a34a)' : '#e2e8f0',
-                    color: leftInput.trim() ? 'white' : '#94a3b8',
-                  }}
-                >
-                  <Plus className="w-4 h-4" />
-                </button>
+          {/* Posts - scrollable */}
+          <div className="flex-1 overflow-auto space-y-3">
+            {leftPosts.length === 0 ? (
+              <div className="text-center py-8 text-slate-400 text-sm">
+                Zatím žádné argumenty
               </div>
-            </div>
-          )}
-
-          {/* Posts */}
-          <div className="space-y-3 overflow-auto max-h-[400px]">
-            {leftPosts.map(post => (
-              <SimplePostCard
-                key={post.id}
-                post={post}
-                currentUserId={currentUserId}
-                isAnonymous={isAnonymous}
-                onLike={onLikePost ? () => onLikePost(post.id) : undefined}
-                onDelete={onDeletePost ? () => onDeletePost(post.id) : undefined}
-                isTeacher={isTeacher}
-              />
-            ))}
+            ) : (
+              leftPosts.map(post => (
+                <SimplePostCard
+                  key={post.id}
+                  post={post}
+                  currentUserId={currentUserId}
+                  isAnonymous={isAnonymous}
+                  onLike={onLikePost ? () => onLikePost(post.id) : undefined}
+                  onDelete={onDeletePost ? () => onDeletePost(post.id) : undefined}
+                  isTeacher={isTeacher}
+                />
+              ))
+            )}
           </div>
         </div>
 
         {/* Right column (Proti) */}
-        <div className="w-1/2 p-6" style={{ backgroundColor: 'rgba(239, 68, 68, 0.05)' }}>
-          <div className="flex items-center gap-2 mb-4">
+        <div 
+          className="w-1/2 p-6 flex flex-col overflow-hidden" 
+          style={{ backgroundColor: 'rgba(239, 68, 68, 0.05)' }}
+        >
+          <div className="flex items-center gap-2 mb-4 flex-shrink-0">
             <div 
               className="w-8 h-8 rounded-lg flex items-center justify-center"
               style={{ background: 'linear-gradient(135deg, #ef4444, #dc2626)' }}
@@ -656,49 +962,28 @@ function ProsConsView({
               <span className="text-white font-bold text-sm">−</span>
             </div>
             <h3 className="font-bold text-red-700 text-lg">{slide.rightColumnLabel || 'Proti'}</h3>
-            <span className="text-sm text-red-600 ml-auto">{rightPosts.length}</span>
+            <span className="text-sm text-red-600 ml-auto bg-red-100 px-2 py-0.5 rounded-full">{rightPosts.length}</span>
           </div>
 
-          {/* Add input */}
-          {!readOnly && canAddPost && (
-            <div className="mb-4">
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={rightInput}
-                  onChange={(e) => setRightInput(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleSubmitRight()}
-                  placeholder="Přidej argument..."
-                  className="flex-1 px-3 py-2 rounded-lg border border-red-200 focus:border-red-500 focus:ring-2 focus:ring-red-500/20 outline-none text-sm bg-white"
-                />
-                <button
-                  onClick={handleSubmitRight}
-                  disabled={!rightInput.trim()}
-                  className="px-3 py-2 rounded-lg font-medium text-sm transition-all"
-                  style={{
-                    background: rightInput.trim() ? 'linear-gradient(135deg, #ef4444, #dc2626)' : '#e2e8f0',
-                    color: rightInput.trim() ? 'white' : '#94a3b8',
-                  }}
-                >
-                  <Plus className="w-4 h-4" />
-                </button>
+          {/* Posts - scrollable */}
+          <div className="flex-1 overflow-auto space-y-3">
+            {rightPosts.length === 0 ? (
+              <div className="text-center py-8 text-slate-400 text-sm">
+                Zatím žádné argumenty
               </div>
-            </div>
-          )}
-
-          {/* Posts */}
-          <div className="space-y-3 overflow-auto max-h-[400px]">
-            {rightPosts.map(post => (
-              <SimplePostCard
-                key={post.id}
-                post={post}
-                currentUserId={currentUserId}
-                isAnonymous={isAnonymous}
-                onLike={onLikePost ? () => onLikePost(post.id) : undefined}
-                onDelete={onDeletePost ? () => onDeletePost(post.id) : undefined}
-                isTeacher={isTeacher}
-              />
-            ))}
+            ) : (
+              rightPosts.map(post => (
+                <SimplePostCard
+                  key={post.id}
+                  post={post}
+                  currentUserId={currentUserId}
+                  isAnonymous={isAnonymous}
+                  onLike={onLikePost ? () => onLikePost(post.id) : undefined}
+                  onDelete={onDeletePost ? () => onDeletePost(post.id) : undefined}
+                  isTeacher={isTeacher}
+                />
+              ))
+            )}
           </div>
         </div>
       </div>
@@ -763,29 +1048,82 @@ export function BoardSlideView({
   // Render Pros-Cons view
   if (boardType === 'pros-cons') {
     return (
-      <ProsConsView
-        slide={slide}
-        posts={posts}
-        currentUserId={currentUserId}
-        isAnonymous={slide.allowAnonymous}
-        readOnly={readOnly}
-        canAddPost={canAddPost}
-        onAddPost={(text, column) => handleAddPost(text, undefined, undefined, undefined, column)}
-        onLikePost={onLikePost}
-        onDeletePost={onDeletePost}
-        isTeacher={isTeacher}
-      />
+      <>
+        <ProsConsView
+          slide={slide}
+          posts={posts}
+          currentUserId={currentUserId}
+          isAnonymous={slide.allowAnonymous}
+          readOnly={readOnly}
+          canAddPost={canAddPost}
+          onOpenAddModal={() => setShowAddModal(true)}
+          onLikePost={onLikePost}
+          onDeletePost={onDeletePost}
+          isTeacher={isTeacher}
+        />
+        
+        {/* Add post modal for pros-cons */}
+        {showAddModal && (
+          <AddPostModal
+            allowMedia={false}
+            showColumnSelector={true}
+            leftColumnLabel={slide.leftColumnLabel}
+            rightColumnLabel={slide.rightColumnLabel}
+            onSubmit={handleAddPost}
+            onClose={() => setShowAddModal(false)}
+          />
+        )}
+      </>
+    );
+  }
+
+  // Render Text Board view - classic list of posts
+  if (boardType === 'text') {
+    return (
+      <>
+        <TextBoardView
+          slide={slide}
+          posts={posts}
+          currentUserId={currentUserId}
+          isAnonymous={slide.allowAnonymous}
+          readOnly={readOnly}
+          canAddPost={canAddPost}
+          onOpenAddModal={() => setShowAddModal(true)}
+          onLikePost={onLikePost}
+          onDeletePost={onDeletePost}
+          isTeacher={isTeacher}
+        />
+        
+        {/* Add post modal for text board */}
+        {showAddModal && (
+          <AddPostModal
+            allowMedia={false}
+            onSubmit={handleAddPost}
+            onClose={() => setShowAddModal(false)}
+          />
+        )}
+      </>
     );
   }
 
   // Render Text or Presentation view (slider)
   return (
-    <div className="w-full h-full bg-gradient-to-br from-slate-50 via-white to-pink-50/30 rounded-3xl overflow-hidden flex flex-col">
-      {/* Main content area */}
-      <div className="flex-1 min-h-0 p-6">
+    <div 
+      className="w-full h-full bg-gradient-to-br from-slate-50 via-white to-pink-50/30 rounded-3xl overflow-hidden"
+      style={{ display: 'flex', flexDirection: 'column' }}
+    >
+      {/* Main content area - takes remaining space with fixed height */}
+      <div 
+        style={{ 
+          flex: '1 1 0%', 
+          minHeight: 0, 
+          padding: '24px',
+          overflow: 'hidden',
+        }}
+      >
         {currentSlideIndex === 0 ? (
           // Question slide
-          <div className="h-full bg-white rounded-2xl shadow-lg overflow-hidden">
+          <div style={{ height: '100%', backgroundColor: '#ffffff', borderRadius: '16px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)', overflow: 'hidden' }}>
             <QuestionSlide
               slide={slide}
               totalPosts={totalPosts}
@@ -796,60 +1134,77 @@ export function BoardSlideView({
             />
           </div>
         ) : currentPost ? (
-          // Post slide
-          <PostSlide
-            post={currentPost}
-            currentUserId={currentUserId}
-            isAnonymous={slide.allowAnonymous}
-            onLike={onLikePost ? () => onLikePost(currentPost.id) : undefined}
-            onDelete={onDeletePost ? () => onDeletePost(currentPost.id) : undefined}
-            isTeacher={isTeacher}
-          />
+          // Post slide - height constrained
+          <div style={{ height: '100%' }}>
+            <PostSlide
+              post={currentPost}
+              currentUserId={currentUserId}
+              isAnonymous={slide.allowAnonymous}
+              onLike={onLikePost ? () => onLikePost(currentPost.id) : undefined}
+              onDelete={onDeletePost ? () => onDeletePost(currentPost.id) : undefined}
+              isTeacher={isTeacher}
+            />
+          </div>
         ) : null}
       </div>
 
-      {/* Navigation - always visible */}
-      <div className="flex-shrink-0 flex items-center justify-center gap-4 px-6 py-4 bg-white/80 backdrop-blur-sm border-t border-slate-100">
-          <button
-            onClick={goToPrevSlide}
-            disabled={currentSlideIndex === 0}
-            className="p-3 rounded-full bg-white shadow-md hover:shadow-lg disabled:opacity-30 disabled:cursor-not-allowed transition-all"
-          >
-            <ChevronLeft className="w-6 h-6 text-slate-600" />
-          </button>
+      {/* Navigation - always visible, fixed height */}
+      <div 
+        style={{ 
+          flexShrink: 0, 
+          display: 'flex', 
+          alignItems: 'center', 
+          justifyContent: 'center', 
+          gap: '16px',
+          padding: '16px 24px',
+          backgroundColor: 'rgba(255,255,255,0.8)',
+          backdropFilter: 'blur(8px)',
+          borderTop: '1px solid #f1f5f9',
+        }}
+      >
+        <button
+          onClick={goToPrevSlide}
+          disabled={currentSlideIndex === 0}
+          className="p-3 rounded-full bg-white shadow-md hover:shadow-lg disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+        >
+          <ChevronLeft className="w-6 h-6 text-slate-600" />
+        </button>
 
-          {/* Dots */}
-          <div className="flex items-center gap-2">
-            {Array.from({ length: totalSlides }).map((_, index) => (
-              <button
-                key={index}
-                onClick={() => setCurrentSlideIndex(index)}
-                className="transition-all"
-                style={{
-                  width: currentSlideIndex === index ? '28px' : '12px',
-                  height: '12px',
-                  borderRadius: '6px',
-                  background: index === 0 
-                    ? (currentSlideIndex === 0 ? '#4E5871' : '#cbd5e1')
-                    : (currentSlideIndex === index ? 'linear-gradient(to right, #ec4899, #f43f5e)' : '#cbd5e1'),
-                }}
-                title={index === 0 ? 'Otázka' : `Příspěvek ${index}`}
-              />
-            ))}
-          </div>
+        {/* Dots */}
+        <div className="flex items-center gap-2">
+          {Array.from({ length: Math.min(totalSlides, 15) }).map((_, index) => (
+            <button
+              key={index}
+              onClick={() => setCurrentSlideIndex(index)}
+              className="transition-all"
+              style={{
+                width: currentSlideIndex === index ? '28px' : '12px',
+                height: '12px',
+                borderRadius: '6px',
+                background: index === 0 
+                  ? (currentSlideIndex === 0 ? '#4E5871' : '#cbd5e1')
+                  : (currentSlideIndex === index ? 'linear-gradient(to right, #ec4899, #f43f5e)' : '#cbd5e1'),
+              }}
+              title={index === 0 ? 'Otázka' : `Příspěvek ${index}`}
+            />
+          ))}
+          {totalSlides > 15 && (
+            <span className="text-xs text-slate-400 ml-1">+{totalSlides - 15}</span>
+          )}
+        </div>
 
-          <button
-            onClick={goToNextSlide}
-            disabled={currentSlideIndex === totalSlides - 1}
-            className="p-3 rounded-full bg-white shadow-md hover:shadow-lg disabled:opacity-30 disabled:cursor-not-allowed transition-all"
-          >
-            <ChevronRight className="w-6 h-6 text-slate-600" />
-          </button>
+        <button
+          onClick={goToNextSlide}
+          disabled={currentSlideIndex === totalSlides - 1}
+          className="p-3 rounded-full bg-white shadow-md hover:shadow-lg disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+        >
+          <ChevronRight className="w-6 h-6 text-slate-600" />
+        </button>
 
-          {/* Slide counter */}
-          <div className="text-sm text-slate-500 font-medium ml-4">
-            {currentSlideIndex + 1} / {totalSlides}
-          </div>
+        {/* Slide counter */}
+        <div className="text-sm text-slate-500 font-medium ml-4">
+          {currentSlideIndex + 1} / {totalSlides}
+        </div>
       </div>
 
       {/* Add post modal */}

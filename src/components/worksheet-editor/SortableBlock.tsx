@@ -24,6 +24,9 @@ const BLOCK_TYPE_CONFIG: Record<BlockType, { label: string; icon: typeof Type; c
   'multiple-choice': { label: 'Výběr odpovědi', icon: ListChecks, color: 'text-green-500' },
   'fill-blank': { label: 'Doplňování', icon: TextCursorInput, color: 'text-purple-500' },
   'free-answer': { label: 'Volná odpověď', icon: MessageSquare, color: 'text-rose-500' },
+  'connect-pairs': { label: 'Spojovačka', icon: Type, color: 'text-orange-500' },
+  'image-hotspots': { label: 'Poznávačka', icon: Type, color: 'text-pink-500' },
+  'video-quiz': { label: 'Video kvíz', icon: Type, color: 'text-red-500' },
   'spacer': { label: 'Volný prostor', icon: Square, color: 'text-gray-400' },
   'examples': { label: 'Příklady', icon: Calculator, color: 'text-emerald-500' },
   'image': { label: 'Obrázek', icon: ImageIcon, color: 'text-cyan-500' },
@@ -46,6 +49,12 @@ function getBlockPreview(block: WorksheetBlock): string {
       return block.content.instruction || 'Doplňování...';
     case 'free-answer':
       return block.content.question?.slice(0, 30) || 'Volná odpověď...';
+    case 'connect-pairs':
+      return block.content.instruction?.slice(0, 30) || `${block.content.pairs.length} dvojic`;
+    case 'image-hotspots':
+      return block.content.instruction?.slice(0, 30) || `${block.content.hotspots.length} bodů`;
+    case 'video-quiz':
+      return block.content.instruction?.slice(0, 30) || `${block.content.questions.length} otázek`;
     case 'spacer':
       return `${block.content.height}px`;
     case 'examples':
@@ -117,4 +126,3 @@ export function SortableBlock({ block, isSelected, onSelect, onHover }: Sortable
     </div>
   );
 }
-

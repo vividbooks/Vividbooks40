@@ -35,12 +35,23 @@ import {
   ABCActivitySlide, 
   OpenActivitySlide, 
   BoardActivitySlide,
+  VotingActivitySlide,
+  ConnectPairsActivitySlide,
+  FillBlanksActivitySlide,
+  ImageHotspotsActivitySlide,
+  VideoQuizActivitySlide,
   SlideResponse,
   InfoSlide 
 } from '../../types/quiz';
 import { BlockLayoutView } from './QuizPreview';
 import { BoardSlideView } from './slides/BoardSlideView';
+import { VotingSlideView } from './slides/VotingSlideView';
+import { ConnectPairsView } from './slides/ConnectPairsView';
+import { FillBlanksView } from './slides/FillBlanksView';
+import { ImageHotspotsView } from './slides/ImageHotspotsView';
+import { VideoQuizView } from './slides/VideoQuizView';
 import { useBoardPosts } from '../../hooks/useBoardPosts';
+import { useVoting } from '../../hooks/useVoting';
 
 // ============================================
 // CONSTANTS
@@ -665,6 +676,15 @@ export function QuizStudentView() {
     currentUserId: studentId || undefined,
     currentUserName: studentName || undefined,
   });
+  
+  // Voting for current slide (if it's a voting activity)
+  const voting = useVoting({
+    sessionId: shareId || null,
+    slideId: currentSlide?.id || '',
+    currentUserId: studentId || undefined,
+    currentUserName: studentName || undefined,
+  });
+  
   const responsesArray = responses ? Object.values(responses) : [];
   const correctCount = responsesArray.filter(function(r) { return r && r.isCorrect; }).length;
   const wrongCount = responsesArray.filter(function(r) { return r && !r.isCorrect; }).length;
@@ -1017,8 +1037,8 @@ export function QuizStudentView() {
                 </div>
               ) : (
                 <>
-                  {/* Question - only for activity slides (except board) */}
-                  {currentSlide.type === 'activity' && currentSlide.activityType !== 'board' && (
+                  {/* Question - only for activity slides (except those with their own display) */}
+                  {currentSlide.type === 'activity' && currentSlide.activityType !== 'board' && currentSlide.activityType !== 'voting' && currentSlide.activityType !== 'connect-pairs' && currentSlide.activityType !== 'fill-blanks' && currentSlide.activityType !== 'image-hotspots' && currentSlide.activityType !== 'video-quiz' && (
                     <div className="flex-1 flex flex-col items-center justify-center p-4 md:p-8">
                       <h1 className="text-xl sm:text-2xl md:text-4xl lg:text-5xl font-bold text-[#4E5871] text-center leading-tight break-words max-w-full overflow-hidden">
                         <MathText>{(currentSlide as any).question || (currentSlide as any).title || 'Otázka'}</MathText>
@@ -1195,6 +1215,78 @@ export function QuizStudentView() {
                 </div>
               )}
               
+              {/* Voting activity */}
+              {currentSlide.type === 'activity' && currentSlide.activityType === 'voting' && (
+                <div className="flex-1 overflow-hidden">
+                  <VotingSlideView 
+                    slide={currentSlide as VotingActivitySlide}
+                    isTeacher={false}
+                    hasVoted={voting.hasVoted}
+                    myVote={voting.myVote}
+                    voteCounts={voting.getVoteCounts()}
+                    totalVoters={voting.getTotalVotes()}
+                    onVote={voting.vote}
+                    readOnly={false}
+                  />
+                </div>
+              )}
+              
+              {/* Connect Pairs activity */}
+              {currentSlide.type === 'activity' && currentSlide.activityType === 'connect-pairs' && (
+                <div className="flex-1 overflow-hidden">
+                  <ConnectPairsView 
+                    slide={currentSlide as ConnectPairsActivitySlide}
+                    isTeacher={false}
+                    readOnly={false}
+                    onSubmit={(result) => {
+                      // Handle submission
+                    }}
+                  />
+                </div>
+              )}
+              
+              {/* Fill Blanks activity */}
+              {currentSlide.type === 'activity' && currentSlide.activityType === 'fill-blanks' && (
+                <div className="flex-1 overflow-hidden">
+                  <FillBlanksView 
+                    slide={currentSlide as FillBlanksActivitySlide}
+                    isTeacher={false}
+                    readOnly={false}
+                    onSubmit={(result) => {
+                      // Handle submission
+                    }}
+                  />
+                </div>
+              )}
+              
+              {/* Image Hotspots activity */}
+              {currentSlide.type === 'activity' && currentSlide.activityType === 'image-hotspots' && (
+                <div className="flex-1 overflow-hidden">
+                  <ImageHotspotsView 
+                    slide={currentSlide as ImageHotspotsActivitySlide}
+                    isTeacher={false}
+                    readOnly={false}
+                    onSubmit={(result) => {
+                      // Handle submission
+                    }}
+                  />
+                </div>
+              )}
+              
+              {/* Video Quiz activity */}
+              {currentSlide.type === 'activity' && currentSlide.activityType === 'video-quiz' && (
+                <div className="flex-1 overflow-hidden">
+                  <VideoQuizView 
+                    slide={currentSlide as VideoQuizActivitySlide}
+                    isTeacher={false}
+                    readOnly={false}
+                    onSubmit={(result) => {
+                      // Handle submission
+                    }}
+                  />
+                </div>
+              )}
+              
               {/* Legacy info slide (without block layout) */}
               {currentSlide.type === 'info' && (!(currentSlide as InfoSlide).layout || (currentSlide as InfoSlide).layout!.blocks.length === 0) && (
                 <div className="flex-1 flex items-center justify-center p-8">
@@ -1207,8 +1299,8 @@ export function QuizStudentView() {
                 </div>
               )}
               
-              {/* Submit button - only for activity slides (except board) */}
-              {currentSlide.type === 'activity' && currentSlide.activityType !== 'board' && (
+              {/* Submit button - only for activity slides (except board and voting which have their own buttons) */}
+              {currentSlide.type === 'activity' && currentSlide.activityType !== 'board' && currentSlide.activityType !== 'voting' && (
               <div className="flex justify-center py-6 md:py-10">
                 {!hasAnswered ? (
                   <button

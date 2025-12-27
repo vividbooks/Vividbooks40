@@ -26,6 +26,12 @@ import {
   OpenActivitySlide,
   ExampleActivitySlide,
   InfoSlide,
+  FillBlanksActivitySlide,
+  ConnectPairsActivitySlide,
+  ImageHotspotsActivitySlide,
+  VideoQuizActivitySlide,
+  VotingActivitySlide,
+  BoardActivitySlide,
   createEmptyQuiz,
   createABCSlide,
   createOpenSlide,
@@ -362,6 +368,206 @@ function slideToBlocks(slide: QuizSlide, startOrder: number): WorksheetBlock[] {
             }
             break;
           }
+          
+          case 'fill-blanks': {
+            const fillSlide = activitySlide as FillBlanksActivitySlide;
+            
+            // Convert each sentence to a fill-blank block
+            for (const sentence of fillSlide.sentences) {
+              // Build segments from text and blanks
+              const segments: any[] = [];
+              let remainingText = sentence.text;
+              
+              // Sort blanks by their position in text (assuming they're marked as [blank_id])
+              const sortedBlanks = [...sentence.blanks].sort((a, b) => {
+                const posA = remainingText.indexOf(`[${a.id}]`);
+                const posB = remainingText.indexOf(`[${b.id}]`);
+                return posA - posB;
+              });
+              
+              for (const blank of sortedBlanks) {
+                const blankMarker = `[${blank.id}]`;
+                const markerPos = remainingText.indexOf(blankMarker);
+                
+                if (markerPos > 0) {
+                  // Add text before blank
+                  segments.push({
+                    type: 'text',
+                    content: remainingText.substring(0, markerPos),
+                  });
+                }
+                
+                // Add blank - BlankItem uses 'text' for the correct answer
+                segments.push({
+                  type: 'blank',
+                  id: blank.id,
+                  correctAnswer: blank.text,
+                  acceptedAnswers: [],
+                });
+                
+                remainingText = remainingText.substring(markerPos + blankMarker.length);
+              }
+              
+              // Add remaining text
+              if (remainingText) {
+                segments.push({
+                  type: 'text',
+                  content: remainingText,
+                });
+              }
+              
+              blocks.push({
+                id: generateBlockId(),
+                type: 'fill-blank',
+                order: order++,
+                width: 'full',
+                content: {
+                  instruction: fillSlide.instruction || 'Doplň chybějící slova',
+                  segments: segments.length > 0 ? segments : [{ type: 'text', content: sentence.text }],
+                },
+              });
+            }
+            break;
+          }
+          
+          case 'connect-pairs': {
+            const pairsSlide = activitySlide as ConnectPairsActivitySlide;
+            
+            // Create native connect-pairs block
+            blocks.push({
+              id: generateBlockId(),
+              type: 'connect-pairs',
+              order: order++,
+              width: 'full',
+              content: {
+                instruction: pairsSlide.instruction || 'Spoj správné dvojice',
+                pairs: pairsSlide.pairs.map(pair => ({
+                  id: pair.id,
+                  left: {
+                    id: pair.left.id,
+                    type: pair.left.type,
+                    content: pair.left.content,
+                  },
+                  right: {
+                    id: pair.right.id,
+                    type: pair.right.type,
+                    content: pair.right.content,
+                  },
+                })),
+                shuffleSides: pairsSlide.shuffleSides,
+              },
+            });
+            break;
+          }
+          
+          case 'image-hotspots': {
+            const hotspotsSlide = activitySlide as ImageHotspotsActivitySlide;
+            
+            // Create native image-hotspots block
+            blocks.push({
+              id: generateBlockId(),
+              type: 'image-hotspots',
+              order: order++,
+              width: 'full',
+              content: {
+                instruction: hotspotsSlide.instruction || 'Označ správná místa na obrázku',
+                imageUrl: hotspotsSlide.imageUrl || '',
+                hotspots: hotspotsSlide.hotspots.map(hotspot => ({
+                  id: hotspot.id,
+                  x: hotspot.x,
+                  y: hotspot.y,
+                  label: hotspot.label,
+                  options: (hotspot as any).options || undefined,
+                })),
+                markerStyle: hotspotsSlide.markerStyle === 'pin' ? 'pin' 
+                  : hotspotsSlide.markerStyle === 'question-mark' ? 'question-mark' 
+                  : 'circle',
+                markerSize: Math.round((hotspotsSlide.markerSize || 1) * 100),
+                answerType: hotspotsSlide.answerType || 'text',
+              },
+            });
+            break;
+          }
+          
+          case 'video-quiz': {
+            const videoSlide = activitySlide as VideoQuizActivitySlide;
+            
+            // Create native video-quiz block
+            blocks.push({
+              id: generateBlockId(),
+              type: 'video-quiz',
+              order: order++,
+              width: 'full',
+              content: {
+                instruction: videoSlide.instruction || 'Video kvíz',
+                videoUrl: videoSlide.videoUrl || '',
+                videoId: videoSlide.videoId,
+                questions: videoSlide.questions.map(q => ({
+                  id: q.id,
+                  timestamp: q.timestamp,
+                  question: q.question,
+                  options: q.options.map(opt => ({
+                    id: opt.id,
+                    label: opt.label,
+                    content: opt.content,
+                    isCorrect: opt.isCorrect,
+                  })),
+                })),
+              },
+            });
+            break;
+          }
+          
+          case 'voting': {
+            const votingSlide = activitySlide as VotingActivitySlide;
+            
+            // Convert voting to paragraph with options
+            blocks.push({
+              id: generateBlockId(),
+              type: 'heading',
+              order: order++,
+              width: 'full',
+              content: {
+                text: votingSlide.question || 'Hlasování',
+                level: 'h3' as const,
+              },
+            });
+            
+            if (votingSlide.options && votingSlide.options.length > 0) {
+              const optionsHtml = votingSlide.options
+                .map((opt, idx) => `<p>${String.fromCharCode(65 + idx)}) ${opt.content || opt.label || ''}</p>`)
+                .join('');
+              
+              blocks.push({
+                id: generateBlockId(),
+                type: 'paragraph',
+                order: order++,
+                width: 'full',
+                content: {
+                  html: optionsHtml,
+                },
+              });
+            }
+            break;
+          }
+          
+          case 'board': {
+            const boardSlide = activitySlide as BoardActivitySlide;
+            
+            // Convert board to instruction paragraph
+            blocks.push({
+              id: generateBlockId(),
+              type: 'infobox',
+              order: order++,
+              width: 'full',
+              content: {
+                title: 'Nástěnka',
+                html: `<p>${boardSlide.question || 'Sdílejte své odpovědi s třídou.'}</p>`,
+                variant: 'yellow',
+              },
+            });
+            break;
+          }
         }
       }
       break;
@@ -370,29 +576,94 @@ function slideToBlocks(slide: QuizSlide, startOrder: number): WorksheetBlock[] {
     case 'info': {
       const infoSlide = slide as InfoSlide;
       
-      // Add title as heading if present
-      if (infoSlide.title) {
-        blocks.push({
-          id: generateBlockId(),
-          type: 'heading',
-          order: order++,
-          width: 'full',
-          content: {
-            text: infoSlide.title,
-            level: 'h2' as const,
-          },
-        });
+      // First check if there's a layout with blocks (new format)
+      if (infoSlide.layout && infoSlide.layout.blocks && infoSlide.layout.blocks.length > 0) {
+        for (const block of infoSlide.layout.blocks) {
+          // Text blocks become paragraphs or headings based on font size
+          if (block.type === 'text' && block.content) {
+            if (block.fontSize === 'xlarge' || block.fontWeight === 'bold') {
+              blocks.push({
+                id: generateBlockId(),
+                type: 'heading',
+                order: order++,
+                width: 'full',
+                content: {
+                  text: block.content,
+                  level: 'h2' as const,
+                },
+              });
+            } else {
+              blocks.push({
+                id: generateBlockId(),
+                type: 'paragraph',
+                order: order++,
+                width: 'full',
+                content: {
+                  html: `<p>${block.content}</p>`,
+                },
+              });
+            }
+          }
+          // Image blocks
+          else if (block.type === 'image' && block.content) {
+            blocks.push({
+              id: generateBlockId(),
+              type: 'image',
+              order: order++,
+              width: 'full',
+              content: {
+                url: block.content,
+                alt: block.imageCaption || '',
+                caption: block.imageCaption || '',
+                size: 'medium',
+                alignment: 'center',
+              },
+            });
+          }
+        }
+      } else {
+        // Legacy format - use title and content fields
+        // Add title as heading if present
+        if (infoSlide.title) {
+          blocks.push({
+            id: generateBlockId(),
+            type: 'heading',
+            order: order++,
+            width: 'full',
+            content: {
+              text: infoSlide.title,
+              level: 'h2' as const,
+            },
+          });
+        }
+        
+        // Add content as paragraph
+        if (infoSlide.content) {
+          blocks.push({
+            id: generateBlockId(),
+            type: 'paragraph',
+            order: order++,
+            width: 'full',
+            content: {
+              html: infoSlide.content,
+            },
+          });
+        }
       }
       
-      // Add content as paragraph
-      if (infoSlide.content) {
+      // Add media if present
+      if (infoSlide.media && infoSlide.media.url) {
         blocks.push({
           id: generateBlockId(),
-          type: 'paragraph',
+          type: 'image',
           order: order++,
           width: 'full',
           content: {
-            html: infoSlide.content,
+            url: infoSlide.media.url,
+            alt: infoSlide.media.caption || '',
+            caption: infoSlide.media.caption || '',
+            size: 'medium',
+            alignment: 'center',
           },
         });
       }

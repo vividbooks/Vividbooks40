@@ -14,7 +14,11 @@ import {
   Settings,
   Book,
   LayoutGrid,
-  Image as ImageIcon
+  Image as ImageIcon,
+  Play,
+  FileEdit,
+  Upload,
+  ArrowLeft
 } from 'lucide-react';
 import { DndContext, DragEndEvent, closestCenter, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
@@ -80,7 +84,7 @@ interface SortableItemProps {
   onDeleteItem: (item: MenuItem) => void;
   onEditItem: (item: MenuItem) => void;
   onAddChild: (parentId: string, type: 'page' | 'group' | 'workbook', label: string, slug?: string) => void;
-  onCreatePage: (label: string, parentId?: string) => void;
+  onCreatePage: (label: string, parentId?: string, documentType?: string) => Promise<void>;
   category: string;
   allPages: MenuItem[];
   activeTab: 'folders' | 'workbooks';
@@ -103,7 +107,7 @@ function SortableItem({
 }: SortableItemProps) {
   const [showAddMenu, setShowAddMenu] = useState(false);
   const [newItemLabel, setNewItemLabel] = useState('');
-  const [selectedPageId, setSelectedPageId] = useState('');
+  const [worksheetSubmenu, setWorksheetSubmenu] = useState(false);
   
   const {
     attributes,
@@ -133,17 +137,32 @@ function SortableItem({
   );
   const isCompactFolder = hasChildren && !containsSubfolders;
 
-  const handleAddChild = (type: 'page' | 'group' | 'workbook') => {
+  const handleAddChild = async (type: 'page' | 'group' | 'workbook' | 'board' | 'worksheet-create' | 'worksheet-pdf') => {
     if (!newItemLabel.trim()) return;
     
-    if (type === 'page') {
-      onCreatePage(newItemLabel.trim(), item.id);
-    } else {
-      onAddChild(item.id, type, newItemLabel.trim());
+    const label = newItemLabel.trim();
+    
+    try {
+      if (type === 'page') {
+        await onCreatePage(label, item.id, 'page');
+      } else if (type === 'board') {
+        await onCreatePage(label, item.id, 'board');
+      } else if (type === 'worksheet-create') {
+        await onCreatePage(label, item.id, 'worksheet-editor');
+      } else if (type === 'worksheet-pdf') {
+        await onCreatePage(label, item.id, 'worksheet');
+      } else if (type === 'group') {
+        onAddChild(item.id, 'group', label);
+      } else if (type === 'workbook') {
+        await onCreatePage(label, item.id, 'workbook');
+      }
+    } catch (err) {
+      console.error('Error adding child:', err);
     }
     
     setShowAddMenu(false);
     setNewItemLabel('');
+    setWorksheetSubmenu(false);
   };
 
   const getIconForType = (item: MenuItem) => {
@@ -292,76 +311,138 @@ function SortableItem({
       </div>
 
       {showAddMenu && isGroup && (
-        <div className="mx-3 my-1 p-3 bg-white border border-slate-200 rounded-lg shadow-sm z-20 relative" style={{ marginLeft: `${0.75 + level * 0.5 + 1.5}rem` }}>
-          <input
-            type="text"
-            value={newItemLabel}
-            onChange={(e) => setNewItemLabel(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') handleAddChild('page');
-              if (e.key === 'Escape') {
-                setShowAddMenu(false);
-                setNewItemLabel('');
-              }
-            }}
-            placeholder="Název..."
-            className="w-full px-2 py-1.5 bg-background rounded focus:outline-none focus:ring-2 focus:ring-ring mb-2 shadow-sm"
-            style={{ color: '#4E5871', fontSize: '0.85rem' }}
-            autoFocus
-          />
-          <div className="grid grid-cols-2 gap-1.5">
-            <button
-              onClick={() => handleAddChild(activeTab === 'workbooks' ? 'workbook' : 'group')}
-              disabled={!newItemLabel.trim()}
-              className="flex items-center justify-center gap-1 px-2 py-1.5 border border-border bg-white rounded hover:bg-accent transition-colors disabled:opacity-50"
-              style={{ fontSize: '0.75rem', color: '#4E5871' }}
-              title="Přidat složku"
-            >
-              <Folder className="h-3 w-3" />
-              Složka
-            </button>
-            <button
-              onClick={() => handleAddChild('page')}
-              disabled={!newItemLabel.trim()}
-              className="flex items-center justify-center gap-1 px-2 py-1.5 bg-primary text-primary-foreground rounded hover:opacity-90 transition-opacity disabled:opacity-50"
-              style={{ fontSize: '0.75rem' }}
-              title="Přidat stránku"
-            >
-              <FileText className="h-3 w-3" />
-              Stránka
-            </button>
-          </div>
-
-          <div className="mt-3 pt-2 border-t border-border">
-            <p className="text-[10px] uppercase text-muted-foreground font-medium mb-1.5">Přiřadit existující</p>
-            <div className="flex gap-1">
-              <select
-                value={selectedPageId}
-                onChange={(e) => setSelectedPageId(e.target.value)}
-                className="flex-1 px-2 py-1 text-xs bg-background border border-border rounded focus:outline-none focus:ring-1 focus:ring-ring"
-                style={{ color: '#4E5871' }}
-              >
-                <option value="">Vyberte list...</option>
-                {allPages.map(p => (
-                  <option key={p.id} value={p.id}>{p.label}</option>
-                ))}
-              </select>
+        <div className="mx-3 my-1 p-3 bg-white border border-slate-200 rounded-lg shadow-lg z-20 relative" style={{ marginLeft: `${0.75 + level * 0.5 + 1.5}rem` }}>
+          {/* Submenu state for worksheet options */}
+          {worksheetSubmenu ? (
+            <>
               <button
-                onClick={() => {
-                   const page = allPages.find(p => p.id === selectedPageId);
-                   if (page) {
-                     onAddChild(item.id, 'page', page.label, page.slug);
-                     setShowAddMenu(false);
-                     setSelectedPageId('');
-                   }
-                }}
-                disabled={!selectedPageId}
-                className="px-2 py-1 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded hover:bg-indigo-100 disabled:opacity-50 text-xs font-medium"
+                onClick={() => setWorksheetSubmenu(false)}
+                className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700 mb-2"
               >
-                Přidat
+                <ArrowLeft className="h-3 w-3" />
+                Zpět
               </button>
-            </div>
-          </div>
+              <p className="text-[10px] uppercase text-muted-foreground font-medium mb-2">Pracovní list</p>
+              <input
+                type="text"
+                value={newItemLabel}
+                onChange={(e) => setNewItemLabel(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') {
+                    setShowAddMenu(false);
+                    setNewItemLabel('');
+                    setWorksheetSubmenu(false);
+                  }
+                }}
+                placeholder="Název pracovního listu..."
+                className="w-full px-2 py-1.5 bg-background rounded focus:outline-none focus:ring-2 focus:ring-ring mb-2 shadow-sm"
+                style={{ color: '#4E5871', fontSize: '0.85rem' }}
+                autoFocus
+              />
+              <div className="flex flex-col gap-1.5">
+                <button
+                  onClick={() => {
+                    handleAddChild('worksheet-create');
+                    setWorksheetSubmenu(false);
+                  }}
+                  disabled={!newItemLabel.trim()}
+                  className="flex items-center gap-2 px-3 py-2 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded hover:bg-emerald-100 transition-colors disabled:opacity-50"
+                  style={{ fontSize: '0.8rem' }}
+                >
+                  <FileEdit className="h-4 w-4" />
+                  <div className="text-left">
+                    <div className="font-medium">Vytvořit</div>
+                    <div className="text-[10px] opacity-70">Otevřít editor pracovních listů</div>
+                  </div>
+                </button>
+                <button
+                  onClick={() => {
+                    handleAddChild('worksheet-pdf');
+                    setWorksheetSubmenu(false);
+                  }}
+                  disabled={!newItemLabel.trim()}
+                  className="flex items-center gap-2 px-3 py-2 bg-amber-50 text-amber-700 border border-amber-200 rounded hover:bg-amber-100 transition-colors disabled:opacity-50"
+                  style={{ fontSize: '0.8rem' }}
+                >
+                  <Upload className="h-4 w-4" />
+                  <div className="text-left">
+                    <div className="font-medium">Nahrát PDF</div>
+                    <div className="text-[10px] opacity-70">Přidat existující pracovní list</div>
+                  </div>
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <input
+                type="text"
+                value={newItemLabel}
+                onChange={(e) => setNewItemLabel(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && newItemLabel.trim()) handleAddChild('page');
+                  if (e.key === 'Escape') {
+                    setShowAddMenu(false);
+                    setNewItemLabel('');
+                  }
+                }}
+                placeholder="Název..."
+                className="w-full px-2 py-1.5 bg-background rounded focus:outline-none focus:ring-2 focus:ring-ring mb-3 shadow-sm"
+                style={{ color: '#4E5871', fontSize: '0.85rem' }}
+                autoFocus
+              />
+              
+              <div className="grid grid-cols-2 gap-1.5">
+                {/* Složka */}
+                <button
+                  onClick={() => handleAddChild(activeTab === 'workbooks' ? 'workbook' : 'group')}
+                  disabled={!newItemLabel.trim()}
+                  className="flex items-center justify-center gap-1.5 px-2 py-2 border border-slate-200 bg-white rounded-lg hover:bg-slate-50 transition-colors disabled:opacity-50"
+                  style={{ fontSize: '0.75rem', color: '#4E5871' }}
+                  title="Přidat složku"
+                >
+                  <Folder className="h-4 w-4 text-slate-500" />
+                  Složka
+                </button>
+                
+                {/* Dokument */}
+                <button
+                  onClick={() => handleAddChild('page')}
+                  disabled={!newItemLabel.trim()}
+                  className="flex items-center justify-center gap-1.5 px-2 py-2 border border-blue-200 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors disabled:opacity-50"
+                  style={{ fontSize: '0.75rem', color: '#1e40af' }}
+                  title="Přidat dokument"
+                >
+                  <FileText className="h-4 w-4" />
+                  Dokument
+                </button>
+                
+                {/* Board */}
+                <button
+                  onClick={() => handleAddChild('board')}
+                  disabled={!newItemLabel.trim()}
+                  className="flex items-center justify-center gap-1.5 px-2 py-2 border border-purple-200 bg-purple-50 rounded-lg hover:bg-purple-100 transition-colors disabled:opacity-50"
+                  style={{ fontSize: '0.75rem', color: '#7c3aed' }}
+                  title="Přidat Vividboard"
+                >
+                  <Play className="h-4 w-4" />
+                  Board
+                </button>
+                
+                {/* Pracovní list */}
+                <button
+                  onClick={() => setWorksheetSubmenu(true)}
+                  disabled={!newItemLabel.trim()}
+                  className="flex items-center justify-center gap-1.5 px-2 py-2 border border-emerald-200 bg-emerald-50 rounded-lg hover:bg-emerald-100 transition-colors disabled:opacity-50"
+                  style={{ fontSize: '0.75rem', color: '#059669' }}
+                  title="Přidat pracovní list"
+                >
+                  <FileEdit className="h-4 w-4" />
+                  Pracovní list
+                </button>
+              </div>
+
+            </>
+          )}
         </div>
       )}
 
@@ -580,7 +661,7 @@ export function AdminSidebar({ activeCategory, activeSlug, onSelectPage }: Admin
     });
   };
 
-  const createNewPage = async (title: string, parentId?: string, itemType: 'page' | 'workbook' = 'page') => {
+  const createNewPage = async (title: string, parentId?: string, itemType: 'page' | 'workbook' | 'board' | 'worksheet-editor' | 'worksheet' = 'page') => {
     if (creating) return;
     
     setCreating(true);
@@ -598,6 +679,16 @@ export function AdminSidebar({ activeCategory, activeSlug, onSelectPage }: Admin
         return;
       }
 
+      // Determine the document type for the API
+      let documentType = 'lesson';
+      let externalUrl = '';
+      if (itemType === 'workbook') documentType = 'workbook';
+      else if (itemType === 'board') {
+        documentType = 'practice'; // Board is stored as practice type
+        externalUrl = `board://board_${slug}`; // Pre-set the board ID
+      }
+      else if (itemType === 'worksheet-editor' || itemType === 'worksheet') documentType = 'worksheet';
+
       const response = await fetch(
         `https://${projectId}.supabase.co/functions/v1/make-server-46c8107b/pages`,
         {
@@ -612,7 +703,8 @@ export function AdminSidebar({ activeCategory, activeSlug, onSelectPage }: Admin
             content: '',
             description: '',
             category: activeCategory,
-            documentType: itemType === 'workbook' ? 'workbook' : 'lesson'
+            documentType,
+            externalUrl
           })
         }
       );
@@ -624,12 +716,26 @@ export function AdminSidebar({ activeCategory, activeSlug, onSelectPage }: Admin
 
       const responseData = await response.json();
 
+      // Determine icon and type for menu item
+      let menuType: string | undefined;
+      let menuIcon: string | undefined;
+      if (itemType === 'workbook') {
+        menuType = 'workbook';
+        menuIcon = 'book';
+      } else if (itemType === 'board') {
+        menuType = 'practice';
+        menuIcon = 'play';
+      } else if (itemType === 'worksheet-editor' || itemType === 'worksheet') {
+        menuType = 'worksheet';
+        menuIcon = 'file-edit';
+      }
+
       const newPage: MenuItem = {
         id: crypto.randomUUID(),
         label: title,
         slug: slug,
-        type: itemType === 'workbook' ? 'workbook' : undefined,
-        icon: itemType === 'workbook' ? 'book' : undefined,
+        type: menuType,
+        icon: menuIcon,
         children: itemType === 'workbook' ? [] : undefined
       };
 
@@ -658,7 +764,26 @@ export function AdminSidebar({ activeCategory, activeSlug, onSelectPage }: Admin
       }
 
       await saveMenu(updatedMenu);
-      navigate(`/admin/${activeCategory}/${slug}`);
+      
+      // Navigate to the appropriate editor based on item type
+      if (itemType === 'board') {
+        // Create the board in localStorage and navigate to quiz editor
+        const boardId = `board_${slug}`;
+        const { createEmptyQuiz } = await import('../types/quiz');
+        const { saveQuiz } = await import('../utils/quiz-storage');
+        const newQuiz = createEmptyQuiz();
+        newQuiz.id = boardId;
+        newQuiz.title = title;
+        newQuiz.subject = activeCategory || undefined;
+        saveQuiz(newQuiz);
+        navigate(`/quiz/edit/${boardId}`);
+      } else if (itemType === 'worksheet-editor') {
+        // Navigate to worksheet editor
+        navigate(`/worksheet/edit/new?title=${encodeURIComponent(title)}&category=${encodeURIComponent(activeCategory || '')}&slug=${encodeURIComponent(slug)}`);
+      } else {
+        // Navigate to admin page
+        navigate(`/admin/${activeCategory}/${slug}`);
+      }
     } catch (err) {
       console.error('Error creating page:', err);
       alert('Chyba při vytváření stránky: ' + (err as Error).message);

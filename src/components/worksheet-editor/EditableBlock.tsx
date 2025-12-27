@@ -8,7 +8,7 @@ import { useState, useRef, useEffect, useCallback, useId } from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { Plus, X, Bold, Italic, Underline, List, Sigma, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Copy, Trash2, ImageIcon, Table as TableIcon } from 'lucide-react';
-import { WorksheetBlock, ChoiceOption, GlobalFontSize, SpacerStyle, ExamplesContent, MathExample, ExampleDifficulty, AnswerBoxStyle, ImageContent, ImageSize, BlockImage, TableContent } from '../../types/worksheet';
+import { WorksheetBlock, ChoiceOption, GlobalFontSize, SpacerStyle, ExamplesContent, MathExample, ExampleDifficulty, AnswerBoxStyle, ImageContent, ImageSize, BlockImage, TableContent, ConnectPairsContent, ImageHotspotsContent, VideoQuizContent, ConnectPairContent, WorksheetHotspot, WorksheetVideoQuestion } from '../../types/worksheet';
 import { LatexRenderer } from './LatexRenderer';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
@@ -509,6 +509,33 @@ function BlockContent({ block, isEditing, onUpdate, onBlur, onKeyDown, globalFon
           isEditing={isEditing}
           onUpdate={onUpdate}
           onBlur={onBlur}
+        />
+      );
+    case 'connect-pairs':
+      return (
+        <ConnectPairsEditorBlock
+          content={block.content as ConnectPairsContent}
+          isEditing={isEditing}
+          onUpdate={onUpdate}
+          activityNumber={activityNumber}
+        />
+      );
+    case 'image-hotspots':
+      return (
+        <ImageHotspotsEditorBlock
+          content={block.content as ImageHotspotsContent}
+          isEditing={isEditing}
+          onUpdate={onUpdate}
+          activityNumber={activityNumber}
+        />
+      );
+    case 'video-quiz':
+      return (
+        <VideoQuizEditorBlock
+          content={block.content as VideoQuizContent}
+          isEditing={isEditing}
+          onUpdate={onUpdate}
+          activityNumber={activityNumber}
         />
       );
     default:
@@ -2217,6 +2244,383 @@ function TableEditor({ content, isEditing, onUpdate, onBlur }: TableEditorProps)
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+// ============================================
+// CONNECT PAIRS EDITOR (SPOJOVAČKA)
+// ============================================
+
+interface ConnectPairsEditorBlockProps {
+  content: ConnectPairsContent;
+  isEditing: boolean;
+  onUpdate: (content: ConnectPairsContent) => void;
+  activityNumber?: number;
+}
+
+function ConnectPairsEditorBlock({ content, isEditing, onUpdate, activityNumber }: ConnectPairsEditorBlockProps) {
+  const addPair = () => {
+    const newPair: ConnectPairContent = {
+      id: `pair-${Date.now()}`,
+      left: { id: `left-${Date.now()}`, type: 'text', content: '' },
+      right: { id: `right-${Date.now()}`, type: 'text', content: '' },
+    };
+    onUpdate({
+      ...content,
+      pairs: [...content.pairs, newPair],
+    });
+  };
+
+  const updatePair = (pairId: string, side: 'left' | 'right', value: string) => {
+    onUpdate({
+      ...content,
+      pairs: content.pairs.map(pair =>
+        pair.id === pairId
+          ? { ...pair, [side]: { ...pair[side], content: value } }
+          : pair
+      ),
+    });
+  };
+
+  const removePair = (pairId: string) => {
+    if (content.pairs.length <= 2) return;
+    onUpdate({
+      ...content,
+      pairs: content.pairs.filter(pair => pair.id !== pairId),
+    });
+  };
+
+  return (
+    <div className="space-y-3">
+      {/* Header with activity number */}
+      <div className="flex items-center gap-3">
+        {activityNumber && (
+          <div
+            className="flex items-center justify-center shrink-0 font-bold text-white"
+            style={{ 
+              width: '21px',
+              height: '21px',
+              borderRadius: '50%',
+              backgroundColor: '#1e293b',
+              fontSize: '12px',
+            }}
+          >
+            {activityNumber}
+          </div>
+        )}
+        <span className="font-medium text-slate-700">
+          {content.instruction || 'Spoj správné dvojice'}
+        </span>
+      </div>
+
+      {/* Pairs grid */}
+      <div className="space-y-2" style={{ paddingLeft: activityNumber ? '32px' : 0 }}>
+        {content.pairs.map((pair, idx) => (
+          <div key={pair.id} className="flex items-center gap-3 group">
+            <span className="text-slate-400 text-sm w-4">{idx + 1}.</span>
+            
+            {isEditing ? (
+              <>
+                <input
+                  type="text"
+                  value={pair.left.content}
+                  onChange={(e) => updatePair(pair.id, 'left', e.target.value)}
+                  placeholder="Levá strana"
+                  className="flex-1 px-3 py-1.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <span className="text-slate-400">↔</span>
+                <input
+                  type="text"
+                  value={pair.right.content}
+                  onChange={(e) => updatePair(pair.id, 'right', e.target.value)}
+                  placeholder="Pravá strana"
+                  className="flex-1 px-3 py-1.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                {content.pairs.length > 2 && (
+                  <button
+                    onClick={() => removePair(pair.id)}
+                    className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-red-500 transition-all"
+                  >
+                    <X size={14} />
+                  </button>
+                )}
+              </>
+            ) : (
+              <>
+                <div className="flex-1 px-3 py-1.5 bg-blue-50 rounded-lg text-sm border border-blue-100">
+                  {pair.left.content || <span className="text-slate-400">...</span>}
+                </div>
+                <span className="text-slate-400">—</span>
+                <div className="flex-1 px-3 py-1.5 bg-purple-50 rounded-lg text-sm border border-purple-100">
+                  {pair.right.content || <span className="text-slate-400">...</span>}
+                </div>
+              </>
+            )}
+          </div>
+        ))}
+
+        {isEditing && (
+          <button
+            onClick={addPair}
+            className="flex items-center gap-2 text-blue-600 hover:text-blue-700 mt-2 text-sm"
+          >
+            <Plus size={14} />
+            Přidat dvojici
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// IMAGE HOTSPOTS EDITOR (POZNÁVAČKA)
+// ============================================
+
+interface ImageHotspotsEditorBlockProps {
+  content: ImageHotspotsContent;
+  isEditing: boolean;
+  onUpdate: (content: ImageHotspotsContent) => void;
+  activityNumber?: number;
+}
+
+function ImageHotspotsEditorBlock({ content, isEditing, onUpdate, activityNumber }: ImageHotspotsEditorBlockProps) {
+  const updateHotspot = (hotspotId: string, label: string) => {
+    onUpdate({
+      ...content,
+      hotspots: content.hotspots.map(h =>
+        h.id === hotspotId ? { ...h, label } : h
+      ),
+    });
+  };
+
+  const removeHotspot = (hotspotId: string) => {
+    onUpdate({
+      ...content,
+      hotspots: content.hotspots.filter(h => h.id !== hotspotId),
+    });
+  };
+
+  return (
+    <div className="space-y-3">
+      {/* Header with activity number */}
+      <div className="flex items-center gap-3">
+        {activityNumber && (
+          <div
+            className="flex items-center justify-center shrink-0 font-bold text-white"
+            style={{ 
+              width: '21px',
+              height: '21px',
+              borderRadius: '50%',
+              backgroundColor: '#1e293b',
+              fontSize: '12px',
+            }}
+          >
+            {activityNumber}
+          </div>
+        )}
+        <span className="font-medium text-slate-700">
+          {content.instruction || 'Označ správná místa na obrázku'}
+        </span>
+      </div>
+
+      <div style={{ paddingLeft: activityNumber ? '32px' : 0 }}>
+        {/* Image preview */}
+        {content.imageUrl ? (
+          <div className="relative mb-3">
+            <img
+              src={content.imageUrl}
+              alt="Poznávačka"
+              className="w-full max-h-64 object-contain rounded-lg border border-slate-200"
+            />
+            {/* Hotspot markers on image */}
+            {content.hotspots.map((hotspot, idx) => (
+              <div
+                key={hotspot.id}
+                className="absolute flex items-center justify-center w-6 h-6 bg-purple-600 text-white rounded-full text-xs font-bold border-2 border-white shadow-md"
+                style={{
+                  left: `${hotspot.x}%`,
+                  top: `${hotspot.y}%`,
+                  transform: 'translate(-50%, -50%)',
+                }}
+              >
+                {idx + 1}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="flex items-center justify-center py-8 bg-slate-50 rounded-lg border-2 border-dashed border-slate-200 mb-3">
+            <div className="text-center text-slate-400">
+              <ImageIcon size={32} className="mx-auto mb-2" />
+              <span className="text-sm">Obrázek nebyl nastaven</span>
+            </div>
+          </div>
+        )}
+
+        {/* Hotspots list */}
+        {content.hotspots.length > 0 && (
+          <div className="space-y-2">
+            <span className="text-sm font-medium text-slate-600">Body k označení:</span>
+            {content.hotspots.map((hotspot, idx) => (
+              <div key={hotspot.id} className="flex items-center gap-2 group">
+                <span className="flex items-center justify-center w-5 h-5 bg-purple-600 text-white rounded-full text-xs font-bold">
+                  {idx + 1}
+                </span>
+                {isEditing ? (
+                  <input
+                    type="text"
+                    value={hotspot.label}
+                    onChange={(e) => updateHotspot(hotspot.id, e.target.value)}
+                    placeholder="Název bodu"
+                    className="flex-1 px-2 py-1 border border-slate-200 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                ) : (
+                  <span className="text-sm text-slate-700">{hotspot.label || '—'}</span>
+                )}
+                {isEditing && (
+                  <button
+                    onClick={() => removeHotspot(hotspot.id)}
+                    className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-red-500"
+                  >
+                    <X size={14} />
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// VIDEO QUIZ EDITOR
+// ============================================
+
+interface VideoQuizEditorBlockProps {
+  content: VideoQuizContent;
+  isEditing: boolean;
+  onUpdate: (content: VideoQuizContent) => void;
+  activityNumber?: number;
+}
+
+function VideoQuizEditorBlock({ content, isEditing, onUpdate, activityNumber }: VideoQuizEditorBlockProps) {
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${String(secs).padStart(2, '0')}`;
+  };
+
+  const updateQuestion = (questionId: string, question: string) => {
+    onUpdate({
+      ...content,
+      questions: content.questions.map(q =>
+        q.id === questionId ? { ...q, question } : q
+      ),
+    });
+  };
+
+  const removeQuestion = (questionId: string) => {
+    onUpdate({
+      ...content,
+      questions: content.questions.filter(q => q.id !== questionId),
+    });
+  };
+
+  // Extract video ID for thumbnail
+  const getYouTubeId = (url: string) => {
+    const match = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([^&\s]+)/);
+    return match ? match[1] : null;
+  };
+
+  const videoId = content.videoId || getYouTubeId(content.videoUrl);
+  const thumbnailUrl = videoId ? `https://img.youtube.com/vi/${videoId}/mqdefault.jpg` : null;
+
+  return (
+    <div className="space-y-3">
+      {/* Header with activity number */}
+      <div className="flex items-center gap-3">
+        {activityNumber && (
+          <div
+            className="flex items-center justify-center shrink-0 font-bold text-white"
+            style={{ 
+              width: '21px',
+              height: '21px',
+              borderRadius: '50%',
+              backgroundColor: '#1e293b',
+              fontSize: '12px',
+            }}
+          >
+            {activityNumber}
+          </div>
+        )}
+        <span className="font-medium text-slate-700">
+          {content.instruction || 'Video kvíz'}
+        </span>
+      </div>
+
+      <div style={{ paddingLeft: activityNumber ? '32px' : 0 }}>
+        {/* Video preview */}
+        {thumbnailUrl ? (
+          <div className="relative mb-3 rounded-lg overflow-hidden border border-slate-200">
+            <img
+              src={thumbnailUrl}
+              alt="Video thumbnail"
+              className="w-full h-32 object-cover"
+            />
+            <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
+              <div className="w-12 h-12 bg-red-600 rounded-xl flex items-center justify-center">
+                <div className="w-0 h-0 border-t-8 border-b-8 border-l-12 border-transparent border-l-white ml-1" />
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center justify-center py-8 bg-slate-50 rounded-lg border-2 border-dashed border-slate-200 mb-3">
+            <div className="text-center text-slate-400">
+              <span className="text-sm">YouTube video nebylo nastaveno</span>
+            </div>
+          </div>
+        )}
+
+        {/* Questions list */}
+        {content.questions.length > 0 && (
+          <div className="space-y-2">
+            <span className="text-sm font-medium text-slate-600">Otázky ve videu:</span>
+            {content.questions.map((q, idx) => (
+              <div key={q.id} className="flex items-center gap-2 group p-2 bg-slate-50 rounded-lg">
+                <span className="text-xs text-slate-500 font-mono bg-slate-200 px-1.5 py-0.5 rounded">
+                  {formatTime(q.timestamp)}
+                </span>
+                {isEditing ? (
+                  <input
+                    type="text"
+                    value={q.question}
+                    onChange={(e) => updateQuestion(q.id, e.target.value)}
+                    placeholder={`Otázka ${idx + 1}`}
+                    className="flex-1 px-2 py-1 border border-slate-200 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                ) : (
+                  <span className="flex-1 text-sm text-slate-700">{q.question || `Otázka ${idx + 1}`}</span>
+                )}
+                {isEditing && (
+                  <button
+                    onClick={() => removeQuestion(q.id)}
+                    className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-red-500"
+                  >
+                    <X size={14} />
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {content.questions.length === 0 && (
+          <p className="text-sm text-slate-400 italic">Žádné otázky</p>
+        )}
+      </div>
     </div>
   );
 }

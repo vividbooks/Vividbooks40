@@ -17,6 +17,63 @@
 import { supabase } from './supabase/client';
 
 // ============================================
+// LOCAL STORAGE FALLBACK
+// ============================================
+
+const LOCAL_STORAGE_PREFIX = 'doc_versions_';
+const MAX_LOCAL_VERSIONS = 20;
+
+interface LocalVersionStore {
+  versions: DocumentVersion[];
+  lastUpdated: string;
+}
+
+function getLocalStorageKey(documentId: string, documentType: DocumentType): string {
+  return `${LOCAL_STORAGE_PREFIX}${documentType}_${documentId}`;
+}
+
+function getLocalVersions(documentId: string, documentType: DocumentType): DocumentVersion[] {
+  try {
+    const key = getLocalStorageKey(documentId, documentType);
+    const data = localStorage.getItem(key);
+    if (data) {
+      const store: LocalVersionStore = JSON.parse(data);
+      return store.versions || [];
+    }
+  } catch (e) {
+    console.warn('[DocumentVersions] Error reading local versions:', e);
+  }
+  return [];
+}
+
+function saveLocalVersion(documentId: string, documentType: DocumentType, version: DocumentVersion): void {
+  try {
+    const key = getLocalStorageKey(documentId, documentType);
+    const versions = getLocalVersions(documentId, documentType);
+    
+    // Add new version at the beginning
+    versions.unshift(version);
+    
+    // Keep only MAX_LOCAL_VERSIONS
+    if (versions.length > MAX_LOCAL_VERSIONS) {
+      versions.length = MAX_LOCAL_VERSIONS;
+    }
+    
+    const store: LocalVersionStore = {
+      versions,
+      lastUpdated: new Date().toISOString(),
+    };
+    
+    localStorage.setItem(key, JSON.stringify(store));
+  } catch (e) {
+    console.warn('[DocumentVersions] Error saving local version:', e);
+  }
+}
+
+// Flag to track if Supabase is available
+let supabaseAvailable = true;
+
+// ============================================
 // TYPES
 // ============================================
 
@@ -305,14 +362,41 @@ export async function saveVersion(options: SaveVersionOptions): Promise<{
 
     if (error) {
       console.error('[DocumentVersions] Error saving version:', error);
-      // Check for common errors
-      if (error.message?.includes('permission denied') || error.code === '42501') {
-        return { success: false, error: 'Nemáte oprávnění ukládat verze. Kontaktujte administrátora.' };
-      }
-      if (error.message?.includes('does not exist') || error.code === '42P01') {
-        return { success: false, error: 'Tabulka document_versions neexistuje. Spusťte SQL migraci.' };
-      }
-      return { success: false, error: error.message };
+      
+      // Mark Supabase as unavailable and fall back to local storage
+      supabaseAvailable = false;
+      console.log('[DocumentVersions] Falling back to localStorage');
+      
+      // Create a local version
+      const localVersion: DocumentVersion = {
+        id: `local_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        document_id: documentId,
+        document_type: documentType,
+        category,
+        title,
+        content,
+        content_type: contentType,
+        version_number: versionNumber,
+        content_hash: contentHash,
+        content_size: content.length,
+        created_by: userId,
+        created_by_type: userType,
+        created_by_name: userName,
+        created_at: new Date().toISOString(),
+        change_type: changeType,
+        change_description: changeDescription,
+        metadata,
+      };
+      
+      saveLocalVersion(documentId, documentType, localVersion);
+      
+      // Update cache
+      lastSaveTimestamps.set(docKey, Date.now());
+      lastContentHashes.set(docKey, contentHash);
+      
+      console.log(`[DocumentVersions] Saved local version ${versionNumber} for ${documentType}:${documentId}`);
+      
+      return { success: true, version: localVersion };
     }
 
     // Update cache
@@ -342,6 +426,17 @@ export async function getVersionHistory(
 
   console.log(`[DocumentVersions] getVersionHistory for ${documentType}:${documentId}`);
 
+  // If we know Supabase is unavailable, use local storage directly
+  if (!supabaseAvailable) {
+    console.log('[DocumentVersions] Using localStorage (Supabase unavailable)');
+    const localVersions = getLocalVersions(documentId, documentType);
+    const paginatedVersions = localVersions.slice(offset, offset + limit);
+    return {
+      versions: paginatedVersions,
+      total: localVersions.length,
+    };
+  }
+
   try {
     // Get count
     const { count, error: countError } = await supabase
@@ -352,11 +447,16 @@ export async function getVersionHistory(
 
     if (countError) {
       console.error('[DocumentVersions] Error counting versions:', countError);
-      // If table doesn't exist, return empty result
-      if (countError.message?.includes('does not exist') || countError.code === '42P01') {
-        console.warn('[DocumentVersions] Table document_versions does not exist. Please run the migration.');
-        return { versions: [], total: 0, error: 'Tabulka document_versions neexistuje. Spusťte migraci.' };
-      }
+      
+      // Fall back to local storage on any error
+      supabaseAvailable = false;
+      console.log('[DocumentVersions] Falling back to localStorage');
+      const localVersions = getLocalVersions(documentId, documentType);
+      const paginatedVersions = localVersions.slice(offset, offset + limit);
+      return {
+        versions: paginatedVersions,
+        total: localVersions.length,
+      };
     }
 
     console.log('[DocumentVersions] Count result:', count);
@@ -372,22 +472,52 @@ export async function getVersionHistory(
 
     if (error) {
       console.error('[DocumentVersions] Error fetching versions:', error);
-      // If table doesn't exist, return helpful error
-      if (error.message?.includes('does not exist') || error.code === '42P01') {
-        return { versions: [], total: 0, error: 'Tabulka document_versions neexistuje. Spusťte migraci.' };
-      }
-      return { versions: [], total: 0, error: error.message };
+      
+      // Fall back to local storage on any error
+      supabaseAvailable = false;
+      console.log('[DocumentVersions] Falling back to localStorage');
+      const localVersions = getLocalVersions(documentId, documentType);
+      const paginatedVersions = localVersions.slice(offset, offset + limit);
+      return {
+        versions: paginatedVersions,
+        total: localVersions.length,
+      };
     }
 
     console.log(`[DocumentVersions] Fetched ${data?.length || 0} versions, total: ${count}`);
 
+    // Merge with any local versions that might exist
+    const localVersions = getLocalVersions(documentId, documentType);
+    const mergedVersions = [...(data || [])];
+    
+    // Add local versions that aren't in Supabase (by ID prefix)
+    localVersions.forEach(localVer => {
+      if (localVer.id.startsWith('local_')) {
+        // Insert local version at the right position by version_number
+        const insertIndex = mergedVersions.findIndex(v => v.version_number < localVer.version_number);
+        if (insertIndex === -1) {
+          mergedVersions.push(localVer);
+        } else {
+          mergedVersions.splice(insertIndex, 0, localVer);
+        }
+      }
+    });
+
     return {
-      versions: data || [],
-      total: count || 0,
+      versions: mergedVersions.slice(0, limit),
+      total: (count || 0) + localVersions.filter(v => v.id.startsWith('local_')).length,
     };
   } catch (error) {
     console.error('[DocumentVersions] Unexpected error:', error);
-    return { versions: [], total: 0, error: String(error) };
+    
+    // Fall back to local storage
+    supabaseAvailable = false;
+    const localVersions = getLocalVersions(documentId, documentType);
+    const paginatedVersions = localVersions.slice(offset, offset + limit);
+    return {
+      versions: paginatedVersions,
+      total: localVersions.length,
+    };
   }
 }
 
@@ -398,6 +528,30 @@ export async function getVersion(versionId: string): Promise<{
   version?: DocumentVersion;
   error?: string;
 }> {
+  // Check if this is a local version
+  if (versionId.startsWith('local_')) {
+    // Search all local storage keys for this version
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key?.startsWith(LOCAL_STORAGE_PREFIX)) {
+          const data = localStorage.getItem(key);
+          if (data) {
+            const store: LocalVersionStore = JSON.parse(data);
+            const version = store.versions.find(v => v.id === versionId);
+            if (version) {
+              return { version };
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[DocumentVersions] Error searching local versions:', e);
+    }
+    return { error: 'Local version not found' };
+  }
+
+  // Try Supabase
   try {
     const { data, error } = await supabase
       .from('document_versions')

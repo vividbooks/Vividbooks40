@@ -37,10 +37,18 @@ import {
   Lock,
   Unlock,
   AlertTriangle,
+  MessageSquare,
+  Vote,
 } from 'lucide-react';
-import { Quiz, QuizSlide, ABCActivitySlide, OpenActivitySlide, ExampleActivitySlide, BoardActivitySlide, InfoSlide, LiveQuizSession, SlideResponse } from '../../types/quiz';
+import { Quiz, QuizSlide, ABCActivitySlide, OpenActivitySlide, ExampleActivitySlide, BoardActivitySlide, VotingActivitySlide, ConnectPairsActivitySlide, FillBlanksActivitySlide, ImageHotspotsActivitySlide, VideoQuizActivitySlide, InfoSlide, LiveQuizSession, SlideResponse } from '../../types/quiz';
 import { BoardSlideView } from './slides/BoardSlideView';
+import { VotingSlideView } from './slides/VotingSlideView';
+import { ConnectPairsView } from './slides/ConnectPairsView';
+import { FillBlanksView } from './slides/FillBlanksView';
+import { ImageHotspotsView } from './slides/ImageHotspotsView';
+import { VideoQuizView } from './slides/VideoQuizView';
 import { useBoardPosts } from '../../hooks/useBoardPosts';
+import { useVoting } from '../../hooks/useVoting';
 import { getQuiz } from '../../utils/quiz-storage';
 import * as storage from '../../utils/profile-storage';
 import { database } from '../../utils/firebase-config';
@@ -50,6 +58,7 @@ import { saveWorksheet } from '../../utils/worksheet-storage';
 import { MathText } from '../math/MathText';
 import { QRCodeSVG } from 'qrcode.react';
 import { BlockLayoutView } from './QuizPreview';
+import { getClasses, ClassGroup } from '../../utils/supabase/classes';
 
 // Toggle switch component - simple working version
 const ToggleSwitch = ({ enabled, onChange, label }: { enabled: boolean; onChange: (v: boolean) => void; label: string }) => {
@@ -345,6 +354,11 @@ export function QuizViewPage() {
   // Live session settings
   const [liveShowSolutionHints, setLiveShowSolutionHints] = useState(true);
   
+  // Class connection state
+  const [availableClasses, setAvailableClasses] = useState<ClassGroup[]>([]);
+  const [selectedClassId, setSelectedClassId] = useState<string | null>(null);
+  const [loadingClasses, setLoadingClasses] = useState(false);
+  
   // Share settings
   const [sessionName, setSessionName] = useState('Nová relace');
   const [anonymousAccess, setAnonymousAccess] = useState(false);
@@ -363,6 +377,14 @@ export function QuizViewPage() {
   // Board posts for current slide (if it's a board activity)
   // Must be called before any early returns to satisfy React hooks rules
   const boardPosts = useBoardPosts({
+    sessionId: sessionId,
+    slideId: currentSlideForBoard?.id || '',
+    currentUserId: profile?.id,
+    currentUserName: profile?.name,
+  });
+  
+  // Voting for current slide (if it's a voting activity)
+  const voting = useVoting({
     sessionId: sessionId,
     slideId: currentSlideForBoard?.id || '',
     currentUserId: profile?.id,
@@ -436,6 +458,7 @@ export function QuizViewPage() {
     const sessionData: LiveQuizSession = {
       id: newSessionId,
       quizId: quiz.id,
+      code: code, // IMPORTANT: Store code so students can find the session!
       teacherId: profile?.userId || 'anonymous',
       teacherName: (profile as any)?.firstName || profile?.name || 'Učitel',
       isActive: true,
@@ -493,6 +516,23 @@ export function QuizViewPage() {
       });
     }
   }, [sessionId, currentSlideIndex, session?.isActive]);
+  
+  // Load available classes when live settings panel opens
+  useEffect(() => {
+    if (showLiveSettings && availableClasses.length === 0 && !loadingClasses) {
+      setLoadingClasses(true);
+      getClasses()
+        .then(classes => {
+          setAvailableClasses(classes);
+        })
+        .catch(err => {
+          console.error('Failed to load classes:', err);
+        })
+        .finally(() => {
+          setLoadingClasses(false);
+        });
+    }
+  }, [showLiveSettings, availableClasses.length, loadingClasses]);
   
   // End session
   const endLiveSession = async (viewResults: boolean = false) => {
@@ -754,15 +794,40 @@ export function QuizViewPage() {
                   const currentSlideData = quiz?.slides[currentSlideIndex];
                   const currentSlideResponse = studentResponses.find(r => r.slideId === currentSlideData?.id);
                   let answerLabel = '';
-                  if (currentSlideResponse && currentSlideData?.type === 'activity') {
-                    if ((currentSlideData as any).activityType === 'abc') {
+                  let answerColor = '#7C3AED'; // default purple
+                  
+                  if (currentSlideData?.type === 'activity') {
+                    const activityType = (currentSlideData as any).activityType;
+                    
+                    if (activityType === 'abc' && currentSlideResponse) {
                       // Find the option label (A, B, C, D)
                       const optionIndex = (currentSlideData as any).options?.findIndex((o: any) => o.id === currentSlideResponse.answer);
                       if (optionIndex >= 0) {
                         answerLabel = String.fromCharCode(65 + optionIndex); // A, B, C, D...
                       }
-                    } else if ((currentSlideData as any).activityType === 'open') {
+                    } else if (activityType === 'open' && currentSlideResponse) {
                       answerLabel = String(currentSlideResponse.answer).substring(0, 10) + (String(currentSlideResponse.answer).length > 10 ? '...' : '');
+                    } else if (activityType === 'voting') {
+                      // Check voting data for this student
+                      const studentVote = voting.votes[id];
+                      if (studentVote && studentVote.selectedOptions?.length > 0) {
+                        // Find option labels
+                        const votedOptions = studentVote.selectedOptions.map(optId => {
+                          const optIndex = (currentSlideData as any).options?.findIndex((o: any) => o.id === optId);
+                          return optIndex >= 0 ? String.fromCharCode(65 + optIndex) : '?';
+                        });
+                        answerLabel = votedOptions.join(', ');
+                        answerColor = '#0ea5e9'; // sky blue for voting
+                      }
+                    } else if (activityType === 'board') {
+                      // Count posts from this student
+                      const studentPosts = boardPosts.posts.filter(p => p.authorId === id);
+                      if (studentPosts.length > 0) {
+                        const lastPost = studentPosts[studentPosts.length - 1];
+                        // Show post count and preview
+                        answerLabel = `${studentPosts.length}× ${lastPost.text?.substring(0, 8) || ''}${(lastPost.text?.length || 0) > 8 ? '...' : ''}`;
+                        answerColor = '#10b981'; // green for board posts
+                      }
                     }
                   }
                   
@@ -798,14 +863,17 @@ export function QuizViewPage() {
                         // Show student's answer for current slide
                         answerLabel ? (
                           <div 
-                            className="px-2 py-1 rounded text-xs font-bold flex-shrink-0"
+                            className="px-2 py-1 rounded text-xs font-bold flex-shrink-0 max-w-[120px] truncate flex items-center gap-1"
                             style={{ 
                               backgroundColor: currentSlideResponse?.isCorrect === true ? '#4ade80' : 
-                                             currentSlideResponse?.isCorrect === false ? '#f87171' : '#7C3AED',
+                                             currentSlideResponse?.isCorrect === false ? '#f87171' : answerColor,
                               color: '#ffffff'
                             }}
+                            title={answerLabel}
                           >
-                            {answerLabel}
+                            {(currentSlideData as any).activityType === 'voting' && <Vote className="w-3 h-3" />}
+                            {(currentSlideData as any).activityType === 'board' && <MessageSquare className="w-3 h-3" />}
+                            <span className="truncate">{answerLabel}</span>
                           </div>
                         ) : (
                           <span className="text-xs flex-shrink-0" style={{ color: '#64748b' }}>—</span>
@@ -984,7 +1052,36 @@ export function QuizViewPage() {
           </div>
           
           {/* Settings form */}
-          <div className="flex-1 px-6 flex flex-col">
+          <div className="flex-1 px-6 flex flex-col overflow-y-auto">
+            {/* Class selector */}
+            <div className="mt-4">
+              <label className="text-white font-medium block mb-2">
+                <Users className="w-4 h-4 inline-block mr-2" />
+                Připojit třídu (volitelné)
+              </label>
+              {loadingClasses ? (
+                <div className="text-white/50 text-sm py-3">Načítám třídy...</div>
+              ) : availableClasses.length === 0 ? (
+                <div className="text-white/50 text-sm py-3">Žádné třídy k dispozici</div>
+              ) : (
+                <select
+                  value={selectedClassId || ''}
+                  onChange={(e) => setSelectedClassId(e.target.value || null)}
+                  className="w-full px-4 py-3 rounded-xl bg-white/10 text-white border border-white/20 focus:border-white/40 outline-none"
+                >
+                  <option value="" className="text-slate-800">Bez třídy (veřejná relace)</option>
+                  {availableClasses.map(cls => (
+                    <option key={cls.id} value={cls.id} className="text-slate-800">
+                      {cls.name}
+                    </option>
+                  ))}
+                </select>
+              )}
+              <p className="text-white/50 text-xs pl-1 pt-2 pb-3">
+                Připojením třídy budou výsledky automaticky přiřazeny studentům.
+              </p>
+            </div>
+            
             {/* Toggle settings */}
             <div className="space-y-1 mt-4">
               <ToggleSwitch
@@ -1349,6 +1446,48 @@ export function QuizViewPage() {
                 isTeacher={true}
                 onDeletePost={boardPosts.deletePost}
                 readOnly={false}
+              />
+            );
+          case 'voting':
+            return (
+              <VotingSlideView 
+                slide={slide as VotingActivitySlide}
+                isTeacher={true}
+                voteCounts={voting.getVoteCounts()}
+                totalVoters={voting.getTotalVotes()}
+                readOnly={true}
+              />
+            );
+          case 'connect-pairs':
+            return (
+              <ConnectPairsView 
+                slide={slide as ConnectPairsActivitySlide}
+                isTeacher={true}
+                readOnly={true}
+              />
+            );
+          case 'fill-blanks':
+            return (
+              <FillBlanksView 
+                slide={slide as FillBlanksActivitySlide}
+                isTeacher={true}
+                readOnly={true}
+              />
+            );
+          case 'image-hotspots':
+            return (
+              <ImageHotspotsView 
+                slide={slide as ImageHotspotsActivitySlide}
+                isTeacher={true}
+                readOnly={true}
+              />
+            );
+          case 'video-quiz':
+            return (
+              <VideoQuizView 
+                slide={slide as VideoQuizActivitySlide}
+                isTeacher={true}
+                readOnly={true}
               />
             );
           default:

@@ -7,7 +7,7 @@ import { ref, onValue, push, update, remove, get } from 'firebase/database';
 import { database } from '../utils/firebase-config';
 import { BoardPost } from '../types/quiz';
 
-const QUIZ_SESSIONS_PATH = 'quizSessions';
+const QUIZ_SESSIONS_PATH = 'quiz_sessions';
 
 interface UseBoardPostsOptions {
   sessionId: string | null;
@@ -20,7 +20,7 @@ interface UseBoardPostsReturn {
   posts: BoardPost[];
   isLoading: boolean;
   error: string | null;
-  addPost: (text: string, mediaUrl?: string, mediaType?: 'image' | 'youtube') => Promise<void>;
+  addPost: (text: string, mediaUrl?: string, mediaType?: 'image' | 'youtube', backgroundColor?: string, column?: 'left' | 'right') => Promise<void>;
   likePost: (postId: string) => Promise<void>;
   deletePost: (postId: string) => Promise<void>;
 }
@@ -56,6 +56,8 @@ export function useBoardPosts({
           text: post.text || '',
           mediaUrl: post.mediaUrl,
           mediaType: post.mediaType,
+          backgroundColor: post.backgroundColor,
+          column: post.column,
           authorName: post.authorName || 'Anonym',
           authorId: post.authorId || '',
           likes: post.likes ? Object.keys(post.likes) : [],

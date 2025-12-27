@@ -23,6 +23,11 @@ import {
   OpenActivitySlide,
   ExampleActivitySlide,
   BoardActivitySlide,
+  VotingActivitySlide,
+  ConnectPairsActivitySlide,
+  FillBlanksActivitySlide,
+  ImageHotspotsActivitySlide,
+  VideoQuizActivitySlide,
   InfoSlide,
   SlideResponse,
   calculateQuizScore,
@@ -30,12 +35,18 @@ import {
 } from '../../types/quiz';
 import { MathText } from '../math/MathText';
 import { BoardSlideView } from './slides/BoardSlideView';
+import { VotingSlideView } from './slides/VotingSlideView';
+import { ConnectPairsView } from './slides/ConnectPairsView';
+import { FillBlanksView } from './slides/FillBlanksView';
+import { ImageHotspotsView } from './slides/ImageHotspotsView';
+import { VideoQuizView } from './slides/VideoQuizView';
 
 interface QuizPreviewProps {
   quiz: Quiz;
   onClose?: () => void;
   isLive?: boolean;
   onComplete?: (responses: SlideResponse[]) => void;
+  initialSlideIndex?: number;
 }
 
 // ============================================
@@ -797,8 +808,8 @@ export function BlockLayoutView({ slide }: { slide: InfoSlide }) {
 // MAIN COMPONENT
 // ============================================
 
-export function QuizPreview({ quiz, onClose, isLive = false, onComplete }: QuizPreviewProps) {
-  const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
+export function QuizPreview({ quiz, onClose, isLive = false, onComplete, initialSlideIndex = 0 }: QuizPreviewProps) {
+  const [currentSlideIndex, setCurrentSlideIndex] = useState(initialSlideIndex);
   const [prevSlideIndex, setPrevSlideIndex] = useState(0);
   const [isAnimating, setIsAnimating] = useState(false);
   const [responses, setResponses] = useState<SlideResponse[]>([]);
@@ -1005,6 +1016,48 @@ export function QuizPreview({ quiz, onClose, isLive = false, onComplete }: QuizP
                 posts={[]} // Preview mode - no live posts
                 readOnly={true}
                 isTeacher={true}
+              />
+            );
+          case 'voting':
+            return (
+              <VotingSlideView 
+                slide={slide as VotingActivitySlide}
+                isTeacher={false}
+                voteCounts={{}} // Preview mode - no live votes
+                totalVoters={0}
+                readOnly={false}
+              />
+            );
+          case 'connect-pairs':
+            return (
+              <ConnectPairsView 
+                slide={slide as ConnectPairsActivitySlide}
+                isTeacher={false}
+                readOnly={false}
+              />
+            );
+          case 'fill-blanks':
+            return (
+              <FillBlanksView 
+                slide={slide as FillBlanksActivitySlide}
+                isTeacher={false}
+                readOnly={false}
+              />
+            );
+          case 'image-hotspots':
+            return (
+              <ImageHotspotsView 
+                slide={slide as ImageHotspotsActivitySlide}
+                isTeacher={false}
+                readOnly={false}
+              />
+            );
+          case 'video-quiz':
+            return (
+              <VideoQuizView 
+                slide={slide as VideoQuizActivitySlide}
+                isTeacher={false}
+                readOnly={false}
               />
             );
           default:

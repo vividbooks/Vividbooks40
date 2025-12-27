@@ -22,7 +22,10 @@ export type BlockType =
   | 'spacer'
   | 'examples'
   | 'image'
-  | 'table';
+  | 'table'
+  | 'connect-pairs'     // Spojovačka - connect matching pairs
+  | 'image-hotspots'    // Poznávačka - identify points on image
+  | 'video-quiz';       // Video quiz with questions at timestamps
 
 /**
  * Pozice obrázku v bloku
@@ -223,6 +226,103 @@ export interface TableContent {
   colorStyle?: 'default' | 'blue' | 'green' | 'purple' | 'yellow' | 'red' | 'pink' | 'cyan';
 }
 
+// ============================================
+// ACTIVITY BLOCK CONTENT TYPES
+// ============================================
+
+/**
+ * Item in a connect-pairs activity (can be text or image)
+ */
+export interface ConnectPairItemContent {
+  id: string;
+  type: 'text' | 'image';
+  content: string; // Text or image URL
+}
+
+/**
+ * A pair to connect in the worksheet
+ */
+export interface ConnectPairContent {
+  id: string;
+  left: ConnectPairItemContent;
+  right: ConnectPairItemContent;
+}
+
+/**
+ * Obsah bloku spojovačky (Connect Pairs)
+ */
+export interface ConnectPairsContent {
+  /** Instrukce k úloze */
+  instruction?: string;
+  /** Dvojice k propojení */
+  pairs: ConnectPairContent[];
+  /** Zamíchat strany */
+  shuffleSides: boolean;
+}
+
+/**
+ * Hotspot marker style for worksheet
+ */
+export type WorksheetHotspotMarkerStyle = 'circle' | 'pin' | 'question-mark';
+
+/**
+ * Single hotspot on an image for worksheet
+ */
+export interface WorksheetHotspot {
+  id: string;
+  x: number; // Percentage position (0-100)
+  y: number; // Percentage position (0-100)
+  label: string; // The correct answer/label for the hotspot
+  options?: { id: string; text: string; isCorrect: boolean }[]; // ABC options if any
+}
+
+/**
+ * Obsah bloku poznávačky (Image Hotspots)
+ */
+export interface ImageHotspotsContent {
+  /** Instrukce k úloze */
+  instruction?: string;
+  /** URL obrázku */
+  imageUrl: string;
+  /** Body na obrázku */
+  hotspots: WorksheetHotspot[];
+  /** Styl markeru */
+  markerStyle: WorksheetHotspotMarkerStyle;
+  /** Velikost markeru (procenta, 100 = normální) */
+  markerSize: number;
+  /** Typ odpovědi: abc, numeric, text */
+  answerType: 'abc' | 'numeric' | 'text';
+}
+
+/**
+ * Video question for worksheet
+ */
+export interface WorksheetVideoQuestion {
+  id: string;
+  timestamp: number; // Seconds from start
+  question: string;
+  options: {
+    id: string;
+    label: string; // A, B, C, D
+    content: string;
+    isCorrect: boolean;
+  }[];
+}
+
+/**
+ * Obsah bloku video kvízu
+ */
+export interface VideoQuizContent {
+  /** Instrukce k úloze */
+  instruction?: string;
+  /** URL videa (YouTube) */
+  videoUrl: string;
+  /** Extrahované YouTube ID */
+  videoId?: string;
+  /** Otázky k videu */
+  questions: WorksheetVideoQuestion[];
+}
+
 /**
  * Typ označení příkladů
  */
@@ -390,6 +490,30 @@ export interface TableBlock extends BaseBlock {
 }
 
 /**
+ * Blok se spojovačkou (Connect Pairs)
+ */
+export interface ConnectPairsBlock extends BaseBlock {
+  type: 'connect-pairs';
+  content: ConnectPairsContent;
+}
+
+/**
+ * Blok s poznávačkou (Image Hotspots)
+ */
+export interface ImageHotspotsBlock extends BaseBlock {
+  type: 'image-hotspots';
+  content: ImageHotspotsContent;
+}
+
+/**
+ * Blok s video kvízem
+ */
+export interface VideoQuizBlock extends BaseBlock {
+  type: 'video-quiz';
+  content: VideoQuizContent;
+}
+
+/**
  * Union type pro všechny typy bloků
  */
 export type WorksheetBlock = 
@@ -402,7 +526,10 @@ export type WorksheetBlock =
   | SpacerBlock
   | ExamplesBlock
   | ImageBlock
-  | TableBlock;
+  | TableBlock
+  | ConnectPairsBlock
+  | ImageHotspotsBlock
+  | VideoQuizBlock;
 
 // ============================================
 // METADATA A PRACOVNÍ LIST
@@ -487,6 +614,9 @@ export type BlockContentByType = {
   'examples': ExamplesContent;
   'image': ImageContent;
   'table': TableContent;
+  'connect-pairs': ConnectPairsContent;
+  'image-hotspots': ImageHotspotsContent;
+  'video-quiz': VideoQuizContent;
 };
 
 /**
@@ -660,6 +790,56 @@ export function createEmptyBlock(type: BlockType, order: number): WorksheetBlock
           hasHeader: true,
           hasBorder: true,
           hasRoundedCorners: true,
+        },
+      };
+    case 'connect-pairs':
+      return {
+        id,
+        type: 'connect-pairs',
+        order,
+        width: 'full',
+        content: {
+          instruction: 'Spoj správné dvojice',
+          pairs: [
+            {
+              id: 'pair-1',
+              left: { id: 'left-1', type: 'text', content: '' },
+              right: { id: 'right-1', type: 'text', content: '' },
+            },
+            {
+              id: 'pair-2',
+              left: { id: 'left-2', type: 'text', content: '' },
+              right: { id: 'right-2', type: 'text', content: '' },
+            },
+          ],
+          shuffleSides: true,
+        },
+      };
+    case 'image-hotspots':
+      return {
+        id,
+        type: 'image-hotspots',
+        order,
+        width: 'full',
+        content: {
+          instruction: 'Označ správné místo na obrázku',
+          imageUrl: '',
+          hotspots: [],
+          markerStyle: 'circle',
+          markerSize: 100,
+          answerType: 'text',
+        },
+      };
+    case 'video-quiz':
+      return {
+        id,
+        type: 'video-quiz',
+        order,
+        width: 'full',
+        content: {
+          instruction: 'Sleduj video a odpověz na otázky',
+          videoUrl: '',
+          questions: [],
         },
       };
   }

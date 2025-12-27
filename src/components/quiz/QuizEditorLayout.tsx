@@ -7,7 +7,7 @@
  * 3. Main editing area
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Plus,
@@ -29,6 +29,7 @@ import {
   XCircle,
   MoreVertical,
   Eye,
+  EyeOff,
   Share2,
   ListOrdered,
   Lightbulb,
@@ -44,7 +45,15 @@ import {
   Palette,
   History,
   LayoutGrid,
+  Printer,
+  Layers,
+  // New activity icons
+  Puzzle,
+  MapPin,
+  Film,
 } from 'lucide-react';
+import { boardToWorksheet } from '../../utils/content-converter';
+import { saveWorksheet } from '../../utils/worksheet-storage';
 import { useVersionHistory } from '../../hooks/useVersionHistory';
 import { VersionHistoryPanel } from '../shared/VersionHistoryPanel';
 import { database } from '../../utils/firebase-config';
@@ -60,12 +69,26 @@ import {
   createExampleSlide,
   createInfoSlide,
   createBoardSlide,
+  createVotingSlide,
+  createFillBlanksSlide,
+  createImageHotspotsSlide,
+  createConnectPairsSlide,
+  createVideoQuizSlide,
+  FillBlanksActivitySlide,
+  ImageHotspotsActivitySlide,
+  ConnectPairsActivitySlide,
+  VideoQuizActivitySlide,
 } from '../../types/quiz';
 import { ABCSlideEditor } from './slides/ABCSlideEditor';
 import { OpenSlideEditor } from './slides/OpenSlideEditor';
 import { ExampleSlideEditor } from './slides/ExampleSlideEditor';
 import { InfoSlideEditor } from './slides/InfoSlideEditor';
 import { BoardSlideEditor } from './slides/BoardSlideEditor';
+import { VotingSlideEditor } from './slides/VotingSlideEditor';
+import { ConnectPairsEditor } from './slides/ConnectPairsEditor';
+import { FillBlanksEditor } from './slides/FillBlanksEditor';
+import { ImageHotspotsEditor } from './slides/ImageHotspotsEditor';
+import { VideoQuizEditor } from './slides/VideoQuizEditor';
 import { SlideTextToolbar } from './slides/SlideTextToolbar';
 import { BackgroundPicker } from './slides/BackgroundPicker';
 import { PageSettingsPanel } from './slides/PageSettingsPanel';
@@ -311,6 +334,204 @@ interface SlideTypeOption {
   description: string;
 }
 
+// Slide thumbnail - renders visual representation of the slide
+function SlidePreviewThumbnail({ slide }: { slide: QuizSlide }) {
+  // Info slide
+  if (slide.type === 'info') {
+    const infoSlide = slide as InfoSlide;
+    const bgColor = infoSlide.slideBackground?.color || '#ffffff';
+    
+    // Check for layout blocks
+    if (infoSlide.layout?.blocks?.length) {
+      return (
+        <div 
+          className="w-full h-full p-3 flex flex-col gap-2"
+          style={{ backgroundColor: bgColor }}
+        >
+          {infoSlide.layout.blocks.slice(0, 3).map((block, i) => (
+            <div key={i}>
+              {block.type === 'text' && block.content && (
+                <p 
+                  className="text-slate-800 leading-tight"
+                  style={{ 
+                    fontSize: i === 0 ? '14px' : '10px',
+                    fontWeight: block.fontWeight === 'bold' || i === 0 ? 600 : 400,
+                  }}
+                >
+                  {block.content.slice(0, 60)}{block.content.length > 60 ? '...' : ''}
+                </p>
+              )}
+              {block.type === 'image' && block.content && (
+                <img 
+                  src={block.content} 
+                  alt="" 
+                  className="w-full h-20 object-cover rounded"
+                />
+              )}
+            </div>
+          ))}
+        </div>
+      );
+    }
+    
+    // Legacy
+    return (
+      <div className="w-full h-full p-3 flex flex-col justify-center" style={{ backgroundColor: bgColor }}>
+        {infoSlide.title && (
+          <p className="text-sm font-bold text-slate-800 text-center mb-2">{infoSlide.title}</p>
+        )}
+        {infoSlide.media?.url && (
+          <img src={infoSlide.media.url} alt="" className="w-full h-16 object-cover rounded" />
+        )}
+      </div>
+    );
+  }
+  
+  // Activity slides
+  const activitySlide = slide as any;
+  const question = activitySlide.question || activitySlide.instruction || '';
+  
+  switch (activitySlide.activityType) {
+    case 'abc':
+    case 'true-false':
+      return (
+        <div className="w-full h-full p-3 bg-white flex flex-col">
+          <p className="text-xs font-bold text-slate-800 text-center mb-2 line-clamp-2">{question || 'Otázka'}</p>
+          <div className="flex-1 flex flex-col gap-1 justify-center">
+            {(activitySlide.options || []).slice(0, 4).map((opt: any, i: number) => (
+              <div 
+                key={i} 
+                className="flex items-center gap-1 px-2 py-1 rounded text-[10px]"
+                style={{ backgroundColor: opt.isCorrect ? '#dcfce7' : '#f1f5f9' }}
+              >
+                <span className="font-bold text-slate-500">{String.fromCharCode(65 + i)}</span>
+                <span className="text-slate-700 truncate">{opt.text?.slice(0, 25) || ''}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    
+    case 'open':
+      return (
+        <div className="w-full h-full p-3 bg-white flex flex-col">
+          <p className="text-xs font-bold text-slate-800 text-center mb-3 line-clamp-2">{question || 'Otázka'}</p>
+          <div className="flex-1 border-2 border-dashed border-slate-300 rounded bg-slate-50" />
+        </div>
+      );
+    
+    case 'example':
+      return (
+        <div className="w-full h-full p-3 bg-white flex flex-col">
+          <p className="text-xs font-bold text-slate-800 text-center mb-2">{activitySlide.topic || 'Příklady'}</p>
+          <div className="flex-1 flex flex-col gap-1">
+            {(activitySlide.examples || []).slice(0, 3).map((ex: any, i: number) => (
+              <div key={i} className="text-[10px] text-slate-700 bg-emerald-50 px-2 py-1 rounded truncate">
+                {i + 1}) {ex.question?.slice(0, 20) || '...'}
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    
+    case 'fill-blanks':
+      return (
+        <div className="w-full h-full p-3 bg-white flex items-center justify-center">
+          <div className="text-[10px] text-slate-700 text-center flex flex-wrap justify-center gap-1">
+            <span>Text</span>
+            <span className="bg-purple-200 px-2 rounded">____</span>
+            <span>slovo</span>
+            <span className="bg-purple-200 px-2 rounded">____</span>
+          </div>
+        </div>
+      );
+    
+    case 'connect-pairs':
+      return (
+        <div className="w-full h-full p-2 bg-white flex items-center justify-between gap-2">
+          <div className="flex flex-col gap-1 flex-1">
+            {(activitySlide.pairs || []).slice(0, 4).map((_: any, i: number) => (
+              <div key={i} className="h-4 bg-orange-100 rounded text-[8px] flex items-center justify-center text-orange-700">
+                {i + 1}
+              </div>
+            ))}
+          </div>
+          <div className="text-orange-400 text-lg">↔</div>
+          <div className="flex flex-col gap-1 flex-1">
+            {(activitySlide.pairs || []).slice(0, 4).map((_: any, i: number) => (
+              <div key={i} className="h-4 bg-orange-100 rounded text-[8px] flex items-center justify-center text-orange-700">
+                {String.fromCharCode(65 + i)}
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    
+    case 'image-hotspots':
+      return (
+        <div className="w-full h-full relative bg-slate-100">
+          {activitySlide.imageUrl ? (
+            <>
+              <img src={activitySlide.imageUrl} alt="" className="w-full h-full object-cover" />
+              {(activitySlide.hotspots || []).slice(0, 5).map((h: any, i: number) => (
+                <div 
+                  key={i}
+                  className="absolute w-3 h-3 bg-pink-500 rounded-full border border-white"
+                  style={{ left: `${h.x}%`, top: `${h.y}%`, transform: 'translate(-50%, -50%)' }}
+                />
+              ))}
+            </>
+          ) : (
+            <div className="w-full h-full flex items-center justify-center">
+              <span className="text-[10px] text-slate-400">Obrázek</span>
+            </div>
+          )}
+        </div>
+      );
+    
+    case 'video-quiz':
+      return (
+        <div className="w-full h-full bg-slate-800 flex flex-col items-center justify-center">
+          <div className="w-12 h-8 bg-black rounded flex items-center justify-center mb-1">
+            <div className="w-0 h-0 border-l-[8px] border-l-white border-y-[5px] border-y-transparent" />
+          </div>
+          <span className="text-[9px] text-white/70">{activitySlide.questions?.length || 0} otázek</span>
+        </div>
+      );
+    
+    case 'voting':
+      return (
+        <div className="w-full h-full p-3 bg-white flex flex-col">
+          <p className="text-[10px] font-bold text-slate-800 text-center mb-2 truncate">{question || 'Hlasování'}</p>
+          <div className="flex-1 flex items-end justify-center gap-1">
+            {[40, 70, 30, 55].map((h, i) => (
+              <div key={i} className="w-4 bg-indigo-400 rounded-t" style={{ height: `${h}%` }} />
+            ))}
+          </div>
+        </div>
+      );
+    
+    case 'board':
+      return (
+        <div className="w-full h-full p-2 bg-white flex flex-col">
+          <p className="text-[10px] font-bold text-slate-800 text-center mb-2 truncate">{question || 'Nástěnka'}</p>
+          <div className="flex-1 grid grid-cols-3 gap-1">
+            {[1, 2, 3, 4, 5, 6].map(i => (
+              <div key={i} className="bg-amber-100 rounded" />
+            ))}
+          </div>
+        </div>
+      );
+    
+    default:
+      return (
+        <div className="w-full h-full bg-slate-100 flex items-center justify-center">
+          <span className="text-xs text-slate-400">Náhled</span>
+        </div>
+      );
+  }
+}
+
 const SLIDE_TYPES: SlideTypeOption[] = [
   // Info slides
   {
@@ -357,6 +578,52 @@ const SLIDE_TYPES: SlideTypeOption[] = [
     icon: <LayoutGrid className="w-5 h-5" />,
     color: '#ec4899',
     description: 'Sdílené příspěvky',
+  },
+  {
+    id: 'voting',
+    type: 'activity',
+    activityType: 'voting',
+    label: 'Hlasování',
+    icon: <BarChart2 className="w-5 h-5" />,
+    color: '#0ea5e9',
+    description: 'Anketa s grafem',
+  },
+  // New multi-step activities
+  {
+    id: 'fill-blanks',
+    type: 'activity',
+    activityType: 'fill-blanks',
+    label: 'Doplňování',
+    icon: <Puzzle className="w-5 h-5" />,
+    color: '#f97316',
+    description: 'Přetáhni slova',
+  },
+  {
+    id: 'connect-pairs',
+    type: 'activity',
+    activityType: 'connect-pairs',
+    label: 'Spojovačka',
+    icon: <Link2 className="w-5 h-5" />,
+    color: '#a855f7',
+    description: 'Spoj dvojice',
+  },
+  {
+    id: 'image-hotspots',
+    type: 'activity',
+    activityType: 'image-hotspots',
+    label: 'Poznávačka',
+    icon: <MapPin className="w-5 h-5" />,
+    color: '#14b8a6',
+    description: 'Označ na obrázku',
+  },
+  {
+    id: 'video-quiz',
+    type: 'activity',
+    activityType: 'video-quiz',
+    label: 'Video kvíz',
+    icon: <Film className="w-5 h-5" />,
+    color: '#ef4444',
+    description: 'Otázky ve videu',
   },
   // Tools slides (future)
   {
@@ -498,14 +765,17 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
   const [viewMode, setViewMode] = useState<'editor' | 'results'>(
     (searchParams.get('tab') as 'editor' | 'results') || 'editor'
   );
-  const [activePanel, setActivePanel] = useState<ActivePanel>('board');
+  const [activePanel, setActivePanel] = useState<ActivePanel>('settings');
   const [showSettings, setShowSettings] = useState(false);
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [showVersionHistory, setShowVersionHistory] = useState(false);
+  const [showActivitiesSubmenu, setShowActivitiesSubmenu] = useState(false);
+  const [showSlidePreviews, setShowSlidePreviews] = useState(false);
   const [showPageSettings, setShowPageSettings] = useState(false);
   const [pageSettingsSection, setPageSettingsSection] = useState<'type' | 'template' | 'layout' | 'background' | 'chapter' | 'note' | undefined>(undefined);
   const [selectedBlockIndex, setSelectedBlockIndex] = useState<number | null>(null);
   const [editingTextBlockIndex, setEditingTextBlockIndex] = useState<number | null>(null);
+  
   
   // Results state
   const [sessions, setSessions] = useState<SessionData[]>([]);
@@ -685,6 +955,21 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
         break;
       case 'board':
         newSlide = createBoardSlide(order);
+        break;
+      case 'voting':
+        newSlide = createVotingSlide(order);
+        break;
+      case 'fill-blanks':
+        newSlide = createFillBlanksSlide(order);
+        break;
+      case 'connect-pairs':
+        newSlide = createConnectPairsSlide(order);
+        break;
+      case 'image-hotspots':
+        newSlide = createImageHotspotsSlide(order);
+        break;
+      case 'video-quiz':
+        newSlide = createVideoQuizSlide(order);
         break;
       case 'info':
       default:
@@ -876,10 +1161,16 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
   }
   
   if (showPreview) {
+    // Calculate the current slide index from selectedSlideId
+    const previewSlideIndex = selectedSlideId 
+      ? quiz.slides.findIndex(s => s.id === selectedSlideId)
+      : 0;
+    
     return (
       <QuizPreview 
         quiz={quiz} 
         onClose={() => setShowPreview(false)} 
+        initialSlideIndex={previewSlideIndex >= 0 ? previewSlideIndex : 0}
       />
     );
   }
@@ -933,15 +1224,26 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
           <span style={{ fontSize: '12px', fontWeight: 500, color: '#4E5871' }}>Zpět</span>
         </button>
         
-        {/* My Board Tab */}
+        {/* My Board Tab (Settings) */}
+        <SidebarButton
+          onClick={() => {
+            setActivePanel('settings');
+            setViewMode('editor');
+          }}
+          isActive={activePanel === 'settings' && viewMode === 'editor'}
+          icon={BookOpen}
+          label="Můj board"
+        />
+        
+        {/* Structure Tab (Slide list) */}
         <SidebarButton
           onClick={() => {
             setActivePanel('board');
             setViewMode('editor');
           }}
           isActive={activePanel === 'board' && viewMode === 'editor'}
-          icon={BookOpen}
-          label="Můj board"
+          icon={Layers}
+          label="Struktura"
         />
         
         {/* Add Content Tab */}
@@ -964,58 +1266,36 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
           label="AI"
         />
         
-        {/* Separator */}
-        <div style={{ width: '48px', height: '1px', backgroundColor: '#C5CCD9', margin: '12px 0' }} />
-        
-        {/* Settings Tab */}
-        <SidebarButton
-          onClick={() => {
-            setActivePanel('settings');
-            setViewMode('editor');
-          }}
-          isActive={activePanel === 'settings' && viewMode === 'editor'}
-          icon={SlidersHorizontal}
-          label="Nastavení"
-        />
-        
         {/* Spacer */}
         <div style={{ flex: 1 }} />
-        
-        {/* Separator */}
-        <div style={{ width: '48px', height: '1px', backgroundColor: '#C5CCD9', margin: '12px 0' }} />
-        
-        {/* Results Button */}
-        <SidebarButton
-          onClick={() => setViewMode('results')}
-          isActive={viewMode === 'results'}
-          icon={BarChart2}
-          label="Výsledky"
-          variant="orange"
-        />
-        
-        {/* Play Button */}
-        <SidebarButton
-          onClick={() => setShowLiveSession(true)}
-          disabled={quiz.slides.length === 0}
-          icon={Play}
-          label="Přehrát"
-          variant="green"
-        />
       </div>
       
       {/* 2. CONTEXTUAL SIDEBAR PANEL (Only visible in editor mode) */}
       {viewMode === 'editor' && (
         <div 
-          className="bg-white border-r border-slate-200 flex flex-col transition-all duration-300"
-          style={{ width: '320px', minWidth: '320px' }}
+          className="flex flex-col transition-all duration-300"
+          style={{ width: '320px', minWidth: '320px', backgroundColor: '#F2F5F9' }}
         >
           {/* PANEL CONTENT */}
           
           {/* BOARD STRUCTURE PANEL */}
           {activePanel === 'board' && (
-            <div className="flex flex-col h-full">
+            <div className="flex flex-col h-full bg-white">
               <div className="p-5 border-b border-slate-100">
-                <h2 className="text-xl font-bold text-[#4E5871]">Struktura</h2>
+                <div className="flex items-center justify-between">
+                  <h2 className="text-xl font-bold text-[#4E5871]">Struktura</h2>
+                  <button
+                    onClick={() => setShowSlidePreviews(!showSlidePreviews)}
+                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                      showSlidePreviews 
+                        ? 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200' 
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                    title={showSlidePreviews ? 'Skrýt náhledy' : 'Zobrazit náhledy'}
+                  >
+                    {showSlidePreviews ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
                 <p className="text-sm text-slate-500 mt-1">Uspořádejte slidy vašeho boardu</p>
               </div>
               
@@ -1035,13 +1315,15 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
                     </button>
                   </div>
                 ) : (
-                  <div className="space-y-2">
+                  <div className={showSlidePreviews ? 'space-y-3' : 'space-y-2'}>
                     {quiz.slides.map((slide, index) => {
                       const typeInfo = SLIDE_TYPES.find(t => 
                         t.type === slide.type && 
                         (slide.type !== 'activity' || t.activityType === (slide as any).activityType)
                       ) || SLIDE_TYPES[0];
                       
+                      // Compact view (no visual preview)
+                      if (!showSlidePreviews) {
                       return (
                         <div
                           key={slide.id}
@@ -1096,6 +1378,62 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
                                 <Trash2 className="w-3.5 h-3.5" />
                               </button>
                             </div>
+                            </div>
+                          </div>
+                        );
+                      }
+                      
+                      // Preview view with visual thumbnail
+                      return (
+                        <div
+                          key={slide.id}
+                          onClick={() => setSelectedSlideId(slide.id)}
+                          className={`
+                            group relative rounded-xl cursor-pointer transition-all border overflow-hidden
+                            ${selectedSlideId === slide.id 
+                              ? 'border-indigo-500 ring-2 ring-indigo-500 shadow-md' 
+                              : 'border-slate-200 hover:border-indigo-300 hover:shadow-md'
+                            }
+                          `}
+                        >
+                          {/* Header bar */}
+                          <div className="flex items-center gap-2 px-2 py-1.5 bg-slate-50 border-b border-slate-200">
+                            <div className="text-slate-300 cursor-grab active:cursor-grabbing p-0.5 hover:bg-slate-200 rounded">
+                              <GripVertical className="w-3 h-3" />
+                            </div>
+                            <span className="text-xs font-bold text-slate-400">{index + 1}</span>
+                            <div 
+                              className="w-4 h-4 rounded flex items-center justify-center"
+                              style={{ backgroundColor: `${typeInfo.color}20`, color: typeInfo.color }}
+                            >
+                              {React.cloneElement(typeInfo.icon, { size: 10 })}
+                            </div>
+                            <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide flex-1 truncate">
+                              {typeInfo.label}
+                            </span>
+                            
+                            {/* Actions */}
+                            <div className="opacity-0 group-hover:opacity-100 flex gap-0.5 transition-opacity">
+                              <button
+                                onClick={(e) => { e.stopPropagation(); duplicateSlide(slide.id); }}
+                                className="p-1 rounded hover:bg-slate-200 text-slate-400 hover:text-indigo-600"
+                                title="Duplikovat"
+                              >
+                                <Copy className="w-3 h-3" />
+                              </button>
+                              <button
+                                onClick={(e) => { e.stopPropagation(); deleteSlide(slide.id); }}
+                                className="p-1 rounded hover:bg-red-100 text-slate-400 hover:text-red-500"
+                                title="Smazat"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                            </div>
+                          </div>
+                          
+                          {/* Visual preview - slide thumbnail */}
+                          <div style={{ height: '140px' }} className="overflow-hidden rounded-b-xl">
+                            <SlidePreviewThumbnail slide={slide} />
                           </div>
                         </div>
                       );
@@ -1118,47 +1456,136 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
           
           {/* ADD CONTENT PANEL */}
           {activePanel === 'content' && (
-            <div className="flex flex-col h-full">
+            <div className="flex flex-col h-full bg-white">
               <div className="p-5 border-b border-slate-100">
                 <h2 className="text-xl font-bold text-[#4E5871]">Přidat obsah</h2>
-                <p className="text-sm text-slate-500 mt-1">Vyberte typ slidu pro přidání</p>
               </div>
               
-              <div className="p-4 overflow-y-auto bg-[#F8F9FB] flex-1">
-                <div className="grid grid-cols-1 gap-3">
-                  {SLIDE_TYPES.map((type) => (
+              <div className="p-5 overflow-y-auto flex-1">
+                {!showActivitiesSubmenu ? (
+                  <>
+                    {/* Main options */}
+                    <div className="mb-6">
+                      <h3 className="text-sm font-semibold text-slate-500 mb-3">Přidat stránku:</h3>
+                      <div className="space-y-2">
+                        {/* Informace */}
+                        <button
+                          onClick={() => {
+                            const infoType = SLIDE_TYPES.find(t => t.id === 'info');
+                            if (infoType) addSlide(infoType);
+                          }}
+                          className="w-full flex items-center gap-4 p-4 rounded-xl border border-slate-200 hover:border-indigo-400 hover:shadow-md transition-all text-left group"
+                        >
+                          <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ backgroundColor: '#6366f115', color: '#6366f1' }}>
+                            <FileText className="w-5 h-5" />
+                          </div>
+                          <span className="font-semibold text-slate-700 group-hover:text-indigo-700">Informace</span>
+                          <Plus className="w-5 h-5 text-slate-300 ml-auto group-hover:text-indigo-500" />
+                        </button>
+                        
+                        {/* Aktivity */}
+                        <button
+                          onClick={() => setShowActivitiesSubmenu(true)}
+                          className="w-full flex items-center gap-4 p-4 rounded-xl border border-slate-200 hover:border-indigo-400 hover:shadow-md transition-all text-left group"
+                        >
+                          <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ backgroundColor: '#10b98115', color: '#10b981' }}>
+                            <ListOrdered className="w-5 h-5" />
+                          </div>
+                          <span className="font-semibold text-slate-700 group-hover:text-indigo-700">Aktivity</span>
+                          <ChevronRight className="w-5 h-5 text-slate-300 ml-auto group-hover:text-indigo-500" />
+                        </button>
+                        
+                        {/* Nástroje */}
+                        <button
+                          onClick={() => {
+                            const toolType = SLIDE_TYPES.find(t => t.type === 'tools');
+                            if (toolType) addSlide(toolType);
+                          }}
+                          className="w-full flex items-center gap-4 p-4 rounded-xl border border-slate-200 hover:border-indigo-400 hover:shadow-md transition-all text-left group"
+                        >
+                          <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ backgroundColor: '#64748b15', color: '#64748b' }}>
+                            <Calculator className="w-5 h-5" />
+                          </div>
+                          <span className="font-semibold text-slate-700 group-hover:text-indigo-700">Nástroje</span>
+                          <Plus className="w-5 h-5 text-slate-300 ml-auto group-hover:text-indigo-500" />
+                        </button>
+                      </div>
+                    </div>
+                    
+                    {/* Additional options */}
+                    <div className="space-y-2">
+                      <button
+                        onClick={() => {
+                          // TODO: Implement import from another board
+                          alert('Funkce bude brzy dostupná');
+                        }}
+                        className="w-full flex items-center gap-4 p-4 rounded-xl border border-slate-200 hover:border-indigo-400 hover:shadow-md transition-all text-left group"
+                      >
+                        <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ backgroundColor: '#8b5cf615', color: '#8b5cf6' }}>
+                          <BookOpen className="w-5 h-5" />
+                        </div>
+                        <span className="font-semibold text-slate-700 group-hover:text-indigo-700">Přidat obsah z jiného boardu</span>
+                      </button>
+                      
+                      <button
+                        onClick={() => {
+                          // TODO: Implement import from PDF
+                          alert('Funkce bude brzy dostupná');
+                        }}
+                        className="w-full flex items-center gap-4 p-4 rounded-xl border border-slate-200 hover:border-indigo-400 hover:shadow-md transition-all text-left group"
+                      >
+                        <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ backgroundColor: '#f9731615', color: '#f97316' }}>
+                          <FileText className="w-5 h-5" />
+                        </div>
+                        <span className="font-semibold text-slate-700 group-hover:text-indigo-700">Přidat obsah z PDF</span>
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  /* Activities submenu */
+                  <>
+                    <button
+                      onClick={() => setShowActivitiesSubmenu(false)}
+                      className="flex items-center gap-2 text-slate-500 hover:text-slate-700 mb-4"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                      <span className="text-sm font-medium">Zpět</span>
+                    </button>
+                    
+                    <h3 className="text-sm font-semibold text-slate-500 mb-3">Vyberte aktivitu:</h3>
+                    <div className="space-y-2">
+                      {SLIDE_TYPES.filter(t => t.type === 'activity').map((type) => (
                     <button
                       key={type.id}
-                      onClick={() => addSlide(type)}
-                      className="flex items-center gap-4 p-4 bg-white border border-slate-200 rounded-xl hover:border-indigo-400 hover:shadow-md transition-all text-left group"
+                          onClick={() => {
+                            addSlide(type);
+                            setShowActivitiesSubmenu(false);
+                          }}
+                          className="w-full flex items-center gap-4 p-4 rounded-xl border border-slate-200 hover:border-indigo-400 hover:shadow-md transition-all text-left group"
                     >
                       <div 
-                        className="w-12 h-12 rounded-lg flex items-center justify-center transition-transform group-hover:scale-110"
+                            className="w-10 h-10 rounded-lg flex items-center justify-center"
                         style={{ backgroundColor: `${type.color}15`, color: type.color }}
                       >
-                        {React.cloneElement(type.icon, { size: 24 })}
+                            {React.cloneElement(type.icon, { className: 'w-5 h-5' })}
                       </div>
                       <div>
-                        <h3 className="font-bold text-slate-700 group-hover:text-indigo-700 transition-colors">
-                          {type.label}
-                        </h3>
-                        <p className="text-xs text-slate-500 mt-0.5">
-                          {type.id === 'info' && 'Text, obrázky a vysvětlivky'}
-                          {type.id === 'abc' && 'Výběr z více možností'}
-                          {type.id === 'open' && 'Volná odpověď studenta'}
-                          {type.id === 'example' && 'Krokovaný postup řešení'}
-                        </p>
+                            <span className="font-semibold text-slate-700 group-hover:text-indigo-700">{type.label}</span>
+                            <p className="text-xs text-slate-500">{type.description}</p>
                       </div>
                       <Plus className="w-5 h-5 text-slate-300 ml-auto group-hover:text-indigo-500" />
                     </button>
                   ))}
                 </div>
+                  </>
+                )}
               </div>
             </div>
           )}
           
           {/* AI PANEL */}
           {activePanel === 'ai' && (
+            <div className="flex flex-col h-full bg-white">
             <AIBoardPanel
               quiz={quiz}
               onAddSlides={(newSlides) => {
@@ -1183,21 +1610,15 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
               }}
               onClose={() => setActivePanel('board')}
             />
+            </div>
           )}
           
           {/* SETTINGS PANEL */}
           {activePanel === 'settings' && (
-            <div className="flex flex-col h-full">
-              <div className="p-5 border-b border-slate-100">
-                <h2 className="text-xl font-bold text-[#4E5871]">Nastavení</h2>
-                <p className="text-sm text-slate-500 mt-1">Upravte parametry boardu</p>
-              </div>
-              
-              <div className="p-6 space-y-6 bg-[#F8F9FB] flex-1">
-                <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-2">
-                    Název boardu
-                  </label>
+            <div className="flex flex-col h-full border-0" style={{ backgroundColor: '#F2F5F9' }}>
+              <div className="px-6 flex-1 overflow-y-auto" style={{ paddingTop: '155px' }}>
+                <div className="space-y-4">
+                  {/* Board Name - 80px height */}
                   <input
                     type="text"
                     value={quiz.title}
@@ -1205,48 +1626,112 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
                       setQuiz({ ...quiz, title: e.target.value });
                       setIsDirty(true);
                     }}
-                    className="w-full px-4 py-2 rounded-lg border border-slate-300 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition-all"
-                    placeholder="Zadejte název..."
+                    className="w-full px-5 text-2xl font-bold rounded-2xl border-0 focus:ring-2 focus:ring-indigo-300 outline-none transition-all text-slate-700 placeholder-slate-400"
+                    placeholder="Název boardu"
+                    style={{ backgroundColor: '#DFE4F0', height: '80px' }}
                   />
+                  
+                  {/* Označení dropdown */}
+                  <div className="flex items-center gap-4">
+                    <span className="text-base font-medium text-slate-500 whitespace-nowrap">Označení:</span>
+                    <select 
+                      value={(quiz as any).boardType || 'practice'}
+                      onChange={(e) => {
+                        setQuiz({ ...quiz, boardType: e.target.value } as any);
+                        setIsDirty(true);
+                      }}
+                      className="flex-1 px-4 py-3.5 rounded-2xl border-0 focus:ring-2 focus:ring-indigo-300 outline-none text-slate-700 font-medium"
+                      style={{ backgroundColor: '#DFE4F0' }}
+                    >
+                      <option value="practice">Procvičování</option>
+                      <option value="text">Text</option>
+                      <option value="test">Písemky</option>
+                      <option value="lesson">Lekce</option>
+                    </select>
                 </div>
                 
-                <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-2">
-                    Předmět
-                  </label>
+                  {/* Subject dropdown - full width */}
                   <select 
                     value={quiz.subject || ''}
                     onChange={(e) => {
                       setQuiz({ ...quiz, subject: e.target.value });
                       setIsDirty(true);
                     }}
-                    className="w-full px-4 py-2 rounded-lg border border-slate-300 focus:border-indigo-500 outline-none"
+                    className="w-full px-5 py-4 rounded-2xl border-0 focus:ring-2 focus:ring-indigo-300 outline-none text-slate-600 font-medium"
+                    style={{ backgroundColor: '#DFE4F0' }}
                   >
-                    <option value="">Vyberte předmět...</option>
+                    <option value="">Předmět</option>
                     <option value="matematika">Matematika</option>
                     <option value="fyzika">Fyzika</option>
+                    <option value="chemie">Chemie</option>
+                    <option value="biologie">Biologie</option>
                     <option value="cestina">Český jazyk</option>
                     <option value="anglictina">Anglický jazyk</option>
+                    <option value="dejepis">Dějepis</option>
+                    <option value="zemepis">Zeměpis</option>
                   </select>
                 </div>
                 
-                <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-2">
-                    Ročník
-                  </label>
-                  <select 
-                    value={quiz.grade || ''}
-                    onChange={(e) => {
-                      setQuiz({ ...quiz, grade: Number(e.target.value) });
-                      setIsDirty(true);
-                    }}
-                    className="w-full px-4 py-2 rounded-lg border border-slate-300 focus:border-indigo-500 outline-none"
+                {/* Action buttons - no background, smaller spacing */}
+                <div className="mt-8 space-y-2">
+                  {/* Version History Button */}
+                  <button
+                    onClick={() => setShowVersionHistory(true)}
+                    className="w-full flex items-center gap-4 px-2 py-2.5 rounded-lg hover:bg-slate-200/50 transition-colors text-slate-600"
                   >
-                    <option value="">Vyberte ročník...</option>
-                    {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(g => (
-                      <option key={g} value={g}>{g}. ročník</option>
-                    ))}
-                  </select>
+                    <History className="w-5 h-5" />
+                    <span className="font-medium">Historie verzí</span>
+                  </button>
+                  
+                  {/* Share Edit Link Button */}
+                  <button
+                    onClick={() => {
+                      const editUrl = `${window.location.origin}/quiz/edit/${quiz.id}`;
+                      navigator.clipboard.writeText(editUrl);
+                      alert('Odkaz pro úpravu zkopírován do schránky!');
+                    }}
+                    className="w-full flex items-center gap-4 px-2 py-2.5 rounded-lg hover:bg-slate-200/50 transition-colors text-slate-600"
+                  >
+                    <Share2 className="w-5 h-5" />
+                    <span className="font-medium">Sdílet odkaz pro úpravu</span>
+                  </button>
+                  
+                  {/* Results Button */}
+                  <button
+                    onClick={() => setViewMode('results')}
+                    className="w-full flex items-center gap-4 px-2 py-2.5 rounded-lg hover:bg-slate-200/50 transition-colors text-slate-600"
+                  >
+                    <BarChart2 className="w-5 h-5" />
+                    <span className="font-medium">Výsledky</span>
+                  </button>
+                  
+                  {/* Print Button */}
+                  <button
+                    onClick={() => {
+                      saveQuiz(quiz);
+                      setIsDirty(false);
+                      const worksheet = boardToWorksheet(quiz);
+                      saveWorksheet(worksheet);
+                      navigate(`/worksheet/edit/${worksheet.id}`);
+                    }}
+                    className="w-full flex items-center gap-4 px-2 py-2.5 rounded-lg hover:bg-slate-200/50 transition-colors text-slate-600"
+                  >
+                    <Printer className="w-5 h-5" />
+                    <span className="font-medium">Tisknout</span>
+                  </button>
+                  
+                  {/* Delete Button */}
+                  <button
+                    onClick={() => {
+                      if (confirm('Opravdu chcete smazat tento board? Tato akce je nevratná.')) {
+                        navigate('/quizzes');
+                      }
+                    }}
+                    className="w-full flex items-center gap-4 px-2 py-2.5 rounded-lg hover:bg-red-100 transition-colors text-red-500"
+                  >
+                    <Trash2 className="w-5 h-5" />
+                    <span className="font-medium">Smazat</span>
+                  </button>
                 </div>
               </div>
             </div>
@@ -1258,76 +1743,103 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
       <div className="flex-1 flex flex-col overflow-hidden bg-slate-100">
         {viewMode === 'editor' ? (
           <>
-            {/* Top bar - simplified */}
-            <div className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6 shadow-sm z-10">
-              <div className="flex items-center gap-4">
-                <h1 className="text-lg font-bold text-slate-800 truncate max-w-md">
-                  {quiz.title || 'Nový board'}
-                </h1>
-                {isDirty && (
-                  <span className="text-xs text-amber-600 bg-amber-50 px-2 py-1 rounded-full font-medium">
-                    Neuloženo
-                  </span>
-                )}
-              </div>
-              
-              <div className="flex items-center gap-3">
-                {/* Undo/Redo buttons */}
-                <div className="flex items-center gap-1 mr-2">
-                  <button
-                    onClick={undo}
-                    disabled={undoStack.length === 0}
-                    className="p-2 rounded-lg text-slate-500 hover:bg-slate-100 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
-                    title="Zpět (Ctrl+Z)"
-                  >
-                    <Undo2 className="w-5 h-5" />
-                  </button>
-                  <button
-                    onClick={redo}
-                    disabled={redoStack.length === 0}
-                    className="p-2 rounded-lg text-slate-500 hover:bg-slate-100 disabled:opacity-30 disabled:hover:bg-transparent transition-colors"
-                    title="Vpřed (Ctrl+Shift+Z)"
-                  >
-                    <Redo2 className="w-5 h-5" />
-                  </button>
-                </div>
-
-                <div className="w-px h-6 bg-slate-200" />
-
-                <button
-                  onClick={() => setShowVersionHistory(true)}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors font-medium text-sm ${
-                    versionHistory.hasUnsavedChanges 
-                      ? 'text-amber-600 hover:bg-amber-50' 
-                      : 'text-slate-600 hover:bg-slate-100'
-                  }`}
-                  title={`Historie verzí${versionHistory.totalVersions > 0 ? ` (${versionHistory.totalVersions})` : ''}`}
-                >
-                  <History className="w-4 h-4" />
-                  Historie
-                  {versionHistory.autoSavePending && (
-                    <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
-                  )}
-                </button>
-                <button
-                  onClick={() => setShowPreview(true)}
-                  className="flex items-center gap-2 px-4 py-2 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors font-medium text-sm"
-                >
-                  <Eye className="w-4 h-4" />
-                  Náhled
-                </button>
+            {/* Top bar - clean, no background */}
+            <div className="h-16 flex items-center justify-between px-6 z-10">
+              {/* Slide navigation */}
+              <div className="flex items-center gap-2">
                 <button
                   onClick={() => {
+                    const currentIndex = quiz.slides.findIndex(s => s.id === selectedSlideId);
+                    if (currentIndex > 0) {
+                      setSelectedSlideId(quiz.slides[currentIndex - 1].id);
+                    }
+                  }}
+                  disabled={!selectedSlideId || quiz.slides.findIndex(s => s.id === selectedSlideId) === 0}
+                  className="w-8 h-8 rounded-lg text-slate-500 hover:bg-slate-200 disabled:opacity-30 disabled:hover:bg-transparent transition-colors flex items-center justify-center"
+                >
+                  <ChevronLeft className="w-5 h-5" />
+                </button>
+                <div className="px-4 py-1.5 rounded-full text-sm font-medium" style={{ backgroundColor: '#374151', color: '#f3f4f6' }}>
+                  Stránka {selectedSlideId ? quiz.slides.findIndex(s => s.id === selectedSlideId) + 1 : 0} / {quiz.slides.length}
+                </div>
+                <button
+                  onClick={() => {
+                    const currentIndex = quiz.slides.findIndex(s => s.id === selectedSlideId);
+                    if (currentIndex < quiz.slides.length - 1) {
+                      setSelectedSlideId(quiz.slides[currentIndex + 1].id);
+                    }
+                  }}
+                  disabled={!selectedSlideId || quiz.slides.findIndex(s => s.id === selectedSlideId) === quiz.slides.length - 1}
+                  className="w-8 h-8 rounded-lg text-slate-500 hover:bg-slate-200 disabled:opacity-30 disabled:hover:bg-transparent transition-colors flex items-center justify-center"
+                >
+                  <ChevronRight className="w-5 h-5" />
+                </button>
+            </div>
+            
+                    <div className="flex items-center gap-2">
+                {/* Undo/Redo buttons - square icons */}
+                      <button
+                  onClick={undo}
+                  disabled={undoStack.length === 0}
+                  className="w-10 h-10 rounded-lg bg-slate-200 text-slate-600 hover:bg-slate-300 disabled:opacity-30 disabled:hover:bg-slate-200 transition-colors flex items-center justify-center"
+                  title="Zpět (Ctrl+Z)"
+                >
+                  <Undo2 className="w-5 h-5" />
+                      </button>
+                      <button
+                  onClick={redo}
+                  disabled={redoStack.length === 0}
+                  className="w-10 h-10 rounded-lg bg-slate-200 text-slate-600 hover:bg-slate-300 disabled:opacity-30 disabled:hover:bg-slate-200 transition-colors flex items-center justify-center"
+                  title="Vpřed (Ctrl+Shift+Z)"
+                >
+                  <Redo2 className="w-5 h-5" />
+                      </button>
+
+                {/* Preview - square icon */}
+                      <button
+                  onClick={() => setShowPreview(true)}
+                  className="w-10 h-10 rounded-lg bg-slate-200 text-slate-600 hover:bg-slate-300 transition-colors flex items-center justify-center"
+                  title="Náhled"
+                >
+                  <Eye className="w-5 h-5" />
+                      </button>
+
+                {/* Print / Worksheet - square icon */}
+                                <button
+                                  onClick={() => {
+                    // Auto-save first
                     saveQuiz(quiz);
                     setIsDirty(false);
+                    // Convert to worksheet and open
+                    const worksheet = boardToWorksheet(quiz);
+                    saveWorksheet(worksheet);
+                    navigate(`/worksheet/edit/${worksheet.id}`);
                   }}
-                  className="flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition-colors shadow-sm font-medium text-sm"
+                  className="w-10 h-10 rounded-lg text-white flex items-center justify-center transition-colors"
+                  style={{ backgroundColor: '#f97316' }}
+                  title="Pracovní list"
                 >
-                  <Save className="w-4 h-4" />
-                  Uložit
+                  <Printer className="w-5 h-5" />
+                                </button>
+
+                {/* Play and Share - green button */}
+                <button
+                  onClick={() => {
+                    // Auto-save first
+                    saveQuiz(quiz);
+                    setIsDirty(false);
+                    // Navigate to quiz view page
+                    navigate(`/quiz/view/${quiz.id}`);
+                  }}
+                  disabled={quiz.slides.length === 0}
+                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-white transition-all hover:scale-105 disabled:opacity-50 disabled:transform-none"
+                  style={{ backgroundColor: '#22c55e' }}
+                >
+                  <Play className="w-5 h-5" />
+                  Přehrát a sdílet
                 </button>
-              </div>
-            </div>
+                            </div>
+                          </div>
             
             {/* Editor Canvas */}
             <div 
@@ -1351,36 +1863,34 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
             >
               {selectedSlide ? (
                 <div className="relative w-full flex flex-col mb-8" style={{ maxWidth: 'min(1024px, calc((100vh - 200px) * 4 / 3))' }}>
-                  {/* Navigation above slide */}
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => moveSlide(selectedSlide.id, 'up')}
-                        disabled={selectedSlide.order === 0}
-                        className="p-2 rounded-lg hover:bg-white text-slate-500 disabled:opacity-30 disabled:hover:bg-transparent"
-                      >
-                        <ChevronLeft className="w-5 h-5" />
-                      </button>
-                      <span className="text-sm font-medium text-slate-500 bg-white px-3 py-1 rounded-full border border-slate-200">
-                        Slide {selectedSlide.order + 1} / {quiz.slides.length}
-                      </span>
-                      <button
-                        onClick={() => moveSlide(selectedSlide.id, 'down')}
-                        disabled={selectedSlide.order === quiz.slides.length - 1}
-                        className="p-2 rounded-lg hover:bg-white text-slate-500 disabled:opacity-30 disabled:hover:bg-transparent"
-                      >
-                        <ChevronRight className="w-5 h-5" />
-                      </button>
-                    </div>
-
-                    {/* Page Settings Button */}
-                      <button
+                  {/* Settings and Slide Type Info - aligned left */}
+                  <div className="flex items-center justify-start gap-3 mb-4">
+                    {/* Settings Button - more prominent */}
+                    <button
                       onClick={() => setShowPageSettings(true)}
-                        className="flex items-center gap-2 px-3 py-1.5 bg-white rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors"
+                      className="w-10 h-10 bg-white rounded-lg border-2 border-slate-300 text-slate-600 hover:bg-slate-50 hover:border-slate-400 hover:text-slate-800 transition-colors flex items-center justify-center shadow-sm"
                       title="Nastavení stránky"
                     >
-                      <Settings className="w-4 h-4" />
-                      </button>
+                      <Settings className="w-5 h-5" />
+                    </button>
+                    
+                    {/* Slide Type - plain text */}
+                    {(() => {
+                      const typeInfo = SLIDE_TYPES.find(t => 
+                        t.type === selectedSlide.type && 
+                        (selectedSlide.type !== 'activity' || t.activityType === (selectedSlide as any).activityType)
+                      ) || SLIDE_TYPES[0];
+                      return (
+                        <div className="flex items-center gap-2">
+                          <div style={{ color: typeInfo.color }}>
+                            {React.cloneElement(typeInfo.icon, { className: 'w-5 h-5' })}
+                    </div>
+                          <span className="text-sm font-semibold text-slate-600">
+                            {typeInfo.label}
+                          </span>
+                        </div>
+                      );
+                    })()}
                   </div>
                   
                   {/* Text Toolbar - shown when editing text, overlays the navigation */}
@@ -1687,6 +2197,16 @@ function renderSlideEditor(
           return <ExampleSlideEditor slide={slide as any} onUpdate={onUpdate} />;
         case 'board':
           return <BoardSlideEditor slide={slide as any} onUpdate={onUpdate} />;
+        case 'voting':
+          return <VotingSlideEditor slide={slide as any} onUpdate={onUpdate} />;
+        case 'connect-pairs':
+          return <ConnectPairsEditor slide={slide as ConnectPairsActivitySlide} onUpdate={onUpdate} />;
+        case 'fill-blanks':
+          return <FillBlanksEditor slide={slide as FillBlanksActivitySlide} onUpdate={onUpdate} />;
+        case 'image-hotspots':
+          return <ImageHotspotsEditor slide={slide as ImageHotspotsActivitySlide} onUpdate={onUpdate} />;
+        case 'video-quiz':
+          return <VideoQuizEditor slide={slide as VideoQuizActivitySlide} onUpdate={onUpdate} />;
         default:
           return <div>Nepodporovaný typ aktivity</div>;
       }

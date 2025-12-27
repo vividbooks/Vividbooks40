@@ -14,6 +14,9 @@ import {
   Calculator,
   ImageIcon,
   Table,
+  Link2,
+  MapPin,
+  Video,
 } from 'lucide-react';
 import { BlockType } from '../../types/worksheet';
 
@@ -35,6 +38,9 @@ const blockTypes: Array<{
   { type: 'multiple-choice', icon: ListChecks, label: 'Výběr odpovědi', color: 'text-green-600' },
   { type: 'fill-blank', icon: PenLine, label: 'Doplňování', color: 'text-purple-600' },
   { type: 'free-answer', icon: MessageSquare, label: 'Volná odpověď', color: 'text-rose-600' },
+  { type: 'connect-pairs', icon: Link2, label: 'Spojovačka', color: 'text-orange-600' },
+  { type: 'image-hotspots', icon: MapPin, label: 'Poznávačka', color: 'text-pink-600' },
+  { type: 'video-quiz', icon: Video, label: 'Video kvíz', color: 'text-red-600' },
   { type: 'examples', icon: Calculator, label: 'Příklady', color: 'text-emerald-600' },
   { type: 'table', icon: Table, label: 'Tabulka', color: 'text-indigo-600' },
   { type: 'image', icon: ImageIcon, label: 'Obrázek', color: 'text-cyan-600' },

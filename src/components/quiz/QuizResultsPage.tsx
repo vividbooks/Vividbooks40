@@ -35,6 +35,9 @@ import {
   QuizSlide,
   ABCActivitySlide,
   OpenActivitySlide,
+  VotingActivitySlide,
+  BoardActivitySlide,
+  BoardPost,
   SlideResponse,
   LiveQuizSession,
 } from '../../types/quiz';
@@ -96,6 +99,10 @@ export function QuizResultsPage() {
   const [loading, setLoading] = useState(true);
   const [expandedActivities, setExpandedActivities] = useState<Set<string>>(new Set());
   const [sortBy, setSortBy] = useState<'name' | 'success' | 'time'>('name');
+  
+  // Voting and board results
+  const [votingResults, setVotingResults] = useState<Record<string, Record<string, { selectedOptions: string[]; voterName?: string }>>>({});
+  const [boardPosts, setBoardPosts] = useState<Record<string, BoardPost[]>>({});
   
   // Sync to class state
   const [showSyncDialog, setShowSyncDialog] = useState(false);
@@ -766,6 +773,72 @@ Piš stručně, prakticky a v češtině. Formátuj přehledně s odrážkami.`;
     
     return () => off(sessionRef);
   }, [sessionId, sessionType, searchParams]);
+  
+  // Load voting results for all voting slides
+  useEffect(() => {
+    if (!sessionId || !quiz) return;
+    
+    const votingSlides = quiz.slides.filter(s => s.type === 'activity' && s.activityType === 'voting');
+    if (votingSlides.length === 0) return;
+    
+    const path = sessionType === 'shared' ? QUIZ_SHARES_PATH : QUIZ_SESSIONS_PATH;
+    
+    votingSlides.forEach(slide => {
+      const votesRef = ref(database, `${path}/${sessionId}/votes/${slide.id}`);
+      onValue(votesRef, (snapshot) => {
+        const data = snapshot.val();
+        if (data) {
+          setVotingResults(prev => ({ ...prev, [slide.id]: data }));
+        }
+      });
+    });
+    
+    return () => {
+      votingSlides.forEach(slide => {
+        const votesRef = ref(database, `${path}/${sessionId}/votes/${slide.id}`);
+        off(votesRef);
+      });
+    };
+  }, [sessionId, sessionType, quiz]);
+  
+  // Load board posts for all board slides
+  useEffect(() => {
+    if (!sessionId || !quiz) return;
+    
+    const boardSlides = quiz.slides.filter(s => s.type === 'activity' && s.activityType === 'board');
+    if (boardSlides.length === 0) return;
+    
+    const path = sessionType === 'shared' ? QUIZ_SHARES_PATH : QUIZ_SESSIONS_PATH;
+    
+    boardSlides.forEach(slide => {
+      const postsRef = ref(database, `${path}/${sessionId}/boardPosts/${slide.id}`);
+      onValue(postsRef, (snapshot) => {
+        const data = snapshot.val();
+        if (data) {
+          const postsArray = Object.entries(data).map(([key, post]: [string, any]) => ({
+            id: key,
+            text: post.text || '',
+            mediaUrl: post.mediaUrl,
+            mediaType: post.mediaType,
+            authorName: post.authorName || 'Anonymní',
+            authorId: post.authorId || '',
+            likes: Array.isArray(post.likes) ? post.likes : Object.keys(post.likes || {}),
+            createdAt: post.createdAt || Date.now(),
+            backgroundColor: post.backgroundColor,
+            column: post.column,
+          }));
+          setBoardPosts(prev => ({ ...prev, [slide.id]: postsArray }));
+        }
+      });
+    });
+    
+    return () => {
+      boardSlides.forEach(slide => {
+        const postsRef = ref(database, `${path}/${sessionId}/boardPosts/${slide.id}`);
+        off(postsRef);
+      });
+    };
+  }, [sessionId, sessionType, quiz]);
   
   // Calculate student results
   const studentResults: StudentResult[] = React.useMemo(() => {
@@ -2381,6 +2454,168 @@ Piš stručně, prakticky a v češtině. Formátuj přehledně s odrážkami.`;
                             })}
                           </div>
                         )}
+                        
+                        {/* Voting results */}
+                        {stat.activityType === 'voting' && (() => {
+                          const votes = votingResults[stat.slideId] || {};
+                          const votingSlide = quiz?.slides.find(s => s.id === stat.slideId) as VotingActivitySlide | undefined;
+                          const voteOptions = votingSlide?.options || [];
+                          const totalVoters = Object.keys(votes).length;
+                          
+                          // Calculate vote counts per option
+                          const voteCounts: Record<string, number> = {};
+                          Object.values(votes).forEach((vote: any) => {
+                            (vote.selectedOptions || []).forEach((optId: string) => {
+                              voteCounts[optId] = (voteCounts[optId] || 0) + 1;
+                            });
+                          });
+                          
+                          const maxVotes = Math.max(...Object.values(voteCounts), 1);
+                          
+                          const VOTING_COLORS = ['#10b981', '#f59e0b', '#3b82f6', '#ec4899', '#8b5cf6', '#ef4444', '#06b6d4', '#84cc16'];
+                          
+                          return (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                                <BarChart2 style={{ width: 16, height: 16, color: '#0ea5e9' }} />
+                                <span style={{ fontSize: '14px', color: '#64748b' }}>{totalVoters} hlasů</span>
+                              </div>
+                              {voteOptions.map((option, idx) => {
+                                const count = voteCounts[option.id] || 0;
+                                const percentage = totalVoters > 0 ? Math.round((count / totalVoters) * 100) : 0;
+                                const barWidth = maxVotes > 0 ? (count / maxVotes) * 100 : 0;
+                                const color = option.color || VOTING_COLORS[idx % VOTING_COLORS.length];
+                                
+                                return (
+                                  <div key={option.id} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                        <span 
+                                          style={{
+                                            width: '24px',
+                                            height: '24px',
+                                            borderRadius: '6px',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            fontWeight: 'bold',
+                                            fontSize: '11px',
+                                            backgroundColor: color,
+                                            color: '#ffffff',
+                                          }}
+                                        >
+                                          {option.label}
+                                        </span>
+                                        <span style={{ fontSize: '14px', color: '#334155' }}>{option.content || option.label}</span>
+                                      </div>
+                                      <span style={{ fontSize: '14px', fontWeight: 500, color: '#475569' }}>
+                                        {count} ({percentage}%)
+                                      </span>
+                                    </div>
+                                    <div style={{ height: '24px', backgroundColor: '#f1f5f9', borderRadius: '8px', overflow: 'hidden' }}>
+                                      <div 
+                                        style={{ 
+                                          width: `${barWidth}%`,
+                                          height: '100%',
+                                          borderRadius: '8px',
+                                          backgroundColor: color,
+                                          transition: 'all 0.3s',
+                                          minWidth: count > 0 ? '30px' : '0',
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          justifyContent: 'flex-end',
+                                          paddingRight: '8px',
+                                        }}
+                                      >
+                                        {count > 0 && (
+                                          <span style={{ color: '#fff', fontSize: '12px', fontWeight: 'bold' }}>{count}</span>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          );
+                        })()}
+                        
+                        {/* Board posts */}
+                        {stat.activityType === 'board' && (() => {
+                          const posts = boardPosts[stat.slideId] || [];
+                          const boardSlide = quiz?.slides.find(s => s.id === stat.slideId) as BoardActivitySlide | undefined;
+                          
+                          return (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                                <MessageSquare style={{ width: 16, height: 16, color: '#ec4899' }} />
+                                <span style={{ fontSize: '14px', color: '#64748b' }}>{posts.length} příspěvků</span>
+                              </div>
+                              {posts.length === 0 ? (
+                                <div style={{ padding: '16px', backgroundColor: '#f8fafc', borderRadius: '8px', textAlign: 'center' }}>
+                                  <span style={{ color: '#94a3b8', fontSize: '14px' }}>Žádné příspěvky</span>
+                                </div>
+                              ) : (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '300px', overflowY: 'auto' }}>
+                                  {posts.slice(0, 10).map(post => (
+                                    <div 
+                                      key={post.id}
+                                      style={{
+                                        padding: '12px',
+                                        backgroundColor: post.backgroundColor || '#f8fafc',
+                                        borderRadius: '12px',
+                                        border: '1px solid #e2e8f0',
+                                      }}
+                                    >
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '4px' }}>
+                                        <span style={{ fontSize: '12px', fontWeight: 500, color: '#64748b' }}>{post.authorName}</span>
+                                        <span style={{ fontSize: '11px', color: '#94a3b8' }}>
+                                          ❤️ {Array.isArray(post.likes) ? post.likes.length : Object.keys(post.likes || {}).length}
+                                        </span>
+                                      </div>
+                                      <p style={{ fontSize: '14px', color: '#334155', margin: 0 }}>{post.text}</p>
+                                      {post.mediaUrl && (
+                                        <div style={{ marginTop: '8px' }}>
+                                          {post.mediaType === 'image' ? (
+                                            <img 
+                                              src={post.mediaUrl} 
+                                              alt="Příloha" 
+                                              style={{ maxWidth: '100%', maxHeight: '150px', borderRadius: '8px', objectFit: 'cover' }}
+                                            />
+                                          ) : (
+                                            <a href={post.mediaUrl} target="_blank" rel="noopener noreferrer" style={{ color: '#3b82f6', fontSize: '13px' }}>
+                                              🎬 Video
+                                            </a>
+                                          )}
+                                        </div>
+                                      )}
+                                      {boardSlide?.boardType === 'pros-cons' && post.column && (
+                                        <span 
+                                          style={{
+                                            display: 'inline-block',
+                                            marginTop: '8px',
+                                            padding: '2px 8px',
+                                            borderRadius: '4px',
+                                            fontSize: '11px',
+                                            fontWeight: 500,
+                                            backgroundColor: post.column === 'left' ? '#dcfce7' : '#fee2e2',
+                                            color: post.column === 'left' ? '#166534' : '#991b1b',
+                                          }}
+                                        >
+                                          {post.column === 'left' ? (boardSlide.leftColumnLabel || 'Pro') : (boardSlide.rightColumnLabel || 'Proti')}
+                                        </span>
+                                      )}
+                                    </div>
+                                  ))}
+                                  {posts.length > 10 && (
+                                    <div style={{ textAlign: 'center', padding: '8px' }}>
+                                      <span style={{ color: '#64748b', fontSize: '13px' }}>+{posts.length - 10} dalších příspěvků</span>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </div>
                     )}
                   </div>

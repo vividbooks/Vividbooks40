@@ -18,6 +18,9 @@ import {
   ImageSize,
   BlockImage,
   TableContent,
+  ConnectPairsContent,
+  ImageHotspotsContent,
+  VideoQuizContent,
 } from '../../types/worksheet';
 
 // Size to width mapping for block images (print)
@@ -231,6 +234,12 @@ function PrintableBlock({ block, activityNumber }: BlockProps) {
         return <PrintableImage block={block} style={{}} />;
       case 'table':
         return <PrintableTable block={block} style={{}} />;
+      case 'connect-pairs':
+        return <PrintableConnectPairs block={block} style={{}} activityNumber={activityNumber} />;
+      case 'image-hotspots':
+        return <PrintableImageHotspots block={block} style={{}} activityNumber={activityNumber} />;
+      case 'video-quiz':
+        return <PrintableVideoQuiz block={block} style={{}} activityNumber={activityNumber} />;
       default:
         return null;
     }
@@ -303,6 +312,12 @@ function PrintableBlock({ block, activityNumber }: BlockProps) {
       return <PrintableImage block={block} style={baseStyle} />;
     case 'table':
       return <PrintableTable block={block} style={baseStyle} />;
+    case 'connect-pairs':
+      return <PrintableConnectPairs block={block} style={baseStyle} activityNumber={activityNumber} />;
+    case 'image-hotspots':
+      return <PrintableImageHotspots block={block} style={baseStyle} activityNumber={activityNumber} />;
+    case 'video-quiz':
+      return <PrintableVideoQuiz block={block} style={baseStyle} activityNumber={activityNumber} />;
     default:
       return null;
   }
@@ -643,6 +658,330 @@ function PrintableTable({ block, style }: BlockWithStyleProps) {
       className={tableClasses}
       dangerouslySetInnerHTML={{ __html: html }}
     />
+  );
+}
+
+/**
+ * Connect Pairs block (Spojovačka)
+ */
+function PrintableConnectPairs({ block, style, activityNumber }: BlockWithStyleProps) {
+  const content = block.content as ConnectPairsContent;
+
+  return (
+    <div style={style} className="no-break">
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', marginBottom: '12px' }}>
+        {activityNumber && (
+          <span style={{
+            width: '21px',
+            height: '21px',
+            borderRadius: '50%',
+            backgroundColor: '#1e293b',
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '11pt',
+            fontWeight: 700,
+            color: 'white',
+            flexShrink: 0,
+          }}>
+            {activityNumber}
+          </span>
+        )}
+        <span style={{ fontWeight: '500' }}>
+          {content.instruction || 'Spoj správné dvojice'}
+        </span>
+      </div>
+
+      {/* Two columns for pairs */}
+      <div style={{ 
+        display: 'flex', 
+        gap: '40px',
+        paddingLeft: activityNumber ? '34px' : 0,
+      }}>
+        {/* Left column */}
+        <div style={{ flex: 1 }}>
+          {content.pairs.map((pair, idx) => (
+            <div 
+              key={`left-${pair.id}`}
+              style={{ 
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                marginBottom: '8px',
+                padding: '8px 12px',
+                border: '1px solid #e2e8f0',
+                borderRadius: '6px',
+              }}
+            >
+              <span style={{
+                width: '18px',
+                height: '18px',
+                borderRadius: '50%',
+                border: '1.5px solid #3b82f6',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '9pt',
+                fontWeight: 600,
+                color: '#3b82f6',
+                flexShrink: 0,
+              }}>
+                {idx + 1}
+              </span>
+              <span>{pair.left.content || '...'}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* Right column */}
+        <div style={{ flex: 1 }}>
+          {content.pairs.map((pair, idx) => (
+            <div 
+              key={`right-${pair.id}`}
+              style={{ 
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                marginBottom: '8px',
+                padding: '8px 12px',
+                border: '1px solid #e2e8f0',
+                borderRadius: '6px',
+              }}
+            >
+              <span style={{
+                width: '18px',
+                height: '18px',
+                borderRadius: '50%',
+                border: '1.5px solid #a855f7',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '9pt',
+                fontWeight: 600,
+                color: '#a855f7',
+                flexShrink: 0,
+              }}>
+                {String.fromCharCode(65 + idx)}
+              </span>
+              <span>{pair.right.content || '...'}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Image Hotspots block (Poznávačka)
+ */
+function PrintableImageHotspots({ block, style, activityNumber }: BlockWithStyleProps) {
+  const content = block.content as ImageHotspotsContent;
+
+  return (
+    <div style={style} className="no-break">
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', marginBottom: '12px' }}>
+        {activityNumber && (
+          <span style={{
+            width: '21px',
+            height: '21px',
+            borderRadius: '50%',
+            backgroundColor: '#1e293b',
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '11pt',
+            fontWeight: 700,
+            color: 'white',
+            flexShrink: 0,
+          }}>
+            {activityNumber}
+          </span>
+        )}
+        <span style={{ fontWeight: '500' }}>
+          {content.instruction || 'Označ správná místa na obrázku'}
+        </span>
+      </div>
+
+      <div style={{ paddingLeft: activityNumber ? '34px' : 0 }}>
+        {/* Image with numbered hotspots */}
+        {content.imageUrl && (
+          <div style={{ position: 'relative', marginBottom: '12px' }}>
+            <img 
+              src={content.imageUrl} 
+              alt="Poznávačka"
+              style={{ 
+                maxWidth: '100%',
+                maxHeight: '200px',
+                display: 'block',
+                borderRadius: '6px',
+              }}
+            />
+          </div>
+        )}
+
+        {/* Answer lines for each hotspot */}
+        {content.hotspots.length > 0 && (
+          <div style={{ marginTop: '12px' }}>
+            {content.hotspots.map((hotspot, idx) => (
+              <div 
+                key={hotspot.id}
+                style={{ 
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '12px',
+                  marginBottom: '8px',
+                }}
+              >
+                <span style={{
+                  width: '20px',
+                  height: '20px',
+                  borderRadius: '50%',
+                  backgroundColor: '#a855f7',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '10pt',
+                  fontWeight: 600,
+                  color: 'white',
+                  flexShrink: 0,
+                }}>
+                  {idx + 1}
+                </span>
+                <div style={{ 
+                  flex: 1,
+                  borderBottom: '1.5px dotted #94a3b8',
+                  minHeight: '24px',
+                }} />
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Video Quiz block
+ */
+function PrintableVideoQuiz({ block, style, activityNumber }: BlockWithStyleProps) {
+  const content = block.content as VideoQuizContent;
+  const letters = ['A', 'B', 'C', 'D', 'E', 'F'];
+
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${String(secs).padStart(2, '0')}`;
+  };
+
+  return (
+    <div style={style} className="no-break">
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', marginBottom: '12px' }}>
+        {activityNumber && (
+          <span style={{
+            width: '21px',
+            height: '21px',
+            borderRadius: '50%',
+            backgroundColor: '#1e293b',
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '11pt',
+            fontWeight: 700,
+            color: 'white',
+            flexShrink: 0,
+          }}>
+            {activityNumber}
+          </span>
+        )}
+        <span style={{ fontWeight: '500' }}>
+          {content.instruction || 'Video kvíz'}
+        </span>
+      </div>
+
+      <div style={{ paddingLeft: activityNumber ? '34px' : 0 }}>
+        {/* Video URL info */}
+        {content.videoUrl && (
+          <div style={{ 
+            padding: '8px 12px',
+            backgroundColor: '#f1f5f9',
+            borderRadius: '6px',
+            marginBottom: '12px',
+            fontSize: '10pt',
+            color: '#64748b',
+          }}>
+            Video: {content.videoUrl}
+          </div>
+        )}
+
+        {/* Questions */}
+        {content.questions.map((q, qIdx) => (
+          <div key={q.id} style={{ marginBottom: '16px' }}>
+            <div style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: '8px', 
+              marginBottom: '8px',
+              fontWeight: '500',
+            }}>
+              <span style={{
+                fontSize: '9pt',
+                color: '#64748b',
+                backgroundColor: '#e2e8f0',
+                padding: '2px 6px',
+                borderRadius: '4px',
+                fontFamily: 'monospace',
+              }}>
+                {formatTime(q.timestamp)}
+              </span>
+              <span>{q.question}</span>
+            </div>
+            
+            {/* Options */}
+            <div style={{ paddingLeft: '8px' }}>
+              {q.options.map((opt, optIdx) => (
+                <div 
+                  key={opt.id}
+                  style={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    marginBottom: '4px',
+                  }}
+                >
+                  <span style={{
+                    width: '18px',
+                    height: '18px',
+                    borderRadius: '50%',
+                    border: '1.5px solid #1e293b',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    marginRight: '8px',
+                    fontSize: '9pt',
+                    fontWeight: 600,
+                    color: '#1e293b',
+                    flexShrink: 0,
+                  }}>
+                    {letters[optIdx]}
+                  </span>
+                  <span style={{ fontSize: '10pt' }}>{opt.content}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+
+        {content.questions.length === 0 && (
+          <p style={{ color: '#94a3b8', fontSize: '10pt', fontStyle: 'italic' }}>
+            Žádné otázky k videu
+          </p>
+        )}
+      </div>
+    </div>
   );
 }
 

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { LogOut, Moon, Sun, Save, BookOpen, CheckCircle2, Loader2, ChevronDown, ChevronUp, Settings, User, GraduationCap, ExternalLink, BarChart3 } from 'lucide-react';
+import { LogOut, Moon, Sun, Save, BookOpen, CheckCircle2, Loader2, ChevronDown, ChevronUp, Settings, User, GraduationCap, ExternalLink, BarChart3, Play, Pencil, Plus } from 'lucide-react';
 import { AdminSidebar } from './AdminSidebar';
 import { CategoryOverview } from './admin/CategoryOverview';
 import { RichTextEditor } from './RichTextEditor';
@@ -14,6 +14,8 @@ import { supabase } from '../utils/supabase/client';
 import { projectId, publicAnonKey } from '../utils/supabase/info.tsx';
 import { DOCUMENT_TYPES } from '../types/document-types';
 import { useViewMode } from '../contexts/ViewModeContext';
+import * as quizStorage from '../utils/quiz-storage';
+import { createEmptyQuiz } from '../types/quiz';
 import {
   Popover,
   PopoverContent,
@@ -115,6 +117,7 @@ export function NewAdminLayout({ theme, toggleTheme, onLogout }: AdminLayoutProp
   const [sectionImages, setSectionImages] = useState<SectionMediaItem[]>([]);
   const [worksheetData, setWorksheetData] = useState<WorksheetData>(DEFAULT_WORKSHEET_DATA);
   const [workbookData, setWorkbookData] = useState<WorkbookData>(DEFAULT_WORKBOOK_DATA);
+  const [boardId, setBoardId] = useState<string>('');
   const [availableHeadings, setAvailableHeadings] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -141,6 +144,7 @@ export function NewAdminLayout({ theme, toggleTheme, onLogout }: AdminLayoutProp
       setDescription('');
       setContent('');
       setExternalUrl('');
+      setBoardId('');
       setIcon('');
       setDocumentType('lesson');
       initialLoadRef.current = true;
@@ -217,6 +221,12 @@ export function NewAdminLayout({ theme, toggleTheme, onLogout }: AdminLayoutProp
         setDescription(page.description || '');
         setContent(page.content || '');
         setExternalUrl(page.externalUrl || '');
+        // Parse boardId from externalUrl if it's a board:// URL
+        if (page.externalUrl?.startsWith('board://')) {
+          setBoardId(page.externalUrl.replace('board://', ''));
+        } else {
+          setBoardId('');
+        }
         setIcon(page.icon || '');
         setDocumentType(page.documentType || 'lesson');
 
@@ -747,19 +757,106 @@ export function NewAdminLayout({ theme, toggleTheme, onLogout }: AdminLayoutProp
                        />
                     </div>
                   ) : ['practice', 'test', 'exam'].includes(documentType) ? (
-                    <div>
-                      <label htmlFor="externalUrl" className="block mb-2 text-sm">Odkaz na cvičení/test *</label>
-                      <input
-                        id="externalUrl"
-                        type="url"
-                        value={externalUrl}
-                        onChange={(e) => setExternalUrl(e.target.value)}
-                        className="w-full px-4 py-2 bg-input-background border border-border rounded focus:outline-none focus:ring-2 focus:ring-ring"
-                        placeholder="https://..."
-                      />
-                      <p className="mt-2 text-xs text-muted-foreground">
-                        Pro tento typ dokumentu se zadává pouze externí odkaz. Po kliknutí na kartu v přehledu bude uživatel přesměrován.
-                      </p>
+                    <div className="space-y-4">
+                      <label className="block mb-2 text-sm font-medium">Vividboard</label>
+                      
+                      {/* Show connected board or create button */}
+                      {boardId ? (
+                        <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 bg-green-500 rounded-lg flex items-center justify-center">
+                                <Play className="w-5 h-5 text-white" />
+                              </div>
+                              <div>
+                                <p className="font-medium text-green-800">Vividboard propojený</p>
+                                <p className="text-xs text-green-600">ID: {boardId}</p>
+                              </div>
+                            </div>
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => navigate(`/quiz/edit/${boardId}`)}
+                                className="flex items-center gap-2 px-4 py-2 bg-white border border-green-300 rounded-lg hover:bg-green-50 transition-colors"
+                              >
+                                <Pencil className="w-4 h-4" />
+                                Upravit
+                              </button>
+                              <button
+                                onClick={() => window.open(`/quiz/view/${boardId}`, '_blank')}
+                                className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                              >
+                                <Play className="w-4 h-4" />
+                                Přehrát
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="p-6 border-2 border-dashed border-slate-300 rounded-lg bg-slate-50 text-center">
+                          <div className="w-16 h-16 bg-indigo-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                            <Plus className="w-8 h-8 text-indigo-600" />
+                          </div>
+                          <h3 className="text-lg font-medium text-slate-800 mb-2">Vytvořit Vividboard</h3>
+                          <p className="text-sm text-slate-500 mb-4">
+                            Vytvořte interaktivní {documentType === 'practice' ? 'procvičování' : documentType === 'test' ? 'test' : 'písemku'} pomocí Vividboard editoru.
+                          </p>
+                          <button
+                            onClick={() => {
+                              // Create a new quiz with a unique ID based on page slug
+                              const newBoardId = `board_${pageSlug || crypto.randomUUID()}`;
+                              const newQuiz = createEmptyQuiz();
+                              newQuiz.id = newBoardId;
+                              newQuiz.title = title || 'Nový board';
+                              newQuiz.subject = category || undefined;
+                              
+                              // Save the quiz
+                              quizStorage.saveQuiz(newQuiz);
+                              
+                              // Update boardId state
+                              setBoardId(newBoardId);
+                              
+                              // Store boardId in externalUrl for persistence
+                              setExternalUrl(`board://${newBoardId}`);
+                              
+                              // Navigate to the editor
+                              navigate(`/quiz/edit/${newBoardId}`);
+                            }}
+                            className="inline-flex items-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium"
+                          >
+                            <Plus className="w-5 h-5" />
+                            Vytvořit Vividboard
+                          </button>
+                        </div>
+                      )}
+                      
+                      {/* Divider */}
+                      <div className="relative my-6">
+                        <div className="absolute inset-0 flex items-center">
+                          <div className="w-full border-t border-slate-200"></div>
+                        </div>
+                        <div className="relative flex justify-center text-xs">
+                          <span className="px-2 bg-white text-slate-400">nebo použijte externí odkaz</span>
+                        </div>
+                      </div>
+                      
+                      {/* External URL fallback */}
+                      <div>
+                        <label htmlFor="externalUrl" className="block mb-2 text-sm text-slate-500">Externí odkaz (volitelné)</label>
+                        <input
+                          id="externalUrl"
+                          type="url"
+                          value={externalUrl.startsWith('board://') ? '' : externalUrl}
+                          onChange={(e) => {
+                            setExternalUrl(e.target.value);
+                            // Clear boardId if external URL is set
+                            if (e.target.value && !e.target.value.startsWith('board://')) {
+                              setBoardId('');
+                            }
+                          }}
+                          className="w-full px-4 py-2 bg-input-background border border-border rounded focus:outline-none focus:ring-2 focus:ring-ring"
+                          placeholder="https://..."
+                        />
+                      </div>
                     </div>
                   ) : (
                     <div>

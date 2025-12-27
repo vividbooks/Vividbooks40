@@ -67,11 +67,25 @@ export function ABCSlideEditor({ slide, onUpdate }: ABCSlideEditorProps) {
   };
   
   const setCorrectOption = (optionId: string) => {
-    const newOptions = slide.options.map(opt => ({
-      ...opt,
-      isCorrect: opt.id === optionId,
-    }));
-    onUpdate(slide.id, { options: newOptions });
+    if (slide.allowMultipleCorrect) {
+      // Toggle mode - multiple can be correct
+      const newOptions = slide.options.map(opt => ({
+        ...opt,
+        isCorrect: opt.id === optionId ? !opt.isCorrect : opt.isCorrect,
+      }));
+      // Ensure at least one is correct
+      if (!newOptions.some(opt => opt.isCorrect)) {
+        newOptions[0].isCorrect = true;
+      }
+      onUpdate(slide.id, { options: newOptions });
+    } else {
+      // Single correct mode
+      const newOptions = slide.options.map(opt => ({
+        ...opt,
+        isCorrect: opt.id === optionId,
+      }));
+      onUpdate(slide.id, { options: newOptions });
+    }
   };
   
   const addOption = () => {
@@ -365,40 +379,100 @@ export function ABCSlideEditor({ slide, onUpdate }: ABCSlideEditorProps) {
         </button>
         
         {showAdvanced && (
-          <div className="px-6 pb-6 grid grid-cols-2 gap-4">
-            {/* Points */}
-            <div>
-              <label className="flex items-center gap-2 text-sm font-medium text-slate-700 mb-2">
-                <Star className="w-4 h-4 text-amber-500" />
-                Body
-              </label>
+          <div className="px-6 pb-6 space-y-4">
+            {/* Multiple correct toggle */}
+            <label className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 cursor-pointer hover:bg-slate-50 transition-colors">
+              <div className="flex-1">
+                <div className="flex items-center gap-2">
+                  <CheckCircle className="w-4 h-4 text-emerald-500" />
+                  <span className="font-medium text-slate-700">Více správných odpovědí</span>
+                </div>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {slide.allowMultipleCorrect 
+                    ? 'Student musí vybrat všechny správné odpovědi' 
+                    : 'Pouze jedna odpověď je správná'}
+                </p>
+              </div>
+              <div 
+                className="relative flex-shrink-0"
+                style={{ 
+                  width: '52px', 
+                  height: '28px', 
+                  borderRadius: '14px',
+                  backgroundColor: slide.allowMultipleCorrect ? '#10b981' : '#94a3b8',
+                  transition: 'background-color 0.2s ease',
+                  boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.2)'
+                }}
+              >
+                <div 
+                  style={{ 
+                    position: 'absolute',
+                    top: '2px',
+                    left: slide.allowMultipleCorrect ? '26px' : '2px',
+                    width: '24px', 
+                    height: '24px', 
+                    borderRadius: '12px',
+                    backgroundColor: '#ffffff',
+                    boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
+                    transition: 'left 0.2s ease'
+                  }}
+                />
+              </div>
               <input
-                type="number"
-                value={slide.points}
-                onChange={(e) => onUpdate(slide.id, { points: parseInt(e.target.value) || 1 })}
-                min={1}
-                max={10}
-                className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none"
+                type="checkbox"
+                checked={slide.allowMultipleCorrect || false}
+                onChange={(e) => {
+                  // When switching off, ensure only one option is correct
+                  if (!e.target.checked) {
+                    const firstCorrectIdx = slide.options.findIndex(o => o.isCorrect);
+                    const newOptions = slide.options.map((opt, idx) => ({
+                      ...opt,
+                      isCorrect: idx === (firstCorrectIdx >= 0 ? firstCorrectIdx : 0)
+                    }));
+                    onUpdate(slide.id, { allowMultipleCorrect: false, options: newOptions });
+                  } else {
+                    onUpdate(slide.id, { allowMultipleCorrect: true });
+                  }
+                }}
+                className="sr-only"
               />
-            </div>
+            </label>
             
-            {/* Time limit */}
-            <div>
-              <label className="flex items-center gap-2 text-sm font-medium text-slate-700 mb-2">
-                <Clock className="w-4 h-4 text-blue-500" />
-                Časový limit (s)
-              </label>
-              <input
-                type="number"
-                value={slide.timeLimit || ''}
-                onChange={(e) => onUpdate(slide.id, { 
-                  timeLimit: e.target.value ? parseInt(e.target.value) : undefined 
-                })}
-                placeholder="Bez limitu"
-                min={5}
-                max={300}
-                className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none"
-              />
+            <div className="grid grid-cols-2 gap-4">
+              {/* Points */}
+              <div>
+                <label className="flex items-center gap-2 text-sm font-medium text-slate-700 mb-2">
+                  <Star className="w-4 h-4 text-amber-500" />
+                  Body
+                </label>
+                <input
+                  type="number"
+                  value={slide.points}
+                  onChange={(e) => onUpdate(slide.id, { points: parseInt(e.target.value) || 1 })}
+                  min={1}
+                  max={10}
+                  className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none"
+                />
+              </div>
+              
+              {/* Time limit */}
+              <div>
+                <label className="flex items-center gap-2 text-sm font-medium text-slate-700 mb-2">
+                  <Clock className="w-4 h-4 text-blue-500" />
+                  Časový limit (s)
+                </label>
+                <input
+                  type="number"
+                  value={slide.timeLimit || ''}
+                  onChange={(e) => onUpdate(slide.id, { 
+                    timeLimit: e.target.value ? parseInt(e.target.value) : undefined 
+                  })}
+                  placeholder="Bez limitu"
+                  min={5}
+                  max={300}
+                  className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none"
+                />
+              </div>
             </div>
           </div>
         )}
