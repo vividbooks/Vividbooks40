@@ -1090,13 +1090,17 @@ export function BlockLayoutView({ slide }: { slide: InfoSlide }) {
             color: textStyle.color,
             fontFamily: theFontFamily,
             whiteSpace: 'pre-wrap',
-            wordWrap: 'normal',
-            overflowWrap: 'normal',
-            wordBreak: 'normal',
-            hyphens: 'none',
+            // On mobile: allow word breaking to prevent overflow
+            wordWrap: isMobile ? 'break-word' : 'normal',
+            overflowWrap: isMobile ? 'break-word' : 'normal',
+            wordBreak: isMobile ? 'break-word' : 'normal',
+            hyphens: isMobile ? 'auto' : 'none',
             lineHeight: block.lineHeight ?? 1.5,
             letterSpacing: `${block.letterSpacing ?? 0}px`,
-            padding: `${block.textPadding ?? 20}px`,
+            // On mobile: cap padding at 16px to prevent text overflow
+            padding: isMobile 
+              ? `${Math.min(block.textPadding ?? 20, 16)}px` 
+              : `${block.textPadding ?? 20}px`,
             // On mobile: flex-grow to fill parent (for vertical alignment)
             // On desktop: fixed height with scroll or fit
             height: isMobile ? '100%' : '100%',
