@@ -551,7 +551,7 @@ export function AIChatPanel({
       console.log('[Edit] Prompt length:', prompt.length);
       
       // Call AI to modify blocks
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=AIzaSyDcPJrEcxThsVskj2LvYf6VB3mGTM45Ih0`, {
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${import.meta.env.VITE_GEMINI_API_KEY}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

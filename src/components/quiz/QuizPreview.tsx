@@ -535,7 +535,7 @@ function InfoSlideView({ slide }: { slide: InfoSlide }) {
   // If slide has new block-based layout, render it
   if (slide.layout && slide.layout.blocks.length > 0) {
     return (
-      <div className="flex-1 h-full">
+      <div style={{ display: 'flex', flexDirection: 'column', flex: 1, height: '100%' }}>
         <BlockLayoutView slide={slide} />
       </div>
     );
@@ -881,10 +881,12 @@ export function BlockLayoutView({ slide }: { slide: InfoSlide }) {
           break;
 
         case 'embed':
+          // Convert http:// to https:// to avoid mixed content errors on HTTPS pages
+          const secureUrl = url.startsWith('http://') ? url.replace('http://', 'https://') : url;
           return (
             <RelativeWrapper className="bg-slate-50">
               <iframe
-                src={url}
+                src={secureUrl}
                 className="absolute inset-0 w-full h-full border-none"
                 title="Embedded content"
                 sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
@@ -968,7 +970,7 @@ export function BlockLayoutView({ slide }: { slide: InfoSlide }) {
       const [fitFontSize, setFitFontSize] = React.useState<number | null>(null);
 
       const calculateFitSize = React.useCallback(() => {
-        // On mobile, don't try to fit - just use a nice readable size
+        // On mobile, don't calculate - use large readable sizes
         if (isMobile) return;
         
         // Default to 'fit' if not explicitly set to 'scroll'
@@ -1049,17 +1051,29 @@ export function BlockLayoutView({ slide }: { slide: InfoSlide }) {
         };
       }, [calculateFitSize, isMobile, block.textPadding]);
 
-      // On mobile: always allow natural flow with scroll, use readable font size
+      // On mobile: use large readable font sizes for 'fit' mode
       // On desktop: use fit calculation or scroll based on setting
       const isFitMode = block.textOverflow === 'fit' || block.textOverflow === undefined;
       const hasScroll = isMobile || block.textOverflow === 'scroll';
       
-      // Mobile font sizes - readable and consistent
-      const mobileFontSize = block.fontSize === 'xxlarge' ? '64px' :
-                             block.fontSize === 'xlarge' ? '48px' : 
-                             block.fontSize === 'large' ? '32px' : 
-                             block.fontSize === 'small' ? '16px' :
-                             block.fontSize === 'xsmall' ? '12px' : '22px';
+      // Mobile font sizes - LARGE and readable for 'fit' mode (auto)
+      // These scale based on content length for better readability
+      const contentLength = block.content?.length || 0;
+      const getMobileFitSize = () => {
+        if (contentLength < 20) return '72px';  // Very short text - huge
+        if (contentLength < 50) return '56px';  // Short text - large
+        if (contentLength < 100) return '42px'; // Medium text
+        if (contentLength < 200) return '32px'; // Longer text
+        return '24px'; // Long text
+      };
+      
+      const mobileFontSize = isFitMode 
+        ? getMobileFitSize()
+        : (block.fontSize === 'xxlarge' ? '64px' :
+           block.fontSize === 'xlarge' ? '48px' : 
+           block.fontSize === 'large' ? '32px' : 
+           block.fontSize === 'small' ? '16px' :
+           block.fontSize === 'xsmall' ? '12px' : '24px');
       
       const finalFontSize = isMobile 
         ? mobileFontSize 
@@ -1083,9 +1097,10 @@ export function BlockLayoutView({ slide }: { slide: InfoSlide }) {
             lineHeight: block.lineHeight ?? 1.5,
             letterSpacing: `${block.letterSpacing ?? 0}px`,
             padding: `${block.textPadding ?? 20}px`,
-            // On mobile: auto height, content flows naturally
+            // On mobile: flex-grow to fill parent (for vertical alignment)
             // On desktop: fixed height with scroll or fit
-            height: isMobile ? 'auto' : '100%',
+            height: isMobile ? '100%' : '100%',
+            flex: isMobile ? 1 : undefined,
             minHeight: isMobile ? 'auto' : undefined,
             overflowY: isMobile ? 'visible' : (hasScroll ? 'auto' : 'hidden'),
             overflowX: 'hidden',
@@ -1192,28 +1207,126 @@ export function BlockLayoutView({ slide }: { slide: InfoSlide }) {
   };
 
   // MOBILE LAYOUT - simple vertical stack, scrollable
+  // Special case: single block with image should be vertically centered
   const renderMobileLayout = () => {
+    // Check if this is a single block with an image - if so, center it vertically
+    const isSingleImageBlock = blocks.length === 1 && (blocks[0].type === 'image' || blocks[0].type === 'lottie');
+    
+    if (isSingleImageBlock) {
+      const block = blocks[0];
+      const imageScale = block.imageScale || 100;
+      const imageFit = imageScale > 100 ? 'cover' : (block.imageFit || 'contain');
+      const posX = block.imagePositionX ?? 50;
+      const posY = block.imagePositionY ?? 50;
+      const hasGallery = block.gallery && block.gallery.length > 1;
+      const currentImage = (hasGallery && block.gallery) ? block.gallery[0] : block.content;
+      
+      // Full height centered layout for single image/lottie - minimal padding for max image size
+      return (
+        <div style={{ 
+          display: 'flex', 
+          flexDirection: 'column', 
+          alignItems: 'center',
+          justifyContent: 'center',
+          flex: 1,
+          width: '100%',
+          padding: 8, // Minimal padding for largest possible image
+        }}>
+          {block.type === 'image' ? (
+            <img
+              src={currentImage}
+              alt={block.imageCaption || ''}
+              style={{
+                maxWidth: '100%',
+                maxHeight: 'calc(100vh - 200px)',
+                objectFit: imageFit as any,
+                objectPosition: imageFit === 'cover' ? `${posX}% ${posY}%` : undefined,
+                borderRadius: blockRadius,
+              }}
+            />
+          ) : (
+            <div style={{ 
+              width: '100%', 
+              maxWidth: '400px',
+              aspectRatio: '1',
+            }}>
+              <LottieBlockPreview 
+                url={block.lottieUrl || block.content} 
+                loop={block.lottieLoop} 
+                autoplay={block.lottieAutoplay} 
+              />
+            </div>
+          )}
+          {block.imageCaption && (
+            <div className="mt-3 text-center text-sm text-slate-600 px-4">
+              {block.imageCaption}
+            </div>
+          )}
+        </div>
+      );
+    }
+    
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: blockGap }}>
-        {blocks.map((block, index) => (
-          <div 
-            key={index} 
-            style={{ 
-              // For images/lottie: explicit height so h-full works inside
-              // For text: auto height to fit content
-              height: (block.type === 'image' || block.type === 'lottie') ? 250 : 'auto',
-              minHeight: block.type === 'text' ? 60 : undefined,
-            }}
-          >
-            {renderBlock(block, index)}
-          </div>
-        ))}
+        {blocks.map((block, index) => {
+          // For text blocks with vertical alignment, use minHeight to allow alignment to work
+          const hasVerticalAlign = block.type === 'text' && block.verticalAlign && block.verticalAlign !== 'top';
+          const textMinHeight = hasVerticalAlign ? 300 : 60;
+          
+          // For link blocks with embed/video/preview mode, need explicit height for iframe
+          // Use most of viewport height for better mobile experience
+          const isEmbedLink = block.type === 'link' && ['embed', 'video', 'preview'].includes(block.linkMode || '');
+          const linkHeight = isEmbedLink ? 'calc(100vh - 120px)' : 'auto';
+          
+          // Determine block height
+          let blockHeight: number | string = 'auto';
+          if (block.type === 'image' || block.type === 'lottie') {
+            blockHeight = 250;
+          } else if (isEmbedLink) {
+            blockHeight = linkHeight;
+          }
+          
+          return (
+            <div 
+              key={index} 
+              style={{ 
+                height: blockHeight,
+                minHeight: block.type === 'text' ? textMinHeight : undefined,
+                display: 'flex',
+                flexDirection: 'column',
+              }}
+            >
+              {renderBlock(block, index)}
+            </div>
+          );
+        })}
       </div>
     );
   };
 
   // Desktop: full height with aspect ratio, Mobile: auto height scrollable
   if (isMobile) {
+    // Check if this is a single block with an image - if so, we need full height for centering
+    const isSingleImageBlock = blocks.length === 1 && (blocks[0].type === 'image' || blocks[0].type === 'lottie');
+    
+    if (isSingleImageBlock) {
+      // For single image blocks, use flex to fill entire available space
+      return (
+        <div 
+          style={{ 
+            ...getSlideBackgroundStyle(), 
+            fontFamily,
+            display: 'flex',
+            flexDirection: 'column',
+            flex: 1,
+            minHeight: '100%',
+          }}
+        >
+          {renderMobileLayout()}
+        </div>
+      );
+    }
+    
     return (
       <div 
         style={{ 
@@ -1290,8 +1403,8 @@ export function QuizPreview({ quiz, onClose, isLive = false, onComplete, initial
   
   const score = calculateQuizScore(responses, quiz.slides);
   
-  // Outer background color (area around slide) - always the same
-  const bgColor = '#F0F1F8';
+  // Outer background color (area around slide) - dark mode
+  const bgColor = '#1a1a2e';
   
   // Slide background color from current slide settings
   const slideBgColor = (currentSlide as any)?.slideBackground?.color || '#ffffff';
@@ -1325,6 +1438,7 @@ export function QuizPreview({ quiz, onClose, isLive = false, onComplete, initial
   const submitComment = async () => {
     if (!boardId || !currentSlide || !commentContent.trim()) return;
     
+    console.log('[PublicViewer] Submitting comment:', { boardId, slideId: currentSlide.id, content: commentContent.trim() });
     setSubmittingComment(true);
     try {
       const result = await addBoardComment({
@@ -1333,6 +1447,8 @@ export function QuizPreview({ quiz, onClose, isLive = false, onComplete, initial
         author_name: commentAuthorName.trim() || null,
         content: commentContent.trim(),
       });
+      
+      console.log('[PublicViewer] Comment result:', result);
       
       if (result) {
         setCommentSuccess(true);
@@ -1346,6 +1462,8 @@ export function QuizPreview({ quiz, onClose, isLive = false, onComplete, initial
         setSlideComments(updated);
         // Reset success after 3s
         setTimeout(() => setCommentSuccess(false), 3000);
+      } else {
+        console.error('[PublicViewer] Failed to add comment - result was null');
       }
     } catch (e) {
       console.error('Error submitting comment:', e);
@@ -1476,14 +1594,14 @@ export function QuizPreview({ quiz, onClose, isLive = false, onComplete, initial
             className="h-full transition-all duration-300"
             style={{ 
               width: `${progressPercent}%`,
-              backgroundColor: '#475569'
+              backgroundColor: '#7C3AED'
             }}
           />
           {/* Remaining part */}
           <div
             className="h-full flex-1"
             style={{ 
-              backgroundColor: '#CBD5E1'
+              backgroundColor: 'rgba(255,255,255,0.2)'
             }}
           />
         </div>
@@ -1498,7 +1616,7 @@ export function QuizPreview({ quiz, onClose, isLive = false, onComplete, initial
             className="rounded-full cursor-pointer hover:opacity-80"
             style={{ 
               height: '8px',
-              backgroundColor: '#475569',
+              backgroundColor: '#7C3AED',
               flex: currentSlideIndex + 1
             }}
             onClick={() => {
@@ -1527,7 +1645,7 @@ export function QuizPreview({ quiz, onClose, isLive = false, onComplete, initial
               className="flex-1 rounded-full cursor-pointer hover:opacity-80"
               style={{ 
                 height: '8px',
-                backgroundColor: '#CBD5E1'
+                backgroundColor: 'rgba(255,255,255,0.2)'
               }}
             />
           );
@@ -1930,12 +2048,12 @@ export function QuizPreview({ quiz, onClose, isLive = false, onComplete, initial
         )} */}
       
         {/* Mobile: Top navigation with arrows and progress bar */}
-        <div className="flex lg:hidden items-center gap-3 px-4 py-4" style={{ backgroundColor: bgColor }}>
+        <div className="flex lg:hidden items-center gap-3 px-4 py-4" style={{ backgroundColor: slideBgColor }}>
           {/* Menu button for chapters */}
           {chapters.length > 0 && (
             <button
               onClick={() => setShowChapterMenu(!showChapterMenu)}
-              className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 bg-[#CBD5E1] text-slate-600"
+              className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 bg-white/20 text-white/80"
             >
               <Menu className="w-5 h-5" />
             </button>
@@ -1945,7 +2063,7 @@ export function QuizPreview({ quiz, onClose, isLive = false, onComplete, initial
         <button
           onClick={goToPrevSlide}
           disabled={currentSlideIndex === 0 || !quiz.settings.allowBack}
-          className={`w-14 h-14 rounded-full flex items-center justify-center flex-shrink-0 bg-[#CBD5E1] text-slate-600 ${
+          className={`w-14 h-14 rounded-full flex items-center justify-center flex-shrink-0 bg-white/20 text-white/80 ${
             currentSlideIndex === 0 || !quiz.settings.allowBack ? 'opacity-30 cursor-not-allowed' : ''
           }`}
         >
@@ -1978,7 +2096,9 @@ export function QuizPreview({ quiz, onClose, isLive = false, onComplete, initial
       <div 
         className="flex-1 flex flex-col overflow-hidden" 
         style={{ 
-          backgroundColor: bgColor,
+          // On mobile, use slide's background color to fill entire screen
+          // On desktop, use the light gray outer background
+          backgroundColor: isMobile ? slideBgColor : bgColor,
           minHeight: 0,
         }}
       >
@@ -1993,7 +2113,11 @@ export function QuizPreview({ quiz, onClose, isLive = false, onComplete, initial
         </div>
         
         {/* Content with arrows - with bottom padding */}
-        <div className="flex-1 flex items-stretch overflow-hidden" style={{ minHeight: 0, paddingBottom: isMobile ? 16 : 5 }}>
+        <div className="flex-1 flex items-stretch overflow-hidden" style={{ 
+          minHeight: 0, 
+          paddingBottom: isMobile ? 16 : 5,
+          backgroundColor: isMobile ? slideBgColor : undefined,
+        }}>
           {/* Desktop: Left arrow - same width as right arrow for symmetry */}
           <div 
             className="hidden lg:flex flex-shrink-0 items-center justify-center"
@@ -2002,7 +2126,7 @@ export function QuizPreview({ quiz, onClose, isLive = false, onComplete, initial
             <button
               onClick={goToPrevSlide}
               disabled={currentSlideIndex === 0 || !quiz.settings.allowBack}
-              className={`w-12 h-12 rounded-full flex items-center justify-center transition-all duration-300 ease-out bg-[#CBD5E1] text-slate-600 ${
+              className={`w-12 h-12 rounded-full flex items-center justify-center transition-all duration-300 ease-out bg-white/20 text-white/80 ${
                 currentSlideIndex === 0 || !quiz.settings.allowBack ? 'opacity-30 cursor-not-allowed' : 'hover:h-28'
               }`}
             >
@@ -2018,12 +2142,15 @@ export function QuizPreview({ quiz, onClose, isLive = false, onComplete, initial
               overflowY: isMobile ? 'auto' : 'hidden',
               overflowX: 'hidden',
               WebkitOverflowScrolling: 'touch',
-              // Padding for shadow visibility
-              padding: 16,
+              // Padding for shadow visibility - reduced by 50% for smaller margins
+              padding: 8,
+              // On mobile, the scrollable area should have the slide's background color
+              // to prevent white gaps when content is smaller than viewport
+              backgroundColor: isMobile ? slideBgColor : undefined,
             }}
           >
             <div 
-              className={`w-full h-full rounded-3xl ${
+              className={`w-full rounded-3xl ${
                 currentSlide?.type !== 'info' ? 'max-w-5xl mx-auto' : ''
               } ${
                 currentSlideIndex > prevSlideIndex && isAnimating ? 'animate-slide-in' : ''
@@ -2034,8 +2161,9 @@ export function QuizPreview({ quiz, onClose, isLive = false, onComplete, initial
                 display: 'flex',
                 flexDirection: 'column',
                 overflow: 'hidden',
-                // Fill available space exactly - no growing beyond
-                height: isMobile ? 'auto' : '100%',
+                // On mobile, use 100% height to fill the container and allow flex children to expand
+                // On desktop, use 100% to fill container
+                height: '100%',
                 // Subtle shadow with small spread
                 boxShadow: '0 4px 12px -2px rgba(0, 0, 0, 0.08)',
                 // Dynamic background and text color based on slide settings
@@ -2045,7 +2173,12 @@ export function QuizPreview({ quiz, onClose, isLive = false, onComplete, initial
               key={currentSlideIndex}
             >
               {currentSlide ? (
-                <div className="flex-1 flex flex-col" style={{ minHeight: 0 }}>
+                <div style={{ 
+                  display: 'flex',
+                  flexDirection: 'column',
+                  flex: 1,
+                  minHeight: 0,
+                }}>
                   {renderSlideView(currentSlide)}
                 </div>
               ) : (

@@ -493,6 +493,8 @@ export function QuizViewPage() {
   const [copied, setCopied] = useState(false);
   const [showEndDialog, setShowEndDialog] = useState(false);
   const [showLiveSettings, setShowLiveSettings] = useState(false);
+  const [showQRPopup, setShowQRPopup] = useState<'qr' | 'code' | null>(null);
+  const [showModeDropdown, setShowModeDropdown] = useState(false);
   
   // Live session settings
   const [liveShowSolutionHints, setLiveShowSolutionHints] = useState(true);
@@ -742,6 +744,9 @@ export function QuizViewPage() {
         slides: quiz.slides,
       });
       
+      // Create lookup table entry for fast session lookup by code
+      await set(ref(database, `session_codes/${code}`), newSessionId);
+      
       setSessionId(newSessionId);
       setSessionCode(code);
       setSession(sessionData);
@@ -929,99 +934,143 @@ export function QuizViewPage() {
     if (sessionId && sessionCode) {
       return (
         <div className="flex flex-col h-full text-white" style={{ backgroundColor: '#1e2533' }}>
-          {/* Session code and QR */}
+          {/* Presentation mode dropdown - AT TOP */}
+          <div className="px-4 py-3" style={{ borderBottom: '1px solid #334155' }}>
+            <div className="relative">
+              <button
+                onClick={() => setShowModeDropdown(!showModeDropdown)}
+                className="w-full flex items-center justify-between p-3 rounded-xl transition-colors"
+                style={{ backgroundColor: '#334155' }}
+              >
+                <div className="flex items-center gap-3">
+                  {(session?.isLocked ?? true) ? (
+                    <Lock className="w-5 h-5" style={{ color: '#94a3b8' }} />
+                  ) : (
+                    <Unlock className="w-5 h-5" style={{ color: '#4ade80' }} />
+                  )}
+                  <div className="text-left">
+                    <p className="text-xs" style={{ color: '#64748b' }}>Promítat:</p>
+                    <p className="text-sm font-medium" style={{ color: '#ffffff' }}>
+                      {(session?.isLocked ?? true) ? 'Učitel prezentuje' : 'Studenti sami'}
+                    </p>
+                  </div>
+                </div>
+                <ChevronDown 
+                  className={`w-5 h-5 transition-transform ${showModeDropdown ? 'rotate-180' : ''}`} 
+                  style={{ color: '#94a3b8' }} 
+                />
+              </button>
+              
+              {/* Dropdown menu */}
+              {showModeDropdown && (
+                <div 
+                  className="absolute top-full left-0 right-0 mt-1 rounded-xl overflow-hidden z-10 shadow-lg"
+                  style={{ backgroundColor: '#334155' }}
+                >
+                  <button
+                    onClick={() => {
+                      updateLiveSession({ isLocked: true });
+                      setShowModeDropdown(false);
+                    }}
+                    className={`w-full flex items-center gap-3 p-3 text-left hover:bg-slate-600/50 transition-colors ${(session?.isLocked ?? true) ? 'bg-slate-600/30' : ''}`}
+                  >
+                    <Lock className="w-4 h-4" style={{ color: '#94a3b8' }} />
+                    <span className="text-sm text-white">Učitel prezentuje</span>
+                    {(session?.isLocked ?? true) && <CheckCircle className="w-4 h-4 ml-auto" style={{ color: '#4ade80' }} />}
+                  </button>
+                  <button
+                    onClick={() => {
+                      updateLiveSession({ isLocked: false });
+                      setShowModeDropdown(false);
+                    }}
+                    className={`w-full flex items-center gap-3 p-3 text-left hover:bg-slate-600/50 transition-colors ${!(session?.isLocked ?? true) ? 'bg-slate-600/30' : ''}`}
+                  >
+                    <Unlock className="w-4 h-4" style={{ color: '#94a3b8' }} />
+                    <span className="text-sm text-white">Studenti sami</span>
+                    {!(session?.isLocked ?? true) && <CheckCircle className="w-4 h-4 ml-auto" style={{ color: '#4ade80' }} />}
+                  </button>
+                  <button
+                    onClick={() => {
+                      // TODO: Competition mode
+                      setShowModeDropdown(false);
+                    }}
+                    className="w-full flex items-center gap-3 p-3 text-left hover:bg-slate-600/50 transition-colors"
+                  >
+                    <BarChart2 className="w-4 h-4" style={{ color: '#94a3b8' }} />
+                    <span className="text-sm text-white">Soutěž</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      // TODO: Share link only mode
+                      setShowModeDropdown(false);
+                    }}
+                    className="w-full flex items-center gap-3 p-3 text-left hover:bg-slate-600/50 transition-colors"
+                  >
+                    <Share2 className="w-4 h-4" style={{ color: '#94a3b8' }} />
+                    <span className="text-sm text-white">Sdílet odkaz</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+          
+          {/* Session code and QR - styled like design */}
           <div className="p-4" style={{ borderBottom: '1px solid #334155' }}>
-            {/* QR Code - full join URL */}
-            <div className="flex justify-center mb-4">
-              <div className="bg-white p-3 rounded-xl">
+            {/* Top: "Připojte se na..." with actual URL */}
+            <p className="text-center text-white/80 text-sm mb-2">
+              Připojte se na <span className="font-medium text-white">{window.location.host}{import.meta.env.BASE_URL || ''}/go</span>
+            </p>
+            
+            {/* Code display */}
+            <div 
+              className="text-center mb-3 cursor-pointer hover:opacity-80 transition-opacity"
+              onClick={() => setShowQRPopup('code')}
+              title="Zobrazit kód přes celou obrazovku"
+            >
+              <span className="text-white/70 text-xl">Kód: </span>
+              <span className="text-yellow-400 text-xl font-bold tracking-wider">{sessionCode}</span>
+            </div>
+            
+            {/* QR Code - clickable for fullscreen QR */}
+            <div 
+              className="flex justify-center mb-3 cursor-pointer transition-all group"
+              onClick={() => setShowQRPopup('qr')}
+              title="Zobrazit QR kód přes celou obrazovku"
+            >
+              <div className="bg-white p-3 rounded-xl transition-all group-hover:ring-4 group-hover:ring-orange-400">
                 <QRCodeSVG 
-                  value={`${window.location.origin}${import.meta.env.BASE_URL || '/'}quiz/join/${sessionCode}`}
-                  size={160}
+                  value={`${window.location.origin}${import.meta.env.BASE_URL || '/'}go/${sessionCode}`}
+                  size={180}
                   level="M"
                 />
               </div>
             </div>
             
-            {/* Code display */}
-            <div 
-              className="text-center py-3 px-4 rounded-xl mb-3"
-              style={{ backgroundColor: '#334155' }}
-            >
-              <p className="text-xs mb-1" style={{ color: '#64748b' }}>Kód pro ruční zadání</p>
-              <div 
-                className="text-3xl font-mono font-bold tracking-widest select-all"
-                style={{ color: '#ffffff', letterSpacing: '0.2em' }}
-              >
-                {sessionCode}
-              </div>
-            </div>
-            
-            {/* Copy full link button */}
-            <button
-              onClick={() => {
-                const fullLink = `${window.location.origin}${import.meta.env.BASE_URL || '/'}quiz/join/${sessionCode}`;
-                navigator.clipboard.writeText(fullLink);
-                setCopied(true);
-                setTimeout(() => setCopied(false), 2000);
-              }}
-              className="w-full py-3 px-4 rounded-lg transition-colors flex items-center justify-center gap-2"
-              style={{ backgroundColor: '#334155', color: '#ffffff' }}
-            >
-              {copied ? (
-                <>
-                  <CheckCircle className="w-4 h-4" style={{ color: '#4ade80' }} />
-                  <span className="text-sm font-medium">Odkaz zkopírován!</span>
-                </>
-              ) : (
-                <>
-                  <Copy className="w-4 h-4" style={{ color: '#94a3b8' }} />
-                  <span className="text-sm font-medium">Kopírovat odkaz pro studenty</span>
-                </>
-              )}
-            </button>
-            
-            <p className="text-xs mt-3 text-center" style={{ color: '#64748b' }}>
-              Nebo: <span style={{ color: '#94a3b8' }}>{window.location.origin}{import.meta.env.BASE_URL || '/'}quiz/join</span>
-            </p>
-          </div>
-          
-          {/* Lock mode toggle */}
-          <div className="px-4 py-3" style={{ borderBottom: '1px solid #334155' }}>
-            <button
-              onClick={() => updateLiveSession({ isLocked: !(session?.isLocked ?? true) })}
-              className="w-full flex items-center justify-between p-3 rounded-xl transition-colors"
-              style={{ backgroundColor: '#334155' }}
-            >
-              <div className="flex items-center gap-3">
-                {(session?.isLocked ?? true) ? (
-                  <Lock className="w-5 h-5" style={{ color: '#94a3b8' }} />
-                ) : (
-                  <Unlock className="w-5 h-5" style={{ color: '#4ade80' }} />
-                )}
-                <div className="text-left">
-                  <p className="text-sm font-medium" style={{ color: '#ffffff' }}>
-                    {(session?.isLocked ?? true) ? 'Zamčený mód' : 'Odemčený mód'}
-                  </p>
-                  <p className="text-xs" style={{ color: '#64748b' }}>
-                    {(session?.isLocked ?? true) ? 'Studenti sledují učitele' : 'Studenti se pohybují sami'}
-                  </p>
-                </div>
-              </div>
-              <div 
-                className="w-12 h-7 rounded-full flex items-center transition-colors"
-                style={{ 
-                  backgroundColor: (session?.isLocked ?? true) ? '#475569' : '#4ade80',
-                  padding: '2px'
+            {/* Copy button - same width as QR (180 + 24px padding = 204px) */}
+            <div className="flex justify-center">
+              <button
+                onClick={() => {
+                  const fullLink = `${window.location.origin}${import.meta.env.BASE_URL || '/'}go/${sessionCode}`;
+                  navigator.clipboard.writeText(fullLink);
+                  setCopied(true);
+                  setTimeout(() => setCopied(false), 2000);
                 }}
+                className="py-2 px-3 rounded-lg transition-colors flex items-center justify-center gap-2 text-sm font-medium hover:opacity-90"
+                style={{ backgroundColor: '#f59e0b', color: '#1e293b', width: '206px' }}
               >
-                <div 
-                  className="w-6 h-6 rounded-full bg-white shadow transition-transform"
-                  style={{ 
-                    transform: (session?.isLocked ?? true) ? 'translateX(0)' : 'translateX(20px)'
-                  }}
-                />
-              </div>
-            </button>
+                {copied ? (
+                  <>
+                    <CheckCircle className="w-4 h-4" />
+                    <span>Zkopírováno!</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-4 h-4" />
+                    <span>Kopírovat odkaz</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
           
           {/* Students list */}
@@ -1243,21 +1292,23 @@ export function QuizViewPage() {
               return null;
             })()}
             
-            <button
-              className="w-full py-2 rounded-lg text-white text-sm flex items-center justify-center gap-2"
-              style={{ backgroundColor: '#334155' }}
-            >
-              <BarChart2 className="w-4 h-4" />
-              Zobrazit výsledky
-            </button>
-            <button
-              onClick={() => setShowEndDialog(true)}
-              className="w-full py-2 rounded-lg text-white text-sm flex items-center justify-center gap-2"
-              style={{ backgroundColor: '#dc2626' }}
-            >
-              <StopCircle className="w-4 h-4" />
-              Ukončit session
-            </button>
+            <div className="flex gap-2">
+              <button
+                className="flex-1 py-2 rounded-lg text-white text-sm flex items-center justify-center gap-1"
+                style={{ backgroundColor: '#334155' }}
+              >
+                <BarChart2 className="w-4 h-4" />
+                Výsledky
+              </button>
+              <button
+                onClick={() => setShowEndDialog(true)}
+                className="flex-1 py-2 rounded-lg text-white text-sm flex items-center justify-center gap-1"
+                style={{ backgroundColor: '#dc2626' }}
+              >
+                <StopCircle className="w-4 h-4" />
+                Ukončit
+              </button>
+            </div>
           </div>
           
           {/* End session dialog */}
@@ -1964,6 +2015,81 @@ export function QuizViewPage() {
   
   return (
     <div className="flex h-screen overflow-hidden" style={{ backgroundColor: bgColor }}>
+      {/* QR/Code Popup - displays over entire presentation area */}
+      {showQRPopup && sessionCode && (
+        <div 
+          className="absolute inset-0 z-50 flex items-center justify-center"
+          style={{ 
+            backgroundColor: 'white',
+            right: showRightPanel ? '320px' : '0' 
+          }}
+        >
+          {/* Close button in corner */}
+          <button
+            onClick={() => setShowQRPopup(null)}
+            className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full transition-colors z-10"
+          >
+            <X className="w-8 h-8" />
+          </button>
+          
+          <div className="flex flex-col items-center justify-center h-full w-full p-8">
+            {showQRPopup === 'qr' ? (
+              /* QR Code - as large as possible */
+              <div className="flex flex-col items-center">
+                <QRCodeSVG 
+                  value={`${window.location.origin}${import.meta.env.BASE_URL || '/'}go/${sessionCode}`}
+                  size={Math.min(window.innerWidth * 0.6, window.innerHeight * 0.75, 700)}
+                  level="M"
+                />
+                <p className="mt-6 text-slate-400 text-lg">
+                  {window.location.origin}{import.meta.env.BASE_URL || '/'}go/{sessionCode}
+                </p>
+              </div>
+            ) : (
+              /* Code - large display */
+              <div className="flex flex-col items-center">
+                {/* URL above code */}
+                <p className="mb-6 text-slate-500 text-xl">
+                  Připojte se na <span className="font-medium text-slate-700">{window.location.host}{import.meta.env.BASE_URL || ''}/go</span>
+                </p>
+                
+                {/* Large code */}
+                <div 
+                  className="font-mono font-bold tracking-[0.4em] text-slate-800"
+                  style={{ fontSize: 'min(25vw, 250px)' }}
+                >
+                  {sessionCode}
+                </div>
+                
+                {/* Copy button below code */}
+                <button
+                  onClick={() => {
+                    const fullLink = `${window.location.origin}${import.meta.env.BASE_URL || '/'}go/${sessionCode}`;
+                    navigator.clipboard.writeText(fullLink);
+                    setCopied(true);
+                    setTimeout(() => setCopied(false), 2000);
+                  }}
+                  className="mt-8 px-6 py-3 rounded-xl font-medium transition-colors flex items-center gap-2"
+                  style={{ backgroundColor: '#f59e0b', color: 'white' }}
+                >
+                  {copied ? (
+                    <>
+                      <CheckCircle className="w-5 h-5" />
+                      <span>Zkopírováno!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-5 h-5" />
+                      <span>Zkopírovat odkaz</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+      
       {/* Main content area */}
       <div className="flex-1 flex flex-col relative">
         {/* Desktop: Top bar with X and panel toggle */}
@@ -2075,7 +2201,7 @@ export function QuizViewPage() {
           >
             <div 
               className={`
-                w-full h-full rounded-3xl shadow-2xl overflow-hidden flex flex-col
+                w-full h-full rounded-3xl shadow-md overflow-hidden flex flex-col
                 ${currentSlide?.type !== 'info' ? 'max-w-5xl mx-auto' : ''}
                 ${currentSlideIndex > prevSlideIndex && isAnimating ? 'animate-slide-in' : ''}
                 ${currentSlideIndex < prevSlideIndex && isAnimating ? 'animate-slide-in-left' : ''}

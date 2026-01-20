@@ -239,11 +239,6 @@ function PieChartView({
             ))
           )}
         </svg>
-        {/* Total voters badge */}
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white/90 backdrop-blur-sm rounded-full w-20 h-20 flex flex-col items-center justify-center shadow-lg">
-          <span className="font-bold text-2xl text-slate-700">{totalVoters}</span>
-          <span className="text-xs text-slate-500">hlasů</span>
-        </div>
       </div>
       
       {/* Legend */}
@@ -502,12 +497,16 @@ export function VotingSlideView({
   // Default votingType for backwards compatibility
   const votingType: VotingType = slide.votingType || (slide.allowMultiple ? 'multiple' : 'single');
 
-  // Reset state when slide changes or myVote changes
+  // Reset showResults only when slide changes (not when votes update)
   useEffect(() => {
-    setSelectedOptions(myVote || []);
     setShowResults(false);
     setIsSubmitting(false);
-  }, [slide.id, myVote]);
+  }, [slide.id]);
+  
+  // Update selected options when myVote changes (but don't reset showResults)
+  useEffect(() => {
+    setSelectedOptions(myVote || []);
+  }, [myVote]);
 
   const questionFontSize = getQuestionFontSize(slide.question || '');
   const canShowResults = hasVoted && slide.showResultsToStudents;

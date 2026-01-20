@@ -4402,24 +4402,43 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
                   
                   {/* Buttons below slide */}
                   <div className="flex items-center justify-between mt-4">
-                    {/* Nová kapitola - left */}
-                    <button
-                      onClick={(e) => { e.stopPropagation(); openPageSettings('chapter'); }}
-                      className="flex items-center gap-2 px-2 py-1 text-slate-500 hover:text-slate-700 transition-colors"
-                    >
-                      <ListOrdered className="w-4 h-4" />
-                      <span className="text-sm">
-                        {(selectedSlide as any).chapterName || 'Nová kapitola'}
-                      </span>
-                    </button>
+                    {/* Left side: Comments + Nová kapitola */}
+                    <div className="flex items-center gap-1">
+                      {/* Comments button */}
+                      {(() => {
+                        const slideComments = boardComments.filter(c => c.slide_id === selectedSlide.id);
+                        const unreadCount = slideComments.filter(c => !c.is_read).length;
+                        return (
+                          <SlideCommentsPreview
+                            comments={slideComments}
+                            unreadCount={unreadCount}
+                            onOpenPanel={() => {
+                              setPageSettingsSection('comments');
+                              setShowPageSettings(true);
+                            }}
+                          />
+                        );
+                      })()}
+                      
+                      {/* Nová kapitola */}
+                      <button
+                        onClick={(e) => { e.stopPropagation(); openPageSettings('chapter'); }}
+                        className="flex items-center gap-2 px-3 py-2 text-sm text-slate-600 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                      >
+                        <ListOrdered className="w-4 h-4" />
+                        <span>
+                          {(selectedSlide as any).chapterName || 'Nová kapitola'}
+                        </span>
+                      </button>
+                    </div>
                     
                     {/* Přidat poznámku - right */}
                     <button
                       onClick={(e) => { e.stopPropagation(); openPageSettings('note'); }}
-                      className="flex items-center gap-2 px-2 py-1 text-slate-500 hover:text-slate-700 transition-colors"
+                      className="flex items-center gap-2 px-3 py-2 text-sm text-slate-600 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
                     >
                       <MessageSquare className="w-4 h-4" />
-                      <span className="text-sm truncate max-w-[200px]">
+                      <span className="truncate max-w-[200px]">
                         {(selectedSlide as any).note 
                           ? ((selectedSlide as any).note.length > 30 
                               ? (selectedSlide as any).note.substring(0, 30) + '...' 
@@ -4428,25 +4447,6 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
                       </span>
                     </button>
                   </div>
-                  
-                  {/* Comments preview */}
-                  {(() => {
-                    const slideComments = boardComments.filter(c => c.slide_id === selectedSlide.id);
-                    const unreadCount = slideComments.filter(c => !c.is_read).length;
-                    if (slideComments.length > 0) {
-                      return (
-                        <SlideCommentsPreview
-                          comments={slideComments}
-                          unreadCount={unreadCount}
-                          onOpenPanel={() => {
-                            setPageSettingsSection('comments');
-                            setShowPageSettings(true);
-                          }}
-                        />
-                      );
-                    }
-                    return null;
-                  })()}
                 </div>
               ) : (
                 <div className="flex flex-col items-center justify-center h-full text-slate-400">

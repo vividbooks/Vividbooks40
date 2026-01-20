@@ -2,16 +2,16 @@
 import { initializeApp } from 'firebase/app';
 import { getDatabase, ref, set, get, onValue, remove, update, push, serverTimestamp } from 'firebase/database';
 
-// Your Firebase configuration
+// Firebase configuration from environment variables
 const firebaseConfig = {
-  apiKey: "AIzaSyBhZjdioVEcLloJ9rKyMz6UcI7nzGkhKoM",
-  authDomain: "vividbooks-3.firebaseapp.com",
-  databaseURL: "https://vividbooks-3-default-rtdb.europe-west1.firebasedatabase.app",
-  projectId: "vividbooks-3",
-  storageBucket: "vividbooks-3.firebasestorage.app",
-  messagingSenderId: "97293018354",
-  appId: "1:97293018354:web:9bf048ec96ee9c30559c6b",
-  measurementId: "G-F85SR5489S"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  databaseURL: import.meta.env.VITE_FIREBASE_DATABASE_URL,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID
 };
 
 // Initialize Firebase

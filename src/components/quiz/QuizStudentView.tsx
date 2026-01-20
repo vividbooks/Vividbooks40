@@ -777,7 +777,7 @@ export function QuizStudentView() {
             className="flex-1 rounded-full"
             style={{ 
               height: '8px',
-              backgroundColor: '#CBD5E1'
+              backgroundColor: 'rgba(255,255,255,0.2)'
             }}
           />
         ))}
@@ -936,44 +936,30 @@ export function QuizStudentView() {
   }
 
   return (
-    <div className="flex flex-col h-screen" style={{ backgroundColor: '#F0F1F8' }}>
+    <div className="flex flex-col h-screen" style={{ backgroundColor: '#1a1a2e' }}>
       {renderConnectionBanner()}
       
       {/* Desktop: Top bar - height 40px to match margin requirement */}
       <div 
-        className="hidden lg:grid px-6" 
+        className="hidden lg:flex items-end justify-center px-6" 
         style={{ 
-          backgroundColor: '#F0F1F8', 
-          gridTemplateColumns: '1fr auto 1fr',
+          backgroundColor: '#1a1a2e', 
           height: 40,
-          alignItems: 'center',
+          paddingBottom: 8,
         }}
       >
-        {/* Left spacer */}
-        <div />
         {/* Center: Progress bar */}
-        <div className="flex items-center gap-1.5" style={{ width: '500px' }}>
+        <div className="flex items-center gap-1.5" style={{ width: '50%', maxWidth: '600px' }}>
           {renderProgressBar()}
-        </div>
-        {/* Right: Stats */}
-        <div className="flex items-center justify-end gap-4">
-          <div className="flex items-center gap-1.5 text-emerald-600">
-            <CheckCircle className="w-5 h-5" />
-            <span className="font-bold">{correctCount}</span>
-          </div>
-          <div className="flex items-center gap-1.5 text-red-500">
-            <XCircle className="w-5 h-5" />
-            <span className="font-bold">{wrongCount}</span>
-          </div>
         </div>
       </div>
       
       {/* Mobile: Top navigation */}
-      <div className="flex lg:hidden items-center gap-3 px-4 py-4" style={{ backgroundColor: '#F0F1F8' }}>
+      <div className="flex lg:hidden items-center gap-3 px-4 py-4" style={{ backgroundColor: '#1a1a2e' }}>
         <button
           onClick={goToPrevSlide}
           disabled={currentSlideIndex === 0}
-          className={`w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 ${currentSlideIndex === 0 ? 'opacity-30 cursor-not-allowed' : ''} bg-[#CBD5E1] text-slate-600`}
+          className={`w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 ${currentSlideIndex === 0 ? 'opacity-30 cursor-not-allowed' : ''} bg-white/20 text-white/80`}
         >
           <ArrowLeft className="w-5 h-5" />
         </button>
@@ -995,7 +981,7 @@ export function QuizStudentView() {
       <div 
         className="flex-1 flex flex-col overflow-hidden" 
         style={{ 
-          backgroundColor: '#F0F1F8',
+          backgroundColor: '#1a1a2e',
           minHeight: 0,
         }}
       >
@@ -1006,7 +992,7 @@ export function QuizStudentView() {
             <button
               onClick={goToPrevSlide}
               disabled={currentSlideIndex === 0}
-              className={`w-12 h-12 rounded-full bg-[#CBD5E1] flex items-center justify-center text-slate-600 transition-all duration-300 ease-out ${currentSlideIndex === 0 ? 'opacity-30 cursor-not-allowed' : 'hover:h-24'}`}
+              className={`w-12 h-12 rounded-full bg-white/20 flex items-center justify-center text-white/80 transition-all duration-300 ease-out ${currentSlideIndex === 0 ? 'opacity-30 cursor-not-allowed' : 'hover:h-24'}`}
             >
               <ArrowLeft className="w-5 h-5" />
             </button>
@@ -1020,20 +1006,21 @@ export function QuizStudentView() {
               overflowY: isMobile ? 'auto' : 'hidden',
               overflowX: 'hidden',
               WebkitOverflowScrolling: 'touch',
-              // Padding for shadow visibility
-              padding: 16,
+              // Padding for shadow visibility - reduced by 50%
+              padding: 8,
             }}
           >
             <div 
               className={`
-                w-full h-full rounded-3xl shadow-2xl overflow-hidden flex flex-col bg-white
+                w-full rounded-3xl shadow-md overflow-hidden flex flex-col bg-white
                 ${currentSlide?.type !== 'info' ? 'max-w-5xl mx-auto' : ''}
                 ${currentSlideIndex > prevSlideIndex && isAnimating ? 'animate-slide-in' : ''}
                 ${currentSlideIndex < prevSlideIndex && isAnimating ? 'animate-slide-in-left' : ''}
               `}
               style={{
-                // Fill available space exactly - no growing beyond
+                // Fill available space - on mobile, use minHeight to ensure background extends
                 height: isMobile ? 'auto' : '100%',
+                minHeight: isMobile ? 'calc(100vh - 140px)' : undefined,
               }}
               key={currentSlideIndex}
             >

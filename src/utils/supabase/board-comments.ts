@@ -6,6 +6,7 @@
  */
 
 import { supabase } from './client';
+import { supabaseUrl, publicAnonKey } from './info';
 
 // =============================================
 // TYPES
@@ -34,29 +35,54 @@ export interface NewBoardComment {
 
 /**
  * Add a new comment to a slide
+ * Uses direct REST API call to avoid Supabase client auth issues for anonymous users
  */
 export async function addBoardComment(comment: NewBoardComment): Promise<BoardComment | null> {
+  console.log('[BoardComments] Adding comment via REST API:', comment);
+  
   try {
-    const { data, error } = await supabase
-      .from('board_comments')
-      .insert({
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    
+    const response = await fetch(`${supabaseUrl}/rest/v1/board_comments`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': publicAnonKey,
+        'Authorization': `Bearer ${publicAnonKey}`,
+        'Prefer': 'return=representation',
+      },
+      body: JSON.stringify({
         board_id: comment.board_id,
         slide_id: comment.slide_id,
         author_name: comment.author_name?.trim() || null,
         content: comment.content.trim(),
         is_read: false,
-      })
-      .select()
-      .single();
-
-    if (error) {
-      console.error('[BoardComments] Error adding comment:', error);
+      }),
+      signal: controller.signal,
+    });
+    
+    clearTimeout(timeoutId);
+    
+    console.log('[BoardComments] REST API response status:', response.status);
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[BoardComments] REST API error:', response.status, errorText);
       return null;
     }
-
-    return data as BoardComment;
+    
+    const data = await response.json();
+    console.log('[BoardComments] Comment added successfully:', data);
+    
+    // Response is an array with one item
+    return (Array.isArray(data) ? data[0] : data) as BoardComment;
   } catch (e) {
-    console.error('[BoardComments] Exception adding comment:', e);
+    if (e instanceof Error && e.name === 'AbortError') {
+      console.error('[BoardComments] Request timed out after 10s');
+    } else {
+      console.error('[BoardComments] Exception adding comment:', e);
+    }
     return null;
   }
 }
@@ -67,47 +93,86 @@ export async function addBoardComment(comment: NewBoardComment): Promise<BoardCo
 
 /**
  * Get all comments for a board
+ * Uses REST API for reliability on GitHub Pages
  */
 export async function getBoardComments(boardId: string): Promise<BoardComment[]> {
+  console.log('[BoardComments] Fetching comments for board:', boardId);
   try {
-    const { data, error } = await supabase
-      .from('board_comments')
-      .select('*')
-      .eq('board_id', boardId)
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      console.error('[BoardComments] Error fetching comments:', error);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    
+    const response = await fetch(
+      `${supabaseUrl}/rest/v1/board_comments?board_id=eq.${encodeURIComponent(boardId)}&order=created_at.desc`,
+      {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': publicAnonKey,
+          'Authorization': `Bearer ${publicAnonKey}`,
+        },
+        signal: controller.signal,
+      }
+    );
+    
+    clearTimeout(timeoutId);
+    
+    if (!response.ok) {
+      console.error('[BoardComments] REST API error:', response.status);
       return [];
     }
-
+    
+    const data = await response.json();
+    console.log('[BoardComments] Fetched', data.length, 'comments');
     return (data || []) as BoardComment[];
   } catch (e) {
-    console.error('[BoardComments] Exception fetching comments:', e);
+    if (e instanceof Error && e.name === 'AbortError') {
+      console.error('[BoardComments] Request timed out');
+    } else {
+      console.error('[BoardComments] Exception fetching comments:', e);
+    }
     return [];
   }
 }
 
 /**
  * Get comments for a specific slide
+ * Uses REST API for reliability on GitHub Pages
  */
 export async function getSlideComments(boardId: string, slideId: string): Promise<BoardComment[]> {
+  console.log('[BoardComments] Fetching comments for slide:', slideId);
   try {
-    const { data, error } = await supabase
-      .from('board_comments')
-      .select('*')
-      .eq('board_id', boardId)
-      .eq('slide_id', slideId)
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      console.error('[BoardComments] Error fetching slide comments:', error);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    
+    const response = await fetch(
+      `${supabaseUrl}/rest/v1/board_comments?board_id=eq.${encodeURIComponent(boardId)}&slide_id=eq.${encodeURIComponent(slideId)}&order=created_at.desc`,
+      {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': publicAnonKey,
+          'Authorization': `Bearer ${publicAnonKey}`,
+        },
+        signal: controller.signal,
+      }
+    );
+    
+    clearTimeout(timeoutId);
+    
+    if (!response.ok) {
+      console.error('[BoardComments] REST API error:', response.status);
       return [];
     }
-
+    
+    const data = await response.json();
+    console.log('[BoardComments] Fetched', data.length, 'slide comments');
     return (data || []) as BoardComment[];
   } catch (e) {
-    console.error('[BoardComments] Exception fetching slide comments:', e);
+    if (e instanceof Error && e.name === 'AbortError') {
+      console.error('[BoardComments] Request timed out');
+    } else {
+      console.error('[BoardComments] Exception fetching slide comments:', e);
+    }
     return [];
   }
 }

@@ -8,8 +8,8 @@
 import { supabase } from './supabase/client';
 import { projectId, publicAnonKey } from './supabase/info';
 
-// Separátní API klíč pro Text-to-Speech (bez omezení)
-const API_KEY = 'AIzaSyDGUd-SCLfA6epLp9OcFUs8bJRGONo9QnQ';
+// API klíč pro Text-to-Speech z environment variables
+const API_KEY = import.meta.env.VITE_GOOGLE_TTS_API_KEY;
 const SUPABASE_URL = `https://${projectId}.supabase.co`;
 
 // České hlasy dostupné v Google TTS

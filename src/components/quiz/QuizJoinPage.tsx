@@ -189,6 +189,9 @@ export function QuizJoinPage() {
   
   // Mobile detection
   const [isMobile, setIsMobile] = useState(false);
+  const [isScrolling, setIsScrolling] = useState(false);
+  const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const mobileScrollRef = useRef<HTMLDivElement>(null);
   
   useEffect(() => {
     const checkMobile = () => setIsMobile(window.innerWidth < 768);
@@ -203,6 +206,8 @@ export function QuizJoinPage() {
   const [school, setSchool] = useState('');
   const [error, setError] = useState('');
   const [isJoining, setIsJoining] = useState(false);
+  const [boardTitle, setBoardTitle] = useState<string | null>(null);
+  const [isLookingUpBoard, setIsLookingUpBoard] = useState(false);
   
   // Session state
   const [isJoined, setIsJoined] = useState(false);
@@ -210,6 +215,41 @@ export function QuizJoinPage() {
   const [studentId, setStudentId] = useState<string | null>(null);
   const [session, setSession] = useState<LiveQuizSession | null>(null);
   const [quiz, setQuiz] = useState<Quiz | null>(null);
+  
+  // Track scrolling for floating nav visibility (must be after isJoined is defined)
+  useEffect(() => {
+    if (!isJoined || !isMobile) return;
+    
+    // Wait a bit for ref to be set after render
+    const timeout = setTimeout(() => {
+      const scrollEl = mobileScrollRef.current;
+      if (!scrollEl) return;
+      
+      const handleScroll = () => {
+        setIsScrolling(true);
+        if (scrollTimeoutRef.current) {
+          clearTimeout(scrollTimeoutRef.current);
+        }
+        scrollTimeoutRef.current = setTimeout(() => {
+          setIsScrolling(false);
+        }, 2000);
+      };
+      
+      scrollEl.addEventListener('scroll', handleScroll, { passive: true });
+      
+      // Cleanup stored for outer effect
+      (scrollEl as any)._scrollHandler = handleScroll;
+    }, 100);
+    
+    return () => {
+      clearTimeout(timeout);
+      const scrollEl = mobileScrollRef.current;
+      if (scrollEl && (scrollEl as any)._scrollHandler) {
+        scrollEl.removeEventListener('scroll', (scrollEl as any)._scrollHandler);
+      }
+      if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
+    };
+  }, [isMobile, isJoined]);
   
   // Quiz progress
   const [responses, setResponses] = useState<SlideResponse[]>([]);
@@ -276,6 +316,61 @@ export function QuizJoinPage() {
       window.removeEventListener('offline', handleOffline);
     };
   }, [sessionId, studentId]);
+
+  // ============================================
+  // LIVE BOARD TITLE LOOKUP
+  // ============================================
+  
+  useEffect(() => {
+    // Only lookup when code is complete (6 chars)
+    if (code.length !== 6) {
+      setBoardTitle(null);
+      return;
+    }
+    
+    const lookupBoardTitle = async () => {
+      setIsLookingUpBoard(true);
+      try {
+        // Try lookup table first
+        const codeUpper = code.toUpperCase();
+        const lookupRef = ref(database, `session_codes/${codeUpper}`);
+        const lookupSnapshot = await get(lookupRef);
+        
+        if (lookupSnapshot.exists()) {
+          const sessionId = lookupSnapshot.val() as string;
+          const quizDataRef = ref(database, `${QUIZ_SESSIONS_PATH}/${sessionId}/quizData/title`);
+          const titleSnapshot = await get(quizDataRef);
+          if (titleSnapshot.exists()) {
+            setBoardTitle(titleSnapshot.val() as string);
+            setIsLookingUpBoard(false);
+            return;
+          }
+        }
+        
+        // Fallback: search all sessions (slower)
+        const sessionsRef = ref(database, QUIZ_SESSIONS_PATH);
+        const snapshot = await get(sessionsRef);
+        if (snapshot.exists()) {
+          const sessions = snapshot.val();
+          const entry = Object.entries(sessions).find(([id]) => 
+            id.includes(`quiz_${codeUpper}_`)
+          );
+          if (entry) {
+            const [, sessionData] = entry as [string, any];
+            if (sessionData?.quizData?.title) {
+              setBoardTitle(sessionData.quizData.title);
+            }
+          }
+        }
+      } catch (e) {
+        console.log('Board title lookup failed:', e);
+      } finally {
+        setIsLookingUpBoard(false);
+      }
+    };
+    
+    lookupBoardTitle();
+  }, [code]);
 
   // ============================================
   // AUTO-RECONNECT ON PAGE LOAD
@@ -611,29 +706,47 @@ export function QuizJoinPage() {
       // Get or create student identity
       const identity = getStudentIdentity(name);
       
-      const sessionsRef = ref(database, QUIZ_SESSIONS_PATH);
-      const snapshot = await get(sessionsRef);
+      // OPTIMIZED: First try to find session via lookup table
+      const codeUpper = code.toUpperCase();
+      const lookupRef = ref(database, `session_codes/${codeUpper}`);
+      const lookupSnapshot = await get(lookupRef);
       
-      if (!snapshot.exists()) {
-        setError('Session nenalezena');
-        setIsJoining(false);
-        return;
+      let foundSessionId: string | null = null;
+      let sessionData: LiveQuizSession | null = null;
+      
+      if (lookupSnapshot.exists()) {
+        // Fast path: Use lookup table
+        foundSessionId = lookupSnapshot.val() as string;
+        const sessionRef = ref(database, `${QUIZ_SESSIONS_PATH}/${foundSessionId}`);
+        const sessionSnapshot = await get(sessionRef);
+        if (sessionSnapshot.exists()) {
+          sessionData = sessionSnapshot.val() as LiveQuizSession;
+        }
       }
       
-      const sessions = snapshot.val();
+      // Fallback: Search by session ID prefix (for older sessions without lookup)
+      if (!foundSessionId || !sessionData) {
+        console.log('[QuizJoin] Lookup not found, using prefix search...');
+        const sessionsRef = ref(database, QUIZ_SESSIONS_PATH);
+        const snapshot = await get(sessionsRef);
+        
+        if (snapshot.exists()) {
+          const sessions = snapshot.val();
+          const sessionEntry = Object.entries(sessions).find(([id, _]) => 
+            id.includes(`quiz_${codeUpper}_`)
+          );
+          
+          if (sessionEntry) {
+            [foundSessionId, sessionData] = sessionEntry as [string, LiveQuizSession];
+          }
+        }
+      }
       
-      // Find session with matching code
-      const sessionEntry = Object.entries(sessions).find(([id, _]) => 
-        id.includes(`quiz_${code.toUpperCase()}_`)
-      );
-      
-      if (!sessionEntry) {
+      if (!foundSessionId || !sessionData) {
         setError('Neplatný kód');
         setIsJoining(false);
         return;
       }
-      
-      const [foundSessionId, sessionData] = sessionEntry as [string, LiveQuizSession];
       
       if (!sessionData.isActive) {
         setError('Session již skončila');
@@ -970,15 +1083,27 @@ export function QuizJoinPage() {
               <Users className="w-8 h-8 text-white" />
             </div>
             <h1 className="text-2xl font-bold text-slate-800">
-              Připojte se do soutěže!
+              {boardTitle ? (
+                <>Připojte se do: <span className="text-indigo-600">{boardTitle}</span></>
+              ) : (
+                'Připojte se'
+              )}
             </h1>
-            <p className="text-slate-500 mt-1">Zadej kód od učitele</p>
+            {!code && (
+              <p className="text-slate-500 mt-1">Zadej kód od učitele</p>
+            )}
+            {isLookingUpBoard && code.length === 6 && (
+              <p className="text-slate-400 mt-1 text-sm flex items-center justify-center gap-2">
+                <RefreshCw className="w-3 h-3 animate-spin" />
+                Hledám relaci...
+              </p>
+            )}
           </div>
           
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-2">
-                Kód session
+                Kód relace
               </label>
               <input
                 type="text"
@@ -999,19 +1124,6 @@ export function QuizJoinPage() {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Jan Novák"
-                className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none text-lg"
-              />
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-2">
-                Jméno školy
-              </label>
-              <input
-                type="text"
-                value={school}
-                onChange={(e) => setSchool(e.target.value)}
-                placeholder="ZŠ Příklad"
                 className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none text-lg"
               />
             </div>
@@ -1137,140 +1249,82 @@ export function QuizJoinPage() {
   // RENDER: PROGRESS BAR
   // ============================================
   
-  const renderProgressBar = () => (
-    <>
-      {currentSlideIndex >= 0 && (
-        <div
-          className="rounded-full"
-          style={{ 
-            height: '8px',
-            backgroundColor: '#475569',
-            flex: currentSlideIndex + 1
-          }}
-        />
-      )}
-      {quiz.slides.slice(currentSlideIndex + 1).map((_, idx) => {
-        const actualIndex = currentSlideIndex + 1 + idx;
-        return (
-          <div
-            key={actualIndex}
-            className="flex-1 rounded-full"
+  const renderProgressBar = () => {
+    const totalSlides = quiz.slides.length;
+    const progressPercent = totalSlides > 0 ? ((currentSlideIndex + 1) / totalSlides) * 100 : 0;
+    
+    // For more than 30 slides, show a simple continuous progress bar
+    if (totalSlides > 30) {
+      return (
+        <div 
+          className="flex-1 h-full rounded-full overflow-hidden"
+          style={{ backgroundColor: 'rgba(255,255,255,0.2)' }}
+        >
+          <div 
+            className="h-full rounded-full transition-all duration-300 ease-out"
             style={{ 
-              height: '8px',
-              backgroundColor: '#CBD5E1'
+              width: `${progressPercent}%`,
+              backgroundColor: '#7C3AED'
             }}
           />
-        );
-      })}
-    </>
-  );
+        </div>
+      );
+    }
+    
+    // For 30 or fewer slides, show individual segments
+    return (
+      <>
+        {currentSlideIndex >= 0 && (
+          <div
+            className="rounded-full h-full"
+            style={{ 
+              backgroundColor: '#7C3AED',
+              flex: currentSlideIndex + 1
+            }}
+          />
+        )}
+        {quiz.slides.slice(currentSlideIndex + 1).map((_, idx) => {
+          const actualIndex = currentSlideIndex + 1 + idx;
+          return (
+            <div
+              key={actualIndex}
+              className="flex-1 rounded-full h-full"
+              style={{ 
+                backgroundColor: 'rgba(255,255,255,0.2)'
+              }}
+            />
+          );
+        })}
+      </>
+    );
+  };
 
   // ============================================
   // RENDER: QUIZ VIEW
   // ============================================
   
   return (
-    <div className="flex flex-col h-screen" style={{ backgroundColor: '#F0F1F8' }}>
+    <div className="flex flex-col h-screen" style={{ backgroundColor: '#1a1a2e' }}>
       {renderConnectionBanner()}
       
-      {/* Progress bar header - height 40px on desktop, hidden on mobile (use lg: breakpoint consistently) */}
+      {/* Progress bar header - height 40px on desktop only */}
       <div 
         className="hidden lg:flex items-center justify-center px-4" 
         style={{ 
-          backgroundColor: '#F0F1F8',
+          backgroundColor: '#1a1a2e',
           height: 40,
         }}
       >
         {/* Progress bar - centered with max width */}
-        <div className="flex items-center gap-1.5" style={{ width: '300px', maxWidth: '50%' }}>
+        <div className="flex items-center gap-1.5" style={{ width: '50%', maxWidth: '600px', height: '8px' }}>
           {renderProgressBar()}
         </div>
-        {/* Stats */}
-        <div className="flex items-center gap-3 ml-4">
-          {/* Online students indicator */}
-          <div className="flex items-center gap-1 text-indigo-600" title="Připojení studenti">
-            <Users className="w-4 h-4" />
-            <span className="font-semibold text-sm">{onlineStudentsCount}</span>
-          </div>
-          <div className="flex items-center gap-1 text-emerald-600">
-            <CheckCircle className="w-4 h-4" />
-            <span className="font-semibold text-sm">{correctCount}</span>
-          </div>
-          <div className="flex items-center gap-1 text-red-500">
-            <XCircle className="w-4 h-4" />
-            <span className="font-semibold text-sm">{wrongCount}</span>
-          </div>
-        </div>
       </div>
-      
-      {/* Mobile: Progress bar only (locked mode) */}
-      {!canNavigate && (
-        <div className="flex lg:hidden items-center justify-center gap-3 px-4 py-2">
-          <div className="flex-1 flex items-center gap-1.5" style={{ maxWidth: '300px' }}>
-            {renderProgressBar()}
-          </div>
-          <div className="flex items-center gap-2 flex-shrink-0">
-            {/* Online students indicator */}
-            <div className="flex items-center gap-1 text-indigo-600" title="Připojení studenti">
-              <Users className="w-4 h-4" />
-              <span className="font-semibold text-sm">{onlineStudentsCount}</span>
-            </div>
-            <div className="flex items-center gap-1 text-emerald-600">
-              <CheckCircle className="w-4 h-4" />
-              <span className="font-semibold text-sm">{correctCount}</span>
-            </div>
-            <div className="flex items-center gap-1 text-red-500">
-              <XCircle className="w-4 h-4" />
-              <span className="font-semibold text-sm">{wrongCount}</span>
-            </div>
-          </div>
-        </div>
-      )}
-      
-      {/* Mobile: Navigation arrows for unlocked mode */}
-      {canNavigate && (
-        <div className="flex lg:hidden items-center gap-2 px-4 py-2">
-          <button
-            onClick={goToPrevSlide}
-            disabled={currentSlideIndex === 0}
-            className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${currentSlideIndex === 0 ? 'opacity-30 cursor-not-allowed' : ''} bg-[#CBD5E1] text-slate-600`}
-          >
-            <ArrowLeft className="w-5 h-5" />
-          </button>
-          <div className="flex-1 flex items-center gap-1.5">
-            {renderProgressBar()}
-          </div>
-          {/* Stats */}
-          <div className="flex items-center gap-2 flex-shrink-0">
-            {/* Online students indicator */}
-            <div className="flex items-center gap-1 text-indigo-600" title="Připojení studenti">
-              <Users className="w-4 h-4" />
-              <span className="font-semibold text-sm">{onlineStudentsCount}</span>
-            </div>
-            <div className="flex items-center gap-1 text-emerald-600">
-              <CheckCircle className="w-4 h-4" />
-              <span className="font-semibold text-sm">{correctCount}</span>
-            </div>
-            <div className="flex items-center gap-1 text-red-500">
-              <XCircle className="w-4 h-4" />
-              <span className="font-semibold text-sm">{wrongCount}</span>
-            </div>
-          </div>
-          <button
-            onClick={() => (currentSlideIndex < quiz.slides.length - 1 && canProceed) ? goToNextSlide() : (!canProceed ? triggerWiggle() : null)}
-            className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 transition-all duration-300 ${(currentSlideIndex === quiz.slides.length - 1 || !canProceed) ? 'bg-slate-300 text-slate-400' : 'text-white'}`}
-            style={{ backgroundColor: (currentSlideIndex < quiz.slides.length - 1 && canProceed) ? '#7C3AED' : undefined }}
-          >
-            <ArrowRight className="w-5 h-5" />
-          </button>
-        </div>
-      )}
       
       {/* Main content area */}
       <div 
         className="flex-1 flex flex-col overflow-hidden" 
         style={{ 
-          backgroundColor: '#F0F1F8',
           minHeight: 0,
         }}
       >
@@ -1282,7 +1336,7 @@ export function QuizJoinPage() {
               <button
                 onClick={goToPrevSlide}
                 disabled={currentSlideIndex === 0}
-                className={`w-12 h-12 rounded-full bg-[#CBD5E1] flex items-center justify-center text-slate-600 transition-all duration-300 ease-out ${currentSlideIndex === 0 ? 'opacity-30 cursor-not-allowed' : 'hover:h-24'}`}
+                className={`w-12 h-12 rounded-full bg-white/20 flex items-center justify-center text-white/80 transition-all duration-300 ease-out ${currentSlideIndex === 0 ? 'opacity-30 cursor-not-allowed' : 'hover:h-24'}`}
               >
                 <ArrowLeft className="w-5 h-5" />
               </button>
@@ -1291,32 +1345,75 @@ export function QuizJoinPage() {
           
           {/* Slide card - fills remaining space */}
           <div 
-            className="flex-1"
+            ref={mobileScrollRef}
+            className="flex-1 relative"
             style={{
               minHeight: 0,
               overflowY: isMobile ? 'auto' : 'hidden',
               overflowX: 'hidden',
               WebkitOverflowScrolling: 'touch',
-              // Padding for shadow visibility
-              padding: 16,
+              // Padding - top for nav (smaller if locked mode), sides for shadow - reduced by 50%
+              padding: isMobile ? (canNavigate ? '75px 8px 8px 8px' : '50px 8px 8px 8px') : 8,
             }}
           >
+            {/* Mobile: Fixed top navigation */}
+            {isMobile && (
+              <div 
+                className="fixed top-0 left-0 right-0 z-50 flex justify-center pt-3 pb-2"
+              >
+                {/* Locked mode: only progress bar */}
+                {!canNavigate ? (
+                  <div 
+                    className={`rounded-full px-6 py-3 transition-all duration-300 ${isScrolling ? 'bg-white shadow-lg' : ''}`}
+                  >
+                    <div className="flex items-center gap-0.5" style={{ height: '8px', width: '150px' }}>
+                      {renderProgressBar()}
+                    </div>
+                  </div>
+                ) : (
+                  /* Unlocked mode: buttons + progress bar */
+                  <div 
+                    className={`flex items-center gap-3 rounded-full px-4 py-2 transition-all duration-300 ${isScrolling ? 'bg-white shadow-lg' : ''}`}
+                  >
+                    <button
+                      onClick={goToPrevSlide}
+                      disabled={currentSlideIndex === 0}
+                      className={`w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 ${currentSlideIndex === 0 ? 'opacity-30 cursor-not-allowed' : ''} bg-[#E2E8F0] text-slate-500`}
+                    >
+                      <ArrowLeft className="w-6 h-6" />
+                    </button>
+                    <div className="flex items-center gap-0.5" style={{ height: '8px', width: '120px' }}>
+                      {renderProgressBar()}
+                    </div>
+                    <button
+                      onClick={() => (currentSlideIndex < quiz.slides.length - 1 && canProceed) ? goToNextSlide() : (!canProceed ? triggerWiggle() : null)}
+                      className={`w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 transition-all duration-300 ${(currentSlideIndex === quiz.slides.length - 1 || !canProceed) ? 'bg-slate-300 text-slate-400' : 'text-white'}`}
+                      style={{ backgroundColor: (currentSlideIndex < quiz.slides.length - 1 && canProceed) ? '#7C3AED' : undefined }}
+                    >
+                      <ArrowRight className="w-6 h-6" />
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
             <div 
               className={`
-                w-full h-full rounded-3xl shadow-2xl overflow-hidden flex flex-col bg-white
+                w-full rounded-3xl shadow-md overflow-hidden flex flex-col bg-white
                 ${currentSlide?.type !== 'info' ? 'max-w-5xl mx-auto' : ''}
                 ${currentSlideIndex > prevSlideIndex && isAnimating ? 'animate-slide-in' : ''}
                 ${currentSlideIndex < prevSlideIndex && isAnimating ? 'animate-slide-in-left' : ''}
               `}
               style={{
-                // Fill available space exactly - no growing beyond
+                // Mobile: min height to ensure background extends to viewport
+                // Desktop: fill available space
                 height: isMobile ? 'auto' : '100%',
+                minHeight: isMobile ? 'calc(100vh - 140px)' : undefined,
               }}
               key={currentSlideIndex}
             >
               {/* Info slide with block layout - render ONLY BlockLayoutView */}
               {currentSlide.type === 'info' && (currentSlide as InfoSlide).layout && (currentSlide as InfoSlide).layout!.blocks.length > 0 ? (
-                <div className="flex-1 flex flex-col" style={{ minHeight: 0 }}>
+                <div className="flex-1 flex flex-col" style={{ minHeight: isMobile ? '100%' : 0, height: '100%' }}>
                   <BlockLayoutView slide={currentSlide as InfoSlide} />
                 </div>
               ) : (

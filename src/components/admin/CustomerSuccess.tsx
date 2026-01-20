@@ -4592,8 +4592,8 @@ const NPSManualInput: React.FC<{ onSubmit: (score: number, feedback: string) => 
 // UPOZORNĚNÍ VIEW
 // ============================================
 
-// Gemini API klíč
-const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || 'AIzaSyDcPJrEcxThsVskj2LvYf6VB3mGTM45Ih0';
+// Gemini API klíč z environment variables
+const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
 
 interface AlertsViewProps {
   alerts: typeof DEMO_ALERTS;

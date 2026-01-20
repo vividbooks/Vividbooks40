@@ -79,8 +79,8 @@ export async function generateExamplesFromSample(
 ): Promise<GenerateExamplesResult> {
   const { count = 15, difficultyProgression = true } = options;
   
-  // Gemini API klíč
-  const apiKey = import.meta.env.VITE_GEMINI_API_KEY || 'AIzaSyDcPJrEcxThsVskj2LvYf6VB3mGTM45Ih0';
+  // Gemini API klíč z environment variables
+  const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
 
   const easyCount = Math.floor(count / 3);
   const mediumCount = Math.floor(count / 3);

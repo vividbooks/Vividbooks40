@@ -127,6 +127,10 @@ export function TeacherSession({ quiz, teacherId, teacherName, onClose }: Teache
         title: quiz.title,
         slides: optimizedSlides,
       });
+      
+      // Create lookup table entry for fast session lookup by code
+      await set(ref(database, `session_codes/${code}`), newSessionId);
+      
       console.log('Session started successfully:', newSessionId);
       setSessionId(newSessionId);
       setSessionCode(code);

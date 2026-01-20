@@ -1348,13 +1348,15 @@ export function SlideBlockEditor({
                   );
 
                 case 'embed':
+                  // Convert http:// to https:// to avoid mixed content errors
+                  const secureEmbedUrl = url.startsWith('http://') ? url.replace('http://', 'https://') : url;
                   return (
                     <div 
                       className="absolute inset-0 w-full h-full overflow-hidden bg-slate-50"
                       style={{ borderRadius }}
                     >
                       <iframe
-                        src={url}
+                        src={secureEmbedUrl}
                         className="w-full h-full border-none"
                         title="Embedded content"
                         sandbox="allow-scripts allow-same-origin allow-forms allow-popups"

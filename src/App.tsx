@@ -527,6 +527,11 @@ export default function App() {
           path="/quiz/join/:code" 
           element={<QuizJoinPage />} 
         />
+        {/* Short URL for joining - redirects to /quiz/join/:code */}
+        <Route 
+          path="/go/:code" 
+          element={<QuizJoinPage />} 
+        />
         <Route 
           path="/quiz/results/:sessionId" 
           element={<QuizResultsPage />} 

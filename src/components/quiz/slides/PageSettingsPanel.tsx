@@ -59,8 +59,9 @@ const NoteIcon = ({ size = 20, className = "" }: { size?: number, className?: st
   </svg>
 );
 
-// Import BoardComment type
-import { BoardComment, markSlideCommentsAsRead, deleteComment as deleteBoardComment } from '../../../utils/supabase/board-comments';
+// Import BoardComment type and functions
+import { BoardComment, markSlideCommentsAsRead, deleteComment as deleteBoardComment, addBoardComment } from '../../../utils/supabase/board-comments';
+import { Send, Loader2 } from 'lucide-react';
 
 interface PageSettingsPanelProps {
   slide: QuizSlide;
@@ -223,10 +224,36 @@ export function PageSettingsPanel({ slide, onClose, onUpdate, onTypeChange, init
   const [expandedSection, setExpandedSection] = useState<SectionId | null>(initialSection || null);
   const [showActivitiesList, setShowActivitiesList] = useState(initialShowActivitiesList || false);
   const [deletingCommentId, setDeletingCommentId] = useState<string | null>(null);
+  const [newCommentContent, setNewCommentContent] = useState('');
+  const [submittingComment, setSubmittingComment] = useState(false);
   
   // Filter comments for current slide
   const slideComments = comments.filter(c => c.slide_id === slide.id);
   const unreadCount = slideComments.filter(c => !c.is_read).length;
+  
+  // Handle adding new comment
+  const handleAddComment = async () => {
+    if (!boardId || !newCommentContent.trim()) return;
+    
+    setSubmittingComment(true);
+    try {
+      const result = await addBoardComment({
+        board_id: boardId,
+        slide_id: slide.id,
+        author_name: 'Autor', // Could be made configurable
+        content: newCommentContent.trim(),
+      });
+      
+      if (result) {
+        setNewCommentContent('');
+        onCommentsUpdated?.();
+      }
+    } catch (e) {
+      console.error('Error adding comment:', e);
+    } finally {
+      setSubmittingComment(false);
+    }
+  };
 
   // Update expanded section when initialSection changes
   useEffect(() => {
@@ -757,51 +784,76 @@ export function PageSettingsPanel({ slide, onClose, onUpdate, onTypeChange, init
         </AccordionSection>
 
         {/* 7. Komentáře od návštěvníků */}
-        {slideComments.length > 0 && (
-          <AccordionSection 
-            id="comments" 
-            icon={MessageSquare} 
-            title="Komentáře" 
-            value={
-              <span className="flex items-center gap-1.5">
-                {slideComments.length}
-                {unreadCount > 0 && (
-                  <span className="px-1.5 py-0.5 text-xs font-bold text-white bg-red-500 rounded-full">
-                    {unreadCount}
-                  </span>
-                )}
-              </span>
-            }
-            isExpanded={expandedSection === 'comments'}
-            onToggle={(id) => {
-              toggleSection(id);
-              // Mark comments as read when opening
-              if (id === 'comments' && boardId && unreadCount > 0) {
-                markSlideCommentsAsRead(boardId, slide.id).then(() => {
-                  onCommentsUpdated?.();
-                });
-              }
-            }}
-          >
-            <div className="pt-2 space-y-3">
-              {/* Mark all as read button */}
+        <AccordionSection 
+          id="comments" 
+          icon={MessageSquare} 
+          title="Komentáře" 
+          value={
+            <span className="flex items-center gap-1.5">
+              {slideComments.length || '-'}
               {unreadCount > 0 && (
-                <button
-                  onClick={async () => {
-                    if (boardId) {
-                      await markSlideCommentsAsRead(boardId, slide.id);
-                      onCommentsUpdated?.();
-                    }
-                  }}
-                  className="w-full py-2 px-3 text-sm text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg flex items-center justify-center gap-2 transition-colors"
-                >
-                  <CheckCheck className="w-4 h-4" />
-                  Označit vše jako přečtené
-                </button>
+                <span className="px-1.5 py-0.5 text-xs font-bold text-white bg-red-500 rounded-full">
+                  {unreadCount}
+                </span>
               )}
-              
-              {/* Comments list */}
-              <div className="space-y-2 max-h-[400px] overflow-y-auto">
+            </span>
+          }
+          isExpanded={expandedSection === 'comments'}
+          onToggle={(id) => {
+            toggleSection(id);
+            // Mark comments as read when opening
+            if (id === 'comments' && boardId && unreadCount > 0) {
+              markSlideCommentsAsRead(boardId, slide.id).then(() => {
+                onCommentsUpdated?.();
+              });
+            }
+          }}
+        >
+          <div className="pt-2 space-y-3">
+            {/* Add new comment form */}
+            <div className="space-y-2">
+              <textarea
+                value={newCommentContent}
+                onChange={(e) => setNewCommentContent(e.target.value)}
+                placeholder="Napište komentář..."
+                rows={2}
+                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+              />
+              <button
+                onClick={handleAddComment}
+                disabled={!newCommentContent.trim() || submittingComment}
+                className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white text-sm font-medium rounded-lg flex items-center justify-center gap-2 transition-colors"
+              >
+                {submittingComment ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <>
+                    <Send className="w-4 h-4" />
+                    Přidat komentář
+                  </>
+                )}
+              </button>
+            </div>
+            
+            {/* Mark all as read button */}
+            {unreadCount > 0 && (
+              <button
+                onClick={async () => {
+                  if (boardId) {
+                    await markSlideCommentsAsRead(boardId, slide.id);
+                    onCommentsUpdated?.();
+                  }
+                }}
+                className="w-full py-2 px-3 text-sm text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg flex items-center justify-center gap-2 transition-colors"
+              >
+                <CheckCheck className="w-4 h-4" />
+                Označit vše jako přečtené
+              </button>
+            )}
+            
+            {/* Comments list */}
+            {slideComments.length > 0 ? (
+              <div className="space-y-2 max-h-[300px] overflow-y-auto">
                 {slideComments.map((comment) => (
                   <div 
                     key={comment.id}
@@ -852,15 +904,13 @@ export function PageSettingsPanel({ slide, onClose, onUpdate, onTypeChange, init
                   </div>
                 ))}
               </div>
-              
-              {slideComments.length === 0 && (
-                <p className="text-center text-sm text-slate-400 py-4">
-                  Žádné komentáře k tomuto slidu
-                </p>
-              )}
-            </div>
-          </AccordionSection>
-        )}
+            ) : (
+              <p className="text-center text-sm text-slate-400 py-4">
+                Žádné komentáře k tomuto slidu
+              </p>
+            )}
+          </div>
+        </AccordionSection>
       </div>
     </div>
   );

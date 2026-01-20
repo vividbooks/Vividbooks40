@@ -3,24 +3,29 @@
   <head>
     <meta charset="utf-8">
     <title>Vividbooks</title>
-    <script type="text/javascript">
-      // Single Page Apps for GitHub Pages
-      // MIT License
-      // https://github.com/rafgraph/spa-github-pages
-      var pathSegmentsToKeep = 1;
-
+    <script>
+      // Single Page App redirect for GitHub Pages
+      // Converts path to query string and redirects to index.html
+      // e.g., /quiz/public/123 -> /?p=/quiz/public/123
+      var pathSegmentsToKeep = 1; // Keep /Vividbooks40/
       var l = window.location;
-      l.replace(
-        l.protocol + '//' + l.hostname + (l.port ? ':' + l.port : '') +
-        l.pathname.split('/').slice(0, 1 + pathSegmentsToKeep).join('/') + '/?/' +
-        l.pathname.slice(1).split('/').slice(pathSegmentsToKeep).join('/').replace(/&/g, '~and~') +
-        (l.search ? '&' + l.search.slice(1).replace(/&/g, '~and~') : '') +
-        l.hash
-      );
+      var repo = l.pathname.split('/')[1]; // Get repo name (Vividbooks40)
+      var path = l.pathname.slice(('/' + repo).length); // Get path after repo
+      
+      if (path && path !== '/') {
+        l.replace(
+          l.protocol + '//' + l.hostname + (l.port ? ':' + l.port : '') +
+          '/' + repo + '/?p=' + encodeURIComponent(path) +
+          (l.search ? '&q=' + encodeURIComponent(l.search.slice(1)) : '') +
+          l.hash
+        );
+      } else {
+        // Just redirect to home
+        l.replace(l.protocol + '//' + l.hostname + (l.port ? ':' + l.port : '') + '/' + repo + '/');
+      }
     </script>
   </head>
   <body>
+    <p>Redirecting...</p>
   </body>
 </html>
-
-
