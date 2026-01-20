@@ -7,10 +7,17 @@
     <title>Vividbooks</title>
     <script type="text/javascript">
       // Single Page Apps for GitHub Pages
-      // MIT License
-      // https://github.com/rafgraph/spa-github-pages
+      // Handle redirect from 404.html
       (function(l) {
-        if (l.search[1] === '/' ) {
+        // Handle ?p= redirect from 404.html
+        var params = new URLSearchParams(l.search);
+        var redirectPath = params.get('p');
+        if (redirectPath) {
+          var newUrl = l.pathname.replace(/\/$/, '') + redirectPath + l.hash;
+          window.history.replaceState(null, null, newUrl);
+        }
+        // Also handle legacy ?/ format
+        else if (l.search[1] === '/' ) {
           var decoded = l.search.slice(1).split('&').map(function(s) { 
             return s.replace(/~and~/g, '&')
           }).join('?');
@@ -24,7 +31,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Itim&family=Lora:ital,wght@0,400..700;1,400..700&family=Oswald:wght@200..700&family=Playfair+Display:ital,wght@0,400..900;1,400..900&family=Sacramento&family=Sora:wght@100..800&family=Space+Grotesk:wght@300..700&display=swap" rel="stylesheet">
-    <script type="module" crossorigin src="/Vividbooks40/assets/index-COmVPVUd.js"></script>
+    <script type="module" crossorigin src="/Vividbooks40/assets/index-CK257OFM.js"></script>
     <link rel="stylesheet" crossorigin href="/Vividbooks40/assets/index-6GQMwS85.css">
   </head>
   <body>
