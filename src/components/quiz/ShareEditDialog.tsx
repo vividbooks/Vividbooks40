@@ -16,7 +16,9 @@ import {
   MessageSquare,
   ExternalLink,
   LogIn,
+  Loader2,
 } from 'lucide-react';
+import { setBoardPublic } from '../../utils/quiz-storage';
 
 interface ShareEditDialogProps {
   isOpen: boolean;
@@ -30,6 +32,7 @@ type ShareMode = 'login' | 'public';
 export function ShareEditDialog({ isOpen, onClose, boardId, boardTitle }: ShareEditDialogProps) {
   const [selectedMode, setSelectedMode] = useState<ShareMode>('public');
   const [copied, setCopied] = useState(false);
+  const [isSettingPublic, setIsSettingPublic] = useState(false);
 
   if (!isOpen) return null;
 
@@ -45,11 +48,22 @@ export function ShareEditDialog({ isOpen, onClose, boardId, boardTitle }: ShareE
 
   const copyToClipboard = async () => {
     try {
+      // If public mode, mark the board as public first
+      if (selectedMode === 'public') {
+        setIsSettingPublic(true);
+        const success = await setBoardPublic(boardId, true);
+        setIsSettingPublic(false);
+        if (!success) {
+          console.warn('Failed to set board as public, but continuing with copy');
+        }
+      }
+      
       await navigator.clipboard.writeText(getShareUrl());
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch (e) {
       console.error('Failed to copy:', e);
+      setIsSettingPublic(false);
     }
   };
 

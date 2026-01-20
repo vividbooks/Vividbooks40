@@ -18,6 +18,8 @@ const DELETED_IDS_KEY = 'vividbooks_deleted_quiz_ids';
 // Supabase config for direct fetch calls
 const SUPABASE_URL = 'https://njbtqmsxbyvpwigfceke.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5qYnRxbXN4Ynl2cHdpZ2ZjZWtlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI4MzczODksImV4cCI6MjA3ODQxMzM4OX0.nY0THq2YU9wrjYsPoxYwXRXczE3Vh7cB1opzAV8c50g';
+const SUPABASE_PROJECT_ID = 'njbtqmsxbyvpwigfceke';
+const SUPABASE_ANON_KEY = SUPABASE_KEY;
 
 // Track which quiz IDs exist in Supabase
 let supabaseQuizIds = new Set<string>();
@@ -545,6 +547,114 @@ export async function getQuizAsync(id: string): Promise<Quiz | null> {
   } catch (error) {
     console.error('[QuizStorage] getQuizAsync error:', error);
     return null;
+  }
+}
+
+/**
+ * Načíst veřejný board bez nutnosti přihlášení
+ * Používá se pro PublicBoardViewer
+ */
+export async function getPublicQuizAsync(id: string): Promise<Quiz | null> {
+  try {
+    console.log('[QuizStorage] getPublicQuizAsync: fetching public board:', id);
+    
+    // Fetch from Supabase without authentication (uses anon key only)
+    // This relies on RLS policy: "Anyone can view public boards" where is_public = true
+    const response = await fetch(
+      `${SUPABASE_URL}/rest/v1/teacher_boards?id=eq.${id}&is_public=eq.true&select=*`,
+      {
+        headers: {
+          'apikey': SUPABASE_KEY,
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+    
+    if (!response.ok) {
+      console.warn('[QuizStorage] getPublicQuizAsync: fetch failed:', response.status);
+      return null;
+    }
+    
+    const data = await response.json();
+    if (!data || data.length === 0) {
+      console.log('[QuizStorage] getPublicQuizAsync: not found or not public:', id);
+      return null;
+    }
+    
+    const row = data[0];
+    const quiz: Quiz = {
+      id: row.id,
+      title: row.title || 'Bez názvu',
+      subject: row.subject || undefined,
+      grade: row.grade || undefined,
+      slides: row.slides || [],
+      settings: row.settings || {},
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
+    
+    console.log('[QuizStorage] getPublicQuizAsync: loaded public board:', id, quiz.title);
+    return quiz;
+  } catch (error) {
+    console.error('[QuizStorage] getPublicQuizAsync error:', error);
+    return null;
+  }
+}
+
+/**
+ * Nastavit board jako veřejný (pro sdílení)
+ */
+export async function setBoardPublic(id: string, isPublic: boolean): Promise<boolean> {
+  try {
+    console.log('[QuizStorage] setBoardPublic:', id, isPublic);
+    
+    const userId = await getCurrentUserId();
+    if (!userId) {
+      console.warn('[QuizStorage] setBoardPublic: no user logged in');
+      return false;
+    }
+    
+    // Get access token
+    let accessToken: string | undefined;
+    try {
+      const storageKey = `sb-${SUPABASE_PROJECT_ID}-auth-token`;
+      const stored = localStorage.getItem(storageKey);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        accessToken = parsed?.access_token;
+      }
+    } catch (e) {}
+    
+    if (!accessToken) {
+      console.warn('[QuizStorage] setBoardPublic: no access token');
+      return false;
+    }
+    
+    // Update the board in Supabase
+    const response = await fetch(
+      `${SUPABASE_URL}/rest/v1/teacher_boards?id=eq.${id}&teacher_id=eq.${userId}`,
+      {
+        method: 'PATCH',
+        headers: {
+          'apikey': SUPABASE_KEY,
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+          'Prefer': 'return=minimal',
+        },
+        body: JSON.stringify({ is_public: isPublic }),
+      }
+    );
+    
+    if (!response.ok) {
+      console.error('[QuizStorage] setBoardPublic: update failed:', response.status);
+      return false;
+    }
+    
+    console.log('[QuizStorage] setBoardPublic: success');
+    return true;
+  } catch (error) {
+    console.error('[QuizStorage] setBoardPublic error:', error);
+    return false;
   }
 }
 

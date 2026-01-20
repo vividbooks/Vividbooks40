@@ -13,7 +13,7 @@ import {
   Home,
 } from 'lucide-react';
 import { Quiz } from '../../types/quiz';
-import { getQuizAsync } from '../../utils/quiz-storage';
+import { getPublicQuizAsync } from '../../utils/quiz-storage';
 import { QuizPreview } from './QuizPreview';
 
 export function PublicBoardViewer() {
@@ -34,11 +34,11 @@ export function PublicBoardViewer() {
       }
 
       try {
-        const loadedQuiz = await getQuizAsync(boardId);
+        const loadedQuiz = await getPublicQuizAsync(boardId);
         if (loadedQuiz) {
           setQuiz(loadedQuiz);
         } else {
-          setError('Board nebyl nalezen');
+          setError('Board nebyl nalezen nebo není veřejně sdílený');
         }
       } catch (e) {
         console.error('Error loading quiz:', e);
