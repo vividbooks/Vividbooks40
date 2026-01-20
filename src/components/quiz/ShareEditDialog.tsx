@@ -172,35 +172,43 @@ export function ShareEditDialog({ isOpen, onClose, boardId, boardTitle }: ShareE
             )}
           </div>
 
-          {/* URL Display & Copy */}
-          <div className="flex items-center gap-2">
-            <div className="flex-1 flex items-center gap-2 px-3 py-2.5 bg-slate-100 rounded-lg">
-              <Link className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
-              <span className="text-xs text-slate-600 truncate font-mono">
-                {getShareUrl()}
-              </span>
-            </div>
-            <button
-              onClick={copyToClipboard}
-              className={`px-3 py-2.5 rounded-lg font-medium text-xs flex items-center gap-1.5 transition-colors ${
-                copied
-                  ? 'bg-green-500 text-white'
-                  : 'bg-indigo-600 hover:bg-indigo-700 text-white'
-              }`}
-            >
-              {copied ? (
-                <>
-                  <CheckCircle className="w-3.5 h-3.5" />
-                  Zkopírováno
-                </>
-              ) : (
-                <>
-                  <Copy className="w-3.5 h-3.5" />
-                  Kopírovat
-                </>
-              )}
-            </button>
+          {/* URL Display */}
+          <div className="flex items-center gap-2 px-3 py-2.5 bg-slate-100 rounded-lg">
+            <Link className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+            <span className="text-xs text-slate-600 truncate font-mono">
+              {getShareUrl()}
+            </span>
           </div>
+
+          {/* Copy Button - Large CTA */}
+          <button
+            onClick={copyToClipboard}
+            disabled={isSettingPublic}
+            className={`w-full py-3 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 transition-all ${
+              copied
+                ? 'bg-green-500 text-white'
+                : isSettingPublic
+                ? 'bg-indigo-400 text-white cursor-wait'
+                : 'bg-indigo-600 hover:bg-indigo-700 text-white'
+            }`}
+          >
+            {isSettingPublic ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Nastavuji sdílení...
+              </>
+            ) : copied ? (
+              <>
+                <CheckCircle className="w-4 h-4" />
+                Odkaz zkopírován!
+              </>
+            ) : (
+              <>
+                <Copy className="w-4 h-4" />
+                Kopírovat odkaz
+              </>
+            )}
+          </button>
 
           {/* Open in new tab */}
           <a
