@@ -10,7 +10,10 @@ import {
   MessageSquare,
   Zap,
   Info,
-  HelpCircle
+  HelpCircle,
+  User,
+  Trash2,
+  CheckCheck,
 } from 'lucide-react';
 import { 
   QuizSlide, 
@@ -56,6 +59,9 @@ const NoteIcon = ({ size = 20, className = "" }: { size?: number, className?: st
   </svg>
 );
 
+// Import BoardComment type
+import { BoardComment, markSlideCommentsAsRead, deleteComment as deleteBoardComment } from '../../../utils/supabase/board-comments';
+
 interface PageSettingsPanelProps {
   slide: QuizSlide;
   onClose: () => void;
@@ -63,9 +69,13 @@ interface PageSettingsPanelProps {
   onTypeChange?: (typeOption: SlideTypeOption) => void;
   initialSection?: SectionId; // Which section to expand initially
   initialShowActivitiesList?: boolean;
+  // Comments functionality
+  comments?: BoardComment[];
+  boardId?: string;
+  onCommentsUpdated?: () => void;
 }
 
-type SectionId = 'type' | 'layout' | 'background' | 'chapter' | 'note';
+type SectionId = 'type' | 'layout' | 'background' | 'chapter' | 'note' | 'comments';
 
 // AccordionSection moved outside to prevent re-creation on each render
 interface AccordionSectionProps {
@@ -209,9 +219,14 @@ const LAYOUTS = [
   { id: 'grid-2x2', label: 'Mřížka 2x2' },
 ];
 
-export function PageSettingsPanel({ slide, onClose, onUpdate, onTypeChange, initialSection, initialShowActivitiesList }: PageSettingsPanelProps) {
+export function PageSettingsPanel({ slide, onClose, onUpdate, onTypeChange, initialSection, initialShowActivitiesList, comments = [], boardId, onCommentsUpdated }: PageSettingsPanelProps) {
   const [expandedSection, setExpandedSection] = useState<SectionId | null>(initialSection || null);
   const [showActivitiesList, setShowActivitiesList] = useState(initialShowActivitiesList || false);
+  const [deletingCommentId, setDeletingCommentId] = useState<string | null>(null);
+  
+  // Filter comments for current slide
+  const slideComments = comments.filter(c => c.slide_id === slide.id);
+  const unreadCount = slideComments.filter(c => !c.is_read).length;
 
   // Update expanded section when initialSection changes
   useEffect(() => {
@@ -740,6 +755,112 @@ export function PageSettingsPanel({ slide, onClose, onUpdate, onTypeChange, init
             </p>
           </div>
         </AccordionSection>
+
+        {/* 7. Komentáře od návštěvníků */}
+        {slideComments.length > 0 && (
+          <AccordionSection 
+            id="comments" 
+            icon={MessageSquare} 
+            title="Komentáře" 
+            value={
+              <span className="flex items-center gap-1.5">
+                {slideComments.length}
+                {unreadCount > 0 && (
+                  <span className="px-1.5 py-0.5 text-xs font-bold text-white bg-red-500 rounded-full">
+                    {unreadCount}
+                  </span>
+                )}
+              </span>
+            }
+            isExpanded={expandedSection === 'comments'}
+            onToggle={(id) => {
+              toggleSection(id);
+              // Mark comments as read when opening
+              if (id === 'comments' && boardId && unreadCount > 0) {
+                markSlideCommentsAsRead(boardId, slide.id).then(() => {
+                  onCommentsUpdated?.();
+                });
+              }
+            }}
+          >
+            <div className="pt-2 space-y-3">
+              {/* Mark all as read button */}
+              {unreadCount > 0 && (
+                <button
+                  onClick={async () => {
+                    if (boardId) {
+                      await markSlideCommentsAsRead(boardId, slide.id);
+                      onCommentsUpdated?.();
+                    }
+                  }}
+                  className="w-full py-2 px-3 text-sm text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg flex items-center justify-center gap-2 transition-colors"
+                >
+                  <CheckCheck className="w-4 h-4" />
+                  Označit vše jako přečtené
+                </button>
+              )}
+              
+              {/* Comments list */}
+              <div className="space-y-2 max-h-[400px] overflow-y-auto">
+                {slideComments.map((comment) => (
+                  <div 
+                    key={comment.id}
+                    className={`p-3 rounded-xl border ${
+                      comment.is_read 
+                        ? 'bg-white border-slate-200' 
+                        : 'bg-indigo-50 border-indigo-200'
+                    }`}
+                  >
+                    {/* Header */}
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 rounded-full bg-slate-200 flex items-center justify-center">
+                          <User className="w-3.5 h-3.5 text-slate-500" />
+                        </div>
+                        <span className="text-sm font-medium text-slate-700">
+                          {comment.author_name || 'Anonymní'}
+                        </span>
+                        {!comment.is_read && (
+                          <span className="w-2 h-2 rounded-full bg-red-500" />
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <span className="text-xs text-slate-400">
+                          {new Date(comment.created_at).toLocaleDateString('cs-CZ')}
+                        </span>
+                        <button
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            setDeletingCommentId(comment.id);
+                            await deleteBoardComment(comment.id);
+                            setDeletingCommentId(null);
+                            onCommentsUpdated?.();
+                          }}
+                          disabled={deletingCommentId === comment.id}
+                          className="p-1 rounded hover:bg-red-100 text-slate-400 hover:text-red-500 transition-colors"
+                          title="Smazat komentář"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                    
+                    {/* Content */}
+                    <p className="text-sm text-slate-600 whitespace-pre-wrap">
+                      {comment.content}
+                    </p>
+                  </div>
+                ))}
+              </div>
+              
+              {slideComments.length === 0 && (
+                <p className="text-center text-sm text-slate-400 py-4">
+                  Žádné komentáře k tomuto slidu
+                </p>
+              )}
+            </div>
+          </AccordionSection>
+        )}
       </div>
     </div>
   );

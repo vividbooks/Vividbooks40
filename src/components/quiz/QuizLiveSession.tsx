@@ -80,6 +80,7 @@ export function TeacherSession({ quiz, teacherId, teacherName, onClose }: Teache
   const [copied, setCopied] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
   const [showEndDialog, setShowEndDialog] = useState(false);
+  const [showQRLightbox, setShowQRLightbox] = useState(false);
   
   // Start session
   const startSession = useCallback(async () => {
@@ -109,11 +110,22 @@ export function TeacherSession({ quiz, teacherId, teacherName, onClose }: Teache
       // Save session data
       await set(ref(database, getSessionPath(newSessionId)), sessionData);
       
-      // Also save the quiz data so students can load it
+      // Optimize quiz data for students - remove unnecessary fields to reduce bandwidth
+      const optimizedSlides = quiz.slides.map(slide => {
+        // Remove teacher-only fields like notes, edit history, etc.
+        const { ...slideData } = slide;
+        // Remove any large unnecessary data from slide content
+        if ('notes' in slideData) delete (slideData as any).notes;
+        if ('teacherNotes' in slideData) delete (slideData as any).teacherNotes;
+        if ('editHistory' in slideData) delete (slideData as any).editHistory;
+        return slideData;
+      });
+      
+      // Save optimized quiz data so students can load it
       await set(ref(database, `${QUIZ_SESSIONS_PATH}/${newSessionId}/quizData`), {
         id: quiz.id,
         title: quiz.title,
-        slides: quiz.slides,
+        slides: optimizedSlides,
       });
       console.log('Session started successfully:', newSessionId);
       setSessionId(newSessionId);
@@ -303,55 +315,54 @@ export function TeacherSession({ quiz, teacherId, teacherName, onClose }: Teache
     <div className="fixed inset-0 z-50 flex" style={{ backgroundColor: '#0f172a' }}>
       {/* Left sidebar - Session info */}
       <div className="w-80 flex flex-col" style={{ backgroundColor: '#1e293b' }}>
-        {/* Session code */}
-        <div className="p-6" style={{ borderBottom: '1px solid #334155' }}>
-          <p className="text-sm mb-3" style={{ color: '#94a3b8' }}>Kód pro připojení</p>
-          
-          {/* Code display - large and prominent */}
+        {/* QR Code Section */}
+        <div className="p-4" style={{ borderBottom: '1px solid #334155' }}>
+          {/* Large QR Code - clickable for lightbox */}
           <div 
-            className="text-center py-4 px-6 rounded-xl mb-3"
-            style={{ backgroundColor: '#334155' }}
-            role="status"
-            aria-label={`Kód session: ${sessionCode || '------'}`}
+            className="cursor-pointer hover:opacity-90 transition-opacity mb-3"
+            onClick={() => setShowQRLightbox(true)}
+            title="Klikni pro zvětšení"
           >
+            <img 
+              src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(`${window.location.origin}${import.meta.env.BASE_URL || '/'}quiz/join?code=${sessionCode}`)}`}
+              alt="QR kód pro připojení"
+              className="w-full rounded-xl bg-white p-3"
+              style={{ maxWidth: '100%' }}
+            />
+          </div>
+          
+          {/* Session code display */}
+          <div className="text-center mb-3">
+            <p className="text-xs mb-1" style={{ color: '#64748b' }}>Kód pro ruční zadání</p>
             <div 
-              className="text-4xl font-mono font-bold tracking-widest select-all"
-              style={{ color: '#ffffff', letterSpacing: '0.2em' }}
+              className="text-3xl font-mono font-bold tracking-widest select-all py-2"
+              style={{ color: '#ffffff', letterSpacing: '0.15em' }}
             >
               {sessionCode || '------'}
             </div>
           </div>
           
-          {/* Action buttons */}
-          <div className="flex items-center gap-2">
-            <button
-              onClick={copyCode}
-              className="flex-1 py-2 px-4 rounded-lg transition-colors flex items-center justify-center gap-2"
-              style={{ backgroundColor: '#334155', color: '#ffffff' }}
-            >
-              {copied ? (
-                <>
-                  <CheckCircle className="w-4 h-4" style={{ color: '#4ade80' }} />
-                  <span className="text-sm">Zkopírováno!</span>
-                </>
-              ) : (
-                <>
-                  <Copy className="w-4 h-4" style={{ color: '#94a3b8' }} />
-                  <span className="text-sm">Kopírovat</span>
-                </>
-              )}
-            </button>
-            <button
-              className="p-2 rounded-lg transition-colors"
-              style={{ backgroundColor: '#334155' }}
-              title="QR kód"
-            >
-              <QrCode className="w-5 h-5" style={{ color: '#94a3b8' }} />
-            </button>
-          </div>
+          {/* Copy button */}
+          <button
+            onClick={copyCode}
+            className="w-full py-2.5 px-4 rounded-xl transition-colors flex items-center justify-center gap-2"
+            style={{ backgroundColor: '#334155', color: '#ffffff' }}
+          >
+            {copied ? (
+              <>
+                <CheckCircle className="w-4 h-4" style={{ color: '#4ade80' }} />
+                <span className="text-sm">Zkopírováno!</span>
+              </>
+            ) : (
+              <>
+                <Copy className="w-4 h-4" style={{ color: '#94a3b8' }} />
+                <span className="text-sm">Kopírovat odkaz pro studenty</span>
+              </>
+            )}
+          </button>
           
-          <p className="text-xs mt-3 text-center" style={{ color: '#64748b' }}>
-            Studenti: <span style={{ color: '#94a3b8' }}>{window.location.origin}{import.meta.env.BASE_URL || '/'}quiz/join</span>
+          <p className="text-xs mt-2 text-center" style={{ color: '#64748b' }}>
+            Nebo: <span style={{ color: '#94a3b8' }}>{window.location.origin}{import.meta.env.BASE_URL || '/'}quiz/join</span>
           </p>
         </div>
         
@@ -392,23 +403,23 @@ export function TeacherSession({ quiz, teacherId, teacherName, onClose }: Teache
           )}
         </div>
         
-        {/* Controls */}
-        <div className="p-4 space-y-2" style={{ borderTop: '1px solid #334155' }}>
+        {/* Controls - side by side */}
+        <div className="p-4 flex gap-2" style={{ borderTop: '1px solid #334155' }}>
           <button
             onClick={() => setShowResults(!showResults)}
-            className="w-full py-2 rounded-lg text-white text-sm flex items-center justify-center gap-2"
+            className="flex-1 py-2.5 rounded-lg text-white text-sm flex items-center justify-center gap-1.5"
             style={{ backgroundColor: '#334155' }}
           >
             <BarChart2 className="w-4 h-4" />
-            {showResults ? 'Skrýt výsledky' : 'Zobrazit výsledky'}
+            <span className="hidden sm:inline">{showResults ? 'Skrýt' : 'Výsledky'}</span>
           </button>
           <button
             onClick={() => setShowEndDialog(true)}
-            className="w-full py-2 rounded-lg text-white text-sm flex items-center justify-center gap-2"
+            className="flex-1 py-2.5 rounded-lg text-white text-sm flex items-center justify-center gap-1.5"
             style={{ backgroundColor: '#dc2626' }}
           >
             <StopCircle className="w-4 h-4" />
-            Ukončit session
+            <span className="hidden sm:inline">Ukončit</span>
           </button>
         </div>
         
@@ -441,6 +452,47 @@ export function TeacherSession({ quiz, teacherId, teacherName, onClose }: Teache
                   Zrušit
                 </button>
               </div>
+            </div>
+          </div>
+        )}
+        
+        {/* QR Code Lightbox */}
+        {showQRLightbox && (
+          <div 
+            className="fixed inset-0 z-[100] bg-black/90 flex items-center justify-center cursor-pointer"
+            onClick={() => setShowQRLightbox(false)}
+          >
+            <div 
+              className="bg-white rounded-3xl p-8 max-w-lg w-full mx-4 text-center"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Close button */}
+              <button
+                onClick={() => setShowQRLightbox(false)}
+                className="absolute top-4 right-4 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors"
+              >
+                <X className="w-6 h-6" />
+              </button>
+              
+              {/* Large QR Code */}
+              <img 
+                src={`https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=${encodeURIComponent(`${window.location.origin}${import.meta.env.BASE_URL || '/'}quiz/join?code=${sessionCode}`)}`}
+                alt="QR kód pro připojení"
+                className="w-full max-w-sm mx-auto rounded-2xl mb-6"
+              />
+              
+              {/* Session code */}
+              <div 
+                className="text-5xl font-mono font-bold tracking-widest select-all mb-4"
+                style={{ letterSpacing: '0.2em', color: '#1e293b' }}
+              >
+                {sessionCode || '------'}
+              </div>
+              
+              <p className="text-slate-500 text-sm">
+                Naskenujte QR kód nebo zadejte kód na<br/>
+                <span className="font-medium text-slate-700">{window.location.origin}{import.meta.env.BASE_URL || '/'}quiz/join</span>
+              </p>
             </div>
           </div>
         )}

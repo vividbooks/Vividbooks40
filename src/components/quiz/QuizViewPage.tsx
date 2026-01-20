@@ -48,6 +48,7 @@ import { FillBlanksView } from './slides/FillBlanksView';
 import { ImageHotspotsView } from './slides/ImageHotspotsView';
 import { VideoQuizView } from './slides/VideoQuizView';
 import { useBoardPosts } from '../../hooks/useBoardPosts';
+import { ShareEditDialog } from './ShareEditDialog';
 import { useVoting } from '../../hooks/useVoting';
 import { getQuiz, saveQuiz, duplicateQuiz, moveQuizToFolder } from '../../utils/quiz-storage';
 import * as storage from '../../utils/profile-storage';
@@ -509,6 +510,9 @@ export function QuizViewPage() {
   const [requireAnswerToProgress, setRequireAnswerToProgress] = useState(false);
   const [showNotes, setShowNotes] = useState(false);
   const [shareLink, setShareLink] = useState<string | null>(null);
+  
+  // Share edit dialog
+  const [showShareEditDialog, setShowShareEditDialog] = useState(false);
   
   // Get current user
   const profile = storage.getCurrentUserProfile();
@@ -1772,6 +1776,7 @@ export function QuizViewPage() {
           
           {/* Share edit link */}
           <button 
+            onClick={() => setShowShareEditDialog(true)}
             className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-slate-300 font-medium hover:bg-slate-600/50 transition-colors mt-3"
             style={{ backgroundColor: 'rgba(71,85,105,0.5)' }}
           >
@@ -2126,6 +2131,16 @@ export function QuizViewPage() {
       >
         {showRightPanel && renderRightPanel()}
       </div>
+      
+      {/* Share Edit Dialog */}
+      {quiz && (
+        <ShareEditDialog
+          isOpen={showShareEditDialog}
+          onClose={() => setShowShareEditDialog(false)}
+          boardId={quiz.id}
+          boardTitle={quiz.title || 'Board'}
+        />
+      )}
     </div>
   );
 }

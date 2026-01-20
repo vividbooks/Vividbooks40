@@ -48,6 +48,16 @@ const getSessionPath = (sessionId: string) => `${SESSIONS_PATH}/${sessionId}`;
 const getStudentPath = (sessionId: string, studentId: string) => `${SESSIONS_PATH}/${sessionId}/students/${studentId}`;
 
 // =====================================
+// THROTTLE UTILITY FOR SCALABILITY
+// =====================================
+// Prevents excessive Firebase writes during rapid scroll/updates
+
+let lastScrollUpdate = 0;
+let pendingScrollUpdate: { sessionId: string; scrollPosition: number } | null = null;
+let scrollUpdateTimer: ReturnType<typeof setTimeout> | null = null;
+const SCROLL_THROTTLE_MS = 150; // Max 6-7 updates per second
+
+// =====================================
 // FALLBACK: localStorage + BroadcastChannel
 // =====================================
 const LOCAL_STORAGE_KEY = 'vivid-share-session';
@@ -146,6 +156,35 @@ export async function endSession(sessionId: string): Promise<void> {
 }
 
 export async function updateSessionScroll(sessionId: string, scrollPosition: number): Promise<void> {
+  const now = Date.now();
+  
+  // Throttle scroll updates for better scalability
+  // Store pending update
+  pendingScrollUpdate = { sessionId, scrollPosition };
+  
+  // If we updated recently, schedule delayed update
+  if (now - lastScrollUpdate < SCROLL_THROTTLE_MS) {
+    if (!scrollUpdateTimer) {
+      scrollUpdateTimer = setTimeout(async () => {
+        scrollUpdateTimer = null;
+        if (pendingScrollUpdate) {
+          await executeScrollUpdate(pendingScrollUpdate.sessionId, pendingScrollUpdate.scrollPosition);
+          pendingScrollUpdate = null;
+        }
+      }, SCROLL_THROTTLE_MS);
+    }
+    return;
+  }
+  
+  // Execute immediately
+  lastScrollUpdate = now;
+  await executeScrollUpdate(sessionId, scrollPosition);
+}
+
+// Internal function to actually perform the scroll update
+async function executeScrollUpdate(sessionId: string, scrollPosition: number): Promise<void> {
+  lastScrollUpdate = Date.now();
+  
   if (useFirebase() && database) {
     const sessionRef = ref(database, getSessionPath(sessionId));
     await update(sessionRef, { 
@@ -160,7 +199,6 @@ export async function updateSessionScroll(sessionId: string, scrollPosition: num
       setLocalSession(session);
     }
   }
-  // Debug log removed to reduce noise - scroll updates are frequent
 }
 
 export async function updateSessionPath(sessionId: string, documentPath: string, documentTitle: string): Promise<void> {

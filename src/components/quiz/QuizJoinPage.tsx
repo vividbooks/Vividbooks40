@@ -242,6 +242,14 @@ export function QuizJoinPage() {
   }, [responses]);
 
   // ============================================
+  // COMPUTED: ONLINE STUDENTS COUNT
+  // ============================================
+  
+  const onlineStudentsCount = session?.students 
+    ? Object.values(session.students).filter((s: any) => s.isOnline).length 
+    : 0;
+
+  // ============================================
   // NETWORK STATUS MONITORING
   // ============================================
   
@@ -476,8 +484,8 @@ export function QuizJoinPage() {
     // Update immediately
     updateHeartbeat();
     
-    // Then every 30 seconds
-    heartbeatInterval.current = setInterval(updateHeartbeat, 30000);
+    // Optimized: 45s heartbeat for better scalability with many students
+    heartbeatInterval.current = setInterval(updateHeartbeat, 45000);
     
     return () => {
       if (heartbeatInterval.current) {
@@ -1179,6 +1187,11 @@ export function QuizJoinPage() {
         </div>
         {/* Stats */}
         <div className="flex items-center gap-3 ml-4">
+          {/* Online students indicator */}
+          <div className="flex items-center gap-1 text-indigo-600" title="Připojení studenti">
+            <Users className="w-4 h-4" />
+            <span className="font-semibold text-sm">{onlineStudentsCount}</span>
+          </div>
           <div className="flex items-center gap-1 text-emerald-600">
             <CheckCircle className="w-4 h-4" />
             <span className="font-semibold text-sm">{correctCount}</span>
@@ -1197,6 +1210,11 @@ export function QuizJoinPage() {
             {renderProgressBar()}
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
+            {/* Online students indicator */}
+            <div className="flex items-center gap-1 text-indigo-600" title="Připojení studenti">
+              <Users className="w-4 h-4" />
+              <span className="font-semibold text-sm">{onlineStudentsCount}</span>
+            </div>
             <div className="flex items-center gap-1 text-emerald-600">
               <CheckCircle className="w-4 h-4" />
               <span className="font-semibold text-sm">{correctCount}</span>
@@ -1224,6 +1242,11 @@ export function QuizJoinPage() {
           </div>
           {/* Stats */}
           <div className="flex items-center gap-2 flex-shrink-0">
+            {/* Online students indicator */}
+            <div className="flex items-center gap-1 text-indigo-600" title="Připojení studenti">
+              <Users className="w-4 h-4" />
+              <span className="font-semibold text-sm">{onlineStudentsCount}</span>
+            </div>
             <div className="flex items-center gap-1 text-emerald-600">
               <CheckCircle className="w-4 h-4" />
               <span className="font-semibold text-sm">{correctCount}</span>

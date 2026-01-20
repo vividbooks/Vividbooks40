@@ -166,6 +166,9 @@ import { BackgroundPicker } from './slides/BackgroundPicker';
 import { PageSettingsPanel, LayoutIcon } from './slides/PageSettingsPanel';
 import { BlockSettingsPanel } from './slides/BlockSettingsPanel';
 import { QuizPreview } from './QuizPreview';
+import { ShareEditDialog } from './ShareEditDialog';
+import { getBoardComments, BoardComment, getCommentsGroupedBySlide, addBoardComment } from '../../utils/supabase/board-comments';
+import { SlideCommentsPreview } from './slides/SlideCommentsPreview';
 import { TeacherSession } from './QuizLiveSession';
 import { AIBoardPanel } from './AIBoardPanel';
 import * as storage from '../../utils/profile-storage';
@@ -1102,7 +1105,21 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
   const [showPreview, setShowPreview] = useState(false);
   const [isImportingPdf, setIsImportingPdf] = useState(false);
   const [showNewSlideDropdown, setShowNewSlideDropdown] = useState(false);
+  const [showShareEditDialog, setShowShareEditDialog] = useState(false);
+  const [boardComments, setBoardComments] = useState<BoardComment[]>([]);
   const pdfInputRef = useRef<HTMLInputElement>(null);
+  
+  // Load board comments
+  const loadComments = useCallback(async () => {
+    if (id) {
+      const comments = await getBoardComments(id);
+      setBoardComments(comments);
+    }
+  }, [id]);
+  
+  useEffect(() => {
+    loadComments();
+  }, [loadComments]);
   const newSlideDropdownRef = useRef<HTMLDivElement>(null);
   const dropdownContentRef = useRef<HTMLDivElement>(null);
 
@@ -1274,7 +1291,7 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
   const [showActivitiesSubmenu, setShowActivitiesSubmenu] = useState(false);
   const [showSlidePreviews, setShowSlidePreviews] = useState(false);
   const [showPageSettings, setShowPageSettings] = useState(false);
-  const [pageSettingsSection, setPageSettingsSection] = useState<'type' | 'template' | 'layout' | 'background' | 'chapter' | 'note' | undefined>(undefined);
+  const [pageSettingsSection, setPageSettingsSection] = useState<'type' | 'template' | 'layout' | 'background' | 'chapter' | 'note' | 'comments' | undefined>(undefined);
   const [pageSettingsInitialShowActivities, setPageSettingsInitialShowActivities] = useState(false);
   const [selectedBlockIndex, setSelectedBlockIndex] = useState<number | null>(null);
   const [showBlockSettings, setShowBlockSettings] = useState(false); // Panel se otevírá jen explicitně
@@ -3418,11 +3435,7 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
                   
                   {/* Share Edit Link Button */}
                   <button
-                    onClick={() => {
-                      const editUrl = `${window.location.origin}/quiz/edit/${quiz.id}`;
-                      navigator.clipboard.writeText(editUrl);
-                      alert('Odkaz pro úpravu zkopírován do schránky!');
-                    }}
+                    onClick={() => setShowShareEditDialog(true)}
                     className="w-full flex items-center gap-4 px-2 py-2.5 rounded-lg hover:bg-slate-200 transition-colors text-slate-600"
                   >
                     <Share2 className="w-5 h-5" />
@@ -4415,6 +4428,25 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
                       </span>
                     </button>
                   </div>
+                  
+                  {/* Comments preview */}
+                  {(() => {
+                    const slideComments = boardComments.filter(c => c.slide_id === selectedSlide.id);
+                    const unreadCount = slideComments.filter(c => !c.is_read).length;
+                    if (slideComments.length > 0) {
+                      return (
+                        <SlideCommentsPreview
+                          comments={slideComments}
+                          unreadCount={unreadCount}
+                          onOpenPanel={() => {
+                            setPageSettingsSection('comments');
+                            setShowPageSettings(true);
+                          }}
+                        />
+                      );
+                    }
+                    return null;
+                  })()}
                 </div>
               ) : (
                 <div className="flex flex-col items-center justify-center h-full text-slate-400">
@@ -4474,6 +4506,9 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
           onTypeChange={changeSlideType}
           initialSection={pageSettingsSection}
           initialShowActivitiesList={pageSettingsInitialShowActivities}
+          comments={boardComments}
+          boardId={id}
+          onCommentsUpdated={loadComments}
         />,
         document.body
       )}
@@ -4513,6 +4548,16 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
       )}
       
       {/* No backdrop - allow interaction with slide while panel is open */}
+      
+      {/* Share Edit Dialog */}
+      {quiz && (
+        <ShareEditDialog
+          isOpen={showShareEditDialog}
+          onClose={() => setShowShareEditDialog(false)}
+          boardId={quiz.id}
+          boardTitle={quiz.title || 'Board'}
+        />
+      )}
     </div>
   );
 }

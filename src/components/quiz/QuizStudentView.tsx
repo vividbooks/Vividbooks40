@@ -435,7 +435,8 @@ export function QuizStudentView() {
     };
     
     updateHeartbeat();
-    heartbeatInterval.current = setInterval(updateHeartbeat, 30000);
+    // Optimized: 45s heartbeat for better scalability with many students
+    heartbeatInterval.current = setInterval(updateHeartbeat, 45000);
     
     return () => {
       if (heartbeatInterval.current) {

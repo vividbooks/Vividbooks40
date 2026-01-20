@@ -17,6 +17,8 @@ import { QuizJoinPage } from './components/quiz/QuizJoinPage';
 import { QuizResultsPage } from './components/quiz/QuizResultsPage';
 import { QuizStudentView } from './components/quiz/QuizStudentView';
 import { QuizSelfStudyPage } from './components/quiz/QuizSelfStudyPage';
+import { PublicBoardViewer } from './components/quiz/PublicBoardViewer';
+import { BoardCopyPage } from './components/quiz/BoardCopyPage';
 import { ProfilePageLayout, LicenseAdminPage } from './components/profile';
 import { StudentWallLayout } from './components/StudentWallLayout';
 import { SharedFolderView } from './components/SharedFolderView';
@@ -536,6 +538,14 @@ export default function App() {
         <Route 
           path="/quiz/practice/:id" 
           element={<QuizSelfStudyPage />} 
+        />
+        <Route 
+          path="/quiz/public/:boardId" 
+          element={<PublicBoardViewer />} 
+        />
+        <Route 
+          path="/quiz/copy/:boardId" 
+          element={<BoardCopyPage />} 
         />
         
         <Route 
