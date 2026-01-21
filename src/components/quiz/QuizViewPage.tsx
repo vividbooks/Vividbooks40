@@ -39,7 +39,9 @@ import {
   AlertTriangle,
   MessageSquare,
   Vote,
+  Monitor,
 } from 'lucide-react';
+import { useDeviceDetect } from '../../hooks/useDeviceDetect';
 import { Quiz, QuizSlide, ABCActivitySlide, OpenActivitySlide, ExampleActivitySlide, BoardActivitySlide, VotingActivitySlide, ConnectPairsActivitySlide, FillBlanksActivitySlide, ImageHotspotsActivitySlide, VideoQuizActivitySlide, InfoSlide, LiveQuizSession, SlideResponse } from '../../types/quiz';
 import { BoardSlideView } from './slides/BoardSlideView';
 import { VotingSlideView } from './slides/VotingSlideView';
@@ -484,6 +486,11 @@ export function QuizViewPage() {
   const [loading, setLoading] = useState(true);
   const [isAnimating, setIsAnimating] = useState(false);
   const [showRightPanel, setShowRightPanel] = useState(true);
+  const [showMobileMenu, setShowMobileMenu] = useState(false);
+  
+  // Device detection
+  const { isMobile, isTablet, isTouchDevice } = useDeviceDetect();
+  const isMobileOrTablet = isMobile || isTablet;
   
   // Live session state
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -1839,7 +1846,35 @@ export function QuizViewPage() {
     );
   };
   
-  // Render progress bar segments
+  // Simple progress bar - EXACT copy from QuizStudentView (for mobile)
+  const renderSimpleProgressBar = () => {
+    return (
+      <>
+        {currentSlideIndex >= 0 && (
+          <div
+            className="rounded-full"
+            style={{ 
+              height: '8px',
+              backgroundColor: '#475569',
+              flex: currentSlideIndex + 1
+            }}
+          />
+        )}
+        {quiz.slides.slice(currentSlideIndex + 1).map((_, idx) => (
+          <div
+            key={idx}
+            className="flex-1 rounded-full"
+            style={{ 
+              height: '8px',
+              backgroundColor: '#CBD5E1'
+            }}
+          />
+        ))}
+      </>
+    );
+  };
+
+  // Render progress bar segments (desktop - clickable)
   const renderProgressBar = () => {
     const totalSlides = quiz.slides.length;
     const progressPercent = totalSlides > 0 ? ((currentSlideIndex + 1) / totalSlides) * 100 : 0;
@@ -2119,37 +2154,38 @@ export function QuizViewPage() {
           </button>
         </div>
         
-        {/* Mobile: Top navigation with arrows and progress bar */}
-        <div className="flex lg:hidden items-center gap-3 px-4 py-4" style={{ backgroundColor: bgColor }}>
+        {/* Mobile: Top navigation - exact same as QuizStudentView */}
+        <div className="flex lg:hidden items-center gap-3 px-4 py-4" style={{ backgroundColor: '#F0F1F8' }}>
           {/* Left arrow */}
           <button
             onClick={goToPrevSlide}
             disabled={currentSlideIndex === 0}
-            className={`
-              w-14 h-14 rounded-full flex items-center justify-center flex-shrink-0
-              ${currentSlideIndex === 0 ? 'opacity-30 cursor-not-allowed' : ''}
-              ${isDarkMode ? 'bg-white/10 text-white/70' : 'bg-[#CBD5E1] text-slate-600'}
-            `}
+            className={`w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 ${currentSlideIndex === 0 ? 'opacity-30 cursor-not-allowed' : ''} bg-[#CBD5E1] text-slate-600`}
           >
-            <ArrowLeft className="w-6 h-6" />
+            <ArrowLeft className="w-5 h-5" />
           </button>
           
-          {/* Progress bar */}
+          {/* Progress bar - simple version like QuizStudentView */}
           <div className="flex-1 flex items-center gap-1.5">
-            {renderProgressBar()}
+            {renderSimpleProgressBar()}
           </div>
           
           {/* Right arrow */}
           <button
             onClick={goToNextSlide}
             disabled={currentSlideIndex === quiz.slides.length - 1}
-            className={`
-              w-14 h-14 rounded-full flex items-center justify-center text-white flex-shrink-0
-              ${currentSlideIndex === quiz.slides.length - 1 ? 'opacity-30 cursor-not-allowed' : ''}
-            `}
+            className={`w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 text-white ${currentSlideIndex === quiz.slides.length - 1 ? 'opacity-30 cursor-not-allowed' : ''}`}
             style={{ backgroundColor: '#7C3AED' }}
           >
-            <ArrowRight className="w-6 h-6" />
+            <ArrowRight className="w-5 h-5" />
+          </button>
+          
+          {/* Menu button */}
+          <button
+            onClick={() => setShowMobileMenu(true)}
+            className="w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 bg-[#CBD5E1] text-slate-600"
+          >
+            <Menu className="w-5 h-5" />
           </button>
         </div>
         
@@ -2266,6 +2302,143 @@ export function QuizViewPage() {
           boardId={quiz.id}
           boardTitle={quiz.title || 'Board'}
         />
+      )}
+      
+      {/* Mobile Menu Panel - slides from right */}
+      {showMobileMenu && (
+        <div className="lg:hidden fixed inset-0 z-50 flex">
+          {/* Backdrop */}
+          <div 
+            className="flex-1 bg-black/30"
+            onClick={() => setShowMobileMenu(false)}
+          />
+          
+          {/* Menu panel */}
+          <div className="w-72 bg-white h-full flex flex-col shadow-xl">
+            {/* Header */}
+            <div className="flex items-center gap-3 p-4 border-b border-slate-100">
+              <button
+                onClick={() => setShowMobileMenu(false)}
+                className="w-9 h-9 rounded-full flex items-center justify-center bg-slate-100 text-slate-500"
+              >
+                <X className="w-5 h-5" />
+              </button>
+              <span className="font-semibold text-slate-700 truncate flex-1">{quiz?.title || 'Board'}</span>
+            </div>
+            
+            {/* Menu items */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-2">
+              {/* Edit button - disabled on mobile */}
+              <button 
+                onClick={() => {
+                  // Show message that editing is not available on mobile
+                }}
+                className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-slate-50 text-slate-400"
+                disabled
+              >
+                <Edit3 className="w-5 h-5" />
+                <div className="flex-1 text-left">
+                  <span className="block font-medium">Upravit</span>
+                  <span className="text-xs text-slate-400">Pouze na počítači</span>
+                </div>
+                <Monitor className="w-4 h-4" />
+              </button>
+              
+              {/* Start presentation */}
+              {!sessionId ? (
+                <button 
+                  onClick={() => {
+                    setShowMobileMenu(false);
+                    startLiveSession();
+                  }}
+                  disabled={isStartingSession}
+                  className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-indigo-500 text-white font-medium"
+                >
+                  <Play className="w-5 h-5" />
+                  <span>{isStartingSession ? 'Spouštím...' : 'Spustit promítání'}</span>
+                </button>
+              ) : (
+                <button 
+                  onClick={() => {
+                    setShowMobileMenu(false);
+                    setShowEndDialog(true);
+                  }}
+                  className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-red-500 text-white font-medium"
+                >
+                  <StopCircle className="w-5 h-5" />
+                  <span>Ukončit promítání</span>
+                </button>
+              )}
+              
+              {/* Show QR code - only during session */}
+              {sessionId && sessionCode && (
+                <>
+                  <button 
+                    onClick={() => {
+                      setShowMobileMenu(false);
+                      setShowQRPopup('qr');
+                    }}
+                    className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-slate-100 text-slate-700 font-medium"
+                  >
+                    <QrCode className="w-5 h-5" />
+                    <span>Zobrazit QR kód</span>
+                  </button>
+                  
+                  <button 
+                    onClick={() => {
+                      setShowMobileMenu(false);
+                      setShowQRPopup('code');
+                    }}
+                    className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-slate-100 text-slate-700 font-medium"
+                  >
+                    <span className="w-5 h-5 flex items-center justify-center font-mono font-bold text-sm">123</span>
+                    <span>Zobrazit kód</span>
+                  </button>
+                </>
+              )}
+              
+              {/* Share link */}
+              <button 
+                onClick={() => {
+                  setShowMobileMenu(false);
+                  setShowShareEditDialog(true);
+                }}
+                className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-slate-100 text-slate-700 font-medium"
+              >
+                <Share2 className="w-5 h-5" />
+                <span>Sdílet board</span>
+              </button>
+              
+              {/* Results */}
+              {quiz?.id && (
+                <button 
+                  onClick={() => {
+                    setShowMobileMenu(false);
+                    navigate(`/quiz/results/${quiz.id}`);
+                  }}
+                  className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-slate-100 text-slate-700 font-medium"
+                >
+                  <BarChart2 className="w-5 h-5" />
+                  <span>Výsledky</span>
+                </button>
+              )}
+            </div>
+            
+            {/* Footer - close */}
+            <div className="p-4 border-t border-slate-100">
+              <button 
+                onClick={() => {
+                  setShowMobileMenu(false);
+                  navigate(-1);
+                }}
+                className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-slate-100 text-slate-600 font-medium"
+              >
+                <X className="w-5 h-5" />
+                <span>Zavřít</span>
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

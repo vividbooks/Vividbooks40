@@ -24,6 +24,7 @@ import {
   User,
   Loader2,
 } from 'lucide-react';
+import { useDeviceDetect } from '../../hooks/useDeviceDetect';
 import {
   Quiz,
   QuizSlide,
@@ -731,15 +732,9 @@ export function BlockLayoutView({ slide }: { slide: InfoSlide }) {
   const columnRatios = layout.columnRatios || [50, 50];
   const splitRatio = layout.splitRatio || 50;
 
-  // Detect mobile screen
-  const [isMobile, setIsMobile] = useState(false);
-  
-  useEffect(() => {
-    const checkMobile = () => setIsMobile(window.innerWidth < 768);
-    checkMobile();
-    window.addEventListener('resize', checkMobile);
-    return () => window.removeEventListener('resize', checkMobile);
-  }, []);
+  // Device detection - better than just screen width
+  const { isMobile: isMobileDevice, isTablet } = useDeviceDetect();
+  const isMobile = isMobileDevice || isTablet;
 
   // Get template settings
   const template = slide.templateId ? getTemplateById(slide.templateId) : undefined;
@@ -1374,8 +1369,11 @@ export function QuizPreview({ quiz, onClose, isLive = false, onComplete, initial
   const [isCompleted, setIsCompleted] = useState(false);
   const [showChapterMenu, setShowChapterMenu] = useState(false);
   const [showNotePanel, setShowNotePanel] = useState(false);
-  const [isMobile, setIsMobile] = useState(false);
   const [showMathPanel, setShowMathPanel] = useState(false);
+  
+  // Device detection - better than just screen width
+  const { isMobile: isMobileDevice, isTablet, isTouchDevice } = useDeviceDetect();
+  const isMobile = isMobileDevice || isTablet;
   
   // Public mode - comments state
   const [showCommentsPanel, setShowCommentsPanel] = useState(false);
@@ -1384,14 +1382,6 @@ export function QuizPreview({ quiz, onClose, isLive = false, onComplete, initial
   const [commentContent, setCommentContent] = useState('');
   const [submittingComment, setSubmittingComment] = useState(false);
   const [commentSuccess, setCommentSuccess] = useState(false);
-  
-  // Detect mobile screen
-  useEffect(() => {
-    const checkMobile = () => setIsMobile(window.innerWidth < 768);
-    checkMobile();
-    window.addEventListener('resize', checkMobile);
-    return () => window.removeEventListener('resize', checkMobile);
-  }, []);
   
   const currentSlide = quiz.slides[currentSlideIndex];
   const currentResponse = responses.find(r => r.slideId === currentSlide?.id);
