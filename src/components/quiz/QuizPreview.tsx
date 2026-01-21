@@ -2110,9 +2110,23 @@ export function QuizPreview({ quiz, onClose, isLive = false, onComplete, initial
         )} */}
       
         {/* Mobile: Top navigation with arrows and progress bar */}
-        <div className="flex lg:hidden items-center gap-3 px-4 py-4" style={{ backgroundColor: bgColor }}>
+        <div className="flex lg:hidden items-center gap-2 px-3 py-3" style={{ backgroundColor: bgColor }}>
+          {/* Comment button for public mode - left side */}
+          {isPublicMode && (
+            <button
+              onClick={() => setShowCommentsPanel(!showCommentsPanel)}
+              className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${
+                showCommentsPanel 
+                  ? 'bg-indigo-500 text-white' 
+                  : 'bg-indigo-100 text-indigo-600'
+              }`}
+            >
+              <MessageSquare className="w-5 h-5" />
+            </button>
+          )}
+          
           {/* Menu button for chapters */}
-          {chapters.length > 0 && (
+          {chapters.length > 0 && !isPublicMode && (
             <button
               onClick={() => setShowChapterMenu(!showChapterMenu)}
               className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 bg-[#CBD5E1] text-slate-600"
@@ -2125,15 +2139,15 @@ export function QuizPreview({ quiz, onClose, isLive = false, onComplete, initial
         <button
           onClick={goToPrevSlide}
           disabled={currentSlideIndex === 0 || !quiz.settings.allowBack}
-          className={`w-14 h-14 rounded-full flex items-center justify-center flex-shrink-0 bg-[#CBD5E1] text-slate-600 ${
+          className={`w-11 h-11 rounded-full flex items-center justify-center flex-shrink-0 bg-[#CBD5E1] text-slate-600 ${
             currentSlideIndex === 0 || !quiz.settings.allowBack ? 'opacity-30 cursor-not-allowed' : ''
           }`}
         >
-          <ArrowLeft className="w-6 h-6" />
+          <ArrowLeft className="w-5 h-5" />
         </button>
         
         {/* Progress bar */}
-        <div className="flex-1 flex items-center gap-1.5">
+        <div className="flex-1 flex items-center gap-1">
           {renderProgressBar()}
         </div>
         
@@ -2147,10 +2161,10 @@ export function QuizPreview({ quiz, onClose, isLive = false, onComplete, initial
               submitAnswer();
             }
           }}
-          className="w-14 h-14 rounded-full flex items-center justify-center text-white flex-shrink-0"
+          className="w-11 h-11 rounded-full flex items-center justify-center text-white flex-shrink-0"
           style={{ backgroundColor: '#7C3AED' }}
         >
-          <ArrowRight className="w-6 h-6" />
+          <ArrowRight className="w-5 h-5" />
         </button>
       </div>
       
@@ -2334,6 +2348,97 @@ export function QuizPreview({ quiz, onClose, isLive = false, onComplete, initial
                 );
               })}
             </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Mobile Comments Panel - overlay */}
+      {showCommentsPanel && isPublicMode && isMobile && (
+        <div className="lg:hidden fixed inset-0 z-50 flex flex-col bg-white">
+          {/* Header */}
+          <div className="flex items-center gap-3 p-4 border-b border-slate-100 flex-shrink-0">
+            <button
+              onClick={() => setShowCommentsPanel(false)}
+              className="w-9 h-9 rounded-full flex items-center justify-center bg-slate-100 text-slate-500"
+            >
+              <X className="w-5 h-5" />
+            </button>
+            <span className="font-semibold text-slate-700 text-base">Komentáře ke slidu {currentSlideIndex + 1}</span>
+          </div>
+          
+          {/* Comments list */}
+          <div className="flex-1 overflow-y-auto p-4">
+            {slideComments.length === 0 ? (
+              <div className="text-center py-8 text-slate-400">
+                <MessageSquare className="w-10 h-10 mx-auto mb-2 opacity-50" />
+                <p className="text-sm">Zatím žádné komentáře</p>
+                <p className="text-xs mt-1">Buďte první!</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {slideComments.map((comment) => (
+                  <div key={comment.id} className="p-3 bg-slate-50 rounded-xl">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-xs font-medium text-slate-600">
+                        {comment.author_name || 'Anonym'}
+                      </span>
+                      <span className="text-[10px] text-slate-400">
+                        {new Date(comment.created_at).toLocaleDateString('cs-CZ')}
+                      </span>
+                    </div>
+                    <p className="text-sm text-slate-700">{comment.content}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          
+          {/* Add comment form */}
+          <div className="p-4 border-t border-slate-100 flex-shrink-0 bg-white">
+            {commentSuccess ? (
+              <div className="text-center py-3 text-green-600">
+                <CheckCircle className="w-6 h-6 mx-auto mb-1" />
+                <p className="text-sm font-medium">Komentář odeslán!</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <input
+                  type="text"
+                  value={commentAuthorName}
+                  onChange={(e) => setCommentAuthorName(e.target.value)}
+                  placeholder="Vaše jméno (volitelné)"
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+                <textarea
+                  value={commentContent}
+                  onChange={(e) => setCommentContent(e.target.value)}
+                  placeholder="Napište komentář..."
+                  rows={3}
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+                />
+                <button
+                  onClick={submitComment}
+                  disabled={!commentContent.trim() || submittingComment}
+                  className={`w-full py-2.5 rounded-lg font-medium text-sm flex items-center justify-center gap-2 ${
+                    commentContent.trim() && !submittingComment
+                      ? 'bg-indigo-600 text-white'
+                      : 'bg-slate-100 text-slate-400'
+                  }`}
+                >
+                  {submittingComment ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Odesílám...
+                    </>
+                  ) : (
+                    <>
+                      <Send className="w-4 h-4" />
+                      Odeslat komentář
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
