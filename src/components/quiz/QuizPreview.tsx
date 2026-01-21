@@ -1624,6 +1624,34 @@ export function QuizPreview({ quiz, onClose, isLive = false, onComplete, initial
     setShowResult(false);
   };
   
+  // Simple progress bar - EXACT copy from QuizStudentView (for public mode)
+  const renderSimpleProgressBar = () => {
+    return (
+      <>
+        {currentSlideIndex >= 0 && (
+          <div
+            className="rounded-full"
+            style={{ 
+              height: '8px',
+              backgroundColor: '#475569',
+              flex: currentSlideIndex + 1
+            }}
+          />
+        )}
+        {quiz.slides.slice(currentSlideIndex + 1).map((_, idx) => (
+          <div
+            key={idx}
+            className="flex-1 rounded-full"
+            style={{ 
+              height: '8px',
+              backgroundColor: '#CBD5E1'
+            }}
+          />
+        ))}
+      </>
+    );
+  };
+
   // Progress bar renderer
   const renderProgressBar = () => {
     const totalSlides = quiz.slides.length;
@@ -2144,9 +2172,9 @@ export function QuizPreview({ quiz, onClose, isLive = false, onComplete, initial
             <ArrowLeft className="w-5 h-5" />
           </button>
         
-          {/* Progress bar */}
+          {/* Progress bar - use simple version for public mode (same as QuizStudentView) */}
           <div className="flex-1 flex items-center gap-1.5">
-            {renderProgressBar()}
+            {isPublicMode ? renderSimpleProgressBar() : renderProgressBar()}
           </div>
         
           {/* Right arrow - exact copy from QuizStudentView */}
