@@ -2259,6 +2259,11 @@ export function QuizViewPage() {
                 </div>
               )}
             </div>
+            
+            {/* Mobile: Extra space at bottom for scrolling */}
+            {isMobileOrTablet && (
+              <div style={{ height: '120px', flexShrink: 0 }} />
+            )}
           </div>
           
           {/* Desktop: Right arrow */}
