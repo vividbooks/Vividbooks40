@@ -1085,11 +1085,11 @@ export function BlockLayoutView({ slide }: { slide: InfoSlide }) {
             color: textStyle.color,
             fontFamily: theFontFamily,
             whiteSpace: 'pre-wrap',
-            // On mobile: allow word breaking to prevent overflow
-            wordWrap: isMobile ? 'break-word' : 'normal',
-            overflowWrap: isMobile ? 'break-word' : 'normal',
-            wordBreak: isMobile ? 'break-word' : 'normal',
-            hyphens: isMobile ? 'auto' : 'none',
+            // Never break words in the middle - keep words intact
+            wordWrap: 'normal',
+            overflowWrap: 'anywhere', // Only break very long strings without spaces (like URLs)
+            wordBreak: 'normal',
+            hyphens: 'none',
             lineHeight: block.lineHeight ?? 1.5,
             letterSpacing: `${block.letterSpacing ?? 0}px`,
             // On mobile: cap padding at 16px to prevent text overflow
