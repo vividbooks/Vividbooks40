@@ -86,7 +86,10 @@ Deno.serve(async (req: Request) => {
       },
 
       gotoOptions: {
-        waitUntil: 'networkidle0',
+        // 'load' fires after HTML + linked resources are parsed, before React
+        // finishes its async work. This lets addScriptTag inject
+        // window.__WORKSHEET_DATA__ early, before PrintPage's useEffect reads it.
+        waitUntil: 'load',
         timeout: 45000,
       },
 

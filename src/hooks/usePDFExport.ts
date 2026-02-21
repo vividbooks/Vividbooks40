@@ -10,6 +10,7 @@
 import { useRef, useCallback, useState } from 'react';
 import { Worksheet } from '../types/worksheet';
 import { exportWorksheetPDF } from '../utils/pdf-export';
+import { saveWorksheet } from '../utils/worksheet-storage';
 import { toast } from 'sonner';
 
 interface UsePDFExportReturn {
@@ -37,11 +38,16 @@ export function usePDFExport(): UsePDFExportReturn {
 
     const toastId = toast.loading('Generuji PDF…');
 
+    // Save worksheet to Supabase NOW (before Browserless loads the print page).
+    // This ensures get-worksheet can find it even if addScriptTag injection fails.
+    // saveWorksheet is a fire-and-forget with internal auth check – safe to call.
+    saveWorksheet(worksheet);
+    // Give the async DB write a moment to complete before Browserless starts.
+    await new Promise(r => setTimeout(r, 800));
+
     try {
       // Attempt 1: Browserless edge function → download .pdf
-      // Pass full worksheet JSON so the edge function can upsert it to Supabase
-      // before Browserless loads the print page. This is critical for offline users
-      // whose worksheets only exist in localStorage (Browserless can't access it).
+      // Also pass full worksheet JSON for direct injection via addScriptTag.
       await exportWorksheetPDF({
         worksheetId: worksheet.id,
         worksheetData: worksheet as unknown as Record<string, unknown>,

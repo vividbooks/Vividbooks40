@@ -96,9 +96,14 @@ export function PrintPage() {
       return;
     }
 
-    (async () => {
-      // 1. window.__WORKSHEET_DATA__ – injected by pdf-export edge function via
-      //    Browserless addScriptTag. Highest priority: no network, no auth needed.
+    // ── Priority 1: window.__WORKSHEET_DATA__ injected by Browserless addScriptTag ──
+    // addScriptTag in Browserless runs AFTER page.goto() resolves – which means
+    // it may fire before or after React's useEffect depending on network timing.
+    // We poll for up to 5 s so we catch it regardless of injection timing.
+    const tryLoad = async () => {
+      let resolved = false;
+
+      // Immediate check (best case: addScriptTag ran before React)
       try {
         const injected = (window as any).__WORKSHEET_DATA__;
         if (injected && typeof injected === 'object' && injected.blocks) {
@@ -108,7 +113,32 @@ export function PrintPage() {
         }
       } catch { /* ignore */ }
 
-      // 2. localStorage – instant, works when previewing in the same browser
+      // Poll for up to 5 s (50 × 100 ms)
+      await new Promise<void>((resolve) => {
+        let attempts = 0;
+        const poll = setInterval(() => {
+          attempts++;
+          try {
+            const injected = (window as any).__WORKSHEET_DATA__;
+            if (injected && typeof injected === 'object' && injected.blocks) {
+              clearInterval(poll);
+              resolved = true;
+              setWorksheet(injected as Worksheet);
+              setLoading(false);
+              resolve();
+              return;
+            }
+          } catch { /* ignore */ }
+          if (attempts >= 50) {
+            clearInterval(poll);
+            resolve();
+          }
+        }, 100);
+      });
+
+      if (resolved) return; // worksheet already set by polling
+
+      // ── Priority 2: localStorage (same browser preview) ──
       try {
         const local = localStorage.getItem(`vividbooks_worksheet_${worksheetId}`);
         if (local) {
@@ -118,7 +148,7 @@ export function PrintPage() {
         }
       } catch { /* ignore */ }
 
-      // 3. get-worksheet edge function – service role fallback
+      // ── Priority 3: get-worksheet edge function (service role DB) ──
       const ws = await fetchWorksheetViaProxy(worksheetId);
       if (ws) {
         setWorksheet(ws);
@@ -128,7 +158,9 @@ export function PrintPage() {
 
       setError('Pracovní list nebyl nalezen.');
       setLoading(false);
-    })();
+    };
+
+    tryLoad();
   }, [worksheetId]);
 
   // Signal readiness ONLY after layout stabilisation + font loading
