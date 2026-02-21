@@ -340,44 +340,57 @@ export function GridCanvas({
   }, [blocks]);
 
   // ── Measure block heights with robust ResizeObserver ────────────────────────
+  // IMPORTANT: The observer is created lazily inside blockRefCallback instead of
+  // in a useEffect. This fixes a race condition on page refresh: when a worksheet
+  // is loaded from localStorage all blocks are rendered in the FIRST React pass,
+  // BEFORE any useEffect fires. If the observer were created in useEffect it would
+  // be null when the first blockRefCallback runs, meaning blocks would never be
+  // observed and blockHeights would stay {} permanently (defaulting to 100px).
   const observerRef = useRef<ResizeObserver | null>(null);
 
-  useEffect(() => {
-    observerRef.current = new ResizeObserver((entries) => {
-      setBlockHeights((prev) => {
-        let changed = false;
-        const next = { ...prev };
-        entries.forEach((entry) => {
-          const blockId = (entry.target as HTMLElement).dataset.blockId;
-          if (blockId) {
-            // Použijeme borderBoxSize pro přesnou fyzickou výšku BEZ vlivu CSS scale()
-            // (getBoundingClientRect() vrací zmenšenou výšku, pokud má parent transform: scale)
-            let h = 0;
-            if (entry.borderBoxSize && entry.borderBoxSize.length > 0) {
-              h = entry.borderBoxSize[0].blockSize;
-            } else {
-              h = entry.contentRect.height;
+  const getOrCreateObserver = useCallback((): ResizeObserver => {
+    if (!observerRef.current) {
+      observerRef.current = new ResizeObserver((entries) => {
+        setBlockHeights((prev) => {
+          let changed = false;
+          const next = { ...prev };
+          entries.forEach((entry) => {
+            const blockId = (entry.target as HTMLElement).dataset.blockId;
+            if (blockId) {
+              // borderBoxSize gives the true layout height, unaffected by CSS transform: scale()
+              // getBoundingClientRect() would return the scaled (visual) height which is wrong here.
+              let h = 0;
+              if (entry.borderBoxSize && entry.borderBoxSize.length > 0) {
+                h = entry.borderBoxSize[0].blockSize;
+              } else {
+                h = entry.contentRect.height;
+              }
+              if (next[blockId] !== h) {
+                next[blockId] = h;
+                changed = true;
+              }
             }
-            if (next[blockId] !== h) {
-              next[blockId] = h;
-              changed = true;
-            }
-          }
+          });
+          return changed ? next : prev;
         });
-        return changed ? next : prev;
       });
-    });
+    }
+    return observerRef.current;
+  }, []);
 
+  // Disconnect observer on unmount
+  useEffect(() => {
     return () => {
       observerRef.current?.disconnect();
+      observerRef.current = null;
     };
   }, []);
 
   const blockRefCallback = useCallback((node: HTMLDivElement | null) => {
-    if (node && observerRef.current) {
-      observerRef.current.observe(node);
+    if (node) {
+      getOrCreateObserver().observe(node);
     }
-  }, []);
+  }, [getOrCreateObserver]);
 
   // ── Calculate pages based on block heights (Row-based algorithm) ──────────
   const pagesData = useMemo(() => {

@@ -44,42 +44,50 @@ export function PrintGridCanvas({ worksheet, onStable }: PrintGridCanvasProps) {
   const { top: padTop, bottom: padBot } = getContentPaddingV(pageHeader, pageFooter);
 
   // ── Measure block heights with robust ResizeObserver ────────────────────────
+  // Observer is created lazily in blockRefCallback (not in useEffect) so that
+  // blocks rendered in the very first React pass are immediately observed.
   const observerRef = useRef<ResizeObserver | null>(null);
 
-  useEffect(() => {
-    observerRef.current = new ResizeObserver((entries) => {
-      setBlockHeights((prev) => {
-        let changed = false;
-        const next = { ...prev };
-        entries.forEach((entry) => {
-          const blockId = (entry.target as HTMLElement).dataset.blockId;
-          if (blockId) {
-            let h = 0;
-            if (entry.borderBoxSize && entry.borderBoxSize.length > 0) {
-              h = entry.borderBoxSize[0].blockSize;
-            } else {
-              h = entry.contentRect.height;
+  const getOrCreateObserver = useCallback((): ResizeObserver => {
+    if (!observerRef.current) {
+      observerRef.current = new ResizeObserver((entries) => {
+        setBlockHeights((prev) => {
+          let changed = false;
+          const next = { ...prev };
+          entries.forEach((entry) => {
+            const blockId = (entry.target as HTMLElement).dataset.blockId;
+            if (blockId) {
+              let h = 0;
+              if (entry.borderBoxSize && entry.borderBoxSize.length > 0) {
+                h = entry.borderBoxSize[0].blockSize;
+              } else {
+                h = entry.contentRect.height;
+              }
+              if (next[blockId] !== h) {
+                next[blockId] = h;
+                changed = true;
+              }
             }
-            if (next[blockId] !== h) {
-              next[blockId] = h;
-              changed = true;
-            }
-          }
+          });
+          return changed ? next : prev;
         });
-        return changed ? next : prev;
       });
-    });
+    }
+    return observerRef.current;
+  }, []);
 
+  useEffect(() => {
     return () => {
       observerRef.current?.disconnect();
+      observerRef.current = null;
     };
   }, []);
 
   const blockRefCallback = useCallback((node: HTMLDivElement | null) => {
-    if (node && observerRef.current) {
-      observerRef.current.observe(node);
+    if (node) {
+      getOrCreateObserver().observe(node);
     }
-  }, []);
+  }, [getOrCreateObserver]);
 
   // ── Stabilisation detection ───────────────────────────────────────────────
   // Uses a debounce timer: after each blockHeights change, wait 400 ms. If no
