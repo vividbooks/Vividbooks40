@@ -57,44 +57,7 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // ── Step 1: Ensure worksheet is in Supabase DB ─────────────────────────────
-    // This is critical for offline/unauthenticated users whose worksheets only
-    // exist in localStorage. Browserless cannot access localStorage, so it must
-    // be able to fetch the worksheet via the get-worksheet edge function.
-    // We use the service_role key to bypass RLS entirely.
-    if (worksheetData && serviceRoleKey) {
-      try {
-        const upsertRes = await fetch(
-          `${supabaseUrl}/rest/v1/teacher_worksheets`,
-          {
-            method: 'POST',
-            headers: {
-              apikey: serviceRoleKey,
-              Authorization: `Bearer ${serviceRoleKey}`,
-              'Content-Type': 'application/json',
-              Prefer: 'resolution=merge-duplicates',
-            },
-            body: JSON.stringify({
-              id: worksheetId,
-              name: (worksheetData.title as string) || 'Pracovní list',
-              worksheet_type: ((worksheetData as any).metadata?.subject) || null,
-              content: worksheetData,
-              updated_at: new Date().toISOString(),
-            }),
-          }
-        );
-        if (!upsertRes.ok) {
-          const txt = await upsertRes.text();
-          console.warn('Worksheet upsert warning:', upsertRes.status, txt);
-        } else {
-          console.log('Worksheet upserted to DB:', worksheetId);
-        }
-      } catch (upsertErr) {
-        console.warn('Worksheet upsert failed (non-fatal):', upsertErr);
-      }
-    }
-
-    // ── Step 2: Build Browserless URL ──────────────────────────────────────────
+    // ── Step 1: Build Browserless URL ──────────────────────────────────────────
     // Use ?p= query format to bypass the GitHub Pages 404.html SPA redirect.
     // If we sent /Vividbooks40/print/ws-1, GitHub Pages serves 404.html which
     // does window.location.replace() – a JS navigation that destroys Puppeteer's
@@ -104,8 +67,18 @@ Deno.serve(async (req: Request) => {
     const encodedPath = encodeURIComponent(`/print/${worksheetId}`);
     const printUrl = `${appUrl}/?p=${encodedPath}`;
 
-    const browserlessBody = {
+    // ── Step 2: Inject worksheet data directly into the page ───────────────────
+    // We inject window.__WORKSHEET_DATA__ via addScriptTag BEFORE the page JS
+    // runs. PrintPage reads this first – no DB lookup, no auth, no teacher_id
+    // issues. This is the correct solution for offline/unauthenticated users.
+    const addScriptTag = worksheetData
+      ? [{ content: `window.__WORKSHEET_DATA__ = ${JSON.stringify(worksheetData)};` }]
+      : [];
+
+    const browserlessBody: Record<string, unknown> = {
       url: printUrl,
+
+      ...(addScriptTag.length > 0 ? { addScriptTag } : {}),
 
       waitForFunction: {
         fn: '() => !!window.__PRINT_READY__',

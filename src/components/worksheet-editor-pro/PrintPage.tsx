@@ -97,7 +97,18 @@ export function PrintPage() {
     }
 
     (async () => {
-      // 1. localStorage – instant, works when previewing in the same browser
+      // 1. window.__WORKSHEET_DATA__ – injected by pdf-export edge function via
+      //    Browserless addScriptTag. Highest priority: no network, no auth needed.
+      try {
+        const injected = (window as any).__WORKSHEET_DATA__;
+        if (injected && typeof injected === 'object' && injected.blocks) {
+          setWorksheet(injected as Worksheet);
+          setLoading(false);
+          return;
+        }
+      } catch { /* ignore */ }
+
+      // 2. localStorage – instant, works when previewing in the same browser
       try {
         const local = localStorage.getItem(`vividbooks_worksheet_${worksheetId}`);
         if (local) {
@@ -107,7 +118,7 @@ export function PrintPage() {
         }
       } catch { /* ignore */ }
 
-      // 2. get-worksheet edge function – service role, works in Browserless
+      // 3. get-worksheet edge function – service role fallback
       const ws = await fetchWorksheetViaProxy(worksheetId);
       if (ws) {
         setWorksheet(ws);
