@@ -39,7 +39,14 @@ export function usePDFExport(): UsePDFExportReturn {
 
     try {
       // Attempt 1: Browserless edge function → download .pdf
-      await exportWorksheetPDF({ worksheetId: worksheet.id, filename });
+      // Pass full worksheet JSON so the edge function can upsert it to Supabase
+      // before Browserless loads the print page. This is critical for offline users
+      // whose worksheets only exist in localStorage (Browserless can't access it).
+      await exportWorksheetPDF({
+        worksheetId: worksheet.id,
+        worksheetData: worksheet as unknown as Record<string, unknown>,
+        filename,
+      });
       toast.success('PDF staženo!', { id: toastId });
     } catch (err) {
       console.warn('[PDF Export] Edge function selhal, otevírám náhled:', err);

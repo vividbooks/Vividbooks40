@@ -10,6 +10,10 @@ const ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsI
 
 export interface PDFExportOptions {
   worksheetId: string;
+  /** Full worksheet JSON – sent to edge function so it can upsert to DB
+   *  before Browserless loads the print page. Required for offline users
+   *  whose worksheets only exist in localStorage. */
+  worksheetData?: Record<string, unknown>;
   /** Suggested filename for the downloaded file */
   filename?: string;
   /** Open /print page preview in a new tab instead of generating PDF */
@@ -21,7 +25,7 @@ export interface PDFExportOptions {
  * and triggers a browser download.
  */
 export async function exportWorksheetPDF(opts: PDFExportOptions): Promise<void> {
-  const { worksheetId, filename = 'pracovni-list.pdf', preview = false } = opts;
+  const { worksheetId, worksheetData, filename = 'pracovni-list.pdf', preview = false } = opts;
 
   if (preview) {
     const base = import.meta.env.PROD ? '/Vividbooks40' : '';
@@ -39,7 +43,7 @@ export async function exportWorksheetPDF(opts: PDFExportOptions): Promise<void> 
       'apikey': ANON_KEY,
       ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
     },
-    body: JSON.stringify({ worksheetId, filename }),
+    body: JSON.stringify({ worksheetId, worksheetData, filename }),
   });
 
   if (!response.ok) {
