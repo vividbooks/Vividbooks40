@@ -178,11 +178,26 @@ export function SlideBlockEditor({
   const [showPaddingGuides, setShowPaddingGuides] = useState(false);
   const paddingGuideTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const prevTextPaddingRef = useRef(block.textPadding);
+  const prevBlockContentRef = useRef(block.content);
   
-  // Show padding guides when textPadding changes
+  // Show padding guides only when the user adjusts the padding slider (same block, padding changed)
+  // When switching to a different block (content changes), just update ref silently
   useEffect(() => {
+    const blockContentChanged = prevBlockContentRef.current !== block.content;
+    prevBlockContentRef.current = block.content;
+
+    if (blockContentChanged) {
+      // Different block - just update ref, don't show guides
+      prevTextPaddingRef.current = block.textPadding;
+      setShowPaddingGuides(false);
+      if (paddingGuideTimeoutRef.current) {
+        clearTimeout(paddingGuideTimeoutRef.current);
+      }
+      return;
+    }
+
     if (block.type === 'text' && prevTextPaddingRef.current !== block.textPadding) {
-      // Clear any existing timeout
+      // Same block, padding changed by user slider
       if (paddingGuideTimeoutRef.current) {
         clearTimeout(paddingGuideTimeoutRef.current);
       }
@@ -195,7 +210,7 @@ export function SlideBlockEditor({
         clearTimeout(paddingGuideTimeoutRef.current);
       }
     };
-  }, [block.textPadding, block.type]);
+  }, [block.textPadding, block.type, block.content]);
   const [showAssetPicker, setShowAssetPicker] = useState(false);
   const [showLinkModeDropdown, setShowLinkModeDropdown] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -595,6 +610,7 @@ export function SlideBlockEditor({
   return (
     <div
       ref={containerRef}
+      data-slide-block
       className={`
         relative group h-full transition-all
         ${isSelected ? 'z-[100]' : isHovered ? 'z-[90]' : 'z-10'}
@@ -619,6 +635,7 @@ export function SlideBlockEditor({
     >
       {/* Type switcher & Settings - LEFT of block (OUTSIDE), visible on select */}
       <div 
+        data-slide-block
         className={`
           absolute transition-opacity flex flex-col items-center gap-2
           ${isSelected ? 'opacity-100' : 'opacity-0'}

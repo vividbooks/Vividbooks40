@@ -22,7 +22,8 @@ export type ActivityType =
   | 'fill-blanks'      // Doplňování - drag and drop words into sentences
   | 'image-hotspots'   // Poznávačka - identify points on an image
   | 'connect-pairs'    // Spojovačka - connect matching pairs
-  | 'video-quiz';      // Otázky ve videu - questions at specific video timestamps
+  | 'video-quiz'       // Otázky ve videu - questions at specific video timestamps
+  | 'form';            // Formulář - custom form with various field types
 
 // =============================================
 // BOARD (NÁSTĚNKA) TYPES
@@ -367,6 +368,9 @@ export interface ExampleStep {
   hint?: string;
 }
 
+/** Keyboard type for example activity */
+export type ExampleKeyboardType = 'simple' | 'full' | 'number-only' | 'fraction' | 'comparison' | 'pie-fraction';
+
 export interface ExampleActivitySlide extends BaseSlide {
   type: 'activity';
   activityType: 'example';
@@ -374,6 +378,12 @@ export interface ExampleActivitySlide extends BaseSlide {
   problem: string;
   steps: ExampleStep[];
   finalAnswer: string;
+  /** Alternative correct answers (all are accepted). */
+  alternativeAnswers?: string[];
+  /** Unit/suffix displayed as a gray placeholder after the answer input (e.g. "dm²", "kg", "cm"). */
+  answerSuffix?: string;
+  /** Which keyboard to show students. Defaults to 'simple'. */
+  keyboardType?: ExampleKeyboardType;
   media?: {
     type: 'image' | 'video' | 'lottie';
     url: string;
@@ -454,12 +464,91 @@ export interface VotingActivitySlide extends BaseSlide {
 }
 
 /**
+ * Tool types available
+ */
+export type ToolType = 'calculator' | 'drawing' | 'graph' | 'timer' | 'random' | 'certificate';
+
+/**
+ * Source for certificate fields - can be manual or from a form field
+ */
+export interface CertificateFieldSource {
+  type: 'manual' | 'form-field' | 'auto';
+  value?: string;          // For manual input
+  slideId?: string;        // Reference to form slide
+  fieldId?: string;        // Reference to form field
+}
+
+/**
+ * Certificate column configuration
+ */
+export interface CertificateColumn {
+  title: string;
+  content: string;
+}
+
+/**
+ * Position for custom template overlays
+ */
+export interface CustomPosition {
+  top: string;
+  left: string;
+}
+
+/**
+ * Certificate tool configuration
+ */
+export interface CertificateConfig {
+  title: string;                          // Main title e.g. "CERTIFIKÁT"
+  subtitle?: string;                      // Optional subtitle e.g. "DVPP"
+  organizationName?: string;              // e.g. "VIVIDBOOKS"
+  nameSource: CertificateFieldSource;     // Source for participant name
+  dateOfBirthSource?: CertificateFieldSource; // Source for date of birth
+  issueDate?: CertificateFieldSource;     // Date of issue (can be auto = today)
+  columns: CertificateColumn[];           // Bottom columns (typically 3)
+  backgroundImage?: string;               // Custom background
+  signatureImage?: string;                // Signature image
+  logoImage?: string;                     // Logo image
+  // Custom PDF template
+  useCustomTemplate?: boolean;            // Whether to use custom PDF
+  customPdfUrl?: string;                  // URL to custom PDF/image template
+  customNamePosition?: CustomPosition;    // Position for name on custom template
+  customDatePosition?: CustomPosition;    // Position for date on custom template
+}
+
+/**
  * Tools slide - Interactive tools (calculator, drawing, etc.)
  */
 export interface ToolsSlide extends BaseSlide {
   type: 'tools';
-  toolType: 'calculator' | 'drawing' | 'graph' | 'timer' | 'random';
+  toolType: ToolType;
   config?: Record<string, unknown>;
+  // Certificate specific
+  certificateConfig?: CertificateConfig;
+}
+
+/**
+ * Create a certificate slide
+ */
+export function createCertificateSlide(order: number): ToolsSlide {
+  return {
+    id: `slide-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    type: 'tools',
+    toolType: 'certificate',
+    order,
+    certificateConfig: {
+      title: 'CERTIFIKÁT',
+      subtitle: '',
+      organizationName: '',
+      nameSource: { type: 'manual', value: '' },
+      dateOfBirthSource: { type: 'manual', value: '' },
+      issueDate: { type: 'auto' },
+      columns: [
+        { title: 'Popis programu', content: '' },
+        { title: 'Podpis', content: '' },
+        { title: 'Organizace', content: '' },
+      ],
+    },
+  };
 }
 
 // =============================================
@@ -594,6 +683,43 @@ export interface VideoQuizActivitySlide extends BaseSlide {
   mustAnswerToProgress: boolean; // If true, video pauses until question is answered
 }
 
+// =============================================
+// FORM (FORMULÁŘ) TYPES
+// =============================================
+
+/**
+ * Form field types
+ */
+export type FormFieldType = 
+  | 'short-text'   // Krátká odpověď - single line text input
+  | 'long-text'    // Dlouhá odpověď - multi-line textarea
+  | 'checkboxes'   // Checkboxy - multiple choice with checkboxes
+  | 'radio'        // Radio buttons - single choice
+  | 'dropdown';    // Rozbalovací seznam - dropdown select
+
+/**
+ * Single form field
+ */
+export interface FormField {
+  id: string;
+  type: FormFieldType;
+  label: string; // Question/label for the field
+  required: boolean; // Is this field required?
+  placeholder?: string; // Placeholder text for text inputs
+  options?: string[]; // Options for checkboxes, radio, dropdown
+}
+
+/**
+ * Form Activity (Formulář)
+ * Custom form with various field types
+ */
+export interface FormActivitySlide extends BaseSlide {
+  type: 'activity';
+  activityType: 'form';
+  instruction?: string; // Optional instruction at the top
+  fields: FormField[]; // Array of form fields
+}
+
 /**
  * Union type for all slide types
  */
@@ -609,6 +735,7 @@ export type QuizSlide =
   | ImageHotspotsActivitySlide
   | ConnectPairsActivitySlide
   | VideoQuizActivitySlide
+  | FormActivitySlide
   | ToolsSlide;
 
 /**
@@ -624,7 +751,8 @@ export type ActivitySlide =
   | FillBlanksActivitySlide
   | ImageHotspotsActivitySlide
   | ConnectPairsActivitySlide
-  | VideoQuizActivitySlide;
+  | VideoQuizActivitySlide
+  | FormActivitySlide;
 
 /**
  * Quiz/Test definition
@@ -645,6 +773,12 @@ export interface Quiz {
 /**
  * Quiz settings
  */
+/** Custom key override for the simple math keyboard (replaces default , = -) */
+export interface CustomKeyboardKey {
+  label: string;
+  latex: string;
+}
+
 export interface QuizSettings {
   showProgress: boolean;
   showScore: boolean;
@@ -655,6 +789,10 @@ export interface QuizSettings {
   showExplanations: 'immediately' | 'after-submit' | 'never';
   passingScore?: number; // percentage
   timeLimit?: number; // total time in minutes
+  /** Custom keys for the 3 special buttons on the simple math keyboard (default: , = −). Board-level setting. */
+  customKeys?: [CustomKeyboardKey | null, CustomKeyboardKey | null, CustomKeyboardKey | null];
+  /** Extra row of 3 buttons added below the simple math keyboard. Board-level setting. */
+  extraKeys?: [CustomKeyboardKey | null, CustomKeyboardKey | null, CustomKeyboardKey | null];
 }
 
 // =============================================
@@ -706,21 +844,134 @@ export interface QuizSession {
 /**
  * Live session for classroom sharing (Firebase)
  */
+export type CompetitionPhase = 'lobby' | 'countdown' | 'question' | 'evaluation' | 'results';
+
+// Tactical competition types
+export type TreasureType = 'double' | 'sabotage' | 'block' | 'shield' | 'xray' | 'timeBoost';
+
+export interface TacticalEvent {
+  id: string;
+  type: 'sabotage' | 'block' | 'shield_block' | 'double';
+  fromName: string;
+  toName?: string;
+  points?: number;
+  timestamp: string;
+}
+
 export interface LiveQuizSession {
   id: string;
   quizId: string;
+  code?: string;
   teacherId: string;
   teacherName: string;
   
   // Session state
   isActive: boolean;
   currentSlideIndex: number;
+  mode?: 'live' | 'competition' | 'team-competition' | 'duel-competition' | 'tactical-competition';
   
   // Control
   isPaused: boolean;
   showResults: boolean;
   isLocked: boolean; // true = students follow teacher, false = students can navigate freely
   
+  // Competition mode fields
+  competitionPhase?: CompetitionPhase;
+  competitionData?: {
+    currentQuestionIndex: number;
+    questionSlideIds: string[];
+    timerStartedAt?: string;
+    timerDuration: number;
+    timerPaused: boolean;
+    evaluated: boolean;
+    scores: { [studentId: string]: number };
+  };
+  
+  // Team competition mode fields
+  teamCompetitionData?: {
+    teamCount: number;
+    teams: {
+      [teamId: string]: {
+        name: string;
+        emoji: string;
+        color: string;
+        memberIds: string[];
+        score: number;
+      };
+    };
+    studentTeamMap: { [studentId: string]: string };
+    activePlayerMap: { [teamId: string]: string };
+    playedPlayersMap: { [teamId: string]: string[] };
+    currentRoundType: 'normal' | 'tip' | 'power' | 'double';
+    tipRoundActive: boolean;
+    tipVotes: { [studentId: string]: boolean };
+    timerStartedAt?: string;
+    timerDuration: number;
+    timerPaused: boolean;
+    evaluated: boolean;
+    questionSlideIds: string[];
+    currentQuestionIndex: number;
+    questionsPlayed: number;
+  };
+  
+  // Duel competition mode fields
+  duelCompetitionData?: {
+    duels: {
+      [duelId: string]: {
+        playerIds: string[];
+        scores: { [studentId: string]: number };
+      };
+    };
+    studentDuelMap: { [studentId: string]: string };
+    timerStartedAt?: string;
+    timerDuration: number;
+    timerPaused: boolean;
+    evaluated: boolean;
+    questionSlideIds: string[];
+    currentQuestionIndex: number;
+    questionsPlayed: number;
+  };
+  
+  // Tactical competition mode fields
+  tacticalCompetitionData?: {
+    scores: { [studentId: string]: number };
+    streaks: { [studentId: string]: number };
+    // Power-ups owned by each student
+    powerUps: {
+      [studentId: string]: {
+        shield?: boolean;       // blocks one sabotage/block
+        xray?: boolean;         // see correct answer next question
+        timeBoost?: boolean;    // +15s next question
+      };
+    };
+    // Blocks active for next round
+    blockedPlayers: { [studentId: string]: string }; // studentId -> blockerName
+    // Student choices after correct answer: 'pending' | 'points' | 'treasure'
+    choices: { [studentId: string]: 'pending' | 'points' | 'treasure' };
+    // Treasure selection: what treasures were offered and what was picked
+    treasureOffers: {
+      [studentId: string]: {
+        options: TreasureType[];
+        picked?: TreasureType;
+        target?: string; // studentId target for sabotage/block
+      };
+    };
+    // Phase timing
+    choicePhaseActive: boolean;
+    choicePhaseStartedAt?: string;
+    // Events to display (sabotage, block, etc.)
+    events: TacticalEvent[];
+    // Round info
+    isPowerRound: boolean;
+    timerStartedAt?: string;
+    timerDuration: number;
+    timerPaused: boolean;
+    evaluated: boolean;
+    questionSlideIds: string[];
+    currentQuestionIndex: number;
+    questionsPlayed: number;
+  };
+
   // Quiz data (stored in Firebase for students to load)
   quizData?: {
     id: string;
@@ -1079,6 +1330,20 @@ export function createVideoQuizSlide(order: number): VideoQuizActivitySlide {
     questions: [],
     countAsMultiple: true,
     mustAnswerToProgress: true,
+  };
+}
+
+/**
+ * Create Form slide (Formulář)
+ */
+export function createFormSlide(order: number): FormActivitySlide {
+  return {
+    id: `slide-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    type: 'activity',
+    activityType: 'form',
+    order,
+    instruction: '',
+    fields: [],
   };
 }
 

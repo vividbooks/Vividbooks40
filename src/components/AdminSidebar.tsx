@@ -18,7 +18,9 @@ import {
   Play,
   FileEdit,
   Upload,
-  ArrowLeft
+  ArrowLeft,
+  Layout,
+  Sparkles
 } from 'lucide-react';
 import { DndContext, DragEndEvent, closestCenter, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
@@ -59,7 +61,8 @@ const SUBJECTS = [
   { id: 'fyzika', label: 'Fyzika' },
   { id: 'chemie', label: 'Chemie' },
   { id: 'prirodopis', label: 'Přírodopis' },
-  { id: 'matematika', label: 'Matematika' }
+  { id: 'matematika', label: 'Matematika' },
+  { id: 'dejepis', label: 'Dějepis' }
 ];
 
 const OTHER_CATEGORIES = [
@@ -1190,6 +1193,35 @@ export function AdminSidebar({ activeCategory, activeSlug, onSelectPage }: Admin
       {/* Header */}
       <div className="p-4 border-b border-slate-200/60">
         <h1 className="text-lg font-bold text-[#4E5871]">Admin Vividbooks</h1>
+      </div>
+
+      {/* PRO Editor Shortcut */}
+      <div className="px-4 pt-4 space-y-2">
+        <button
+          onClick={() => navigate('/admin/workbook-pro/1770063965010?offline=1')}
+          className="w-full flex items-center gap-3 px-4 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-md shadow-indigo-200 transition-all group"
+        >
+          <div className="p-2 bg-white/20 rounded-lg group-hover:scale-110 transition-transform">
+            <Layout className="h-5 w-5 text-white" />
+          </div>
+          <div className="text-left">
+            <div className="text-sm font-bold leading-tight">Editor PRO</div>
+            <div className="text-[10px] text-indigo-100 opacity-80">Otevřít přehled sešitů</div>
+          </div>
+        </button>
+
+        <button
+          onClick={() => navigate('/admin/import-agent')}
+          className="w-full flex items-center gap-3 px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl shadow-md shadow-amber-200 transition-all group"
+        >
+          <div className="p-1.5 bg-white/20 rounded-lg group-hover:scale-110 transition-transform">
+            <Sparkles className="h-4 w-4 text-white" />
+          </div>
+          <div className="text-left">
+            <div className="text-sm font-bold leading-tight">Import Agent</div>
+            <div className="text-[10px] text-amber-100 opacity-80">Screenshot → bloky</div>
+          </div>
+        </button>
       </div>
       
       <div className="p-4">

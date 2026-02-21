@@ -1,7 +1,7 @@
 /**
  * AutoScaleQuestion - Automatically scales question text to fill available space
  * 
- * On desktop: scales text to fill container, allowing multi-line wrapping
+ * On desktop: scales text to fill container, preferring single line when possible
  * On mobile: uses fixed responsive sizes
  */
 
@@ -79,13 +79,43 @@ export function AutoScaleQuestion({
       }
     }
 
+    // After finding the wrapping optimal, check if we can still fit on one line
+    // by slightly reducing font. If text is short enough, prefer single-line.
+    const plainLen = children.replace(/\$[^$]*\$/g, 'X').length;
+    if (plainLen <= 30) {
+      // Try to find a size where it stays on one line
+      text.style.whiteSpace = 'nowrap';
+      let singleLow = minFontSize;
+      let singleHigh = optimalSize;
+      let singleSize = minFontSize;
+
+      while (singleLow <= singleHigh) {
+        const mid = Math.floor((singleLow + singleHigh) / 2);
+        text.style.fontSize = `${mid}px`;
+
+        if (text.scrollWidth <= containerWidth && text.scrollHeight <= containerHeight) {
+          singleSize = mid;
+          singleLow = mid + 1;
+        } else {
+          singleHigh = mid - 1;
+        }
+      }
+
+      text.style.whiteSpace = 'normal';
+
+      // Use single-line if it's at least 70% of the wrapped size
+      if (singleSize >= optimalSize * 0.7 && singleSize >= minFontSize) {
+        optimalSize = singleSize;
+      }
+    }
+
     setFontSize(optimalSize);
   }, [children, targetFill, minFontSize, maxFontSize, isMobile]);
 
-  // On mobile, use responsive classes
+  // On mobile, use large responsive text
   if (isMobile) {
     return (
-      <h1 className={`text-xl sm:text-2xl font-bold text-center leading-tight ${className}`} style={{ color: 'inherit' }}>
+      <h1 className={`font-bold text-center leading-tight ${className}`} style={{ color: '#4E5871', fontSize: 'clamp(2rem, 10vw, 4rem)' }}>
         <MathText>{children || 'Otázka...'}</MathText>
       </h1>
     );
@@ -106,7 +136,7 @@ export function AutoScaleQuestion({
           hyphens: 'none',
           whiteSpace: 'normal',
           maxWidth: '95%',
-          color: 'inherit'
+          color: '#4E5871'
         }}
       >
         <MathText>{children || 'Otázka...'}</MathText>
@@ -116,5 +146,3 @@ export function AutoScaleQuestion({
 }
 
 export default AutoScaleQuestion;
-
-

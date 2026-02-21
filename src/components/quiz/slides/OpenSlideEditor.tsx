@@ -16,10 +16,11 @@ import {
   ToggleRight,
   Calculator,
   Sparkles,
+  X,
 } from 'lucide-react';
 import { OpenActivitySlide } from '../../../types/quiz';
 import { MathText } from '../../math/MathText';
-import { MathInputModal } from '../../math/MathKeyboard';
+import MathKeyboard from '../../math/MathKeyboard';
 import { AssetPicker } from '../../shared/AssetPicker';
 import type { AssetPickerResult } from '../../../types/assets';
 import { getContrastColor } from '../../../utils/color-utils';
@@ -34,12 +35,15 @@ export function OpenSlideEditor({ slide, onUpdate }: OpenSlideEditorProps) {
   const [newAnswer, setNewAnswer] = useState('');
   const [showAssetPicker, setShowAssetPicker] = useState(false);
   const [showMathKeyboard, setShowMathKeyboard] = useState(false);
+  const [mathValue, setMathValue] = useState('');
   const [editingQuestion, setEditingQuestion] = useState(false);
   
-  // Handle inserting math expression
-  const handleMathInsert = (latex: string) => {
-    const mathExpression = `$${latex}$`;
+  // Handle inserting math expression from inline keyboard
+  const handleMathInsert = () => {
+    if (!mathValue.trim()) return;
+    const mathExpression = `$${mathValue}$`;
     onUpdate(slide.id, { question: (slide.question || '') + mathExpression });
+    setMathValue('');
     setShowMathKeyboard(false);
   };
 
@@ -84,14 +88,41 @@ export function OpenSlideEditor({ slide, onUpdate }: OpenSlideEditorProps) {
             Otázka *
           </label>
           <button
-            onClick={() => setShowMathKeyboard(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm bg-indigo-100 text-indigo-700 hover:bg-indigo-200 transition-colors"
+            onClick={() => { setShowMathKeyboard(!showMathKeyboard); setMathValue(''); }}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition-colors ${showMathKeyboard ? 'bg-indigo-600 text-white' : 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200'}`}
             title="Vložit matematický zápis"
           >
             <Calculator className="w-4 h-4" />
             Matematika
           </button>
         </div>
+
+        {/* Inline Math Keyboard */}
+        {showMathKeyboard && (
+          <div className="mb-3 p-3 bg-slate-50 rounded-xl border border-slate-200" style={{ maxWidth: 340 }}>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-medium text-slate-500">Matematický zápis</span>
+              <button onClick={() => setShowMathKeyboard(false)} className="p-1 rounded-lg hover:bg-slate-200 text-slate-400">
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+            <MathKeyboard
+              value={mathValue}
+              onChange={setMathValue}
+              placeholder="Napiš výraz..."
+              showPreview={true}
+              compact={true}
+            />
+            <button
+              onClick={handleMathInsert}
+              disabled={!mathValue.trim()}
+              className="mt-2 w-full py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              Vložit do otázky
+            </button>
+          </div>
+        )}
+
         {editingQuestion ? (
           <textarea
             value={slide.question}
@@ -282,14 +313,6 @@ export function OpenSlideEditor({ slide, onUpdate }: OpenSlideEditorProps) {
         )}
       </div>
       
-      {/* Math Keyboard Modal */}
-      <MathInputModal
-        isOpen={showMathKeyboard}
-        onClose={() => setShowMathKeyboard(false)}
-        onSubmit={handleMathInsert}
-        title="Vložit matematický výraz"
-      />
-
       {/* Asset Picker Modal */}
       <AssetPicker
         isOpen={showAssetPicker}

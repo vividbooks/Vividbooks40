@@ -8,10 +8,14 @@ import React, { useState, useRef, useEffect, useCallback, useId } from 'react';
 import { createPortal } from 'react-dom';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { Plus, X, Check, Circle, Square, Type, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Copy, Trash2, ImageIcon, Table as TableIcon, QrCode, ArrowLeftRight } from 'lucide-react';
-import { WorksheetBlock, ChoiceOption, GlobalFontSize, SpacerStyle, ExamplesContent, MathExample, ExampleDifficulty, AnswerBoxStyle, ImageContent, ImageSize, BlockImage, TableContent, ConnectPairsContent, ImageHotspotsContent, VideoQuizContent, ConnectPairContent, WorksheetHotspot, WorksheetVideoQuestion, HeaderFooterContent, QRCodeContent } from '../../types/worksheet';
+import { Plus, X, Check, Circle, Square, Type, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Copy, Trash2, ImageIcon, Table as TableIcon, QrCode, ArrowLeftRight, Bold, Italic, Underline, Info } from 'lucide-react';
+import { WorksheetBlock, ChoiceOption, GlobalFontSize, SpacerStyle, ExamplesContent, MathExample, ExampleDifficulty, AnswerBoxStyle, ImageContent, ImageSize, BlockImage, TableContent, ConnectPairsContent, ImageHotspotsContent, VideoQuizContent, ConnectPairContent, WorksheetHotspot, WorksheetVideoQuestion, HeaderFooterContent, QRCodeContent, FreeCanvasContent, FreeAnswerSubQuestion, SubQuestionLabelType, SubQuestionLabelStyle } from '../../types/worksheet';
+import { FreeCanvasEditor } from './FreeCanvasEditor';
+import { FreeCanvasFullscreen } from './FreeCanvasFullscreen';
+import { PlayfulAnswersDisplay } from './PlayfulAnswersDisplay';
+import { PlayfulImagesDisplay } from './PlayfulImagesDisplay';
 import { QRCodeSVG } from 'qrcode.react';
-import { LatexRenderer } from './LatexRenderer';
+import { LatexRenderer, preventOrphansInHtml } from './LatexRenderer';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import { Table } from '@tiptap/extension-table';
@@ -19,6 +23,7 @@ import TableRow from '@tiptap/extension-table-row';
 import TableCell from '@tiptap/extension-table-cell';
 import TableHeader from '@tiptap/extension-table-header';
 import { WorksheetTextToolbar } from './WorksheetTextToolbar';
+import { TextSelectionBubble } from './TextSelectionBubble';
 import { useAssetPicker } from '../../hooks/useAssetPicker';
 
 function PrintSafePattern({ variant, lineSpacing = 40 }: { variant: 'dotted' | 'lined'; lineSpacing?: number }) {
@@ -35,7 +40,7 @@ function PrintSafePattern({ variant, lineSpacing = 40 }: { variant: 'dotted' | '
             <circle cx="2" cy="2" r="1" fill={dotColor} />
           </pattern>
         </defs>
-        <rect width="100%" height="100%" fill={`url(#${patternId})`} />
+        <rect y="12" width="100%" height="calc(100% - 12px)" fill={`url(#${patternId})`} />
       </svg>
     );
   }
@@ -47,7 +52,7 @@ function PrintSafePattern({ variant, lineSpacing = 40 }: { variant: 'dotted' | '
           <line x1="0" y1={lineSpacing - 1} x2="2000" y2={lineSpacing - 1} stroke={lineColor} strokeWidth="1" />
         </pattern>
       </defs>
-      <rect width="100%" height="100%" fill={`url(#${patternId})`} />
+      <rect y="8" width="100%" height="calc(100% - 8px)" fill={`url(#${patternId})`} />
     </svg>
   );
 }
@@ -101,7 +106,28 @@ export function EditableBlock({ block, isSelected, isHovered, onSelect, onUpdate
   const [isResizingMargin, setIsResizingMargin] = useState(false);
   const [localMargin, setLocalMargin] = useState<number | null>(null);
   const [toolbarPosition, setToolbarPosition] = useState({ top: 0, left: 0 });
+  const [actionPanelPos, setActionPanelPos] = useState<{ top: number; left: number } | null>(null);
   const blockRef = useRef<HTMLDivElement>(null);
+
+  // Track block position for action panel portal
+  useEffect(() => {
+    if (!isSelected || !blockRef.current) {
+      setActionPanelPos(null);
+      return;
+    }
+    const update = () => {
+      if (!blockRef.current) return;
+      const rect = blockRef.current.getBoundingClientRect();
+      setActionPanelPos({ top: rect.top + rect.height / 2, left: rect.right + 8 });
+    };
+    update();
+    window.addEventListener('scroll', update, true);
+    window.addEventListener('resize', update);
+    return () => {
+      window.removeEventListener('scroll', update, true);
+      window.removeEventListener('resize', update);
+    };
+  }, [isSelected]);
 
   // Check if this is a block that can be edited inline (shows toolbar or resize handles)
   const isTextBlock = ['heading', 'paragraph', 'infobox', 'multiple-choice', 'fill-blank', 'free-answer', 'spacer', 'image-hotspots', 'connect-pairs'].includes(block.type);
@@ -187,8 +213,26 @@ export function EditableBlock({ block, isSelected, isHovered, onSelect, onUpdate
     isDragging,
   } = useSortable({ id: block.id });
 
-  // Get visual styles from block
-  const visualStyles = block.visualStyles || {};
+  // For legacy infobox blocks without visualStyles, derive them from the variant
+  const getInfoboxFallbackStyles = (variant: string) => {
+    const map: Record<string, { backgroundColor: string; borderColor: string; borderWidth: number; borderStyle: 'solid'; borderRadius: number }> = {
+      blue:   { backgroundColor: '#dbeafe', borderColor: '#3b82f6', borderWidth: 2, borderStyle: 'solid', borderRadius: 12 },
+      green:  { backgroundColor: '#dcfce7', borderColor: '#22c55e', borderWidth: 2, borderStyle: 'solid', borderRadius: 12 },
+      yellow: { backgroundColor: '#fef9c3', borderColor: '#eab308', borderWidth: 2, borderStyle: 'solid', borderRadius: 12 },
+      purple: { backgroundColor: '#f3e8ff', borderColor: '#a855f7', borderWidth: 2, borderStyle: 'solid', borderRadius: 12 },
+      orange: { backgroundColor: '#fff7ed', borderColor: '#f97316', borderWidth: 2, borderStyle: 'solid', borderRadius: 12 },
+      red:    { backgroundColor: '#fee2e2', borderColor: '#ef4444', borderWidth: 2, borderStyle: 'solid', borderRadius: 12 },
+      gray:   { backgroundColor: '#f1f5f9', borderColor: '#94a3b8', borderWidth: 2, borderStyle: 'solid', borderRadius: 12 },
+      teal:   { backgroundColor: '#ccfbf1', borderColor: '#14b8a6', borderWidth: 2, borderStyle: 'solid', borderRadius: 12 },
+    };
+    return map[variant] || map['blue'];
+  };
+
+  // Get visual styles from block (for infobox type, use variant-derived styles as fallback)
+  const rawVisualStyles = block.visualStyles || {};
+  const visualStyles = (block.type === 'infobox' && !block.visualStyles)
+    ? getInfoboxFallbackStyles((block.content as any).variant || 'blue')
+    : rawVisualStyles;
   
   // Map shadow option to CSS box-shadow
   const getShadowStyle = (shadow?: 'none' | 'small' | 'medium' | 'large'): string => {
@@ -205,14 +249,22 @@ export function EditableBlock({ block, isSelected, isHovered, onSelect, onUpdate
   const hasVisualBorder = visualStyles.borderColor && visualStyles.borderColor !== 'transparent';
   const hasVisualShadow = visualStyles.shadow && visualStyles.shadow !== 'none';
 
+  // Determine padding: use block.padding if explicitly set (even 0), otherwise use visual style padding
+  const blockPadding = block.padding;
+  const effectivePadding = blockPadding !== undefined 
+    ? (blockPadding > 0 ? `${blockPadding}px` : '0px')
+    : (hasVisualBackground || hasVisualBorder || hasVisualShadow) 
+      ? '12px 16px' 
+      : undefined;
+
   // Build visual style object
   const visualStyleObj: React.CSSProperties = {
     backgroundColor: hasVisualBackground ? visualStyles.backgroundColor : undefined,
     border: hasVisualBorder ? `${visualStyles.borderWidth || 2}px solid ${visualStyles.borderColor}` : undefined,
     borderRadius: typeof visualStyles.borderRadius === 'number' ? `${visualStyles.borderRadius}px` : undefined,
     boxShadow: getShadowStyle(visualStyles.shadow),
-    // Add extra padding when visual styles are applied
-    padding: (hasVisualBackground || hasVisualBorder || hasVisualShadow) ? '12px 16px' : undefined,
+    // Apply padding from block settings or visual styles
+    padding: effectivePadding,
   };
 
   const style = {
@@ -399,7 +451,7 @@ export function EditableBlock({ block, isSelected, isHovered, onSelect, onUpdate
       onClick={handleClick}
       onDoubleClick={handleDoubleClick}
       className={`
-        group relative py-1 px-4 rounded-lg transition-all
+        group relative py-1 px-4 rounded-lg
         ${isDragging ? 'shadow-xl scale-[1.01]' : ''}
         ${block.type === 'table' ? '' : highlightClass}
         ${isEditing && block.type !== 'table' ? 'ring-2 ring-blue-500' : ''}
@@ -407,28 +459,28 @@ export function EditableBlock({ block, isSelected, isHovered, onSelect, onUpdate
     >
       
       {/* Block content with optional image */}
-      <BlockWithImage
-        block={block}
-        isEditing={isEditing}
-        isSelected={isSelected}
-        onUpdate={onUpdate}
-        onBlur={handleBlur}
-        onKeyDown={handleKeyDown}
-        globalFontSize={globalFontSize}
-        activityNumber={activityNumber}
-      />
+                <BlockWithImage
+                  block={block}
+                  isEditing={isEditing}
+                  isSelected={isSelected}
+                  onUpdate={onUpdate}
+                  onBlur={handleBlur}
+                  onKeyDown={handleKeyDown}
+                  globalFontSize={globalFontSize}
+                  activityNumber={activityNumber}
+                />
       
       {/* Bottom margin space with optional pattern */}
-      {marginBottom > 0 && (
-        <div style={{ height: marginBottom }} className="relative">
-          {marginStyle === 'dotted' && (
-            <PrintSafePattern key={`dotted-margin-${marginBottom}`} variant="dotted" />
-          )}
-          {marginStyle === 'lined' && (
-            <PrintSafePattern key={`lined-margin-${marginBottom}`} variant="lined" lineSpacing={40} />
-          )}
-        </div>
-      )}
+            {marginBottom > 0 && (
+              <div style={{ height: marginBottom }} className="relative">
+                {marginStyle === 'dotted' && (
+                  <PrintSafePattern key={`dotted-margin-${marginBottom}`} variant="dotted" />
+                )}
+                {marginStyle === 'lined' && (
+                  <PrintSafePattern key={`lined-margin-${marginBottom}`} variant="lined" lineSpacing={40} />
+                )}
+              </div>
+            )}
       
       {/* Margin resize handle - visible on hover, always at the very bottom (not for tables or spacers which have their own resize) */}
       {onUpdateMargin && block.type !== 'table' && block.type !== 'spacer' && (
@@ -454,13 +506,15 @@ export function EditableBlock({ block, isSelected, isHovered, onSelect, onUpdate
         </div>
       )}
 
-      {/* Action buttons - 2x2 grid, positioned OUTSIDE on the right */}
-      {isSelected && (
-        <div 
-          className="absolute top-1/2 z-[9999]"
-          style={{ 
-            right: '0px',
-            transform: 'translateX(100%) translateY(-50%)'
+      {/* Action buttons – rendered via portal so page overflow:hidden doesn't clip them */}
+      {isSelected && actionPanelPos && createPortal(
+        <div
+          style={{
+            position: 'fixed',
+            top: actionPanelPos.top,
+            left: actionPanelPos.left,
+            transform: 'translateY(-50%)',
+            zIndex: 9999,
           }}
           onClick={(e) => e.stopPropagation()}
         >
@@ -484,7 +538,6 @@ export function EditableBlock({ block, isSelected, isHovered, onSelect, onUpdate
             >
               <Copy size={16} className="text-blue-600" />
             </button>
-            
             {/* Row 2: Down + Delete */}
             <button
               onClick={() => onMoveDown?.()}
@@ -506,63 +559,13 @@ export function EditableBlock({ block, isSelected, isHovered, onSelect, onUpdate
               <Trash2 size={16} color="white" />
             </button>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
 
-    {/* Text formatting toolbar - rendered as portal to ensure it's above all panels */}
-    {showTextToolbar && createPortal(
-      <div 
-        className="fixed print:hidden worksheet-text-toolbar"
-        data-toolbar-for-block={block.id}
-        style={{ 
-          top: `${toolbarPosition.top}px`, 
-          left: `${toolbarPosition.left}px`, 
-          transform: 'translateX(-50%)',
-          pointerEvents: 'auto',
-          zIndex: 999999, // Extremely high z-index
-        }}
-        onClick={(e) => {
-          e.stopPropagation();
-        }}
-        onMouseDown={(e) => {
-          e.stopPropagation();
-        }}
-        onMouseUp={(e) => {
-          e.stopPropagation();
-        }}
-        onPointerDown={(e) => {
-          e.stopPropagation();
-        }}
-        onPointerUp={(e) => {
-          e.stopPropagation();
-        }}
-      >
-        <div style={{ backgroundColor: 'white', borderRadius: '12px', boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.2), 0 8px 10px -6px rgba(0, 0, 0, 0.1)' }}>
-          <WorksheetTextToolbar
-            fontSize={formatState.fontSize}
-            textAlign={formatState.textAlign}
-            isBold={formatState.isBold}
-            isItalic={formatState.isItalic}
-            isUnderline={formatState.isUnderline}
-            textColor={formatState.textColor}
-            highlightColor={formatState.highlightColor}
-            listType={formatState.listType}
-            onFontSizeChange={handleFontSizeChange}
-            onAlignChange={handleAlignChange}
-            onBoldToggle={handleBoldToggle}
-            onItalicToggle={handleItalicToggle}
-            onUnderlineToggle={handleUnderlineToggle}
-            onTextColorChange={handleTextColorChange}
-            onHighlightColorChange={handleHighlightColorChange}
-            onListTypeChange={handleListTypeChange}
-            onInsertSymbol={handleInsertSymbol}
-            onOpenAI={onOpenAI}
-          />
-        </div>
-      </div>,
-      document.body
-    )}
+    {/* Text formatting toolbar - REMOVED per user request */}
+    {/* showTextToolbar && createPortal(...) */}
     </>
   );
 }
@@ -591,89 +594,132 @@ const imageSizeToWidth: Record<ImageSize, string> = {
 };
 
 /**
- * BlockWithImage - Wrapper that renders optional image alongside block content
+ * BlockWithImage - Wrapper that renders optional image alongside block content.
+ * Supports widthPercent, visual styles (shape/stroke/rotation) and a drag handle when selected.
  */
 function BlockWithImage({ block, isEditing, isSelected, onUpdate, onBlur, onKeyDown, globalFontSize = 'normal', activityNumber }: BlockContentProps) {
-  const image = block.image;
-  
-  // If no image, just render the content directly
+  const image = block.image as any;
+  const containerRef = React.useRef<HTMLDivElement>(null);
+  const draggingRef = React.useRef(false);
+
+  // No image → just render content
   if (!image?.url) {
     return (
-      <BlockContent
-        block={block}
-        isEditing={isEditing}
-        isSelected={isSelected}
-        onUpdate={onUpdate}
-        onBlur={onBlur}
-        onKeyDown={onKeyDown}
-        globalFontSize={globalFontSize}
-        activityNumber={activityNumber}
-      />
+      <BlockContent block={block} isEditing={isEditing} isSelected={isSelected}
+        onUpdate={onUpdate} onBlur={onBlur} onKeyDown={onKeyDown}
+        globalFontSize={globalFontSize} activityNumber={activityNumber} />
     );
   }
 
-  const imageWidth = imageSizeToWidth[image.size] || '35%';
+  const resolvedWidth = image.widthPercent
+    ? `${image.widthPercent}%`
+    : (imageSizeToWidth[image.size as ImageSize] || '35%');
+  const isImageLeft = image.position === 'beside-left';
+
+  // Visual styles from image settings
+  const shape: string = image.galleryItemShape || 'rectangle';
+  const borderRadiusCss = shape === 'rectangle' ? `${image.galleryBorderRadius ?? 8}px` : '0';
+  const clipPath = GALLERY_CLIP_PATHS[shape] || '';
+  const strokeWidth: number = image.galleryStrokeWidth ?? 0;
+  const strokeColor: string = image.galleryStrokeColor || '#334155';
+  const rotateMax: number = image.galleryRotateMax ?? 5;
+  const rotateDeg = image.galleryRotate ? (((137 + 29) % (rotateMax * 2 + 1)) - rotateMax) : 0;
+  const dropShadowFilter = strokeWidth > 0
+    ? `drop-shadow(0 0 ${strokeWidth}px ${strokeColor}) drop-shadow(0 0 ${Math.ceil(strokeWidth / 2)}px ${strokeColor})`
+    : undefined;
+
+  // Gallery: use gallery array if present, otherwise single url
+  const galleryUrls: string[] = image.gallery?.length ? image.gallery : [image.url];
+  const hasMultiple = galleryUrls.length > 1;
+
+  const maxH = image.maxHeightPx;
+  const imgStyle: React.CSSProperties = shape === 'rectangle'
+    ? { width: '100%', height: 'auto', objectFit: 'contain', display: 'block', borderRadius: borderRadiusCss, ...(maxH ? { maxHeight: maxH } : {}) }
+    : { width: '100%', height: 'auto', objectFit: 'contain', display: 'block', clipPath, WebkitClipPath: clipPath, ...(maxH ? { maxHeight: maxH } : {}) };
+
+  const renderOneImg = (url: string, idx: number) => {
+    const idxRotateDeg = image.galleryRotate ? (((idx * 137 + 29) % (rotateMax * 2 + 1)) - rotateMax) : 0;
+    return (
+      <div key={idx} style={{ transform: idxRotateDeg !== 0 ? `rotate(${idxRotateDeg}deg)` : undefined, filter: dropShadowFilter, ...(shape === 'rectangle' && strokeWidth > 0 ? { outline: `${strokeWidth}px solid ${strokeColor}`, outlineOffset: `-${strokeWidth}px`, borderRadius: borderRadiusCss } : {}) }}>
+        <img src={url} alt={image.alt || ''} style={imgStyle} />
+      </div>
+    );
+  };
+
+  const renderImg = () => hasMultiple ? (
+    <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(galleryUrls.length, 2)}, 1fr)`, gap: 4, alignItems: 'start' }}>
+      {galleryUrls.map((url, idx) => renderOneImg(url, idx))}
+    </div>
+  ) : renderOneImg(galleryUrls[0], 0);
+
+  // Drag handle (bobánek) – only when block is selected
+  const handleDragStart = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    draggingRef.current = true;
+    const container = containerRef.current;
+    if (!container) return;
+    const onMove = (mv: MouseEvent) => {
+      if (!draggingRef.current) return;
+      const rect = container.getBoundingClientRect();
+      const mouseX = mv.clientX - rect.left;
+      let pct = isImageLeft
+        ? Math.round((mouseX / rect.width) * 100)
+        : Math.round(((rect.width - mouseX) / rect.width) * 100);
+      pct = Math.max(15, Math.min(70, pct));
+      onUpdate({ image: { ...image, widthPercent: pct, size: 'medium' } });
+    };
+    const onUp = () => { draggingRef.current = false; document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  };
+
+  const dragHandle = isSelected ? (
+    <div onMouseDown={handleDragStart}
+      style={{ width: 12, flexShrink: 0, cursor: 'col-resize', display: 'flex', alignItems: 'center', justifyContent: 'center', alignSelf: 'stretch', zIndex: 10 }}>
+      <div style={{ width: 8, height: 36, borderRadius: 4, backgroundColor: '#6366f1', boxShadow: '0 0 0 2px #818cf8, 0 2px 8px rgba(99,102,241,0.5)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3 }}>
+        {[0,1,2].map(i => <div key={i} style={{ width: 2, height: 2, borderRadius: '50%', backgroundColor: 'white' }} />)}
+      </div>
+    </div>
+  ) : <div style={{ width: 12, flexShrink: 0 }} />;
 
   // Image before content (above)
   if (image.position === 'before') {
     return (
-      <div className="flex flex-col gap-3">
-        <div style={{ maxWidth: imageWidth }}>
-          <img 
-            src={image.url} 
-            alt={image.alt || ''} 
-            className="w-full h-auto rounded-lg"
-          />
-        </div>
-        <BlockContent
-          block={block}
-          isEditing={isEditing}
-          isSelected={isSelected}
-          onUpdate={onUpdate}
-          onBlur={onBlur}
-          onKeyDown={onKeyDown}
-          globalFontSize={globalFontSize}
-          activityNumber={activityNumber}
-        />
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div style={{ width: resolvedWidth, ...(maxH ? { maxHeight: maxH, overflow: 'hidden' } : {}) }}>{renderImg()}</div>
+        {image.caption && <p style={{ fontSize: 11, color: '#64748b', textAlign: 'center', margin: 0 }}>{image.caption}</p>}
+        <BlockContent block={block} isEditing={isEditing} isSelected={isSelected}
+          onUpdate={onUpdate} onBlur={onBlur} onKeyDown={onKeyDown}
+          globalFontSize={globalFontSize} activityNumber={activityNumber} />
       </div>
     );
   }
 
-  // Image beside content (left or right)
-  const isImageLeft = image.position === 'beside-left';
-  
-  return (
-    <div className="flex gap-4 items-start">
-      {isImageLeft && (
-        <div style={{ width: imageWidth, flexShrink: 0 }}>
-          <img 
-            src={image.url} 
-            alt={image.alt || ''} 
-            className="w-full h-auto rounded-lg"
-          />
-        </div>
-      )}
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <BlockContent
-          block={block}
-          isEditing={isEditing}
-          isSelected={isSelected}
-          onUpdate={onUpdate}
-          onBlur={onBlur}
-          onKeyDown={onKeyDown}
-          globalFontSize={globalFontSize}
-          activityNumber={activityNumber}
-        />
+  // Image after content (below)
+  if (image.position === 'after') {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <BlockContent block={block} isEditing={isEditing} isSelected={isSelected}
+          onUpdate={onUpdate} onBlur={onBlur} onKeyDown={onKeyDown}
+          globalFontSize={globalFontSize} activityNumber={activityNumber} />
+        <div style={{ width: resolvedWidth, ...(maxH ? { maxHeight: maxH, overflow: 'hidden' } : {}) }}>{renderImg()}</div>
+        {image.caption && <p style={{ fontSize: 11, color: '#64748b', textAlign: 'center', margin: 0 }}>{image.caption}</p>}
       </div>
-      {!isImageLeft && (
-        <div style={{ width: imageWidth, flexShrink: 0 }}>
-          <img 
-            src={image.url} 
-            alt={image.alt || ''} 
-            className="w-full h-auto rounded-lg"
-          />
-        </div>
-      )}
+    );
+  }
+
+  return (
+    <div ref={containerRef} style={{ display: 'flex', alignItems: 'flex-start' }}>
+      {isImageLeft && <div style={{ width: resolvedWidth, flexShrink: 0 }}>{renderImg()}</div>}
+      {isImageLeft && dragHandle}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <BlockContent block={block} isEditing={isEditing} isSelected={isSelected}
+          onUpdate={onUpdate} onBlur={onBlur} onKeyDown={onKeyDown}
+          globalFontSize={globalFontSize} activityNumber={activityNumber} />
+      </div>
+      {!isImageLeft && dragHandle}
+      {!isImageLeft && <div style={{ width: resolvedWidth, flexShrink: 0 }}>{renderImg()}</div>}
     </div>
   );
 }
@@ -827,6 +873,15 @@ function BlockContent({ block, isEditing, isSelected, onUpdate, onBlur, onKeyDow
           onUpdate={onUpdate}
         />
       );
+    case 'free-canvas':
+      return (
+        <FreeCanvasActivityBlock
+          block={block}
+          isEditing={isEditing}
+          onUpdate={onUpdate}
+          activityNumber={activityNumber}
+        />
+      );
     default:
       return <p className="text-slate-400">Neznámý typ bloku</p>;
   }
@@ -847,7 +902,7 @@ interface FontSizes {
 }
 
 interface HeadingEditorProps {
-  content: { text: string; level: 'h1' | 'h2' | 'h3'; align?: 'left' | 'center' | 'right'; isBold?: boolean; isItalic?: boolean; isUnderline?: boolean; fontSize?: number; textColor?: string; highlightColor?: string };
+  content: { text: string; level: 'h1' | 'h2' | 'h3'; align?: 'left' | 'center' | 'right'; isBold?: boolean; isItalic?: boolean; isUnderline?: boolean; fontSize?: number; textColor?: string; highlightColor?: string; headingStyle?: 'plain' | 'pill' | 'underline' | 'left-border' };
   isEditing: boolean;
   onUpdate: (content: any) => void;
   onBlur: (e: React.FocusEvent) => void;
@@ -857,6 +912,7 @@ interface HeadingEditorProps {
 
 function HeadingEditor({ content, isEditing, onUpdate, onBlur, onKeyDown, fontSizes }: HeadingEditorProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const didFocusRef = useRef(false);
   const isBold = content.isBold || false;
   const isItalic = content.isItalic || false;
   const isUnderline = content.isUnderline || false;
@@ -872,11 +928,16 @@ function HeadingEditor({ content, isEditing, onUpdate, onBlur, onKeyDown, fontSi
   }, []);
 
   useEffect(() => {
-    if (isEditing && textareaRef.current) {
+    if (isEditing && !didFocusRef.current && textareaRef.current) {
+      didFocusRef.current = true;
       textareaRef.current.focus();
-      // Select all text
-      textareaRef.current.setSelectionRange(0, textareaRef.current.value.length);
+      // Place cursor at end (not select-all, to avoid overwriting on next keystroke)
+      const len = textareaRef.current.value.length;
+      textareaRef.current.setSelectionRange(len, len);
       autoResize();
+    }
+    if (!isEditing) {
+      didFocusRef.current = false;
     }
   }, [isEditing, autoResize]);
 
@@ -917,60 +978,108 @@ function HeadingEditor({ content, isEditing, onUpdate, onBlur, onKeyDown, fontSi
   const fontWeight = isBold && !isH1 ? 'bold' : baseFontWeight;
   const fontFamily = isH1 ? 'Cooper Light, serif' : undefined;
 
+  const hStyle = content.headingStyle || 'plain';
+
   const formattingStyle: React.CSSProperties = {
     fontStyle: isItalic ? 'italic' : 'normal',
     textDecoration: isUnderline ? 'underline' : 'none',
     color: textColor,
-    backgroundColor: highlightColor,
+    backgroundColor: hStyle === 'pill' ? 'transparent' : highlightColor,
   };
 
-  if (isEditing) {
-    return (
-      <textarea
-        ref={textareaRef}
-        value={content.text}
-        onChange={handleChange}
-        onBlur={onBlur}
-        onKeyDown={handleKeyDownLocal}
-        onInput={autoResize}
-        className={`w-full bg-transparent border-none outline-none resize-none overflow-hidden ${alignClass} ${fontClass}`}
-        style={{ fontSize: sizeStyle, fontWeight, fontFamily, ...formattingStyle, minHeight: '1.2em', lineHeight: 1.2 }}
-        placeholder="Zadejte nadpis..."
-        rows={1}
-      />
-    );
-  }
-
-  const HeadingTag = content.level as keyof JSX.IntrinsicElements;
-  
-  // Style object with font for H1 - apply to all child elements too
   const headingStyle: React.CSSProperties = {
     fontSize: sizeStyle,
     fontWeight,
     fontFamily,
     lineHeight: 1.2,
+    margin: 0,
+    padding: 0,
     ...formattingStyle,
   };
   
-  // For H1, we need to ensure the font is applied to ALL nested elements
-  // because Tailwind's base styles can override inherited fonts
   const innerStyle: React.CSSProperties = isH1 
     ? { fontFamily: 'Cooper Light, serif', fontWeight: 300, ...formattingStyle }
     : { ...formattingStyle };
-  
-  return (
-    <HeadingTag 
-      className={`${alignClass} ${fontClass}`}
-      style={headingStyle}
-    >
-      {content.text ? (
-        <span style={innerStyle}>
-          <LatexRenderer text={content.text} style={innerStyle} />
+
+  // Render content: textarea when editing, LatexRenderer when not
+  const renderContent = () => {
+    if (isEditing) {
+      return (
+        <textarea
+          ref={textareaRef}
+          value={content.text}
+          onChange={handleChange}
+          onBlur={onBlur}
+          onKeyDown={handleKeyDownLocal}
+          onInput={autoResize}
+          className={`w-full bg-transparent border-none outline-none resize-none overflow-hidden ${alignClass} ${fontClass}`}
+          style={{ ...headingStyle, minHeight: '1.2em' }}
+          placeholder="Zadejte nadpis..."
+          rows={1}
+        />
+      );
+    }
+    return content.text ? (
+      <span style={innerStyle}>
+        <LatexRenderer text={content.text} style={innerStyle} />
+      </span>
+    ) : (
+      <span className="text-slate-400" style={innerStyle}>Nadpis...</span>
+    );
+  };
+
+  // Heading style decorations
+  if (hStyle === 'pill') {
+    const pillBg = highlightColor !== 'transparent' ? highlightColor : '#dcfce7';
+    return (
+      <div className={alignClass}>
+        <span
+          style={{
+            ...headingStyle,
+            backgroundColor: pillBg,
+            padding: '6px 20px',
+            borderRadius: '10px',
+            display: 'inline-block',
+          }}
+        >
+          {renderContent()}
         </span>
-      ) : (
-        <span className="text-slate-400" style={innerStyle}>Nadpis...</span>
-      )}
-    </HeadingTag>
+      </div>
+    );
+  }
+
+  if (hStyle === 'left-border') {
+    const borderColor = highlightColor !== 'transparent' ? highlightColor : '#3b82f6';
+    return (
+      <div
+        style={{
+          borderLeft: `4px solid ${borderColor}`,
+          paddingLeft: '12px',
+        }}
+      >
+        <div className={`${alignClass} ${fontClass}`} style={headingStyle}>
+          {renderContent()}
+        </div>
+      </div>
+    );
+  }
+
+  if (hStyle === 'underline') {
+    const lineColor = highlightColor !== 'transparent' ? highlightColor : '#e2e8f0';
+    return (
+      <div style={{ borderBottom: `3px solid ${lineColor}`, paddingBottom: '6px' }}>
+        <div className={`${alignClass} ${fontClass}`} style={headingStyle}>
+          {renderContent()}
+        </div>
+      </div>
+    );
+  }
+  
+  // Default: plain
+  return (
+    <div className={`${alignClass} ${fontClass}`} style={headingStyle}>
+      {renderContent()}
+    </div>
   );
 }
 
@@ -1009,6 +1118,7 @@ interface ParagraphEditorProps {
 
 function ParagraphEditor({ content, isEditing, onUpdate, onBlur, onKeyDown, fontSizes }: ParagraphEditorProps) {
   const editorRef = useRef<HTMLTextAreaElement>(null);
+  const didFocusPRef = useRef(false);
   
   const displayMode = content.displayMode || 'normal';
   const bgColor = content.bgColor || 'blue';
@@ -1044,15 +1154,17 @@ function ParagraphEditor({ content, isEditing, onUpdate, onBlur, onKeyDown, font
     }
   }, []);
 
-  // Focus editor when editing starts
+  // Focus editor when editing starts – only once per editing session
   useEffect(() => {
-    if (isEditing && editorRef.current) {
+    if (isEditing && !didFocusPRef.current && editorRef.current) {
+      didFocusPRef.current = true;
       editorRef.current.focus();
-      // Place cursor at end
       const len = editorRef.current.value.length;
       editorRef.current.setSelectionRange(len, len);
-      // Auto-resize on initial focus
       autoResize();
+    }
+    if (!isEditing) {
+      didFocusPRef.current = false;
     }
   }, [isEditing, autoResize]);
 
@@ -1090,58 +1202,120 @@ function ParagraphEditor({ content, isEditing, onUpdate, onBlur, onKeyDown, font
     onUpdate({ ...content, html: newValue });
   };
 
-  if (isEditing) {
+  // Image settings
+  const imageUrl = content.imageUrl;
+  const imagePosition = (content.imagePosition && content.imagePosition !== 'none') ? content.imagePosition : 'right';
+  const imageShape = content.imageShape || 'square';
+  const imageSize = content.imageSize || 120;
+
+  // Image style based on shape
+  const getImageBorderRadius = () => {
+    switch (imageShape) {
+      case 'circle': return '50%';
+      case 'rounded': return '12px';
+      default: return '4px';
+    }
+  };
+
+  // Render image component
+  const renderImage = () => {
+    if (!imageUrl) return null;
+    
     return (
       <div
-        style={wrapperStyle}
-        className={displayMode === 'infobox' ? 'paragraph-infobox' : undefined}
-        data-bg-color={displayMode === 'infobox' ? bgColor : undefined}
-        data-has-border={displayMode === 'infobox' ? (hasBorder ? 'true' : 'false') : undefined}
+        style={{
+          width: imageSize,
+          height: imageShape === 'circle' ? imageSize : 'auto',
+          minHeight: imageShape === 'circle' ? imageSize : imageSize * 0.75,
+          flexShrink: 0,
+          overflow: 'hidden',
+          borderRadius: getImageBorderRadius(),
+        }}
       >
-        {/* Editable content - use textarea for consistent font */}
-        <textarea
-          ref={editorRef}
-          value={plainText}
-          onChange={(e) => {
-            onUpdate({ ...content, html: e.target.value });
-            autoResize();
+        <img
+          src={imageUrl}
+          alt=""
+          style={{
+            width: '100%',
+            height: imageShape === 'circle' ? '100%' : 'auto',
+            objectFit: 'cover',
+            display: 'block',
+            borderRadius: getImageBorderRadius(),
           }}
-          onBlur={onBlur}
-          onKeyDown={(e) => {
-            // Allow Enter for new lines - don't prevent default
-            if (e.key === 'Enter') {
-              // Let the default behavior happen (insert newline)
-              // Just trigger auto-resize after
-              setTimeout(autoResize, 0);
-              return;
-            }
-            // Pass other keys to parent handler (e.g., Escape)
-            onKeyDown(e);
-          }}
-          onInput={autoResize}
-          className="w-full bg-transparent border-none outline-none resize-none overflow-hidden"
-          style={{ ...textStyle, minHeight: '40px' }}
-          placeholder="Odstavec textu..."
         />
       </div>
     );
-  }
+  };
 
-  // Non-editing view - with LaTeX support
+  // Container style based on image position
+  const getContainerStyle = (): React.CSSProperties => {
+    if (!imageUrl) return wrapperStyle;
+    
+    const isHorizontal = imagePosition === 'left' || imagePosition === 'right';
+    
+    return {
+      ...wrapperStyle,
+      display: 'flex',
+      flexDirection: isHorizontal 
+        ? (imagePosition === 'left' ? 'row' : 'row-reverse')
+        : (imagePosition === 'top' ? 'column' : 'column-reverse'),
+      gap: '16px',
+      alignItems: isHorizontal ? 'flex-start' : 'stretch',
+    };
+  };
+
+  const columns = (content as any).columns || 1;
+  const hasHtml = content.html && /<[a-z][\s\S]*>/i.test(content.html);
+
+  const columnStyle: React.CSSProperties = columns > 1 ? {
+    columnCount: columns,
+    columnGap: '24px',
+  } : {};
+
   return (
     <div
-      style={wrapperStyle}
+      style={getContainerStyle()}
       className={displayMode === 'infobox' ? 'paragraph-infobox' : undefined}
       data-bg-color={displayMode === 'infobox' ? bgColor : undefined}
       data-has-border={displayMode === 'infobox' ? (hasBorder ? 'true' : 'false') : undefined}
     >
-      <div 
-        style={{ ...textStyle, whiteSpace: 'pre-wrap' }}
-      >
-        {plainText ? (
-          <LatexRenderer text={plainText} />
+      {renderImage()}
+      <div style={{ ...textStyle, whiteSpace: hasHtml ? undefined : 'pre-wrap', flex: 1, minHeight: '1.5em', ...columnStyle }}>
+        {isEditing ? (
+          <textarea
+            ref={editorRef}
+            value={plainText}
+            onChange={(e) => {
+              onUpdate({ ...content, html: e.target.value });
+              autoResize();
+            }}
+            onBlur={onBlur}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                setTimeout(autoResize, 0);
+                return;
+              }
+              onKeyDown(e);
+            }}
+            onInput={autoResize}
+            className="w-full bg-transparent border-none outline-none resize-none overflow-hidden"
+            style={{ ...textStyle, width: '100%', minHeight: '1.5em' }}
+            placeholder="Odstavec textu..."
+          />
         ) : (
-          <span style={{ color: '#94a3b8' }}>Odstavec textu...</span>
+          content.html ? (
+            hasHtml ? (
+              <div
+                className="prose-content"
+                style={textStyle}
+                dangerouslySetInnerHTML={{ __html: preventOrphansInHtml(content.html) }}
+              />
+            ) : (
+              <LatexRenderer text={content.html} style={textStyle} />
+            )
+          ) : (
+            <span style={{ color: '#94a3b8' }}>Odstavec textu...</span>
+          )
         )}
       </div>
     </div>
@@ -1184,15 +1358,17 @@ function InfoboxEditor({ content, isEditing, onUpdate, onBlur, onKeyDown, fontSi
     }
   }, [isEditing, autoResize]);
 
-  const variantStyles = {
-    blue: 'bg-blue-50 border-l-4 border-blue-500',
-    green: 'bg-green-50 border-l-4 border-green-500',
-    yellow: 'bg-yellow-50 border-l-4 border-yellow-500',
-    purple: 'bg-purple-50 border-l-4 border-purple-500',
+  // Accent color per variant (for title text)
+  const variantAccent: Record<string, string> = {
+    blue: '#1d4ed8',
+    green: '#15803d',
+    yellow: '#b45309',
+    purple: '#7e22ce',
   };
+  const accent = variantAccent[content.variant] || '#1d4ed8';
 
   return (
-    <div className={`p-4 rounded-lg ${variantStyles[content.variant]}`} style={{ fontSize: fontSizes.body }}>
+    <div style={{ fontSize: fontSizes.body }}>
       {isEditing ? (
         <>
           <input
@@ -1201,8 +1377,8 @@ function InfoboxEditor({ content, isEditing, onUpdate, onBlur, onKeyDown, fontSi
             value={content.title || ''}
             onChange={(e) => onUpdate({ ...content, title: e.target.value })}
             onKeyDown={onKeyDown}
-            className="w-full font-semibold text-slate-800 bg-transparent border-none outline-none mb-2"
-            style={{ fontSize: fontSizes.title }}
+            className="w-full bg-transparent border-none outline-none"
+            style={{ fontSize: fontSizes.title, fontWeight: 600, color: accent, padding: 0, margin: 0, marginBottom: '6px', display: 'block' }}
             placeholder="Titulek (volitelný)..."
           />
           <textarea
@@ -1215,25 +1391,309 @@ function InfoboxEditor({ content, isEditing, onUpdate, onBlur, onKeyDown, fontSi
             onBlur={onBlur}
             onKeyDown={onKeyDown}
             onInput={autoResize}
-            className="w-full text-slate-700 bg-transparent border-none outline-none resize-none overflow-hidden"
-            style={{ fontSize: fontSizes.body, minHeight: '40px' }}
+            className="w-full bg-transparent border-none outline-none resize-none overflow-hidden"
+            style={{ fontSize: fontSizes.body, minHeight: '40px', padding: 0, margin: 0, color: '#374151' }}
             placeholder="Text infoboxu..."
           />
         </>
       ) : (
         <>
           {content.title && (
-            <h4 className="font-semibold mb-1 text-slate-800" style={{ fontSize: fontSizes.title }}>{content.title}</h4>
+            <h4 style={{ fontSize: fontSizes.title, fontWeight: 600, color: accent, marginBottom: '4px', marginTop: 0 }}>
+              {content.title}
+            </h4>
           )}
           <div 
-            className="text-slate-700"
-            style={{ fontSize: fontSizes.body }}
+            style={{ fontSize: fontSizes.body, color: '#374151' }}
             dangerouslySetInnerHTML={{ 
-              __html: content.html || '<p class="text-slate-400">Infobox...</p>' 
+              __html: preventOrphansInHtml(content.html || '<p style="color:#9ca3af">Infobox...</p>')
             }}
           />
         </>
       )}
+    </div>
+  );
+}
+
+// ============================================
+// RICH QUESTION EDITOR
+// contenteditable that shows markdown as formatted HTML,
+// with a floating Bold/Italic/Underline/Highlight toolbar on selection.
+// ============================================
+
+/** Walk a DOM node tree and convert it to our markdown subset */
+function nodeToMd(node: Node): string {
+  if (node.nodeType === Node.TEXT_NODE) return node.textContent ?? '';
+  if (node.nodeType !== Node.ELEMENT_NODE) return '';
+  const el = node as HTMLElement;
+  const tag = el.tagName.toLowerCase();
+  const inner = Array.from(el.childNodes).map(nodeToMd).join('');
+  switch (tag) {
+    case 'strong': case 'b': return `**${inner}**`;
+    case 'em':     case 'i': return `*${inner}*`;
+    case 'u': return `<u>${inner}</u>`;
+    case 'mark': {
+      const styleAttr = el.getAttribute('style') ?? '';
+      const bgMatch = styleAttr.match(/background(?:-color)?:\s*([^;]+)/);
+      const bg = bgMatch ? bgMatch[1].trim() : el.style.backgroundColor;
+      return bg ? `<mark style="background:${bg}">${inner}</mark>` : `<mark>${inner}</mark>`;
+    }
+    case 'span': {
+      const bg = el.style.backgroundColor;
+      if (bg && bg !== 'transparent' && bg !== 'rgba(0, 0, 0, 0)') {
+        return `<mark style="background:${bg}">${inner}</mark>`;
+      }
+      return inner;
+    }
+    case 'br':  return '\n';
+    case 'div': return inner ? `${inner}\n` : '\n';
+    default: return inner;
+  }
+}
+
+/** Convert contenteditable innerHTML → markdown */
+function richHtmlToMd(html: string): string {
+  const wrapper = document.createElement('div');
+  wrapper.innerHTML = html;
+  return Array.from(wrapper.childNodes).map(nodeToMd).join('').trim();
+}
+
+/** Convert markdown → display HTML for contenteditable */
+function mdToRichHtml(md: string): string {
+  return (md ?? '')
+    .replace(/\*\*([\s\S]+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*([^*\n]+?)\*/g, '<em>$1</em>')
+    .replace(/\n/g, '<br>');
+  // <u>...</u> and <mark ...>...</mark> are already HTML — left as-is
+}
+
+/** Plain-text option editor — textarea with guaranteed Enter support */
+function OptionTextEditor({
+  value, onChange, onBlur, style, placeholder,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  onBlur?: (e: React.FocusEvent) => void;
+  style?: React.CSSProperties;
+  placeholder?: string;
+}) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+
+  // Auto-size on every render
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = '0px';
+    el.style.height = `${el.scrollHeight}px`;
+  });
+
+  return (
+    <textarea
+      ref={ref}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      onBlur={onBlur}
+      onKeyDown={(e) => {
+        // Explicitly stop ALL propagation for Enter so nothing above can block it
+        if (e.key === 'Enter') {
+          e.stopPropagation();
+          // Do NOT preventDefault — let browser insert \n naturally
+        }
+      }}
+      placeholder={placeholder}
+      rows={1}
+      style={{
+        ...style,
+        display: 'block',
+        width: '100%',
+        padding: 0,
+        margin: 0,
+        border: 'none',
+        outline: 'none',
+        background: 'transparent',
+        resize: 'none',
+        overflow: 'hidden',
+        lineHeight: (style as any)?.lineHeight || 'normal',
+      }}
+    />
+  );
+}
+
+function RichBubbleBtn({ children, onClick, title }: { children: React.ReactNode; onClick: () => void; title?: string }) {
+  return (
+    <button
+      title={title}
+      onMouseDown={(e) => { e.preventDefault(); onClick(); }}
+      style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 30, height: 30, borderRadius: 6, border: 'none', background: 'transparent', cursor: 'pointer', color: '#374151', transition: 'background 0.1s' }}
+      onMouseEnter={(e) => (e.currentTarget.style.background = '#f1f5f9')}
+      onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+    >
+      {children}
+    </button>
+  );
+}
+
+const RICH_HIGHLIGHTS = [
+  { bg: '#fef08a', label: 'Žlutá' },
+  { bg: '#bbf7d0', label: 'Zelená' },
+  { bg: '#bfdbfe', label: 'Modrá' },
+  { bg: '#fbcfe8', label: 'Růžová' },
+  { bg: '#fde68a', label: 'Oranžová' },
+  { bg: 'transparent', label: 'Zrušit' },
+];
+
+interface RichQuestionEditorProps {
+  value: string;
+  onChange: (v: string) => void;
+  style?: React.CSSProperties;
+  placeholder?: string;
+  onKeyDown?: (e: React.KeyboardEvent) => void;
+  onBlur?: (e: React.FocusEvent) => void;
+  autoFocus?: boolean;
+}
+
+function RichQuestionEditor({ value, onChange, style, placeholder, onKeyDown, onBlur, autoFocus }: RichQuestionEditorProps) {
+  const editableRef = useRef<HTMLDivElement>(null);
+  const lastMdRef   = useRef('');
+  const [showBubble,     setShowBubble]     = useState(false);
+  const [bubblePos,      setBubblePos]      = useState<{ top: number; left: number } | null>(null);
+  const [showHighlights, setShowHighlights] = useState(false);
+
+  // Sync external value → innerHTML (only when value changes from outside)
+  useEffect(() => {
+    const el = editableRef.current;
+    const safeValue = value ?? '';
+    if (!el || safeValue === lastMdRef.current) return;
+    lastMdRef.current = safeValue;
+    const newHtml = mdToRichHtml(safeValue);
+    if (el.innerHTML !== newHtml) el.innerHTML = newHtml;
+  }, [value]);
+
+  // Auto-focus + move cursor to end
+  useEffect(() => {
+    if (!autoFocus || !editableRef.current) return;
+    const el = editableRef.current;
+    el.focus();
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    range.collapse(false);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+  }, [autoFocus]);
+
+  const syncToMd = useCallback(() => {
+    const el = editableRef.current;
+    if (!el) return;
+    const md = richHtmlToMd(el.innerHTML);
+    lastMdRef.current = md;
+    onChange(md);
+  }, [onChange]);
+
+  const checkSel = useCallback(() => {
+    const sel = window.getSelection();
+    const el  = editableRef.current;
+    if (!sel || sel.isCollapsed || !sel.rangeCount || !el) { setShowBubble(false); return; }
+    const range = sel.getRangeAt(0);
+    if (!el.contains(range.commonAncestorContainer)) { setShowBubble(false); return; }
+    const rect = range.getBoundingClientRect();
+    if (rect.width === 0 && rect.height === 0) { setShowBubble(false); return; }
+    setShowBubble(true);
+    setBubblePos({ top: rect.top - 52, left: rect.left + rect.width / 2 });
+  }, []);
+
+  const applyFmt = useCallback((cmd: string, val?: string) => {
+    const el = editableRef.current;
+    if (!el) return;
+    el.focus();
+    // eslint-disable-next-line @typescript-eslint/no-deprecated
+    document.execCommand(cmd, false, val);
+    syncToMd();
+    setShowBubble(false);
+    setShowHighlights(false);
+  }, [syncToMd]);
+
+  const bubble = showBubble && bubblePos ? createPortal(
+    <div
+      data-toolbar-element="true"
+      onMouseDown={(e) => e.preventDefault()}
+      style={{
+        position: 'fixed',
+        top: Math.max(8, bubblePos.top),
+        left: bubblePos.left,
+        transform: 'translateX(-50%)',
+        zIndex: 99999,
+        background: 'white',
+        borderRadius: '10px',
+        boxShadow: '0 4px 24px rgba(0,0,0,0.18)',
+        border: '1px solid #e2e8f0',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '2px',
+        padding: '4px 8px',
+        height: '40px',
+        userSelect: 'none',
+      }}
+    >
+      <RichBubbleBtn title="Tučné"     onClick={() => applyFmt('bold')}><Bold     size={14} strokeWidth={2.5} /></RichBubbleBtn>
+      <RichBubbleBtn title="Kurzíva"   onClick={() => applyFmt('italic')}><Italic   size={14} /></RichBubbleBtn>
+      <RichBubbleBtn title="Podtržené" onClick={() => applyFmt('underline')}><Underline size={14} /></RichBubbleBtn>
+      <div style={{ width: 1, height: 20, background: '#e2e8f0', margin: '0 4px' }} />
+      <div style={{ position: 'relative' }}>
+        <RichBubbleBtn title="Zvýraznit" onClick={() => setShowHighlights(v => !v)}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 18, height: 18, borderRadius: 4, background: '#fef08a', fontWeight: 700, fontSize: 12, color: '#78350f' }}>A</span>
+        </RichBubbleBtn>
+        {showHighlights && (
+          <div
+            data-toolbar-element="true"
+            onMouseDown={(e) => e.preventDefault()}
+            style={{ position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)', marginTop: 6, background: 'white', borderRadius: 10, boxShadow: '0 4px 20px rgba(0,0,0,0.15)', border: '1px solid #e2e8f0', display: 'flex', gap: 6, padding: '8px 10px' }}
+          >
+            {RICH_HIGHLIGHTS.map(({ bg, label }) => (
+              <button
+                key={bg}
+                title={label}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  if (bg === 'transparent') applyFmt('removeFormat');
+                  else applyFmt('backColor', bg);
+                }}
+                style={{ width: 24, height: 24, borderRadius: '50%', background: bg === 'transparent' ? 'white' : bg, border: bg === 'transparent' ? '2px solid #e2e8f0' : '2px solid transparent', cursor: 'pointer', position: 'relative', flexShrink: 0 }}
+              >
+                {bg === 'transparent' && <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ef4444', fontSize: 16, fontWeight: 700, lineHeight: 1 }}>×</span>}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>,
+    document.body
+  ) : null;
+
+  return (
+    <div style={{ position: 'relative', minHeight: '1.5em' }}>
+      {!value && placeholder && (
+        <span style={{ ...style, position: 'absolute', top: 0, left: 0, pointerEvents: 'none', color: '#94a3b8' }}>{placeholder}</span>
+      )}
+      <div
+        ref={editableRef}
+        contentEditable
+        suppressContentEditableWarning
+        onInput={syncToMd}
+        onMouseUp={checkSel}
+        onKeyUp={(e) => { checkSel(); onKeyDown?.(e as any); }}
+        onBlur={(e) => {
+          setTimeout(() => {
+            if (!(document.activeElement as HTMLElement)?.closest?.('[data-toolbar-element]')) {
+              setShowBubble(false);
+              setShowHighlights(false);
+            }
+          }, 150);
+          onBlur?.(e);
+        }}
+        style={{ ...style, outline: 'none', minHeight: '1.5em', wordBreak: 'break-word' }}
+      />
+      {bubble}
     </div>
   );
 }
@@ -1259,24 +1719,55 @@ interface MultipleChoiceEditorProps {
 }
 
 function MultipleChoiceEditor({ content, isEditing, onUpdate, onBlur, onKeyDown, fontSizes, activityNumber }: MultipleChoiceEditorProps) {
-  const questionRef = useRef<HTMLTextAreaElement>(null);
   const variant = content.variant || 'text';
-  const gridColumns = content.gridColumns || 4;
+  const gridColumns = content.gridColumns || 1;
+  const letterPosition = content.letterPosition || 'bottom';
 
-  // Auto-resize textarea
-  const autoResize = useCallback(() => {
-    if (questionRef.current) {
-      questionRef.current.style.height = 'auto';
-      questionRef.current.style.height = `${questionRef.current.scrollHeight}px`;
-    }
-  }, []);
+  // State for playful-image upload
+  const [uploadingOptionId, setUploadingOptionId] = useState<string | null>(null);
+  
+  const { openAssetPicker, AssetPickerModal } = useAssetPicker({
+    onSelect: (result) => {
+      if (uploadingOptionId) {
+        onUpdate({
+          ...content,
+          options: content.options.map(opt =>
+            opt.id === uploadingOptionId ? { ...opt, imageUrl: result.url } : opt
+          ),
+        });
+        setUploadingOptionId(null);
+      }
+    },
+  });
+  
+  // Text styles for question
+  const questionStyles: React.CSSProperties = {
+    fontFamily: content.fontFamily || "'Fenomen Sans', sans-serif",
+    fontSize: content.fontSize ? `${content.fontSize}pt` : fontSizes.title,
+    fontWeight: content.fontWeight === 'bold' || content.isBold ? 'bold' : (content.fontWeight || '500'),
+    color: content.textColor || '#1e293b',
+    lineHeight: content.lineHeight || 1.2,
+    letterSpacing: `${content.letterSpacing || 0}%`,
+    textAlign: content.align || 'left',
+    fontStyle: content.isItalic ? 'italic' : 'normal',
+    textDecoration: content.isUnderline ? 'underline' : 'none',
+  };
 
-  useEffect(() => {
-    if (isEditing && questionRef.current) {
-      questionRef.current.focus();
-      setTimeout(autoResize, 0);
-    }
-  }, [isEditing, autoResize]);
+  // Text styles for options
+  const optionTextStyles: React.CSSProperties = {
+    fontFamily: content.fontFamily || "'Fenomen Sans', sans-serif",
+    fontSize: content.fontSize ? `${Math.max(8, content.fontSize * 0.85)}pt` : fontSizes.body,
+    fontWeight: content.fontWeight === 'bold' || content.isBold ? 'bold' : 'normal',
+    color: content.textColor || '#475569',
+    lineHeight: content.lineHeight || 1.5,
+    letterSpacing: `${content.letterSpacing || 0}%`,
+    fontStyle: content.isItalic ? 'italic' : 'normal',
+    textDecoration: content.isUnderline ? 'underline' : 'none',
+  };
+
+  const correctAnswers = content.correctAnswers || [];
+  const circleColor = content.circleColor || '#1e293b';
+  const circleSize = content.circleSize || 21;
 
   const handleQuestionChange = (value: string) => {
     onUpdate({ ...content, question: value });
@@ -1291,15 +1782,33 @@ function MultipleChoiceEditor({ content, isEditing, onUpdate, onBlur, onKeyDown,
     });
   };
 
-  const addOption = () => {
-    const newOption: ChoiceOption = {
-      id: `opt-${Date.now()}`,
-      text: '',
-    };
-    onUpdate({
-      ...content,
-      options: [...content.options, newOption],
-    });
+  const applyOptionFormat = (optionId: string, command: string) => {
+    const option = content.options.find(o => o.id === optionId);
+    if (!option) return;
+
+    // We don't have refs for each option input, so we'll use a simpler approach
+    // or just rely on the user manually typing markdown for now.
+    // But since you asked for bold/italic on selection, I'll add a helper that
+    // can be triggered if we find the active element.
+    const activeEl = document.activeElement as HTMLInputElement;
+    if (!activeEl || activeEl.tagName !== 'INPUT') return;
+
+    const start = activeEl.selectionStart || 0;
+    const end = activeEl.selectionEnd || 0;
+    const text = activeEl.value;
+    const selectedText = text.substring(start, end);
+
+    if (!selectedText) return;
+
+    let formattedText = '';
+    switch (command) {
+      case 'bold': formattedText = `**${selectedText}**`; break;
+      case 'italic': formattedText = `*${selectedText}*`; break;
+      case 'underline': formattedText = `<u>${selectedText}</u>`; break;
+    }
+
+    const newValue = text.substring(0, start) + formattedText + text.substring(end);
+    handleOptionChange(optionId, newValue);
   };
 
   const removeOption = (optionId: string) => {
@@ -1311,129 +1820,241 @@ function MultipleChoiceEditor({ content, isEditing, onUpdate, onBlur, onKeyDown,
     });
   };
 
-  const handleInsertLatex = (latex: string) => {
-    handleQuestionChange(content.question + ' ' + latex);
-  };
-
+  // 1. ABC text
+  const renderTextVariant = () => (
+    <div 
+      className="grid"
+      style={{ 
+        gridTemplateColumns: gridColumns === 4 
+          ? 'repeat(auto-fill, minmax(160px, 1fr))' 
+          : `repeat(${gridColumns}, minmax(0, 1fr))`,
+        columnGap: '24px',
+        rowGap: gridColumns <= 2 ? '12px' : '16px',
+        marginTop: '12px'
+      }}
+    >
+      {content.options.map((opt, i) => {
+        const isCorrect = correctAnswers.includes(opt.id);
   return (
-    <div style={{ fontSize: fontSizes.body }}>
-      {/* Question with optional activity number */}
-      <div className="flex items-start gap-3 mb-3">
-        {activityNumber && (
+          <div key={opt.id} className="flex items-start gap-3 group/option min-w-0">
+            {/* Circle with letter */}
           <div
-            className="flex items-center justify-center shrink-0 font-bold text-white activity-number-circle"
+              className={`flex items-center justify-center shrink-0 font-semibold choice-circle ${isCorrect ? 'choice-circle--correct' : ''}`}
             style={{ 
-              width: '21px',
-              height: '21px',
-              minWidth: '21px',
-              minHeight: '21px',
+                width: `${circleSize}px`,
+                height: `${circleSize}px`,
+                minWidth: `${circleSize}px`,
+                minHeight: `${circleSize}px`,
               borderRadius: '50%',
-              backgroundColor: '#1e293b',
-              fontSize: '12px',
+                border: isCorrect ? 'none' : `1.5px solid ${circleColor}`,
+                color: isCorrect ? '#ffffff' : circleColor,
+                backgroundColor: isCorrect ? '#22c55e' : 'transparent',
+                fontSize: `${Math.round(circleSize * 0.57)}px`,
+                marginTop: '2px'
             }}
           >
-            {activityNumber}
+              {String.fromCharCode(65 + i)}
           </div>
-        )}
-        <div className="flex-1">
+            
+            {/* Text area */}
+            <div className="flex-1 min-w-0 leading-normal group/option-text relative">
           {isEditing ? (
-            <>
-              <textarea
-                ref={questionRef}
-                value={content.question}
-                onChange={(e) => {
-                  handleQuestionChange(e.target.value);
-                  autoResize();
-                }}
-                onBlur={onBlur}
-                onKeyDown={onKeyDown}
-                onInput={autoResize}
-                className="w-full font-medium text-slate-800 bg-transparent border-none outline-none resize-none overflow-hidden"
-                style={{ fontSize: fontSizes.title, minHeight: '1.5em' }}
-                placeholder="Zadejte otázku..."
-                rows={1}
-              />
-            </>
-          ) : (
-            <p className="font-medium text-slate-800" style={{ fontSize: fontSizes.title }}>
-              {content.question ? (
-                <LatexRenderer text={content.question} />
+                <div className="flex items-start gap-2 w-full relative">
+                  <OptionTextEditor
+                    value={opt.text}
+                    onChange={(v) => handleOptionChange(opt.id, v)}
+                    onBlur={onBlur}
+                    style={{ ...optionTextStyles, lineHeight: optionTextStyles.lineHeight || 'normal' }}
+                    placeholder={`Možnost ${i + 1}`}
+                  />
+                  {/* Mini format toolbar for options */}
+                  <div className="absolute -top-7 left-0 flex items-center gap-1 bg-white border border-slate-200 rounded-md shadow-sm p-0.5 z-50 opacity-0 group-hover/option-text:opacity-100 transition-opacity">
+                    <button
+                      onMouseDown={(e) => { e.preventDefault(); applyOptionFormat(opt.id, 'bold'); }}
+                      className="p-0.5 hover:bg-slate-100 rounded text-slate-600"
+                    >
+                      <Bold size={12} />
+                    </button>
+                    <button
+                      onMouseDown={(e) => { e.preventDefault(); applyOptionFormat(opt.id, 'italic'); }}
+                      className="p-0.5 hover:bg-slate-100 rounded text-slate-600"
+                    >
+                      <Italic size={12} />
+                    </button>
+                    <button
+                      onMouseDown={(e) => { e.preventDefault(); applyOptionFormat(opt.id, 'underline'); }}
+                      className="p-0.5 hover:bg-slate-100 rounded text-slate-600"
+                    >
+                      <Underline size={12} />
+                    </button>
+                  </div>
+                  {content.options.length > 2 && (
+                    <button
+                      onClick={() => removeOption(opt.id)}
+                      className="opacity-0 group-hover/option:opacity-100 p-1 text-slate-400 hover:text-red-500 transition-all shrink-0"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  )}
+                </div>
               ) : (
-                <span className="text-slate-400">Otázka...</span>
+                <div 
+                  style={{ 
+                    ...optionTextStyles, 
+                    lineHeight: optionTextStyles.lineHeight || 'normal',
+                    padding: 0,
+                    margin: 0
+                  }} 
+                  className="break-words"
+                >
+                  {opt.text ? (
+                    <LatexRenderer text={opt.text} />
+              ) : (
+                    <span className="text-slate-300 italic">Možnost {i + 1}...</span>
               )}
-            </p>
+                </div>
           )}
         </div>
       </div>
+        );
+      })}
+    </div>
+  );
 
-      {variant === 'image' ? (
+  // 2. ABC text + obr. (Mixed) AND 3. ABC obrázky
+  const renderImageVariant = (isMixed: boolean) => (
         <div 
-          className="grid gap-4 mt-4"
+      className="grid gap-6 mt-4"
           style={{ 
-            gridTemplateColumns: `repeat(${gridColumns}, minmax(0, 1fr))` 
+        gridTemplateColumns: `repeat(${content.gridColumns || 4}, minmax(0, 1fr))` 
           }}
         >
           {content.options.map((opt, i) => {
-            const isCorrect = content.correctAnswers.includes(opt.id);
+            const isCorrect = correctAnswers.includes(opt.id);
             return (
-              <div key={opt.id} className="relative group/opt">
+          <div key={opt.id} className="relative group/opt flex flex-col">
+            {/* Image Box */}
                 <div 
-                  className="aspect-square bg-slate-50 rounded-xl overflow-hidden border border-slate-300 relative"
+              className="aspect-square bg-slate-50 rounded-xl border border-slate-300 relative mb-2"
+              style={{ overflow: 'visible' }}
                 >
+              <div className="w-full h-full rounded-xl overflow-hidden relative">
                   {opt.imageUrl ? (
-                    <img src={opt.imageUrl} className="w-full h-full object-cover" alt={opt.text} />
+                  <img src={opt.imageUrl} className="w-full h-full object-cover" alt={opt.text} style={{ display: 'block' }} />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center text-slate-300">
                       <ImageIcon className="w-8 h-8 opacity-20" />
                     </div>
                   )}
-
                   {isEditing && (
-                    <div className="absolute inset-0 bg-black/5 opacity-0 group-hover/opt:opacity-100 transition-opacity flex items-center justify-center pointer-events-none" />
+                  <div className="absolute inset-0 bg-black/5 opacity-0 group-hover/opt:opacity-100 transition-opacity pointer-events-none" />
                   )}
                 </div>
                 
-                {/* Answer indicator and text - identical to text version layout */}
-                <div className="mt-2 flex items-start gap-2 px-1">
+              {/* Letter Overlay */}
+              {letterPosition === 'overlay' && (
+                <div
+                  className={`flex items-center justify-center font-semibold choice-circle ${isCorrect ? 'choice-circle--correct' : ''}`}
+                  style={{
+                    position: 'absolute',
+                    top: '8px',
+                    left: '8px',
+                    width: `${circleSize + 3}px`,
+                    height: `${circleSize + 3}px`,
+                    borderRadius: '50%',
+                    border: isCorrect ? 'none' : `1.5px solid ${circleColor}`,
+                    color: isCorrect ? '#ffffff' : circleColor,
+                    backgroundColor: isCorrect ? '#22c55e' : 'rgba(255,255,255,0.95)',
+                    fontSize: `${Math.round(circleSize * 0.57)}px`,
+                    zIndex: 100,
+                    boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
+                    pointerEvents: 'none'
+                  }}
+                >
+                  {String.fromCharCode(65 + i)}
+                </div>
+              )}
+            </div>
+            
+            {/* Bottom section (Letter and Text) */}
+            <div className="flex items-start gap-2 px-1 min-h-[24px]">
+              {/* Letter Bottom */}
+              {letterPosition === 'bottom' && (
                   <div
                     className={`flex items-center justify-center shrink-0 font-semibold choice-circle ${isCorrect ? 'choice-circle--correct' : ''}`}
                     style={{
-                      width: '21px',
-                      height: '21px',
-                      minWidth: '21px',
-                      minHeight: '21px',
+                    width: `${circleSize}px`,
+                    height: `${circleSize}px`,
+                    minWidth: `${circleSize}px`,
+                    minHeight: `${circleSize}px`,
                       borderRadius: '50%',
-                      border: isCorrect ? 'none' : '1.5px solid #1e293b',
-                      color: isCorrect ? '#ffffff' : '#1e293b',
+                    border: isCorrect ? 'none' : `1.5px solid ${circleColor}`,
+                    color: isCorrect ? '#ffffff' : circleColor,
                       backgroundColor: isCorrect ? '#22c55e' : 'transparent',
-                      fontSize: '12px',
+                    fontSize: `${Math.round(circleSize * 0.57)}px`,
                       marginTop: '1px'
                     }}
                   >
                     {String.fromCharCode(65 + i)}
                   </div>
+              )}
 
-                  <div className="flex-1 min-w-0 text-slate-700 leading-tight" style={{ fontSize: fontSizes.small }}>
+              {/* Text - ONLY visible in Mixed variant */}
+              {isMixed && (
+                <div className="flex-1 min-w-0 leading-tight group/mixed-text relative">
                     {isEditing ? (
-                      <input
-                        type="text"
+                    <div className="relative">
+                      <OptionTextEditor
                         value={opt.text}
-                        onChange={(e) => handleOptionChange(opt.id, e.target.value)}
+                        onChange={(v) => handleOptionChange(opt.id, v)}
                         onBlur={onBlur}
-                        onKeyDown={onKeyDown}
-                        className="w-full bg-transparent border-none outline-none p-0"
+                        style={{ ...optionTextStyles, lineHeight: optionTextStyles.lineHeight || 'tight' }}
                         placeholder={`Možnost ${i + 1}`}
                       />
-                    ) : (
-                      opt.text ? (
+                      {/* Mini format toolbar for mixed options */}
+                      <div className="absolute -top-7 left-0 flex items-center gap-1 bg-white border border-slate-200 rounded-md shadow-sm p-0.5 z-50 opacity-0 group-hover/mixed-text:opacity-100 transition-opacity">
+                        <button
+                          onMouseDown={(e) => { e.preventDefault(); applyOptionFormat(opt.id, 'bold'); }}
+                          className="p-0.5 hover:bg-slate-100 rounded text-slate-600"
+                        >
+                          <Bold size={12} />
+                        </button>
+                        <button
+                          onMouseDown={(e) => { e.preventDefault(); applyOptionFormat(opt.id, 'italic'); }}
+                          className="p-0.5 hover:bg-slate-100 rounded text-slate-600"
+                        >
+                          <Italic size={12} />
+                        </button>
+                        <button
+                          onMouseDown={(e) => { e.preventDefault(); applyOptionFormat(opt.id, 'underline'); }}
+                          className="p-0.5 hover:bg-slate-100 rounded text-slate-600"
+                        >
+                          <Underline size={12} />
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div 
+                      style={{ 
+                        ...optionTextStyles, 
+                        lineHeight: optionTextStyles.lineHeight || 'tight',
+                        padding: 0,
+                        margin: 0
+                      }} 
+                      className="break-words"
+                    >
+                      {opt.text ? (
                         <LatexRenderer text={opt.text} />
                       ) : (
                         <span className="text-slate-300 italic">Možnost {i + 1}...</span>
-                      )
                     )}
                   </div>
+                  )}
+                </div>
+              )}
                 </div>
 
+            {/* Delete button when editing */}
                 {isEditing && content.options.length > 2 && (
                   <button
                     onClick={() => removeOption(opt.id)}
@@ -1446,75 +2067,212 @@ function MultipleChoiceEditor({ content, isEditing, onUpdate, onBlur, onKeyDown,
             );
           })}
         </div>
-      ) : (
-        <div className="space-y-2">
-          {content.options.map((opt, i) => {
-            const isCorrect = content.correctAnswers.includes(opt.id);
+  );
+
+  // 4. Ano / Ne (Boolean)
+  const renderBooleanVariant = () => (
+    <div 
+      className="grid gap-x-6"
+      style={{ 
+        gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+        rowGap: '12px',
+        marginTop: '12px'
+      }}
+    >
+      {[
+        { id: 'opt-bool-0', text: 'Ano' },
+        { id: 'opt-bool-1', text: 'Ne' }
+      ].map((opt, i) => {
+            const isCorrect = correctAnswers.includes(opt.id);
             return (
-              <div key={opt.id} className="flex items-center gap-3 group/option">
-                {/* Circle with letter A, B, C, D - green if correct */}
+          <div 
+            key={opt.id} 
+            className="flex items-center gap-3 group/option cursor-pointer min-w-0"
+            onClick={() => isEditing && onUpdate({ ...content, correctAnswers: [opt.id] })}
+          >
                 <div
                   className={`flex items-center justify-center shrink-0 font-semibold choice-circle ${isCorrect ? 'choice-circle--correct' : ''}`}
                   style={{
-                    width: '21px',
-                    height: '21px',
-                    minWidth: '21px',
-                    minHeight: '21px',
+              width: `${circleSize}px`,
+              height: `${circleSize}px`,
+              minWidth: `${circleSize}px`,
+              minHeight: `${circleSize}px`,
                     borderRadius: '50%',
-                    border: isCorrect ? 'none' : '1.5px solid #1e293b',
-                    color: isCorrect ? '#ffffff' : '#1e293b',
+              border: isCorrect ? 'none' : `1.5px solid ${circleColor}`,
+              color: isCorrect ? '#ffffff' : circleColor,
                     backgroundColor: isCorrect ? '#22c55e' : 'transparent',
-                    fontSize: '12px',
+              fontSize: `${Math.round(circleSize * 0.57)}px`,
                   }}
                 >
                   {String.fromCharCode(65 + i)}
                 </div>
                 
-                {isEditing ? (
-                  <>
-                    <input
-                      type="text"
-                      value={opt.text}
-                      onChange={(e) => handleOptionChange(opt.id, e.target.value)}
-                      onBlur={onBlur}
-                      onKeyDown={onKeyDown}
-                      className="flex-1 text-slate-600 bg-transparent border-none outline-none"
-                      style={{ fontSize: fontSizes.body }}
-                      placeholder={`Možnost ${i + 1}`}
-                    />
-                    {content.options.length > 2 && (
-                      <button
-                        onClick={() => removeOption(opt.id)}
-                        className="opacity-0 group-hover/option:opacity-100 p-1 text-slate-400 hover:text-red-500 transition-all"
-                      >
-                        <X className="h-3 w-3" />
-                      </button>
-                    )}
-                  </>
-                ) : (
-                  <div className="flex-1 text-slate-600" style={{ fontSize: fontSizes.body }}>
-                    {opt.text ? (
-                      <LatexRenderer text={opt.text} />
-                    ) : (
-                      <span className="text-slate-300 italic">Možnost {i + 1}...</span>
-                    )}
-                  </div>
-                )}
+            <div className="flex-1 leading-normal min-w-0">
+              <div style={optionTextStyles} className="font-bold">
+                {opt.text}
               </div>
-            );
-          })}
-        </div>
-      )}
+            </div>
+            </div>
+        );
+      })}
+    </div>
+  );
 
-      {isEditing && (
-        <button
-          onClick={addOption}
-          className="flex items-center gap-2 text-blue-600 hover:text-blue-700 mt-4 text-sm font-medium transition-colors"
-        >
-          <Plus className="h-4 w-4" />
-          Přidat možnost
-        </button>
-      )}
+  // 5. Hravé ABC (Playful)
+  const renderPlayfulVariant = () => {
+    const playfulSettings = content.playfulSettings || {
+      shape: 'circle' as const,
+      style: 'stroke' as const,
+      primaryColor: '#ef4444',
+      textColor: '#ef4444',
+      strokeWidth: 2,
+      positions: [],
+    };
+    
+    // Calculate container height based on number of options
+    const optionCount = content.options.length;
+    const rows = Math.ceil(optionCount / (optionCount <= 4 ? 2 : optionCount <= 6 ? 3 : 4));
+    const containerHeight = Math.max(150, rows * 80 + 40);
+    
+    return (
+      <div style={{ marginTop: '16px' }}>
+        <PlayfulAnswersDisplay
+          options={content.options}
+          settings={playfulSettings}
+          containerWidth={700}
+          containerHeight={containerHeight}
+          selectedAnswers={correctAnswers}
+          onSelectAnswer={isEditing ? (optionId) => {
+            onUpdate({ ...content, correctAnswers: [optionId] });
+          } : undefined}
+          isEditing={isEditing}
+          onEditOption={isEditing ? (optionId, newText) => {
+            onUpdate({
+              ...content,
+              options: content.options.map(opt =>
+                opt.id === optionId ? { ...opt, text: newText } : opt
+              ),
+            });
+          } : undefined}
+          onUpdatePosition={isEditing ? (index, newPosition) => {
+            const currentPositions = [...(content.playfulSettings?.positions || [])];
+            currentPositions[index] = newPosition;
+            onUpdate({
+              ...content,
+              playfulSettings: {
+                ...playfulSettings,
+                positions: currentPositions,
+              },
+            });
+          } : undefined}
+          baseFontSize={fontSizes.body}
+        />
+      </div>
+    );
+  };
+
+  // 6. Hravé obrázky (Playful Images)
+  const renderPlayfulImageVariant = () => {
+    const playfulSettings = content.playfulSettings || {
+      shape: 'circle' as const,
+      style: 'stroke' as const,
+      primaryColor: '#ef4444',
+      textColor: '#ef4444',
+      strokeWidth: 2,
+      positions: [],
+    };
+    
+    // Calculate container height based on number of options
+    const optionCount = content.options.length;
+    const rows = Math.ceil(optionCount / (optionCount <= 4 ? 2 : optionCount <= 6 ? 3 : 4));
+    const containerHeight = Math.max(200, rows * 120 + 60);
+    
+    return (
+      <div style={{ marginTop: '16px' }}>
+        <PlayfulImagesDisplay
+          options={content.options}
+          settings={playfulSettings}
+          containerWidth={700}
+          containerHeight={containerHeight}
+          selectedAnswers={correctAnswers}
+          onSelectAnswer={(optionId) => {
+            onUpdate({ ...content, correctAnswers: [optionId] });
+          }}
+          isEditing={isEditing}
+          onUpdatePosition={isEditing ? (index, newPosition) => {
+            const currentPositions = [...(content.playfulSettings?.positions || [])];
+            currentPositions[index] = newPosition;
+            onUpdate({
+              ...content,
+              playfulSettings: {
+                ...playfulSettings,
+                positions: currentPositions,
+              },
+            });
+          } : undefined}
+          onUploadImage={isEditing ? (optionId) => {
+            setUploadingOptionId(optionId);
+            openAssetPicker();
+          } : undefined}
+        />
+        {AssetPickerModal}
+      </div>
+    );
+  };
+
+  return (
+    <div style={{ fontSize: fontSizes.body }}>
+      {/* Question section */}
+      <div className="flex items-start gap-3 mb-3">
+        {activityNumber && (
+          <div
+            className="flex items-center justify-center shrink-0 font-bold text-white activity-number-circle"
+            style={{ 
+              width: `${circleSize}px`,
+              height: `${circleSize}px`,
+              minWidth: `${circleSize}px`,
+              minHeight: `${circleSize}px`,
+              borderRadius: '50%',
+              backgroundColor: circleColor,
+              fontSize: `${Math.round(circleSize * 0.57)}px`,
+            }}
+          >
+            {activityNumber}
+          </div>
+        )}
+        <div className="flex-1 relative" style={{ ...questionStyles, minHeight: '1.5em' }}>
+          {isEditing ? (
+            <RichQuestionEditor
+              value={content.question}
+              onChange={handleQuestionChange}
+              style={questionStyles}
+              placeholder="Zadejte otázku..."
+              onKeyDown={onKeyDown}
+              onBlur={onBlur}
+              autoFocus
+            />
+          ) : (
+            content.question ? (
+              <LatexRenderer text={content.question} />
+            ) : (
+              <span className="text-slate-400">Otázka...</span>
+            )
+          )}
+        </div>
+        </div>
+
+      {/* Answer options based on variant */}
+      {(() => {
+        switch (variant) {
+          case 'text': return renderTextVariant();
+          case 'mixed': return renderImageVariant(true);
+          case 'image': return renderImageVariant(false);
+          case 'boolean': return renderBooleanVariant();
+          case 'playful': return renderPlayfulVariant();
+          case 'playful-image': return renderPlayfulImageVariant();
+          default: return renderTextVariant();
+        }
+      })()}
     </div>
   );
 }
@@ -1707,6 +2465,31 @@ interface FreeAnswerEditorProps {
     lines: number;
     hint?: string;
     sampleAnswer?: string;
+    subQuestions?: FreeAnswerSubQuestion[];
+    subColumns?: 1 | 2 | 3;
+    subLabelType?: SubQuestionLabelType;
+    subQuestionColors?: string[];
+    subShowBackground?: boolean;
+    subShowLines?: boolean;
+    subLabelStyle?: SubQuestionLabelStyle;
+    subLabelColors?: string[];
+    subAnswerLines?: number;
+    subAnswerStyle?: 'dotted' | 'solid' | 'space' | 'none' | 'inline-line';
+    subIndent?: boolean;
+    subBackgroundMode?: 'fill' | 'outline';
+    subShadow?: 'none' | 'sm' | 'md';
+    subBorderRadius?: number;
+    // Font settings (from block content)
+    fontFamily?: string;
+    fontSize?: number;
+    fontWeight?: string;
+    lineHeight?: number;
+    letterSpacing?: number;
+    textColor?: string;
+    // Sub-question font settings
+    subFontSize?: number;
+    subFontWeight?: string;
+    subFontFamily?: string;
   };
   isEditing: boolean;
   onUpdate: (content: any) => void;
@@ -1716,32 +2499,78 @@ interface FreeAnswerEditorProps {
   activityNumber?: number;
 }
 
+function toRoman(num: number): string {
+  const vals = [1000, 900, 500, 400, 100, 90, 50, 40, 10, 9, 5, 4, 1];
+  const syms = ['M', 'CM', 'D', 'CD', 'C', 'XC', 'L', 'XL', 'X', 'IX', 'V', 'IV', 'I'];
+  let r = '';
+  for (let i = 0; i < vals.length; i++) { while (num >= vals[i]) { r += syms[i]; num -= vals[i]; } }
+  return r;
+}
+
+function getSubQuestionLabel(index: number, labelType: SubQuestionLabelType): string {
+  if (labelType === 'letters') return String.fromCharCode(65 + index);
+  if (labelType === 'numbers') return String(index + 1);
+  if (labelType === 'roman') return toRoman(index + 1);
+  return '';
+}
+
+const DEFAULT_SUB_QUESTION_COLORS = ['#dbeafe', '#dbeafe', '#dbeafe', '#dbeafe', '#dbeafe', '#dbeafe', '#fef3c7', '#fef3c7'];
+const DEFAULT_SUB_LABEL_COLOR = '#e11d48';
+
 function FreeAnswerEditor({ content, isEditing, onUpdate, onBlur, onKeyDown, fontSizes, activityNumber }: FreeAnswerEditorProps) {
-  const questionRef = useRef<HTMLTextAreaElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef(content);
+  contentRef.current = content;
+  const onUpdateRef = useRef(onUpdate);
+  onUpdateRef.current = onUpdate;
+  const [selectedSubQ, setSelectedSubQ] = useState<number | null>(null);
+  const [resizingSubQ, setResizingSubQ] = useState<number | null>(null);
+  const [resizingWidthIdx, setResizingWidthIdx] = useState<number | null>(null);
+  const hasSubQuestions = content.subQuestions && content.subQuestions.length > 0;
+  const showBg = content.subShowBackground !== false;
+  const answerStyle = content.subAnswerStyle || (content.subShowLines === false ? 'none' : 'dotted');
+  const globalLines = content.subAnswerLines || 1;
+  const labelStyle = content.subLabelStyle || 'text';
+  const bgMode = content.subBackgroundMode || 'fill';
+  const subShadow = content.subShadow || 'none';
+  const subBorderRadius = content.subBorderRadius ?? 10;
+  const columns = content.subColumns || 1;
+  const defaultWidth = Math.floor(100 / columns);
+  const hasVisualStyle = showBg || content.subOutlineEnabled === true;
+  const gap = hasVisualStyle ? 16 : 12;
 
-  // Auto-resize textarea
-  const autoResize = useCallback(() => {
-    if (questionRef.current) {
-      questionRef.current.style.height = 'auto';
-      questionRef.current.style.height = `${questionRef.current.scrollHeight}px`;
-    }
-  }, []);
-
-  useEffect(() => {
-    if (isEditing && questionRef.current) {
-      questionRef.current.focus();
-      setTimeout(autoResize, 0);
-    }
-  }, [isEditing, autoResize]);
-
-  const handleInsertLatex = (latex: string) => {
-    onUpdate({ ...content, question: content.question + ' ' + latex });
+  // Question font styles (from block content settings)
+  const questionFontStyle: React.CSSProperties = {
+    fontFamily: content.fontFamily || FONT_FAMILY,
+    fontSize: content.fontSize ? `${content.fontSize}pt` : fontSizes.title,
+    fontWeight: content.fontWeight || '500',
+    lineHeight: content.lineHeight || 1.4,
+    letterSpacing: content.letterSpacing ? `${content.letterSpacing}%` : undefined,
+    color: content.textColor || '#1e293b',
   };
 
+  // Sub-question font styles (from sub-specific settings, falling back to block font)
+  const subFontStyle: React.CSSProperties = {
+    fontFamily: content.subFontFamily || content.fontFamily || FONT_FAMILY,
+    fontSize: content.subFontSize ? `${content.subFontSize}pt` : (content.fontSize ? `${content.fontSize}pt` : fontSizes.body),
+    fontWeight: content.subFontWeight || content.fontWeight || 'normal',
+    color: content.textColor || '#334155',
+  };
+
+  const handleSubQuestionUpdate = (index: number, field: string, value: string) => {
+    if (!content.subQuestions) return;
+    const updated = [...content.subQuestions];
+    updated[index] = { ...updated[index], [field]: value };
+    onUpdate({ ...content, subQuestions: updated });
+  };
+
+  // In "skupina otázek" mode (subQuestions + empty question), hide the main question header entirely.
+  const isSkupina = hasSubQuestions && !content.question;
+
   return (
-    <div style={{ fontSize: fontSizes.body }}>
-      {/* Question with optional activity number */}
-      <div className="flex items-start gap-3 mb-3">
+    <div style={{ fontSize: fontSizes.body }} onClick={() => setSelectedSubQ(null)}>
+      {/* Main question / instruction – hidden in "skupina otázek" mode */}
+      {!isSkupina && <div className="flex items-start gap-3 mb-3">
         {activityNumber && (
           <div
             className="flex items-center justify-center shrink-0 font-bold text-white"
@@ -1758,48 +2587,428 @@ function FreeAnswerEditor({ content, isEditing, onUpdate, onBlur, onKeyDown, fon
             {activityNumber}
           </div>
         )}
-        <div className="flex-1">
+        <div className="flex-1" style={{ ...questionFontStyle, minHeight: '1.5em' }}>
           {isEditing ? (
-            <textarea
-              ref={questionRef}
+            <RichQuestionEditor
               value={content.question}
-              onChange={(e) => {
-                onUpdate({ ...content, question: e.target.value });
-                autoResize();
-              }}
-              onKeyDown={onKeyDown}
-              onInput={autoResize}
-              className="w-full font-medium text-slate-800 bg-transparent border-none outline-none resize-none overflow-hidden"
-              style={{ fontSize: fontSizes.title, minHeight: '1.5em' }}
+              onChange={(v) => onUpdate({ ...content, question: v })}
+              style={questionFontStyle}
               placeholder="Zadejte otázku..."
-              rows={1}
+              onKeyDown={onKeyDown}
+              onBlur={onBlur}
+              autoFocus
             />
           ) : (
-            <p className="font-medium text-slate-800" style={{ fontSize: fontSizes.title }}>
-              {content.question ? (
-                <LatexRenderer text={content.question} />
-              ) : (
-                <span className="text-slate-400">Otázka...</span>
-              )}
-            </p>
+            content.question ? (
+              <LatexRenderer text={content.question} />
+            ) : (
+              <span className="text-slate-400">Otázka...</span>
+            )
           )}
         </div>
-      </div>
+      </div>}
 
-      {content.hint && (
-        <p className="text-slate-500 mb-1 italic" style={{ fontSize: fontSizes.small, paddingLeft: activityNumber ? '40px' : 0 }}>
+      {content.hint && !isSkupina && (
+        <p className="mb-1 italic" style={{ fontSize: fontSizes.small, paddingLeft: activityNumber ? '40px' : 0, color: content.textColor ? `${content.textColor}99` : '#64748b', fontFamily: questionFontStyle.fontFamily }}>
           <LatexRenderer text={content.hint} />
         </p>
       )}
 
-      <div 
-        className="mt-1"
-        style={{ height: `${content.lines * 40}px`, marginLeft: activityNumber ? '40px' : 0 }}
-      >
-        {Array.from({ length: content.lines }).map((_, i) => (
-          <div key={i} className="border-b border-slate-300" style={{ height: '40px' }} />
-        ))}
-      </div>
+      {/* Sub-questions flex layout */}
+      {hasSubQuestions ? (
+        <div
+          ref={containerRef}
+          style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            alignItems: 'flex-start',
+            gap: `${gap}px`,
+            marginLeft: (activityNumber && !isSkupina && content.subIndent !== false) ? '40px' : 0,
+            marginTop: '8px',
+            overflow: 'visible',
+          }}
+        >
+          {content.subQuestions!.map((sq, i) => {
+            const bgColors = content.subQuestionColors || DEFAULT_SUB_QUESTION_COLORS;
+            const bgColor = showBg ? (bgColors[i % bgColors.length] || '#dbeafe') : 'transparent';
+            const labelType = content.subLabelType || 'letters';
+            const label = getSubQuestionLabel(i, labelType);
+            const labelColors = content.subLabelColors || [DEFAULT_SUB_LABEL_COLOR];
+            const labelColor = sq.labelColor || labelColors[i % labelColors.length] || DEFAULT_SUB_LABEL_COLOR;
+            const isOutline = labelStyle === 'circle-outline';
+            const isCircle = labelStyle === 'circle' || isOutline;
+
+            const isBeside = sq.imagePosition === 'beside';
+
+            const sqLines = sq.lines !== undefined ? sq.lines : globalLines;
+            const isSelected = selectedSubQ === i && isEditing;
+            const shadowMap = { none: 'none', sm: '0 1px 3px rgba(0,0,0,0.12)', md: '0 4px 12px rgba(0,0,0,0.15)' };
+            const sqWidth = sq.widthPercent ?? defaultWidth;
+            const gapAdjust = columns > 1 ? `${gap * (columns - 1) / columns}px` : '0px';
+
+            return (
+              <div
+                key={sq.id}
+                onClick={(e) => { if (isEditing) { e.stopPropagation(); setSelectedSubQ(i); } }}
+                style={{
+                  width: `calc(${sqWidth}% - ${gapAdjust})`,
+                  backgroundColor: showBg && bgMode === 'fill' ? bgColor : 'transparent',
+                  border: (() => {
+                    const outlineOn = content.subOutlineEnabled === true;
+                    const outlineColors = content.subOutlineColors || ['#3b82f6'];
+                    const oColor = outlineColors[i % outlineColors.length];
+                    if (outlineOn) return `2px solid ${oColor}`;
+                    if (showBg && bgMode === 'outline') return `2px solid ${bgColor}`;
+                    if (isSelected) return '2px solid #6366f1';
+                    if (showBg) return '2px solid transparent';
+                    return 'none';
+                  })(),
+                  borderRadius: (showBg || content.subOutlineEnabled) ? `${subBorderRadius}px` : '0',
+                  padding: (showBg || content.subOutlineEnabled) ? '10px 12px' : '4px 0',
+                  display: 'flex',
+                  flexDirection: isBeside && sq.imageUrl ? 'row' : 'column',
+                  gap: isBeside && sq.imageUrl ? '10px' : '4px',
+                  boxShadow: (showBg || content.subOutlineEnabled) ? shadowMap[subShadow] : 'none',
+                  position: 'relative',
+                  overflow: 'visible',
+                  cursor: isEditing ? 'pointer' : undefined,
+                  transition: 'border-color 0.15s',
+                  boxSizing: 'border-box',
+                }}
+              >
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <div className="flex items-start gap-2">
+                    {label && isCircle && (
+                      <div
+                        style={{
+                          width: '24px',
+                          height: '24px',
+                          minWidth: '24px',
+                          borderRadius: '50%',
+                          backgroundColor: isOutline ? 'transparent' : labelColor,
+                          border: isOutline ? `2px solid ${labelColor}` : 'none',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          color: isOutline ? labelColor : 'white',
+                          fontSize: '12px',
+                          fontWeight: 700,
+                          flexShrink: 0,
+                        }}
+                      >
+                        {label}
+                      </div>
+                    )}
+                    {label && !isCircle && (
+                      <span style={{ fontWeight: 700, fontSize: fontSizes.body, color: '#334155', flexShrink: 0 }}>
+                        {label})
+                      </span>
+                    )}
+                    <div style={{ minWidth: 0, flex: '1 1 0%' }}>
+                      {isEditing ? (
+                        <OptionTextEditor
+                          value={sq.text}
+                          onChange={(v) => handleSubQuestionUpdate(i, 'text', v)}
+                          style={{ ...subFontStyle, width: '100%' }}
+                          placeholder="Text pod-otázky..."
+                        />
+                      ) : (
+                        <span style={{ ...subFontStyle }}>
+                          <LatexRenderer text={sq.text || 'Pod-otázka...'} />
+                        </span>
+                      )}
+                      {/* Inline line – shown below wrapped text */}
+                      {answerStyle === 'inline-line' && (
+                        <div
+                          style={{
+                            height: '2px',
+                            backgroundColor: `${labelColor}44`,
+                            borderRadius: '2px',
+                            marginTop: '4px',
+                            width: '100%',
+                          }}
+                        />
+                      )}
+                    </div>
+                  </div>
+                  {/* Image below text */}
+                  {sq.imageUrl && !isBeside && (() => {
+                    const siShape = content.subImageShape || 'rectangle';
+                    const siRadius = content.subImageBorderRadius ?? 8;
+                    const siStrokeColor = content.subImageStrokeColor || '#334155';
+                    const siStrokeWidth = content.subImageStrokeWidth ?? 0;
+                    const siRotate = content.subImageRotate ?? false;
+                    const siRotateMax = content.subImageRotateMax ?? 5;
+                    const siHeight = content.subImageHeight || 140;
+                    const siClipPath = (GALLERY_CLIP_PATHS as Record<string, string>)[siShape] || '';
+                    const siIsRect = siShape === 'rectangle';
+                    const siRotDeg = siRotate
+                      ? (((i * 137 + 29) % (siRotateMax * 2 + 1)) - siRotateMax)
+                      : 0;
+                    const siDropShadow = siStrokeWidth > 0
+                      ? `drop-shadow(0 0 ${siStrokeWidth}px ${siStrokeColor}) drop-shadow(0 0 ${Math.ceil(siStrokeWidth / 2)}px ${siStrokeColor})`
+                      : undefined;
+                    return (
+                      <div
+                        style={{
+                          marginTop: '6px',
+                          transform: siRotDeg !== 0 ? `rotate(${siRotDeg}deg)` : undefined,
+                        }}
+                      >
+                        <div
+                          style={{
+                            filter: !siIsRect ? siDropShadow : undefined,
+                            ...(siIsRect && siStrokeWidth > 0 ? {
+                              outline: `${siStrokeWidth}px solid ${siStrokeColor}`,
+                              outlineOffset: `-${siStrokeWidth}px`,
+                              borderRadius: `${siRadius}px`,
+                            } : {}),
+                          }}
+                        >
+                          {siIsRect ? (
+                            <div
+                              style={{
+                                width: '100%',
+                                height: `${siHeight}px`,
+                                borderRadius: `${siRadius}px`,
+                                overflow: 'hidden',
+                                backgroundColor: '#f8fafc',
+                              }}
+                            >
+                              <img
+                                src={sq.imageUrl}
+                                alt=""
+                                style={{
+                                  width: '100%',
+                                  height: '100%',
+                                  objectFit: 'cover',
+                                  display: 'block',
+                                }}
+                              />
+                            </div>
+                          ) : (
+                            <div style={{ width: '100%', height: `${siHeight}px` }}>
+                              <img
+                                src={sq.imageUrl}
+                                alt=""
+                                style={{
+                                  width: '100%',
+                                  height: '100%',
+                                  objectFit: 'cover',
+                                  display: 'block',
+                                  clipPath: siClipPath,
+                                  WebkitClipPath: siClipPath,
+                                } as React.CSSProperties}
+                              />
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })()}
+                  {/* Answer space – uses individual sq.lines if set, otherwise global */}
+                  {answerStyle !== 'none' && answerStyle !== 'inline-line' && sqLines > 0 && (
+                    <div style={{ marginTop: '4px', height: `${sqLines * 40}px`, position: 'relative' }}>
+                      {answerStyle === 'dotted' && (
+                        <PrintSafePattern variant="dotted" />
+                      )}
+                      {answerStyle === 'solid' && (
+                        <PrintSafePattern variant="lined" lineSpacing={40} />
+                      )}
+                    </div>
+                  )}
+                </div>
+                {/* Image beside text */}
+                {sq.imageUrl && isBeside && (() => {
+                  const siShape = content.subImageShape || 'rectangle';
+                  const siRadius = content.subImageBorderRadius ?? 8;
+                  const siStrokeColor = content.subImageStrokeColor || '#334155';
+                  const siStrokeWidth = content.subImageStrokeWidth ?? 0;
+                  const siHeight = content.subImageHeight || 100;
+                  const siClipPath = (GALLERY_CLIP_PATHS as Record<string, string>)[siShape] || '';
+                  const siIsRect = siShape === 'rectangle';
+                  const siDropShadow = siStrokeWidth > 0
+                    ? `drop-shadow(0 0 ${siStrokeWidth}px ${siStrokeColor}) drop-shadow(0 0 ${Math.ceil(siStrokeWidth / 2)}px ${siStrokeColor})`
+                    : undefined;
+                  return (
+                    <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center' }}>
+                      <div
+                        style={{
+                          filter: !siIsRect ? siDropShadow : undefined,
+                          ...(siIsRect && siStrokeWidth > 0 ? {
+                            outline: `${siStrokeWidth}px solid ${siStrokeColor}`,
+                            outlineOffset: `-${siStrokeWidth}px`,
+                            borderRadius: `${siRadius}px`,
+                          } : {}),
+                        }}
+                      >
+                        {siIsRect ? (
+                          <div
+                            style={{
+                              width: `${siHeight}px`,
+                              height: `${siHeight}px`,
+                              borderRadius: `${siRadius}px`,
+                              overflow: 'hidden',
+                              backgroundColor: '#f8fafc',
+                            }}
+                          >
+                            <img
+                              src={sq.imageUrl}
+                              alt=""
+                              style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                            />
+                          </div>
+                        ) : (
+                          <div style={{ width: `${siHeight}px`, height: `${siHeight}px` }}>
+                            <img
+                              src={sq.imageUrl}
+                              alt=""
+                              style={{
+                                width: '100%',
+                                height: '100%',
+                                objectFit: 'cover',
+                                display: 'block',
+                                clipPath: siClipPath,
+                                WebkitClipPath: siClipPath,
+                              } as React.CSSProperties}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
+                {/* Resize handles */}
+                {isEditing && (() => {
+                  const pillColor = resizingSubQ === i ? '#4f46e5' : '#6366f1';
+                  const pillOpacity = resizingSubQ === i || resizingWidthIdx === i ? 1 : 0.85;
+                  const pillShadow = '0 1px 3px rgba(99,102,241,0.4)';
+                  return (
+                    <>
+                      {/* Bottom handle – height resize */}
+                      {answerStyle !== 'none' && answerStyle !== 'inline-line' && (
+                        <div
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setResizingSubQ(i);
+                            setSelectedSubQ(i);
+                            const startY = e.clientY;
+                            const startLines = sqLines;
+                            const idx = i;
+                            const handleMove = (me: MouseEvent) => {
+                              const delta = me.clientY - startY;
+                              const newLines = Math.max(1, Math.min(20, Math.round(startLines + delta / 30)));
+                              const cur = contentRef.current;
+                              if (!cur.subQuestions) return;
+                              const updated = [...cur.subQuestions];
+                              updated[idx] = { ...updated[idx], lines: newLines };
+                              onUpdateRef.current({ ...cur, subQuestions: updated });
+                            };
+                            const handleUp = () => {
+                              setResizingSubQ(null);
+                              document.removeEventListener('mousemove', handleMove);
+                              document.removeEventListener('mouseup', handleUp);
+                              document.body.style.cursor = '';
+                              document.body.style.userSelect = '';
+                            };
+                            document.addEventListener('mousemove', handleMove);
+                            document.addEventListener('mouseup', handleUp);
+                            document.body.style.cursor = 'row-resize';
+                            document.body.style.userSelect = 'none';
+                          }}
+                          style={{
+                            position: 'absolute', bottom: -5, left: '50%', transform: 'translateX(-50%)',
+                            width: '64px', height: '16px', cursor: 'row-resize',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10,
+                          }}
+                        >
+                          <div style={{
+                            width: '48px', height: '8px', borderRadius: '4px',
+                            backgroundColor: pillColor, opacity: pillOpacity,
+                            transition: 'opacity 0.15s', boxShadow: pillShadow,
+                          }} />
+                        </div>
+                      )}
+                      {/* Right handle – individual width resize */}
+                      {columns >= 2 && (
+                        <div
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setResizingWidthIdx(i);
+                            setSelectedSubQ(i);
+                            const startX = e.clientX;
+                            const startW = sqWidth;
+                            const idx = i;
+                            const sqs = content.subQuestions || [];
+                            const rowStart = Math.floor(idx / columns) * columns;
+                            const rowEnd = Math.min(rowStart + columns, sqs.length);
+                            const neighborIdx = (idx + 1 < rowEnd) ? idx + 1 : -1;
+                            const hasNeighbor = neighborIdx >= 0 && sqs[neighborIdx];
+                            const nW = hasNeighbor
+                              ? (sqs[neighborIdx].widthPercent ?? defaultWidth)
+                              : 0;
+                            const totalRow = hasNeighbor ? startW + nW : 100;
+                            const cw = containerRef.current?.clientWidth || 600;
+                            const handleMove = (me: MouseEvent) => {
+                              const deltaX = me.clientX - startX;
+                              const deltaPct = (deltaX / cw) * 100;
+                              const maxW = hasNeighbor ? totalRow - 15 : 100;
+                              const newW = Math.max(15, Math.min(maxW, Math.round(startW + deltaPct)));
+                              const cur = contentRef.current;
+                              if (!cur.subQuestions) return;
+                              const updated = [...cur.subQuestions];
+                              updated[idx] = { ...updated[idx], widthPercent: newW };
+                              if (hasNeighbor && updated[neighborIdx]) {
+                                updated[neighborIdx] = { ...updated[neighborIdx], widthPercent: totalRow - newW };
+                              }
+                              onUpdateRef.current({ ...cur, subQuestions: updated });
+                            };
+                            const handleUp = () => {
+                              setResizingWidthIdx(null);
+                              document.removeEventListener('mousemove', handleMove);
+                              document.removeEventListener('mouseup', handleUp);
+                              document.body.style.cursor = '';
+                              document.body.style.userSelect = '';
+                            };
+                            document.addEventListener('mousemove', handleMove);
+                            document.addEventListener('mouseup', handleUp);
+                            document.body.style.cursor = 'col-resize';
+                            document.body.style.userSelect = 'none';
+                          }}
+                          style={{
+                            position: 'absolute', right: -8, top: '50%', transform: 'translateY(-50%)',
+                            width: '18px', height: '64px', cursor: 'col-resize',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 20,
+                          }}
+                        >
+                          <div style={{
+                            width: '8px', height: '48px', borderRadius: '4px',
+                            backgroundColor: resizingWidthIdx === i ? '#4f46e5' : '#6366f1',
+                            opacity: resizingWidthIdx === i ? 1 : 0.85,
+                            transition: 'opacity 0.15s', boxShadow: pillShadow,
+                          }} />
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        /* Original single answer lines */
+        <div 
+          className="mt-1"
+          style={{ height: `${content.lines * 40}px`, marginLeft: activityNumber ? '40px' : 0 }}
+        >
+          {Array.from({ length: content.lines }).map((_, i) => (
+            <div key={i} className="border-b border-slate-300" style={{ height: '40px' }} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -2175,6 +3384,23 @@ interface ImageEditorProps {
   onUpdate: (content: any) => void;
 }
 
+// Clip-path definitions for gallery item shapes
+const GALLERY_CLIP_PATHS: Record<string, string> = {
+  rectangle: '',
+  circle: 'circle(50% at 50% 50%)',
+  triangle: 'polygon(50% 0%, 0% 100%, 100% 100%)',
+  star: 'polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%)',
+  heart: 'polygon(50% 30%, 61% 15%, 72% 10%, 83% 13%, 90% 22%, 90% 32%, 82% 43%, 70% 55%, 58% 68%, 50% 78%, 42% 68%, 30% 55%, 18% 43%, 10% 32%, 10% 22%, 17% 13%, 28% 10%, 39% 15%)',
+  'speech-bubble': 'polygon(0% 0%, 100% 0%, 100% 72%, 65% 72%, 50% 95%, 35% 72%, 0% 72%)',
+};
+
+function getGalleryItemLabel(index: number, type: string): string {
+  if (type === 'letters') return String.fromCharCode(65 + index);
+  if (type === 'numbers') return String(index + 1);
+  if (type === 'roman') return toRoman(index + 1);
+  return '';
+}
+
 function ImageEditor({ content, isEditing, onUpdate }: ImageEditorProps) {
   const { 
     url, 
@@ -2187,7 +3413,15 @@ function ImageEditor({ content, isEditing, onUpdate }: ImageEditorProps) {
     galleryLayout = 'grid',
     gridColumns = 2,
     containerHeight = 0,
-    imageActivityType = 'none'
+    imageActivityType = 'none',
+    galleryItemShape = 'rectangle',
+    galleryBorderRadius = 8,
+    galleryStrokeColor = '#334155',
+    galleryStrokeWidth = 0,
+    galleryRotate = false,
+    galleryRotateMax = 5,
+    galleryLabelType = 'none',
+    galleryLabelColor = '#3b82f6',
   } = content;
   
   // Hooks must be before any early returns!
@@ -2251,83 +3485,91 @@ function ImageEditor({ content, isEditing, onUpdate }: ImageEditorProps) {
 
     const itemCaption = (content.galleryCaptions || [])[index ?? 0];
 
-    return (
-      <div key={index ?? 0} className="relative w-full flex flex-col">
-        {/* Image Container with Markers */}
-        <div className="relative w-full">
-          <div 
-            className="relative overflow-hidden rounded-lg w-full flex items-center justify-center bg-slate-50"
-            style={{ 
-              height: typeof currentHeight === 'number' ? `${currentHeight}px` : currentHeight,
-            }}
-          >
-            {/* Main Image */}
-            <img
-              src={imgUrl}
-              alt={alt || ''}
-              className="w-full transition-opacity duration-300"
-              style={{ 
-                opacity: isLoading ? 0.5 : 1,
-                height: currentHeight === 'auto' ? 'auto' : '100%',
-                objectFit: (hasGallery || size > 100 || containerHeight > 0) ? 'cover' : 'contain',
-                transform: size > 100 ? `scale(${zoomFactor})` : 'none',
-                transformOrigin: 'center center',
-              }}
-              onLoad={() => setIsLoading(false)}
-            />
-          </div>
+    // Shape / clip-path
+    const clipPath = GALLERY_CLIP_PATHS[galleryItemShape] || '';
+    const isRect = galleryItemShape === 'rectangle';
+    const borderRadiusCss = isRect ? `${galleryBorderRadius}px` : '0';
 
-          {/* Activity Overlays - positioned relative to image container, outside overflow-hidden */}
+    // Rotation: deterministic per index so it's stable
+    const idx = index ?? 0;
+    const rotationDeg = galleryRotate
+      ? (((idx * 137 + 29) % (galleryRotateMax * 2 + 1)) - galleryRotateMax)
+      : 0;
+
+    // Stroke: handled via dropShadowFilter for both rect and shape
+
+    // Label
+    const labelText = galleryLabelType !== 'none' ? getGalleryItemLabel(idx, galleryLabelType) : '';
+
+    const imgH = typeof currentHeight === 'number' ? `${currentHeight}px` : currentHeight;
+    const imgObjectFit = (hasGallery || size > 100 || containerHeight > 0) ? 'cover' : 'contain';
+    const imgTransform = size > 100 ? `scale(${zoomFactor})` : 'none';
+    const dropShadowFilter = galleryStrokeWidth > 0
+      ? `drop-shadow(0 0 ${galleryStrokeWidth}px ${galleryStrokeColor}) drop-shadow(0 0 ${Math.ceil(galleryStrokeWidth / 2)}px ${galleryStrokeColor})`
+      : undefined;
+
+    return (
+      <div
+        key={index ?? 0}
+        className="relative w-full flex flex-col"
+        style={{ transform: rotationDeg !== 0 ? `rotate(${rotationDeg}deg)` : undefined }}
+      >
+        {/* ── Image + overlays wrapper (relative so absolute children position here) ── */}
+        <div
+          className="relative w-full"
+          style={{
+            filter: dropShadowFilter,
+            ...(isRect && galleryStrokeWidth > 0 ? { outline: `${galleryStrokeWidth}px solid ${galleryStrokeColor}`, outlineOffset: `-${galleryStrokeWidth}px`, borderRadius: borderRadiusCss } : {}),
+          }}
+        >
+          {/* Image */}
+          {isRect ? (
+            <div
+              className="relative overflow-hidden w-full flex items-center justify-center bg-slate-50"
+              style={{ height: imgH, borderRadius: borderRadiusCss }}
+            >
+              <img
+                src={imgUrl} alt={alt || ''}
+                className="w-full transition-opacity duration-300"
+                style={{ opacity: isLoading ? 0.5 : 1, height: currentHeight === 'auto' ? 'auto' : '100%', objectFit: imgObjectFit, transform: imgTransform, transformOrigin: 'center center' }}
+                onLoad={() => setIsLoading(false)}
+              />
+            </div>
+          ) : (
+            <div className="relative w-full" style={{ height: imgH }}>
+              <img
+                src={imgUrl} alt={alt || ''}
+                style={{ opacity: isLoading ? 0.5 : 1, width: '100%', height: '100%', objectFit: 'cover', display: 'block', clipPath: clipPath, WebkitClipPath: clipPath, transform: imgTransform, transformOrigin: 'center center' }}
+                onLoad={() => setIsLoading(false)}
+              />
+            </div>
+          )}
+
+          {/* Activity Overlays */}
           {imageActivityType === 'text-input' && (
-            <div 
-              className="absolute shadow-lg pointer-events-none"
-              style={{
-                bottom: '12px',
-                left: '12px',
-                right: '12px',
-                height: '32px',
-                backgroundColor: '#ffffff',
-                border: '2.5px solid #334155',
-                borderRadius: '8px',
-                zIndex: 50,
-              }}
-            />
+            <div className="absolute shadow-lg pointer-events-none" style={{ bottom: '12px', left: '12px', right: '12px', height: '32px', backgroundColor: '#ffffff', border: '2.5px solid #334155', borderRadius: '8px', zIndex: 50 }} />
           )}
           {imageActivityType === 'checkbox-circle' && (
-            <div 
-              className="absolute shadow-lg pointer-events-none"
-              style={{
-                top: '12px',
-                right: '12px',
-                width: '32px',
-                height: '32px',
-                backgroundColor: '#ffffff',
-                border: '2.5px solid #334155',
-                borderRadius: '50%',
-                zIndex: 50,
-              }}
-            />
+            <div className="absolute shadow-lg pointer-events-none" style={{ top: '12px', right: '12px', width: '32px', height: '32px', backgroundColor: '#ffffff', border: '2.5px solid #334155', borderRadius: '50%', zIndex: 50 }} />
           )}
           {imageActivityType === 'checkbox-square' && (
-            <div 
-              className="absolute shadow-lg pointer-events-none"
-              style={{
-                top: '12px',
-                left: '12px',
-                width: '32px',
-                height: '32px',
-                backgroundColor: '#ffffff',
-                border: '2.5px solid #334155',
-                borderRadius: '6px',
-                zIndex: 50,
-              }}
-            />
+            <div className="absolute shadow-lg pointer-events-none" style={{ top: '12px', left: '12px', width: '32px', height: '32px', backgroundColor: '#ffffff', border: '2.5px solid #334155', borderRadius: '6px', zIndex: 50 }} />
+          )}
+
+          {/* Label badge */}
+          {labelText && (
+            <div
+              className="absolute pointer-events-none flex items-center justify-center"
+              style={{ top: '6px', left: '6px', width: '26px', height: '26px', borderRadius: '50%', backgroundColor: galleryLabelColor, color: '#ffffff', fontSize: '11px', fontWeight: 700, zIndex: 60, boxShadow: '0 1px 4px rgba(0,0,0,0.4)' }}
+            >
+              {labelText}
+            </div>
           )}
         </div>
 
         {/* Individual Item Caption */}
         {hasGallery && itemCaption && (
-          <div className="mt-1.5 text-center text-[11px] font-medium text-slate-600 px-1 leading-tight">
+          <div className="mt-1.5 text-center font-medium text-slate-600 px-1 leading-tight" style={{ fontSize: content.captionFontSize ? `${content.captionFontSize}px` : '11px' }}>
             {itemCaption}
           </div>
         )}
@@ -2545,7 +3787,7 @@ function TableEditor({ content, isEditing, onUpdate, onBlur }: TableEditorProps)
     <div 
       className="worksheet-table-container relative" 
       ref={editorWrapperRef} 
-      style={{ paddingTop: isEditing ? '50px' : '0', paddingBottom: isEditing ? '60px' : '0' }}
+      style={{ paddingTop: isEditing ? '50px' : '0', paddingBottom: '0' }}
       onBlur={(e) => {
         // Check if focus is moving outside the table container
         const container = editorWrapperRef.current;
@@ -2715,7 +3957,7 @@ function TableEditor({ content, isEditing, onUpdate, onBlur }: TableEditorProps)
             className="flex justify-center"
             style={{
               position: 'absolute',
-              bottom: 52,
+              bottom: -8,
               left: 0,
               right: 0,
               zIndex: 10000,
@@ -2761,7 +4003,7 @@ function TableEditor({ content, isEditing, onUpdate, onBlur }: TableEditorProps)
             className="flex justify-between items-center"
             style={{
               position: 'absolute',
-              bottom: 16,
+              bottom: -28,
               left: 0,
               right: 0,
               zIndex: 9999,
@@ -3723,6 +4965,92 @@ function HeaderFooterEditorBlock({ content, isEditing, onUpdate }: HeaderFooterE
           {content.showPageNumber && <PageNumberIcon />}
         </div>
       )}
+    </div>
+  );
+}
+
+// ============================================
+// FREE CANVAS EDITOR BLOCK
+// ============================================
+
+// ============================================
+// FREE CANVAS ACTIVITY BLOCK - Kompletně nová struktura
+// ============================================
+
+interface FreeCanvasActivityBlockProps {
+  block: WorksheetBlock;
+  isEditing: boolean;
+  onUpdate: (content: any) => void;
+  activityNumber?: number;
+}
+
+function FreeCanvasActivityBlock({ block, isEditing, onUpdate, activityNumber }: FreeCanvasActivityBlockProps) {
+  const content = block.content as FreeCanvasContent;
+  const instructionText = (content as any).question || '';
+  const isFullscreen = !!(content as any).fullscreen;
+
+  // Fullscreen: break out of EditableBlock padding (px-4 = 16px) + page PADDING (24px) = 40px each side
+  //            vertically: paddingTop/Bottom (16px) + py-1 (4px) = 20px top & bottom
+  // Normal:    break out of EditableBlock padding only (16px each side, 4px top/bottom)
+  const sidePull = isFullscreen ? 40 : 16;
+  const topPull  = isFullscreen ? 20 : 4;  // GridCanvas paddingTop:16 + EditableBlock py-1:4
+  const botPull  = isFullscreen ? 20 : 4;  // GridCanvas paddingBottom:16 + EditableBlock py-1:4
+
+  return (
+    <div
+      className="w-full"
+      style={{
+        margin: `-${topPull}px -${sidePull}px -${botPull}px -${sidePull}px`,
+        width: `calc(100% + ${sidePull * 2}px)`,
+      }}
+    >
+      {/* Zadání — skryté v info módu (bez čísla aktivity) nebo ve fullscreen */}
+      {activityNumber !== undefined && !isFullscreen && (
+        <div
+          className="flex gap-3 items-start px-4 py-1"
+          style={{
+            fontFamily: content.fontFamily || FONT_FAMILY,
+            fontSize: content.fontSize || FONT_SIZES.body,
+            fontWeight: content.fontWeight || 'normal',
+            fontStyle: content.italic ? 'italic' : 'normal',
+            color: content.textColor || '#1e293b',
+            lineHeight: content.lineHeight || 1.5,
+          }}
+        >
+          <div style={{
+            width: `${content.circleSize || 21}px`,
+            height: `${content.circleSize || 21}px`,
+            borderRadius: '50%',
+            backgroundColor: content.circleColor || '#1e293b',
+            color: 'white',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: `${(content.circleSize || 21) * 0.6}px`,
+            fontWeight: 'bold', flexShrink: 0, marginTop: '2px',
+          }}>
+            {activityNumber}
+          </div>
+          <div className="flex-1 min-w-0">
+            {isEditing ? (
+              <textarea
+                value={instructionText}
+                onChange={(e) => onUpdate({ ...content, question: e.target.value } as any)}
+                className="w-full bg-transparent border-none outline-none resize-none overflow-hidden p-0 m-0"
+                style={{ minHeight: '1.5em' }}
+                placeholder="Zadejte zadání aktivity..."
+              />
+            ) : (
+              <div style={{ minHeight: '1.5em' }}>
+                {instructionText || <span className="text-slate-400">Zadání aktivity...</span>}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Figma SVG viewer */}
+      <div className="w-full overflow-hidden" style={{ borderTop: isFullscreen ? 'none' : '1px solid #e5e7eb' }}>
+        <FreeCanvasEditor content={content} onUpdate={onUpdate} />
+      </div>
     </div>
   );
 }

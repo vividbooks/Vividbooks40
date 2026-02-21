@@ -89,6 +89,7 @@ const SUBJECTS = [
   { id: 'chemie', label: 'Chemie', color: '#ef4444' },
   { id: 'prirodopis', label: 'Přírodopis', color: '#22c55e' },
   { id: 'matematika', label: 'Matematika', color: '#3b82f6' },
+  { id: 'dejepis', label: 'Dějepis', color: '#d97706' },
 ];
 
 interface AIChatPanelProps {
@@ -551,7 +552,7 @@ export function AIChatPanel({
       console.log('[Edit] Prompt length:', prompt.length);
       
       // Call AI to modify blocks
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${import.meta.env.VITE_GEMINI_API_KEY}`, {
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${import.meta.env.VITE_GEMINI_API_KEY}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

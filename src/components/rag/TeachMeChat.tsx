@@ -31,8 +31,8 @@ interface TeachMeChatProps {
 }
 
 const MODELS = [
-  { id: 'gemini-3-flash', label: 'Gemini 3 Flash ⚡', badge: 'Nový!' },
-  { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
+  { id: 'gemini-3-pro', label: 'Gemini 3 Pro 🧠', badge: 'Nejlepší' },
+  { id: 'gemini-3-flash', label: 'Gemini 3 Flash ⚡', badge: 'Rychlý' },
   { id: 'gpt-5', label: 'GPT-5' },
   { id: 'gpt-5-mini', label: 'GPT-5 mini' },
   { id: 'gpt-4o-mini', label: 'GPT-4o mini' },

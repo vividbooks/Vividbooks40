@@ -1,0 +1,932 @@
+        {/* FREE ANSWER - Sub-questions (rendered after TEXT so order is 1) Otázka 2) Vzhled 3) Podotázky – see below) */}
+        {block.type === 'free-answer' && (() => {
+          const faBlock = block as FreeAnswerBlock;
+          const hasSubQ = faBlock.content.subQuestions && faBlock.content.subQuestions.length > 0;
+          
+          return (
+            <div style={{ 
+              marginBottom: '16px',
+              padding: '12px',
+              backgroundColor: '#1e293b',
+              borderRadius: '8px',
+            }}>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                marginBottom: '12px',
+              }}>
+                <span style={{ fontSize: '11px', fontWeight: 600, color: '#CCCCCC' }}>3) Zapnout pod-otázky</span>
+                <LayoutGrid size={14} style={{ color: '#808080' }} />
+              </div>
+
+              {/* Toggle sub-questions mode */}
+              <div style={{ marginBottom: '12px' }}>
+                <button
+                  onClick={() => {
+                    if (hasSubQ) {
+                      onUpdateBlock(block.id, {
+                        content: { ...faBlock.content, subQuestions: undefined, subColumns: undefined, subLabelType: undefined, subQuestionColors: undefined }
+                      } as any);
+                    } else {
+                      onUpdateBlock(block.id, {
+                        content: {
+                          ...faBlock.content,
+                          subQuestions: [
+                            { id: generateBlockId(), text: '', lines: 1 },
+                            { id: generateBlockId(), text: '', lines: 1 },
+                          ],
+                          subColumns: 2,
+                          subLabelType: 'letters' as SubQuestionLabelType,
+                          subQuestionColors: ['#dbeafe'],
+                        }
+                      } as any);
+                    }
+                  }}
+                  style={{
+                    ...buttonStyle,
+                    width: '100%',
+                    justifyContent: 'center',
+                    backgroundColor: hasSubQ ? '#22c55e' : '#334155',
+                    color: hasSubQ ? 'white' : '#e5e7eb',
+                    fontWeight: hasSubQ ? 600 : 400,
+                  }}
+                >
+                  {hasSubQ ? '✓ Pod-otázky zapnuty' : 'Zapnout pod-otázky'}
+                </button>
+              </div>
+
+              {hasSubQ && (
+                <>
+                  {/* Columns */}
+                  <div style={{ marginBottom: '12px' }}>
+                    <label style={labelStyle}>Sloupce</label>
+                    <div style={{ display: 'flex', gap: '4px' }}>
+                      {[1, 2, 3].map((col) => (
+                        <button
+                          key={col}
+                          onClick={() => onUpdateBlock(block.id, {
+                            content: { ...faBlock.content, subColumns: col }
+                          } as any)}
+                          style={{
+                            ...buttonStyle,
+                            flex: 1,
+                            justifyContent: 'center',
+                            backgroundColor: (faBlock.content.subColumns || 2) === col ? '#3b82f6' : '#334155',
+                            color: (faBlock.content.subColumns || 2) === col ? 'white' : '#e5e7eb',
+                          }}
+                        >
+                          {col}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Label type */}
+                  <div style={{ marginBottom: '12px' }}>
+                    <label style={labelStyle}>Označení</label>
+                    <div style={{ display: 'flex', gap: '4px' }}>
+                      {[
+                        { value: 'letters', label: 'A) B) C)' },
+                        { value: 'numbers', label: '1) 2) 3)' },
+                        { value: 'none', label: 'Žádné' },
+                      ].map((opt) => (
+                        <button
+                          key={opt.value}
+                          onClick={() => onUpdateBlock(block.id, {
+                            content: { ...faBlock.content, subLabelType: opt.value }
+                          } as any)}
+                          style={{
+                            ...buttonStyle,
+                            flex: 1,
+                            justifyContent: 'center',
+                            fontSize: '10px',
+                            backgroundColor: (faBlock.content.subLabelType || 'letters') === opt.value ? '#3b82f6' : '#334155',
+                            color: (faBlock.content.subLabelType || 'letters') === opt.value ? 'white' : '#e5e7eb',
+                          }}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Vizuální styl: jedna řádka – Odsazení + barva výplně + barva obrysu */}
+                  <div style={{ marginBottom: '12px' }}>
+                    <label style={labelStyle}>Vizuální styl</label>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                      <button
+                        onClick={() => onUpdateBlock(block.id, {
+                          content: { ...faBlock.content, subIndent: faBlock.content.subIndent === false ? true : false }
+                        } as any)}
+                        style={{
+                          ...buttonStyle,
+                          padding: '6px 10px',
+                          fontSize: '10px',
+                          backgroundColor: faBlock.content.subIndent !== false ? '#3b82f6' : '#334155',
+                          color: faBlock.content.subIndent !== false ? 'white' : '#e5e7eb',
+                        }}
+                      >
+                        Odsazení
+                      </button>
+                      {/* Kolečko barva výplně – přeškrtnuté = vypnuto, klik = color picker */}
+                      <div style={{ position: 'relative' }}>
+                        <input
+                          type="color"
+                          value={(faBlock.content.subShowBackground !== false && faBlock.content.subBackgroundMode !== 'outline' && (faBlock.content.subQuestionColors?.[0] || '#dbeafe')) || '#dbeafe'}
+                          onChange={(e) => onUpdateBlock(block.id, {
+                            content: {
+                              ...faBlock.content,
+                              subShowBackground: true,
+                              subBackgroundMode: 'fill',
+                              subQuestionColors: [e.target.value],
+                            }
+                          } as any)}
+                          style={{
+                            position: 'absolute',
+                            opacity: 0,
+                            width: '28px',
+                            height: '28px',
+                            cursor: 'pointer',
+                          }}
+                          id={`fa-fill-color-${block.id}`}
+                        />
+                        <label
+                          htmlFor={`fa-fill-color-${block.id}`}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            width: '28px',
+                            height: '28px',
+                            borderRadius: '50%',
+                            border: '2px solid #475569',
+                            backgroundColor: faBlock.content.subShowBackground !== false && faBlock.content.subBackgroundMode !== 'outline'
+                              ? (faBlock.content.subQuestionColors?.[0] || '#dbeafe')
+                              : 'transparent',
+                            cursor: 'pointer',
+                            position: 'relative',
+                          }}
+                        >
+                          {!(faBlock.content.subShowBackground !== false && faBlock.content.subBackgroundMode !== 'outline') && (
+                            <span style={{ position: 'absolute', width: '32px', height: '2px', backgroundColor: '#94a3b8', transform: 'rotate(-45deg)' }} />
+                          )}
+                        </label>
+                      </div>
+                      {/* Kolečko barva obrysu */}
+                      <div style={{ position: 'relative' }}>
+                        <input
+                          type="color"
+                          value={(faBlock.content.subShowBackground !== false && faBlock.content.subBackgroundMode === 'outline' && (faBlock.content.subQuestionColors?.[0] || '#93c5fd')) || '#93c5fd'}
+                          onChange={(e) => onUpdateBlock(block.id, {
+                            content: {
+                              ...faBlock.content,
+                              subShowBackground: true,
+                              subBackgroundMode: 'outline',
+                              subQuestionColors: [e.target.value],
+                            }
+                          } as any)}
+                          style={{
+                            position: 'absolute',
+                            opacity: 0,
+                            width: '28px',
+                            height: '28px',
+                            cursor: 'pointer',
+                          }}
+                          id={`fa-outline-color-${block.id}`}
+                        />
+                        <label
+                          htmlFor={`fa-outline-color-${block.id}`}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            width: '28px',
+                            height: '28px',
+                            borderRadius: '50%',
+                            border: '2px solid #475569',
+                            backgroundColor: faBlock.content.subShowBackground !== false && faBlock.content.subBackgroundMode === 'outline'
+                              ? (faBlock.content.subQuestionColors?.[0] || '#93c5fd')
+                              : 'transparent',
+                            cursor: 'pointer',
+                            position: 'relative',
+                          }}
+                        >
+                          {!(faBlock.content.subShowBackground !== false && faBlock.content.subBackgroundMode === 'outline') && (
+                            <span style={{ position: 'absolute', width: '32px', height: '2px', backgroundColor: '#94a3b8', transform: 'rotate(-45deg)' }} />
+                          )}
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Stín + Zakulacení na jedné řádce */}
+                  <div style={{ marginBottom: '12px', display: 'flex', alignItems: 'flex-start', gap: '12px', flexWrap: 'wrap' }}>
+                    <div style={{ flex: '1 1 100px' }}>
+                      <label style={labelStyle}>Stín</label>
+                      <div style={{ display: 'flex', gap: '4px' }}>
+                        {([
+                          { value: 'none', label: 'Žádný' },
+                          { value: 'sm', label: 'Lehký' },
+                          { value: 'md', label: 'Střední' },
+                        ] as const).map((opt) => {
+                          const current = faBlock.content.subShadow || 'none';
+                          return (
+                            <button
+                              key={opt.value}
+                              onClick={() => onUpdateBlock(block.id, {
+                                content: { ...faBlock.content, subShadow: opt.value }
+                              } as any)}
+                              style={{
+                                ...buttonStyle,
+                                flex: 1,
+                                justifyContent: 'center',
+                                fontSize: '10px',
+                                backgroundColor: current === opt.value ? '#3b82f6' : '#334155',
+                                color: current === opt.value ? 'white' : '#e5e7eb',
+                              }}
+                            >
+                              {opt.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    <div style={{ flex: '1 1 100px' }}>
+                      <label style={labelStyle}>Zakulacení</label>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <input
+                          type="range"
+                          min="0"
+                          max="24"
+                          step="2"
+                          value={faBlock.content.subBorderRadius ?? 10}
+                          onChange={(e) => onUpdateBlock(block.id, {
+                            content: { ...faBlock.content, subBorderRadius: parseInt(e.target.value) }
+                          } as any)}
+                          style={{ flex: 1, accentColor: '#3b82f6', minWidth: 0 }}
+                        />
+                        <span style={{ fontSize: '10px', color: '#94a3b8', width: '26px', textAlign: 'right', flexShrink: 0 }}>
+                          {faBlock.content.subBorderRadius ?? 10}px
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Answer space style - visual icons matching VZHLED BLOKU */}
+                  <div style={{ marginBottom: '12px' }}>
+                    <label style={labelStyle}>Prostor pro odpověď</label>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      {([
+                        { value: 'none', label: 'Nic', icon: 'empty' },
+                        { value: 'dotted', label: 'Tečky', icon: 'dots' },
+                        { value: 'solid', label: 'Linky', icon: 'lines' },
+                        { value: 'space', label: 'Prostor', icon: 'space' },
+                        { value: 'inline-line', label: 'Vedle', icon: 'inline' },
+                      ] as const).map((opt) => {
+                        const current = faBlock.content.subAnswerStyle || (faBlock.content.subShowLines === false ? 'none' : 'dotted');
+                        const isActive = current === opt.value;
+                        return (
+                          <button
+                            key={opt.value}
+                            onClick={() => onUpdateBlock(block.id, {
+                              content: { ...faBlock.content, subAnswerStyle: opt.value, subShowLines: opt.value !== 'none' }
+                            } as any)}
+                            style={{
+                              ...buttonStyle,
+                              flex: 1,
+                              flexDirection: 'column',
+                              height: '42px',
+                              justifyContent: 'center',
+                              backgroundColor: isActive ? '#3B82F6' : '#1e293b',
+                              border: isActive ? '1px solid #60A5FA' : '1px solid #334155',
+                              color: isActive ? 'white' : '#94a3b8',
+                              padding: '4px',
+                              gap: '0',
+                            }}
+                            title={opt.label}
+                          >
+                            <div style={{
+                              width: '100%',
+                              height: '100%',
+                              borderRadius: '4px',
+                              backgroundColor: isActive ? 'rgba(255,255,255,0.2)' : '#0f172a',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              justifyContent: 'center',
+                              gap: '3px',
+                              padding: '6px',
+                              overflow: 'hidden',
+                            }}>
+                              {opt.icon === 'dots' && (
+                                <div style={{
+                                  height: '100%',
+                                  backgroundImage: `radial-gradient(${isActive ? '#FFFFFF' : '#CCCCCC'} 1.5px, transparent 1.5px)`,
+                                  backgroundSize: '6px 6px',
+                                }} />
+                              )}
+                              {opt.icon === 'lines' && (
+                                <div style={{ height: '100%', display: 'flex', flexDirection: 'column', gap: '4px', justifyContent: 'center' }}>
+                                  <div style={{ height: '1.5px', backgroundColor: isActive ? '#FFFFFF' : '#CCCCCC', width: '100%' }} />
+                                  <div style={{ height: '1.5px', backgroundColor: isActive ? '#FFFFFF' : '#CCCCCC', width: '100%' }} />
+                                  <div style={{ height: '1.5px', backgroundColor: isActive ? '#FFFFFF' : '#CCCCCC', width: '100%' }} />
+                                </div>
+                              )}
+                              {opt.icon === 'empty' && (
+                                <div style={{ height: '100%', border: '1px dashed #475569', borderRadius: '2px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                  <X size={14} style={{ color: '#64748b', opacity: 0.5 }} />
+                                </div>
+                              )}
+                              {opt.icon === 'space' && (
+                                <div style={{ height: '100%', border: '1px dashed #475569', borderRadius: '2px' }} />
+                              )}
+                              {opt.icon === 'inline' && (
+                                <div style={{ height: '100%', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                  <span style={{ fontSize: '7px', color: isActive ? '#FFFFFF' : '#CCCCCC', flexShrink: 0 }}>A:</span>
+                                  <div style={{ flex: 1, height: '3px', backgroundColor: isActive ? 'rgba(255,255,255,0.3)' : 'rgba(200,200,200,0.3)', borderRadius: '1px' }} />
+                                </div>
+                              )}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {/* Line count (visible when not 'none' and not 'inline-line') */}
+                    {!['none', 'inline-line'].includes(faBlock.content.subAnswerStyle || (faBlock.content.subShowLines === false ? 'none' : 'dotted')) && (
+                      <div style={{ display: 'flex', gap: '3px', marginTop: '6px', alignItems: 'center' }}>
+                        <span style={{ fontSize: '10px', color: '#94a3b8', flexShrink: 0 }}>Počet:</span>
+                        {[1, 2, 3, 4, 5].map((n) => (
+                          <button
+                            key={n}
+                            onClick={() => onUpdateBlock(block.id, {
+                              content: { ...faBlock.content, subAnswerLines: n }
+                            } as any)}
+                            style={{
+                              ...buttonStyle,
+                              flex: 1,
+                              justifyContent: 'center',
+                              fontSize: '10px',
+                              padding: '3px',
+                              backgroundColor: (faBlock.content.subAnswerLines || 1) === n ? '#3b82f6' : '#334155',
+                              color: (faBlock.content.subAnswerLines || 1) === n ? 'white' : '#e5e7eb',
+                            }}
+                          >
+                            {n}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Sub-question font settings */}
+                  <div style={{ marginBottom: '12px' }}>
+                    <label style={labelStyle}>Font pod-otázek</label>
+                    <div style={{ display: 'flex', gap: '6px', marginBottom: '6px' }}>
+                      <div style={{ flex: 1, position: 'relative' }}>
+                        <select
+                          value={faBlock.content.subFontFamily || (faBlock.content as any).fontFamily || "'Fenomen Sans', sans-serif"}
+                          onChange={(e) => onUpdateBlock(block.id, {
+                            content: { ...faBlock.content, subFontFamily: e.target.value }
+                          } as any)}
+                          style={{
+                            ...inputStyle,
+                            appearance: 'none',
+                            paddingRight: '24px',
+                            cursor: 'pointer',
+                            fontSize: '10px',
+                            padding: '5px 8px',
+                          }}
+                        >
+                          {FONT_FAMILIES.map((font) => (
+                            <option key={font.value} value={font.value}>{font.label}</option>
+                          ))}
+                        </select>
+                        <ChevronDownIcon size={12} style={{ 
+                          position: 'absolute', right: '6px', top: '50%', 
+                          transform: 'translateY(-50%)', pointerEvents: 'none', color: '#808080',
+                        }} />
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                      <div style={{ flex: 1, position: 'relative' }}>
+                        <select
+                          value={faBlock.content.subFontWeight || (faBlock.content as any).fontWeight || 'normal'}
+                          onChange={(e) => onUpdateBlock(block.id, {
+                            content: { ...faBlock.content, subFontWeight: e.target.value }
+                          } as any)}
+                          style={{
+                            ...inputStyle,
+                            appearance: 'none',
+                            paddingRight: '24px',
+                            cursor: 'pointer',
+                            fontSize: '10px',
+                            padding: '5px 8px',
+                          }}
+                        >
+                          <option value="normal">Regular</option>
+                          <option value="500">Medium</option>
+                          <option value="600">Semibold</option>
+                          <option value="bold">Bold</option>
+                        </select>
+                        <ChevronDownIcon size={12} style={{ 
+                          position: 'absolute', right: '6px', top: '50%', 
+                          transform: 'translateY(-50%)', pointerEvents: 'none', color: '#808080',
+                        }} />
+                      </div>
+                      <div style={{ width: '60px', position: 'relative' }}>
+                        <select
+                          value={faBlock.content.subFontSize || (faBlock.content as any).fontSize || 12}
+                          onChange={(e) => onUpdateBlock(block.id, {
+                            content: { ...faBlock.content, subFontSize: parseInt(e.target.value) }
+                          } as any)}
+                          style={{
+                            ...inputStyle,
+                            appearance: 'none',
+                            paddingRight: '20px',
+                            cursor: 'pointer',
+                            fontSize: '10px',
+                            padding: '5px 8px',
+                          }}
+                        >
+                          {FONT_SIZES.map((size) => (
+                            <option key={size} value={size}>{size}</option>
+                          ))}
+                        </select>
+                        <ChevronDownIcon size={12} style={{ 
+                          position: 'absolute', right: '6px', top: '50%', 
+                          transform: 'translateY(-50%)', pointerEvents: 'none', color: '#808080',
+                        }} />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Label style */}
+                  <div style={{ marginBottom: '12px' }}>
+                    <label style={labelStyle}>Styl označení</label>
+                    <div style={{ display: 'flex', gap: '4px' }}>
+                      {[
+                        { value: 'text', label: 'A) Text' },
+                        { value: 'circle', label: '● Plný' },
+                        { value: 'circle-outline', label: '○ Obrys' },
+                      ].map((opt) => (
+                        <button
+                          key={opt.value}
+                          onClick={() => onUpdateBlock(block.id, {
+                            content: { ...faBlock.content, subLabelStyle: opt.value }
+                          } as any)}
+                          style={{
+                            ...buttonStyle,
+                            flex: 1,
+                            justifyContent: 'center',
+                            fontSize: '10px',
+                            backgroundColor: (faBlock.content.subLabelStyle || 'text') === opt.value ? '#3b82f6' : '#334155',
+                            color: (faBlock.content.subLabelStyle || 'text') === opt.value ? 'white' : '#e5e7eb',
+                          }}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Label color presets (visible when circle style) */}
+                  {(faBlock.content.subLabelStyle === 'circle' || faBlock.content.subLabelStyle === 'circle-outline') && (
+                    <div style={{ marginBottom: '12px' }}>
+                      <label style={labelStyle}>Barva kroužků</label>
+                      <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                        {[
+                          { label: 'Růžová', colors: ['#e11d48'] },
+                          { label: 'Modrá', colors: ['#2563eb'] },
+                          { label: 'Zelená', colors: ['#16a34a'] },
+                          { label: 'Oranžová', colors: ['#ea580c'] },
+                          { label: 'Fialová', colors: ['#9333ea'] },
+                          { label: 'Šedá', colors: ['#475569'] },
+                          { label: 'Mix 6+2', colors: ['#e11d48','#e11d48','#e11d48','#e11d48','#e11d48','#e11d48','#ea580c','#ea580c'] },
+                        ].map((preset) => {
+                          const currentLabelColors = faBlock.content.subLabelColors || ['#e11d48'];
+                          const isActive = JSON.stringify(currentLabelColors) === JSON.stringify(preset.colors);
+                          return (
+                            <button
+                              key={preset.label}
+                              onClick={() => onUpdateBlock(block.id, {
+                                content: { ...faBlock.content, subLabelColors: preset.colors }
+                              } as any)}
+                              style={{
+                                ...buttonStyle,
+                                padding: '4px 8px',
+                                fontSize: '10px',
+                                backgroundColor: isActive ? '#3b82f6' : '#334155',
+                                color: isActive ? 'white' : '#e5e7eb',
+                              }}
+                            >
+                              <div style={{
+                                width: '10px',
+                                height: '10px',
+                                borderRadius: '50%',
+                                backgroundColor: preset.colors[0],
+                                marginRight: '4px',
+                                flexShrink: 0,
+                              }} />
+                              {preset.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Background colors preset (visible when background is on) */}
+                  {faBlock.content.subShowBackground !== false && (
+                    <div style={{ marginBottom: '12px' }}>
+                      <label style={labelStyle}>Barvy pozadí</label>
+                      <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                        {[
+                          { label: 'Modrá', colors: ['#dbeafe'] },
+                          { label: 'Zelená', colors: ['#dcfce7'] },
+                          { label: 'Žlutá', colors: ['#fef3c7'] },
+                          { label: 'Fialová', colors: ['#f3e8ff'] },
+                          { label: 'Mix 6+2', colors: ['#dbeafe','#dbeafe','#dbeafe','#dbeafe','#dbeafe','#dbeafe','#fef3c7','#fef3c7'] },
+                          { label: 'Mix 4+4', colors: ['#dbeafe','#dbeafe','#dbeafe','#dbeafe','#fef3c7','#fef3c7','#fef3c7','#fef3c7'] },
+                          { label: 'Duha', colors: ['#dbeafe','#dcfce7','#fef3c7','#f3e8ff','#fce7f3','#ffedd5'] },
+                        ].map((preset) => {
+                          const currentColors = faBlock.content.subQuestionColors || ['#dbeafe'];
+                          const isActive = JSON.stringify(currentColors) === JSON.stringify(preset.colors);
+                          return (
+                            <button
+                              key={preset.label}
+                              onClick={() => onUpdateBlock(block.id, {
+                                content: { ...faBlock.content, subQuestionColors: preset.colors }
+                              } as any)}
+                              style={{
+                                ...buttonStyle,
+                                padding: '4px 8px',
+                                fontSize: '10px',
+                                backgroundColor: isActive ? '#3b82f6' : '#334155',
+                                color: isActive ? 'white' : '#e5e7eb',
+                              }}
+                            >
+                              <div style={{
+                                display: 'flex',
+                                gap: '2px',
+                                marginRight: '4px',
+                              }}>
+                                {preset.colors.slice(0, 3).map((c, ci) => (
+                                  <div key={ci} style={{
+                                    width: '8px',
+                                    height: '8px',
+                                    borderRadius: '2px',
+                                    backgroundColor: c,
+                                  }} />
+                                ))}
+                              </div>
+                              {preset.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Sub-questions list */}
+                  <div style={{ marginBottom: '8px' }}>
+                    <label style={labelStyle}>Pod-otázky ({faBlock.content.subQuestions!.length})</label>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      {faBlock.content.subQuestions!.map((sq, i) => {
+                        const isCircleMode = faBlock.content.subLabelStyle === 'circle' || faBlock.content.subLabelStyle === 'circle-outline';
+                        const globalLabelColors = faBlock.content.subLabelColors || ['#e11d48'];
+                        const effectiveColor = sq.labelColor || globalLabelColors[i % globalLabelColors.length] || '#e11d48';
+                        const isExpanded = expandedSubQ === i;
+                        
+                        return (
+                        <div key={sq.id} style={{
+                          backgroundColor: '#0f172a',
+                          borderRadius: '6px',
+                          border: isExpanded ? '1px solid #475569' : '1px solid #1e293b',
+                          overflow: 'hidden',
+                        }}>
+                          {/* Main row */}
+                          <div style={{
+                            display: 'flex',
+                            gap: '4px',
+                            alignItems: 'center',
+                            padding: '4px 6px',
+                          }}>
+                            {/* Color circle with palette popup (portal) */}
+                            {isCircleMode ? (
+                              <div style={{ flexShrink: 0 }}>
+                                <button
+                                  ref={(el) => { if (el) colorBtnRefs.current.set(i, el); }}
+                                  onClick={() => {
+                                    if (colorPaletteForSubQ === i) {
+                                      setColorPaletteForSubQ(null);
+                                      setColorPalettePos(null);
+                                    } else {
+                                      const btn = colorBtnRefs.current.get(i);
+                                      if (btn) {
+                                        const rect = btn.getBoundingClientRect();
+                                        setColorPalettePos({ top: rect.bottom + 4, left: rect.left });
+                                      }
+                                      setColorPaletteForSubQ(i);
+                                    }
+                                  }}
+                                  title={`Barva ${faBlock.content.subLabelType === 'numbers' ? i + 1 : String.fromCharCode(65 + i)}`}
+                                  style={{
+                                    width: '22px',
+                                    height: '22px',
+                                    padding: 0,
+                                    border: colorPaletteForSubQ === i ? '2px solid #3b82f6' : '2px solid #475569',
+                                    borderRadius: '50%',
+                                    cursor: 'pointer',
+                                    backgroundColor: effectiveColor,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    color: 'white',
+                                    fontSize: '10px',
+                                    fontWeight: 700,
+                                  }}
+                                >
+                                  {faBlock.content.subLabelType === 'numbers' ? i + 1 : String.fromCharCode(65 + i)}
+                                </button>
+                                {/* Color palette rendered via portal */}
+                                {colorPaletteForSubQ === i && colorPalettePos && createPortal(
+                                  <div
+                                    onClick={(e) => e.stopPropagation()}
+                                    style={{
+                                      position: 'fixed',
+                                      top: colorPalettePos.top,
+                                      left: colorPalettePos.left,
+                                      zIndex: 99999,
+                                      padding: '8px',
+                                      backgroundColor: '#1e293b',
+                                      border: '1px solid #475569',
+                                      borderRadius: '8px',
+                                      boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+                                      display: 'grid',
+                                      gridTemplateColumns: 'repeat(6, 1fr)',
+                                      gap: '4px',
+                                      width: '170px',
+                                    }}
+                                  >
+                                    {LABEL_COLOR_PALETTE.map((color) => (
+                                      <button
+                                        key={color}
+                                        onClick={() => {
+                                          const updated = [...faBlock.content.subQuestions!];
+                                          updated[i] = { ...updated[i], labelColor: color };
+                                          onUpdateBlock(block.id, {
+                                            content: { ...faBlock.content, subQuestions: updated }
+                                          } as any);
+                                          setColorPaletteForSubQ(null);
+                                          setColorPalettePos(null);
+                                        }}
+                                        style={{
+                                          width: '24px',
+                                          height: '24px',
+                                          borderRadius: '50%',
+                                          backgroundColor: color,
+                                          border: effectiveColor === color ? '2px solid white' : '2px solid transparent',
+                                          cursor: 'pointer',
+                                          padding: 0,
+                                          transition: 'transform 0.1s',
+                                        }}
+                                        onMouseEnter={(e) => (e.currentTarget.style.transform = 'scale(1.2)')}
+                                        onMouseLeave={(e) => (e.currentTarget.style.transform = 'scale(1)')}
+                                      />
+                                    ))}
+                                    {sq.labelColor && (
+                                      <button
+                                        onClick={() => {
+                                          const updated = [...faBlock.content.subQuestions!];
+                                          updated[i] = { ...updated[i], labelColor: undefined };
+                                          onUpdateBlock(block.id, {
+                                            content: { ...faBlock.content, subQuestions: updated }
+                                          } as any);
+                                          setColorPaletteForSubQ(null);
+                                          setColorPalettePos(null);
+                                        }}
+                                        style={{
+                                          gridColumn: 'span 6',
+                                          padding: '4px',
+                                          backgroundColor: '#334155',
+                                          border: '1px solid #475569',
+                                          borderRadius: '4px',
+                                          color: '#94a3b8',
+                                          fontSize: '10px',
+                                          cursor: 'pointer',
+                                          marginTop: '2px',
+                                        }}
+                                      >
+                                        Resetovat na globální
+                                      </button>
+                                    )}
+                                  </div>,
+                                  document.body
+                                )}
+                              </div>
+                            ) : (
+                              <span style={{ fontSize: '10px', color: '#94a3b8', width: '20px', flexShrink: 0 }}>
+                                {faBlock.content.subLabelType === 'numbers' ? `${i + 1})` : `${String.fromCharCode(65 + i)})`}
+                              </span>
+                            )}
+                            <input
+                              type="text"
+                              value={sq.text}
+                              onChange={(e) => {
+                                const updated = [...faBlock.content.subQuestions!];
+                                updated[i] = { ...updated[i], text: e.target.value };
+                                onUpdateBlock(block.id, {
+                                  content: { ...faBlock.content, subQuestions: updated }
+                                } as any);
+                              }}
+                              placeholder="Text pod-otázky..."
+                              style={{
+                                flex: 1,
+                                padding: '4px 8px',
+                                backgroundColor: '#334155',
+                                border: '1px solid #475569',
+                                borderRadius: '4px',
+                                color: '#e5e7eb',
+                                fontSize: '11px',
+                                outline: 'none',
+                              }}
+                            />
+                            {/* Expand/collapse */}
+                            <button
+                              onClick={() => setExpandedSubQ(isExpanded ? null : i)}
+                              style={{ ...buttonStyle, padding: '4px', color: '#94a3b8' }}
+                              title="Rozbalit detaily"
+                            >
+                              {isExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                            </button>
+                            <button
+                              onClick={() => {
+                                const updated = faBlock.content.subQuestions!.filter((_, idx) => idx !== i);
+                                onUpdateBlock(block.id, {
+                                  content: { ...faBlock.content, subQuestions: updated }
+                                } as any);
+                                if (expandedSubQ === i) setExpandedSubQ(null);
+                              }}
+                              style={{ ...buttonStyle, padding: '4px', color: '#ef4444' }}
+                              title="Smazat"
+                            >
+                              <Trash2 size={12} />
+                            </button>
+                          </div>
+
+                          {/* Expanded section: sampleAnswer + image */}
+                          {isExpanded && (
+                            <div style={{
+                              padding: '6px 6px 8px 6px',
+                              borderTop: '1px solid #1e293b',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: '6px',
+                            }}>
+                              {/* Sample answer */}
+                              <div>
+                                <label style={{ fontSize: '10px', color: '#94a3b8', marginBottom: '2px', display: 'block' }}>Vzorové řešení</label>
+                                <input
+                                  type="text"
+                                  value={sq.sampleAnswer || ''}
+                                  onChange={(e) => {
+                                    const updated = [...faBlock.content.subQuestions!];
+                                    updated[i] = { ...updated[i], sampleAnswer: e.target.value || undefined };
+                                    onUpdateBlock(block.id, {
+                                      content: { ...faBlock.content, subQuestions: updated }
+                                    } as any);
+                                  }}
+                                  placeholder="Správná odpověď..."
+                                  style={{
+                                    width: '100%',
+                                    padding: '4px 8px',
+                                    backgroundColor: '#334155',
+                                    border: '1px solid #475569',
+                                    borderRadius: '4px',
+                                    color: '#22c55e',
+                                    fontSize: '11px',
+                                    outline: 'none',
+                                    boxSizing: 'border-box',
+                                  }}
+                                />
+                              </div>
+                              {/* Image */}
+                              <div>
+                                <label style={{ fontSize: '10px', color: '#94a3b8', marginBottom: '2px', display: 'block' }}>Obrázek</label>
+                                {sq.imageUrl ? (
+                                  <div style={{ display: 'flex', gap: '6px', alignItems: 'flex-start' }}>
+                                    <div style={{
+                                      width: '60px',
+                                      height: '60px',
+                                      borderRadius: '4px',
+                                      overflow: 'hidden',
+                                      border: '1px solid #475569',
+                                      flexShrink: 0,
+                                      cursor: 'pointer',
+                                    }}
+                                      onClick={() => openAssetPicker({ type: 'sub-question-image', subQuestionIndex: i })}
+                                    >
+                                      <img src={sq.imageUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                    </div>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', flex: 1 }}>
+                                      {/* Position selector */}
+                                      <div style={{ display: 'flex', gap: '3px' }}>
+                                        {([
+                                          { value: 'below', label: 'Pod textem' },
+                                          { value: 'beside', label: 'Vedle' },
+                                        ] as const).map((pos) => (
+                                          <button
+                                            key={pos.value}
+                                            onClick={() => {
+                                              const updated = [...faBlock.content.subQuestions!];
+                                              updated[i] = { ...updated[i], imagePosition: pos.value };
+                                              onUpdateBlock(block.id, {
+                                                content: { ...faBlock.content, subQuestions: updated }
+                                              } as any);
+                                            }}
+                                            style={{
+                                              ...buttonStyle,
+                                              flex: 1,
+                                              justifyContent: 'center',
+                                              fontSize: '9px',
+                                              padding: '3px 4px',
+                                              backgroundColor: (sq.imagePosition || 'below') === pos.value ? '#3b82f6' : '#334155',
+                                              color: (sq.imagePosition || 'below') === pos.value ? 'white' : '#e5e7eb',
+                                            }}
+                                          >
+                                            {pos.label}
+                                          </button>
+                                        ))}
+                                      </div>
+                                      {/* Remove image */}
+                                      <button
+                                        onClick={() => {
+                                          const updated = [...faBlock.content.subQuestions!];
+                                          updated[i] = { ...updated[i], imageUrl: undefined, imagePosition: undefined };
+                                          onUpdateBlock(block.id, {
+                                            content: { ...faBlock.content, subQuestions: updated }
+                                          } as any);
+                                        }}
+                                        style={{
+                                          ...buttonStyle,
+                                          justifyContent: 'center',
+                                          fontSize: '9px',
+                                          padding: '3px 4px',
+                                          color: '#ef4444',
+                                        }}
+                                      >
+                                        <Trash2 size={10} /> Odebrat
+                                      </button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <button
+                                    onClick={() => openAssetPicker({ type: 'sub-question-image', subQuestionIndex: i })}
+                                    style={{
+                                      ...buttonStyle,
+                                      width: '100%',
+                                      justifyContent: 'center',
+                                      fontSize: '10px',
+                                      padding: '6px',
+                                      backgroundColor: '#334155',
+                                    }}
+                                  >
+                                    <ImageIcon size={12} /> Přidat obrázek
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Add sub-question */}
+                  <button
+                    onClick={() => {
+                      const updated = [
+                        ...(faBlock.content.subQuestions || []),
+                        { id: generateBlockId(), text: '', lines: 1 } as FreeAnswerSubQuestion,
+                      ];
+                      onUpdateBlock(block.id, {
+                        content: { ...faBlock.content, subQuestions: updated }
+                      } as any);
+                    }}
+                    style={{
+                      ...buttonStyle,
+                      width: '100%',
+                      justifyContent: 'center',
+                      backgroundColor: '#334155',
+                    }}
+                  >
+                    <Plus size={14} />
+                    Přidat pod-otázku
+                  </button>
+                </>
+              )}
+            </div>
+          );
+        })()}
+

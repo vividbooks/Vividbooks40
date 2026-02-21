@@ -1,0 +1,48 @@
+---
+description: Pravidla pro používání Gemini AI modelů v projektu
+alwaysApply: true
+---
+
+# Gemini Modely – POUZE Gemini 3
+
+## Povolené modely
+
+Používej VÝHRADNĚ tyto dva modely. Žádné starší verze!
+
+| Model | API ID | Kdy použít |
+|-------|--------|------------|
+| **Gemini 3 Pro** | `gemini-3-pro-preview` | Komplexní úlohy: analýza layoutu, generování strukturovaného JSON, víceagentní pipeline |
+| **Gemini 3 Flash** | `gemini-3-flash-preview` | Rychlé úlohy: chat, jednoduché generování, fallback |
+
+## Edge Function (supabase/functions/ai-chat/index.ts)
+
+Volat pomocí model ID přes edge function:
+- `gemini-3-pro` → mapuje na `gemini-3-pro-preview`
+- `gemini-3-flash` → mapuje na `gemini-3-flash-preview`
+
+## Přímé volání Gemini API
+
+```typescript
+// ✅ SPRÁVNĚ
+fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-preview:generateContent?key=${API_KEY}`)
+fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${API_KEY}`)
+
+// ❌ ŠPATNĚ – nepoužívat
+fetch(`.../gemini-2.0-flash:generateContent...`)
+fetch(`.../gemini-1.5-pro:generateContent...`)
+fetch(`.../gemini-2.5-flash:generateContent...`)
+```
+
+## Fallback vzor
+
+Vždy zkus Gemini 3 Pro nejdřív, při selhání fallback na Gemini 3 Flash:
+
+```typescript
+const modelsToTry = ['gemini-3-pro', 'gemini-3-flash'];
+```
+
+## Import Agent Pipeline
+
+- **Agent 1 (vizuální analýza)**: `gemini-3-pro` (nejlepší pochopení obrazu)
+- **Agent 2 (JSON builder)**: `gemini-3-pro` s fallback na `gemini-3-flash`
+- **Chat**: `gemini-3-flash` (rychlý, dostatečný)

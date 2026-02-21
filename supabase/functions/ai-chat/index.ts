@@ -10,9 +10,21 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+/**
+ * Message content can be a string or multimodal array (text + images)
+ */
+type ChatMessageContent = string | ChatMessagePart[];
+
+interface ChatMessagePart {
+  type: 'text' | 'image';
+  text?: string;
+  data?: string; // base64 image data (without data: prefix)
+  mimeType?: string; // e.g. 'image/png'
+}
+
 interface ChatMessage {
   role: 'system' | 'user' | 'assistant';
-  content: string;
+  content: ChatMessageContent;
 }
 
 interface ChatRequest {
@@ -20,7 +32,7 @@ interface ChatRequest {
   model: string;
   temperature?: number;
   max_tokens?: number;
-  thinking_level?: 'minimal' | 'low' | 'medium' | 'high'; // Gemini 3 Flash specific
+  thinking_level?: 'minimal' | 'low' | 'medium' | 'high';
 }
 
 Deno.serve(async (req) => {
@@ -30,7 +42,9 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { messages, model, temperature = 0.7, max_tokens = 2048, thinking_level }: ChatRequest = await req.json()
+    const { messages, model, temperature = 0.7, max_tokens = 8192, thinking_level }: ChatRequest = await req.json()
+
+    console.log(`Request: model=${model}, max_tokens=${max_tokens}`)
 
     if (!messages || messages.length === 0) {
       throw new Error('Messages are required')
@@ -48,33 +62,59 @@ Deno.serve(async (req) => {
         throw new Error('GEMINI_API_KEY_RAG not configured')
       }
 
-      // Convert messages to Gemini format
+      // Convert messages to Gemini format (supports multimodal content)
       const geminiContents = messages
         .filter(m => m.role !== 'system')
-        .map(m => ({
-          role: m.role === 'assistant' ? 'model' : 'user',
-          parts: [{ text: m.content }]
-        }))
+        .map(m => {
+          const parts: any[] = []
+          
+          if (typeof m.content === 'string') {
+            // Simple text message
+            parts.push({ text: m.content })
+          } else if (Array.isArray(m.content)) {
+            // Multimodal message (text + images)
+            for (const part of m.content) {
+              if (part.type === 'text' && part.text) {
+                parts.push({ text: part.text })
+              } else if (part.type === 'image' && part.data) {
+                parts.push({
+                  inlineData: {
+                    mimeType: part.mimeType || 'image/png',
+                    data: part.data,
+                  }
+                })
+              }
+            }
+          }
+          
+          // Fallback if no parts were added
+          if (parts.length === 0) {
+            parts.push({ text: '' })
+          }
+          
+          return {
+            role: m.role === 'assistant' ? 'model' : 'user',
+            parts,
+          }
+        })
 
       // Add system instruction if present
       const systemMessage = messages.find(m => m.role === 'system')
       
-      // Determine model version first (needed for thinking config)
-      // See: https://ai.google.dev/gemini-api/docs/gemini-3
+      // Model mapping – ONLY Gemini 3 Pro and Gemini 3 Flash are used
+      // Official model IDs (Gemini API / Vertex AI):
+      //   gemini-3-pro-preview  → Gemini 3 Pro (best reasoning, complex tasks)
+      //   gemini-3-flash-preview → Gemini 3 Flash (fast, cost-efficient)
       let geminiModel: string
-      const isGemini3 = model.includes('gemini-3') || (model.includes('3') && model.includes('flash'))
       
-      if (isGemini3) {
-        // Gemini 3 Flash (preview) - released December 2025
-        geminiModel = 'gemini-3-flash-preview'
-      } else if (model.includes('2.0')) {
-        geminiModel = 'gemini-2.0-flash'
-      } else if (model.includes('2.5') || model.includes('gemini-2.5')) {
-        geminiModel = 'gemini-2.5-flash'
+      if (model.includes('3-pro') || model.includes('3 pro') || model.includes('pro')) {
+        geminiModel = 'gemini-3-pro-preview'
       } else {
-        // Default to Gemini 2.5 Flash (stable)
-        geminiModel = 'gemini-2.5-flash'
+        // Default: Gemini 3 Flash for everything else (fast, cheap, capable)
+        geminiModel = 'gemini-3-flash-preview'
       }
+      
+      const isGemini3 = true // Always Gemini 3
       
       const geminiBody: any = {
         contents: geminiContents,
@@ -85,17 +125,22 @@ Deno.serve(async (req) => {
       }
 
       // Add thinking_level for Gemini 3 models
-      // Supported levels: minimal, low, medium, high (default)
-      // For chat, use 'low' for faster responses
+      // Supported levels: minimal, low, medium, high
+      // Gemini 3 Pro always thinks; Flash defaults to low
+      // REST API uses snake_case: thinking_level (NOT thinkingLevel)
       if (isGemini3) {
         geminiBody.generationConfig.thinkingConfig = {
-          thinkingLevel: thinking_level || 'low' // 'low' for chat (faster), 'high' for complex reasoning
+          thinking_level: thinking_level || 'low'
         }
       }
 
       if (systemMessage) {
+        // System instruction is always text-only
+        const systemText = typeof systemMessage.content === 'string' 
+          ? systemMessage.content 
+          : systemMessage.content.filter(p => p.type === 'text').map(p => p.text).join('\n')
         geminiBody.systemInstruction = {
-          parts: [{ text: systemMessage.content }]
+          parts: [{ text: systemText }]
         }
       }
       
@@ -116,7 +161,31 @@ Deno.serve(async (req) => {
       }
 
       const data = await response.json()
-      responseText = data.candidates?.[0]?.content?.parts?.[0]?.text || ''
+      
+      // Gemini 3 thinking models return parts with thought:true (internal reasoning)
+      // and parts without thought flag (the actual answer).
+      // We only want the non-thought parts as the response.
+      const allParts: any[] = data.candidates?.[0]?.content?.parts || []
+      const answerParts = allParts.filter((p: any) => p.text && !p.thought)
+      
+      if (answerParts.length > 0) {
+        responseText = answerParts.map((p: any) => p.text).join('')
+      } else {
+        // Fallback: if no non-thought parts found, include everything (older models)
+        responseText = allParts.filter((p: any) => p.text).map((p: any) => p.text).join('')
+      }
+      
+      // Log details when response is empty for debugging
+      if (!responseText) {
+        const finishReason = data.candidates?.[0]?.finishReason
+        const blockReason = data.promptFeedback?.blockReason
+        console.error(`Empty response from ${geminiModel}. finishReason=${finishReason}, blockReason=${blockReason}`)
+        console.error(`Parts count: ${allParts.length}, answer parts: ${answerParts.length}`)
+        console.error('Full response:', JSON.stringify(data).slice(0, 800))
+        // Return structured error so frontend can show specific reason
+        const reason = blockReason ? `BLOCKED:${blockReason}` : finishReason ? `FINISH:${finishReason}` : 'EMPTY'
+        throw new Error(`Gemini prázdná odpověď [${geminiModel}] – důvod: ${reason}`)
+      }
 
     } else {
       // === OPENAI API ===

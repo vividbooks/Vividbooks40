@@ -5450,132 +5450,8 @@ html {
   font-size: var(--font-size);
 }
 
-@media print {
-  header, aside, .print\:hidden {
-    display: none !important;
-  }
-
-  body {
-    color: #000 !important;
-    background: #fff !important;
-    font-size: 8pt !important;
-    line-height: 1.2 !important;
-  }
-
-  main {
-    max-width: 100% !important;
-    margin: 0 !important;
-    padding: .3cm !important;
-  }
-
-  article {
-    width: 100% !important;
-    max-width: 100% !important;
-  }
-
-  h1 {
-    margin-bottom: 6pt !important;
-    font-size: 14pt !important;
-  }
-
-  h2 {
-    margin-top: 8pt !important;
-    margin-bottom: 4pt !important;
-    font-size: 12pt !important;
-  }
-
-  h3 {
-    margin-top: 6pt !important;
-    margin-bottom: 3pt !important;
-    font-size: 10pt !important;
-  }
-
-  h4, h5, h6 {
-    margin-top: 5pt !important;
-    margin-bottom: 2pt !important;
-    font-size: 9pt !important;
-  }
-
-  p, li, td {
-    margin-bottom: 3pt !important;
-    font-size: 8pt !important;
-    line-height: 1.2 !important;
-  }
-
-  ul, ol {
-    margin-top: 3pt !important;
-    margin-bottom: 3pt !important;
-    padding-left: 15pt !important;
-  }
-
-  h1, h2, h3, h4, h5, h6 {
-    page-break-after: avoid;
-    break-after: avoid;
-  }
-
-  pre, blockquote, table, img, video {
-    page-break-inside: avoid;
-    break-inside: avoid;
-  }
-
-  * {
-    color: #000 !important;
-    background: #fff !important;
-    border-color: #ddd !important;
-  }
-
-  a {
-    text-decoration: underline !important;
-  }
-
-  code {
-    padding: .5pt 2pt !important;
-    font-size: 7pt !important;
-  }
-
-  pre {
-    margin: 4pt 0 !important;
-    padding: 4pt !important;
-    font-size: 7pt !important;
-  }
-
-  code, pre {
-    background: #f5f5f5 !important;
-    border: 1px solid #ddd !important;
-  }
-
-  .callout {
-    page-break-inside: avoid;
-    break-inside: avoid;
-    border: 2px solid #333 !important;
-  }
-
-  a[href]:after {
-    content: " (" attr(href) ")";
-    font-size: .8em;
-    color: #666 !important;
-  }
-
-  a[href^="#"]:after, a[href^="/"]:after {
-    content: "";
-  }
-
-  .print\:flex {
-    display: flex !important;
-  }
-
-  .print\:block {
-    display: block !important;
-  }
-
-  .print\:hidden {
-    display: none !important;
-  }
-
-  .print\:border-gray-300 {
-    border-color: #d1d5db !important;
-  }
-}
+/* Legacy documentation print styles removed – they were overriding
+   worksheet font sizes, colors and backgrounds with !important rules. */
 
 /* ============================================ */
 /* PRINT STYLES - Native PDF Export (A4)        */
@@ -5593,43 +5469,12 @@ html {
     overflow: visible !important;
   }
 
-  /* Override older global print rule (body 8pt) */
-  body {
-    font-family: "Fenomen Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica Neue, Arial, sans-serif !important;
-    font-size: 10pt !important; /* match editor FONT_SIZES.body */
-    line-height: 1.5 !important;
-    color: #0f172a !important;
+  /* Preserve all inline styles, backgrounds and borders in print */
+  *, *::before, *::after {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color-adjust: exact !important;
   }
-
-  /* Override older global print heading sizes (forced 14pt/12pt/10pt) */
-  .a4-page h1 { font-size: 19pt !important; font-family: "Cooper Light", serif !important; font-weight: 300 !important; }
-  .a4-page h2 { font-size: 12pt !important; font-weight: 700 !important; }
-  .a4-page h3 { font-size: 11pt !important; font-weight: 700 !important; }
-
-  /* Undo old global print reset that forces white backgrounds everywhere */
-  .a4-page * {
-    background: transparent !important;
-    border-color: #cbd5e1 !important;
-  }
-
-  /* Restore InfoboxEditor colors (tailwind utility classes) */
-  .a4-page .bg-blue-50 { background-color: #eff6ff !important; }
-  .a4-page .bg-green-50 { background-color: #f0fdf4 !important; }
-  .a4-page .bg-yellow-50 { background-color: #fefce8 !important; }
-  .a4-page .bg-purple-50 { background-color: #faf5ff !important; }
-  .a4-page .border-blue-500 { border-color: #3b82f6 !important; }
-  .a4-page .border-green-500 { border-color: #22c55e !important; }
-  .a4-page .border-yellow-500 { border-color: #eab308 !important; }
-  .a4-page .border-purple-500 { border-color: #a855f7 !important; }
-
-  /* Restore ParagraphEditor infobox mode (inline colors get wiped by old print reset) */
-  .a4-page .paragraph-infobox[data-bg-color="blue"] { background-color: #dbeafe !important; border: 2px solid #93c5fd !important; }
-  .a4-page .paragraph-infobox[data-bg-color="green"] { background-color: #dcfce7 !important; border: 2px solid #86efac !important; }
-  .a4-page .paragraph-infobox[data-bg-color="yellow"] { background-color: #fef9c3 !important; border: 2px solid #fde047 !important; }
-  .a4-page .paragraph-infobox[data-bg-color="red"] { background-color: #fee2e2 !important; border: 2px solid #fca5a5 !important; }
-  .a4-page .paragraph-infobox[data-bg-color="purple"] { background-color: #f3e8ff !important; border: 2px solid #d8b4fe !important; }
-  .a4-page .paragraph-infobox[data-bg-color="gray"] { background-color: #f1f5f9 !important; border: 2px solid #cbd5e1 !important; }
-  .a4-page .paragraph-infobox[data-bg-color="none"] { background-color: transparent !important; border: none !important; }
 
   .top-controls,
   .left-toolbar,
@@ -5666,11 +5511,8 @@ html {
     color: #1e293b !important;
   }
 
-  /* Activity number circles (black filled) */
+  /* Activity number circles – preserve whatever color the user set */
   .activity-number-circle {
-    background-color: #1e293b !important;
-    color: #ffffff !important;
-    border: none !important;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
   }
@@ -6098,13 +5940,21 @@ html {
 .prose th {
   background-color: var(--table-header-bg, #f1f5f9);
   font-weight: 600;
-  color: #1e293b;
+  color: var(--table-border-color, #1e293b);
 }
 
 .tiptap-editor td,
 .html-renderer td,
 .prose td {
   background-color: var(--table-cell-bg, white);
+}
+
+/* First column cells inherit accent color from colorStyle */
+.tiptap-editor tr td:first-child,
+.html-renderer tr td:first-child,
+.prose tr td:first-child {
+  color: var(--table-border-color, #64748b);
+  font-weight: 500;
 }
 
 .tiptap-editor th > p,
@@ -6154,6 +6004,24 @@ html {
 .tiptap-editor table {
   max-width: 100%;
   width: 100%;
+}
+
+/* Worksheet editor - ensure textareas and inputs match display elements exactly */
+.worksheet-a4-page textarea,
+.worksheet-a4-page input[type="text"] {
+  padding: 0 !important;
+  margin: 0 !important;
+  border: none !important;
+  outline: none !important;
+  background: transparent !important;
+  resize: none !important;
+  overflow: hidden !important;
+  box-sizing: border-box !important;
+  -webkit-appearance: none !important;
+  appearance: none !important;
+  font: inherit;
+  line-height: inherit;
+  letter-spacing: inherit;
 }
 
 /* Worksheet table container */
@@ -6984,4 +6852,21 @@ html {
   animation: wiggle 0.6s ease-in-out;
   -webkit-box-shadow: 0 0 30px rgba(99, 102, 241, 0.6), 0 0 60px rgba(99, 102, 241, 0.3) !important;
   box-shadow: 0 0 30px rgba(99, 102, 241, 0.6), 0 0 60px rgba(99, 102, 241, 0.3) !important;
+}
+
+/* Option textareas in MultipleChoiceEditor - auto-grow */
+.option-textarea {
+  field-sizing: content;
+  min-height: 1.4em;
+  overflow: hidden;
+  resize: none;
+}
+
+/* Highlight marks in contenteditable (RichQuestionEditor) */
+[contenteditable] mark,
+[contenteditable] span[style*="background-color"] {
+  border-radius: 7px;
+  padding: 0.11em 0.28em;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
 }

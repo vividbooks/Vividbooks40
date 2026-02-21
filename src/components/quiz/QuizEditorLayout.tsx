@@ -134,14 +134,18 @@ import {
   createFillBlanksSlide, 
   createImageHotspotsSlide, 
   createConnectPairsSlide, 
-  createVideoQuizSlide, 
+  createVideoQuizSlide,
+  createFormSlide,
+  createCertificateSlide,
   FillBlanksActivitySlide, 
   ImageHotspotsActivitySlide, 
   ConnectPairsActivitySlide, 
   VideoQuizActivitySlide,
   OpenActivitySlide,
   ExampleActivitySlide,
+  ToolsSlide,
   getTemplateById,
+  QuizSettings,
 } from '../../types/quiz';
 import { getContrastColor } from '../../utils/color-utils';
 import { SLIDE_TYPES, SlideTypeOption } from './slide-types';
@@ -161,6 +165,8 @@ import { ConnectPairsEditor } from './slides/ConnectPairsEditor';
 import { FillBlanksEditor } from './slides/FillBlanksEditor';
 import { ImageHotspotsEditor } from './slides/ImageHotspotsEditor';
 import { VideoQuizEditor } from './slides/VideoQuizEditor';
+import { FormEditor } from './slides/FormEditor';
+import { CertificateEditor } from './slides/CertificateEditor';
 import { SlideTextToolbar } from './slides/SlideTextToolbar';
 import { BackgroundPicker } from './slides/BackgroundPicker';
 import { PageSettingsPanel, LayoutIcon } from './slides/PageSettingsPanel';
@@ -686,15 +692,20 @@ function SlidePreviewThumbnail({ slide }: { slide: QuizSlide }) {
     
     case 'example':
       return (
-        <div className="w-full h-full p-3 bg-white flex flex-col">
-          <p className="text-xs font-bold text-slate-800 text-center mb-2">{activitySlide.topic || 'Příklady'}</p>
-          <div className="flex-1 flex flex-col gap-1">
-            {(activitySlide.examples || []).slice(0, 3).map((ex: any, i: number) => (
-              <div key={i} className="text-[10px] text-slate-700 bg-emerald-50 px-2 py-1 rounded truncate">
-                {i + 1}) {ex.question?.slice(0, 20) || '...'}
-              </div>
-            ))}
-          </div>
+        <div className="w-full h-full p-3 bg-white flex flex-col justify-center items-center gap-1.5">
+          {activitySlide.problem ? (
+            <p className="text-[11px] font-bold text-slate-800 text-center line-clamp-2">{activitySlide.problem}</p>
+          ) : (
+            <p className="text-[10px] text-slate-400 text-center">Příklad</p>
+          )}
+          {activitySlide.finalAnswer && (
+            <div className="px-2 py-0.5 rounded bg-emerald-100 text-[10px] font-semibold text-emerald-700 text-center truncate max-w-full">
+              = {activitySlide.finalAnswer}
+            </div>
+          )}
+          {(activitySlide.alternativeAnswers || []).filter(Boolean).length > 0 && (
+            <p className="text-[8px] text-slate-400">+{(activitySlide.alternativeAnswers || []).filter(Boolean).length} alt.</p>
+          )}
         </div>
       );
     
@@ -1337,6 +1348,9 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
     const w = Math.abs(e.clientX - marqueeStartPos.current.x);
     const h = Math.abs(e.clientY - marqueeStartPos.current.y);
 
+    // Require minimum 8px drag before starting actual selection
+    if (w < 8 && h < 8) return;
+
     setSelectionRect({ x, y, w, h });
     
     // Find items within rect
@@ -1370,6 +1384,10 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
   };
 
   const handleMarqueeMouseUp = () => {
+    // If the selection rect was never shown (drag too small), clear any accidental selection
+    if (!selectionRect || (selectionRect.w < 8 && selectionRect.h < 8)) {
+      setMultiSelectedIds([]);
+    }
     setIsMarqueeSelecting(false);
     setSelectionRect(null);
     marqueeStartPos.current = null;
@@ -1410,7 +1428,45 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
     }
   };
   const [editingTextBlockIndex, setEditingTextBlockIndex] = useState<number | null>(null);
-  
+
+  // Global click handler to deselect block when clicking outside block & settings panel
+  useEffect(() => {
+    function handleGlobalMouseDown(e: MouseEvent) {
+      const target = e.target as HTMLElement;
+      if (!target) return;
+      
+      // Don't deselect if clicking inside BlockSettingsPanel or PageSettingsPanel (fixed panels)
+      const panel = target.closest('[data-settings-panel]');
+      if (panel) return;
+
+      // Don't deselect if clicking inside AssetPicker or any portal modal
+      const modal = target.closest('[class*="fixed inset-0"]') || target.closest('[role="dialog"]');
+      if (modal) return;
+
+      // Don't deselect if clicking on block toolbar buttons (they have their own handlers)
+      const toolbarBtn = target.closest('[data-block-toolbar]');
+      if (toolbarBtn) return;
+
+      // Don't deselect if clicking inside the selected block itself
+      const blockEl = target.closest('[data-slide-block]');
+      if (blockEl) return;
+
+      // Don't deselect if clicking inside the slide block settings toolbar row
+      const settingsRow = target.closest('[data-block-settings-row]');
+      if (settingsRow) return;
+
+      // If we have a selected block, deselect it
+      if (selectedBlockIndex !== null || showBlockSettings) {
+        setSelectedBlockIndex(null);
+        setShowBlockSettings(false);
+        setBlockSettingsSection(null);
+        setEditingTextBlockIndex(null);
+      }
+    }
+
+    document.addEventListener('mousedown', handleGlobalMouseDown);
+    return () => document.removeEventListener('mousedown', handleGlobalMouseDown);
+  }, [selectedBlockIndex, showBlockSettings]);
   
   // Results state
   const [sessions, setSessions] = useState<SessionData[]>([]);
@@ -1779,6 +1835,12 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
       case 'video-quiz':
         newSlide = createVideoQuizSlide(order);
         break;
+      case 'form':
+        newSlide = createFormSlide(order);
+        break;
+      case 'certificate':
+        newSlide = createCertificateSlide(order);
+        break;
       case 'info':
       default:
         newSlide = createInfoSlide(order);
@@ -1817,6 +1879,8 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
       case 'connect-pairs': template = createConnectPairsSlide(currentSlide.order); break;
       case 'image-hotspots': template = createImageHotspotsSlide(currentSlide.order); break;
       case 'video-quiz': template = createVideoQuizSlide(currentSlide.order); break;
+      case 'form': template = createFormSlide(currentSlide.order); break;
+      case 'certificate': template = createCertificateSlide(currentSlide.order); break;
       case 'info':
       default: template = createInfoSlide(currentSlide.order); break;
     }
@@ -2016,9 +2080,26 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
             const abcSlide = createABCSlide(slideOrder++);
             abcSlide.id = id;
             
-            // Extract question
-            const questionHtml = activityData.selector?.tabs?.text?.data || '';
+            // Extract question — check both "text" and "textvisual" tabs
+            const activeTab = activityData.selector?.activeTab;
+            let questionHtml = '';
+            let imageUrl = '';
+
+            if (activeTab === 'textvisual' && activityData.selector?.tabs?.textvisual) {
+              const tv = activityData.selector.tabs.textvisual;
+              questionHtml = tv.text || '';
+              imageUrl = tv.visual?.data || '';
+            } else {
+              questionHtml = activityData.selector?.tabs?.text?.data || '';
+              // Also check if there's an image tab
+              imageUrl = activityData.selector?.tabs?.image?.images?.[0]?.data || '';
+            }
+
             abcSlide.question = stripHtml(questionHtml);
+            
+            if (imageUrl) {
+              abcSlide.media = { type: 'image', url: imageUrl };
+            }
 
             // Extract options
             const buttons = activityData.selectorAnswers?.tabs?.buttons?.buttons || [];
@@ -2036,8 +2117,26 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
           if (activityKey === 'open' && activityData) {
             const openSlide = createOpenSlide(slideOrder++);
             openSlide.id = id;
-            const questionHtml = activityData.selector?.tabs?.text?.data || '';
-            openSlide.question = stripHtml(questionHtml);
+
+            // Check both "text" and "textvisual" tabs
+            const openActiveTab = activityData.selector?.activeTab;
+            let openQuestionHtml = '';
+            let openImageUrl = '';
+
+            if (openActiveTab === 'textvisual' && activityData.selector?.tabs?.textvisual) {
+              const tv = activityData.selector.tabs.textvisual;
+              openQuestionHtml = tv.text || '';
+              openImageUrl = tv.visual?.data || '';
+            } else {
+              openQuestionHtml = activityData.selector?.tabs?.text?.data || '';
+              openImageUrl = activityData.selector?.tabs?.image?.images?.[0]?.data || '';
+            }
+
+            openSlide.question = stripHtml(openQuestionHtml);
+            if (openImageUrl) {
+              (openSlide as any).media = { type: 'image', url: openImageUrl };
+            }
+
             const answerHtml = activityData.selectorAnswers?.tabs?.text?.data || '';
             if (answerHtml) {
               openSlide.correctAnswers = [stripHtml(answerHtml)];
@@ -2051,15 +2150,36 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
             const exampleSlide = createExampleSlide(slideOrder++);
             exampleSlide.id = id;
             
-            // Question/problem is in selector.tabs.text.data
-            const questionHtml = activityData.selector?.tabs?.text?.data || '';
-            exampleSlide.problem = stripHtml(questionHtml);
+            // Check both "text" and "textvisual" tabs
+            const inputActiveTab = activityData.selector?.activeTab;
+            let inputQuestionHtml = '';
+            let inputImageUrl = '';
+
+            if (inputActiveTab === 'textvisual' && activityData.selector?.tabs?.textvisual) {
+              const tv = activityData.selector.tabs.textvisual;
+              inputQuestionHtml = tv.text || '';
+              inputImageUrl = tv.visual?.data || '';
+            } else {
+              inputQuestionHtml = activityData.selector?.tabs?.text?.data || '';
+              inputImageUrl = activityData.selector?.tabs?.image?.images?.[0]?.data || '';
+            }
+
+            exampleSlide.problem = stripHtml(inputQuestionHtml);
             exampleSlide.title = ''; // No title for imported examples
+            if (inputImageUrl) {
+              exampleSlide.media = { type: 'image', url: inputImageUrl };
+            }
             
             // Answer is directly in activityData.answer
             const answerHtml = activityData.answer || '';
             if (answerHtml) {
               exampleSlide.finalAnswer = stripHtml(answerHtml);
+            }
+            
+            // Import suffix/unit — old format stores it as "pripona" (HTML)
+            const suffixHtml = activityData.pripona || '';
+            if (suffixHtml) {
+              exampleSlide.answerSuffix = stripHtml(suffixHtml);
             }
             
             // No steps for simple examples
@@ -2201,6 +2321,10 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
             }));
           }
           exampleSlide.finalAnswer = stripHtml(legacy.finalAnswer || legacy.answer || '');
+          const legacySuffix = legacy.pripona || legacy.suffix || legacy.answerSuffix || '';
+          if (legacySuffix) {
+            exampleSlide.answerSuffix = stripHtml(legacySuffix);
+          }
           slides.push(exampleSlide);
         } else if (legacy.type !== 'config' && legacy.type !== 'add') {
           // General fallback
@@ -2632,7 +2756,9 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
   }
   
   return (
-    <div className="flex h-screen bg-[#F8F9FB] overflow-hidden font-sans">
+    <div 
+      className="flex h-screen bg-[#F8F9FB] overflow-hidden font-sans"
+    >
       {/* 1. LEFT NARROW NAVIGATION STRIP */}
       <div 
         className="left-toolbar print:!hidden"
@@ -3796,8 +3922,8 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
                   style={{ 
                     width: '100%',
                     maxWidth: showNavArrows 
-                      ? 'calc((100vh - 220px) * 4 / 3 * 1.023)' 
-                      : 'calc((100vh - 220px) * 4 / 3 * 0.93)',
+                      ? 'min(calc((100vh - 220px) * 4 / 3 * 0.97), calc(100% - 40px))' 
+                      : 'min(calc((100vh - 220px) * 4 / 3 * 0.88), calc(100% - 40px))',
                   }}
                   onClick={() => {
                     // Clicking on empty space around slide deselects block
@@ -3806,7 +3932,7 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
                   }}
                 >
                   {/* Settings and Slide Type Info - aligned left */}
-                  <div className="flex items-center justify-start gap-2 mb-3 relative z-[100] min-h-[40px] ml-2.5">
+                  <div className="flex items-center justify-start gap-2 mb-3 relative z-[100] min-h-[40px] ml-2.5" data-block-settings-row>
                     {/* BLOCK SETTINGS - When a block is selected */}
                     {selectedBlockIndex !== null && selectedSlide?.type === 'info' && selectedSlide.layout ? (
                       <>
@@ -3832,9 +3958,7 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
                               setBlockSettingsSection(null);
                             } else {
                               setShowBlockSettings(true);
-                              // For text blocks, open format section by default
-                              const blockType = selectedSlide.layout?.blocks[selectedBlockIndex]?.type;
-                              setBlockSettingsSection(blockType === 'text' ? 'format' : null);
+                              setBlockSettingsSection(null);
                             }
                           }}
                           className="flex items-center gap-2 px-3 py-2 rounded-2xl transition-all group active:scale-95 h-10"
@@ -4342,7 +4466,12 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
                       style={{ 
                         backgroundColor: (selectedSlide as any).slideBackground?.color || '#ffffff'
                       }}
-                      onClick={(e) => e.stopPropagation()}
+                      onClick={() => {
+                        setSelectedBlockIndex(null);
+                        setShowBlockSettings(false);
+                        setBlockSettingsSection(null);
+                        setEditingTextBlockIndex(null);
+                      }}
                     >
                       {renderSlideEditor(
                         selectedSlide, 
@@ -4367,15 +4496,24 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
                         (blockIndex) => {
                           // Open block settings when clicking on settings button
                           setShowBlockSettings(true);
-                          const infoSlide = selectedSlide as InfoSlide;
-                          const blockType = infoSlide.layout?.blocks[blockIndex]?.type;
-                          setBlockSettingsSection(blockType === 'text' ? 'format' : null);
+                          setBlockSettingsSection(null);
                         },
                         (blockIndex) => {
                           setEditingTextBlockIndex(blockIndex);
                         },
                         () => {
                           setEditingTextBlockIndex(null);
+                        },
+                        quiz,
+                        (settingsUpdate) => {
+                          if (!quiz) return;
+                          const updatedQuiz = {
+                            ...quiz,
+                            settings: { ...quiz.settings, ...settingsUpdate },
+                            updatedAt: new Date().toISOString(),
+                          };
+                          setQuiz(updatedQuiz);
+                          setIsDirty(true);
                         }
                       )}
                     </div>
@@ -4607,6 +4745,16 @@ function getSlideTitle(slide: QuizSlide): string {
   
   if (slide.type === 'activity') {
     const activity = slide as any;
+    
+    // Example slides: show problem (e.g. "3 + 8 = ?")
+    if (activity.activityType === 'example' && activity.problem) {
+      const problemText = activity.problem.replace(/<[^>]*>/g, '').substring(0, 50).trim();
+      if (activity.finalAnswer) {
+        return `${problemText}  →  ${activity.finalAnswer}`;
+      }
+      return problemText;
+    }
+    
     if (activity.question) {
       return activity.question.replace(/<[^>]*>/g, '').substring(0, 60).trim();
     }
@@ -4628,50 +4776,58 @@ function renderSlideEditor(
   onBlockSelect: (index: number | null) => void,
   onOpenBlockSettings?: (blockIndex: number) => void,
   onTextEditStart?: (blockIndex: number) => void,
-  onTextEditEnd?: () => void
-): React.ReactNode {
-  switch (slide.type) {
-    case 'info':
-      const infoSlide = slide as InfoSlide;
-      return (
-        <InfoSlideEditor 
-          key={`${slide.id}-${infoSlide.layout?.type || 'default'}-${infoSlide.layout?.blocks?.length || 0}`}
-          slide={slide} 
-          onUpdate={onUpdate} 
-          onSlideClick={onSlideClick} 
-          selectedBlockIndex={selectedBlockIndex}
-          onBlockSelect={onBlockSelect}
-          onOpenBlockSettings={onOpenBlockSettings}
-          onTextEditStart={onTextEditStart}
-          onTextEditEnd={onTextEditEnd}
-        />
-      );
-    case 'activity':
-      switch ((slide as any).activityType) {
-        case 'abc':
-          return <ABCSlideEditor slide={slide as any} onUpdate={onUpdate} />;
-        case 'open':
-          return <OpenSlideEditor slide={slide as any} onUpdate={onUpdate} />;
-        case 'example':
-          return <ExampleSlideEditor slide={slide as any} onUpdate={onUpdate} />;
-        case 'board':
-          return <BoardSlideEditor slide={slide as any} onUpdate={onUpdate} />;
-        case 'voting':
-          return <VotingSlideEditor slide={slide as any} onUpdate={onUpdate} />;
-        case 'connect-pairs':
-          return <ConnectPairsEditor slide={slide as ConnectPairsActivitySlide} onUpdate={onUpdate} />;
-        case 'fill-blanks':
-          return <FillBlanksEditor slide={slide as FillBlanksActivitySlide} onUpdate={onUpdate} />;
-        case 'image-hotspots':
-          return <ImageHotspotsEditor slide={slide as ImageHotspotsActivitySlide} onUpdate={onUpdate} />;
-        case 'video-quiz':
-          return <VideoQuizEditor slide={slide as VideoQuizActivitySlide} onUpdate={onUpdate} />;
-        default:
-          return <div>Nepodporovaný typ aktivity</div>;
-      }
-    default:
-      return <div>Nepodporovaný typ slidu</div>;
+  onTextEditEnd?: () => void,
+  quiz?: Quiz | null,
+  onQuizSettingsUpdate?: (settings: Partial<QuizSettings>) => void
+) {
+  if (slide.type === 'info') {
+    return (
+      <InfoSlideEditor 
+        slide={slide as InfoSlide} 
+        onUpdate={onUpdate}
+        selectedBlockIndex={selectedBlockIndex}
+        onBlockSelect={onBlockSelect}
+        onOpenBlockSettings={onOpenBlockSettings}
+        onTextEditStart={onTextEditStart}
+        onTextEditEnd={onTextEditEnd}
+      />
+    );
   }
+  
+  if (slide.type === 'activity') {
+    const activity = slide as any;
+    switch (activity.activityType) {
+      case 'abc':
+        return <ABCSlideEditor slide={activity} onUpdate={onUpdate} />;
+      case 'open':
+        return <OpenSlideEditor slide={activity} onUpdate={onUpdate} />;
+      case 'example':
+        return <ExampleSlideEditor 
+          slide={activity} 
+          onUpdate={onUpdate}
+          customKeys={quiz?.settings?.customKeys}
+          onCustomKeysChange={onQuizSettingsUpdate ? (keys) => {
+            onQuizSettingsUpdate({ customKeys: keys });
+          } : undefined}
+          extraKeys={quiz?.settings?.extraKeys}
+          onExtraKeysChange={onQuizSettingsUpdate ? (keys) => {
+            onQuizSettingsUpdate({ extraKeys: keys });
+          } : undefined}
+        />;
+      case 'board':
+        return <BoardSlideEditor slide={activity} onUpdate={onUpdate} />;
+      case 'voting':
+        return <VotingSlideEditor slide={activity} onUpdate={onUpdate} />;
+      default:
+        return (
+          <div className="p-8 text-center text-slate-500">
+            Editor pro tento typ aktivity ({activity.activityType}) zatím není k dispozici.
+          </div>
+        );
+    }
+  }
+
+  return null;
 }
 
 export default QuizEditorLayout;

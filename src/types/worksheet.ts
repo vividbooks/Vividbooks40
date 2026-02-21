@@ -27,12 +27,13 @@ export type BlockType =
   | 'image-hotspots'    // Poznávačka - identify points on image
   | 'video-quiz'        // Video quiz with questions at timestamps
   | 'qr-code'           // QR kód s popiskem
-  | 'header-footer';    // Hlavička a patička
+  | 'header-footer'     // Hlavička a patička
+  | 'free-canvas';      // Volné plátno - mini Figma canvas
 
 /**
  * Pozice obrázku v bloku
  */
-export type ImagePosition = 'before' | 'beside-left' | 'beside-right';
+export type ImagePosition = 'before' | 'after' | 'beside-left' | 'beside-right';
 
 /**
  * Velikost obrázku
@@ -53,6 +54,8 @@ export interface BlockImage {
   size: ImageSize;
   /** Šířka v procentech (10-90) při position: beside-* */
   widthPercent?: number;
+  /** Maximální výška obrázku v px (omezí výšku při zachování aspect ratio) */
+  maxHeightPx?: number;
 }
 
 /**
@@ -115,7 +118,19 @@ export interface HeadingContent {
   textColor?: string;
   /** Barva zvýraznění */
   highlightColor?: string;
+  /** Vizuální styl nadpisu */
+  headingStyle?: 'plain' | 'pill' | 'underline' | 'left-border';
 }
+
+/**
+ * Pozice obrázku v odstavci
+ */
+export type ParagraphImagePosition = 'left' | 'right' | 'top' | 'bottom' | 'none';
+
+/**
+ * Tvar obrázku v odstavci
+ */
+export type ParagraphImageShape = 'square' | 'circle' | 'rounded';
 
 /**
  * Obsah bloku s odstavcem
@@ -123,6 +138,16 @@ export interface HeadingContent {
 export interface ParagraphContent {
   /** HTML obsah odstavce (může obsahovat formátování) */
   html: string;
+  /** URL obrázku (volitelný) */
+  imageUrl?: string;
+  /** Pozice obrázku vzhledem k textu */
+  imagePosition?: ParagraphImagePosition;
+  /** Tvar obrázku */
+  imageShape?: ParagraphImageShape;
+  /** Velikost obrázku v pixelech */
+  imageSize?: number;
+  /** Počet textových sloupců (1 = výchozí, 2 nebo 3 = vícekolumnový layout) */
+  columns?: 1 | 2 | 3;
 }
 
 /**
@@ -150,6 +175,57 @@ export interface ChoiceOption {
 }
 
 /**
+ * Tvar odpovědi pro "Hravé ABC" vizuální styl
+ * - circle, square, pill: základní tvary
+ * - star, heart, hexagon, diamond, cloud: speciální tvary
+ * - mix: náhodná kombinace všech tvarů
+ */
+export type PlayfulAnswerShape = 'circle' | 'square' | 'pill' | 'bubble' | 'heart' | 'hexagon' | 'diamond' | 'cloud' | 'mix';
+
+/**
+ * Styl vykreslení tvaru (obrys nebo výplň)
+ */
+export type PlayfulAnswerStyle = 'stroke' | 'fill';
+
+/**
+ * Pozice a rotace jedné odpovědi v "Hravém ABC" režimu
+ */
+export interface PlayfulAnswerPosition {
+  /** X pozice v procentech (0-100) */
+  x: number;
+  /** Y pozice v procentech (0-100) */
+  y: number;
+  /** Rotace ve stupních (-15 až +15) */
+  rotation: number;
+  /** Velikost v procentech (80-120) */
+  scale: number;
+  /** Konkrétní tvar pro tuto odpověď (pro 'mix' režim) */
+  shape?: PlayfulAnswerShape;
+  /** Konkrétní barva pro tuto odpověď (pro 'randomColors' režim) */
+  color?: string;
+}
+
+/**
+ * Nastavení pro "Hravé ABC" vizuální styl
+ */
+export interface PlayfulAnswerSettings {
+  /** Tvar odpovědí */
+  shape: PlayfulAnswerShape;
+  /** Styl vykreslení (obrys nebo výplň) */
+  style: PlayfulAnswerStyle;
+  /** Primární barva (obrys nebo výplň podle style) */
+  primaryColor: string;
+  /** Barva textu */
+  textColor: string;
+  /** Tloušťka obrysu v px (pro style: 'stroke') */
+  strokeWidth: number;
+  /** Předgenerované pozice odpovědí (pro konzistenci) */
+  positions: PlayfulAnswerPosition[];
+  /** Použít náhodnou barvu pro každý tvar */
+  randomColors?: boolean;
+}
+
+/**
  * Obsah multiple-choice otázky
  */
 export interface MultipleChoiceContent {
@@ -167,6 +243,12 @@ export interface MultipleChoiceContent {
   variant?: 'text' | 'image';
   /** Počet sloupců pro obrázkovou variantu */
   gridColumns?: number;
+  /** Rozložení odpovědí pro textovou variantu */
+  layout?: 'vertical' | 'horizontal' | 'grid';
+  /** Vizuální styl odpovědí */
+  visualStyle?: 'list' | 'playful' | 'playful-image';
+  /** Nastavení pro "Hravé ABC" vizuální styl */
+  playfulSettings?: PlayfulAnswerSettings;
 }
 
 /**
@@ -187,6 +269,41 @@ export interface FillBlankContent {
 }
 
 /**
+ * Pod-otázka ve free-answer bloku
+ */
+export interface FreeAnswerSubQuestion {
+  /** Unikátní ID pod-otázky */
+  id: string;
+  /** Text pod-otázky */
+  text: string;
+  /** Počet řádků pro odpověď (1-5) */
+  lines: number;
+  /** Vzorová odpověď (volitelná) */
+  sampleAnswer?: string;
+  /** Individuální barva kroužku/označení (přepíše globální subLabelColors) */
+  labelColor?: string;
+  /** URL obrázku u pod-otázky */
+  imageUrl?: string;
+  /** Pozice obrázku: 'below' pod textem, 'beside' vedle textu */
+  imagePosition?: 'below' | 'beside';
+  /** Šířka podotázky v procentech (default závisí na počtu sloupců) */
+  widthPercent?: number;
+}
+
+/**
+ * Typ označení pod-otázek
+ */
+export type SubQuestionLabelType = 'letters' | 'numbers' | 'roman' | 'none';
+
+/**
+ * Styl označení pod-otázek
+ * - text: prosté "A)"
+ * - circle: plný barevný kroužek s bílým písmem
+ * - circle-outline: obrysový kroužek s barevným písmem
+ */
+export type SubQuestionLabelStyle = 'text' | 'circle' | 'circle-outline';
+
+/**
  * Obsah otázky s volnou odpovědí
  */
 export interface FreeAnswerContent {
@@ -198,6 +315,76 @@ export interface FreeAnswerContent {
   hint?: string;
   /** Vzorová odpověď pro učitele (volitelná) */
   sampleAnswer?: string;
+  
+  // === POD-OTÁZKY (volitelné) ===
+  /** Pole pod-otázek – pokud existuje, renderuje se grid místo jednoduchých řádků */
+  subQuestions?: FreeAnswerSubQuestion[];
+  /** Počet sloupců pro grid pod-otázek (1, 2, 3) */
+  subColumns?: 1 | 2 | 3;
+  /** Typ označení pod-otázek */
+  subLabelType?: SubQuestionLabelType;
+  /** Barvy pozadí pod-otázek (cyklicky se opakují) – např. ["#dbeafe", "#fef3c7"] */
+  subQuestionColors?: string[];
+  
+  // === VIZUÁLNÍ STYL POD-OTÁZEK ===
+  /** Zobrazit barevné pozadí karet (default: true) */
+  subShowBackground?: boolean;
+  /** Zobrazit linkované řádky na odpověď (default: true) – DEPRECATED, use subAnswerStyle */
+  subShowLines?: boolean;
+  /** Styl označení: 'text' = "A)", 'circle' = písmeno v kroužku (default: 'text') */
+  subLabelStyle?: SubQuestionLabelStyle;
+  /** Barvy kroužků/označení (cyklicky se opakují) – např. ["#e11d48", "#f59e0b"] */
+  subLabelColors?: string[];
+  
+  // === GLOBÁLNÍ NASTAVENÍ ODPOVĚDÍ POD-OTÁZEK ===
+  /** Globální počet řádků/prostoru pro odpověď u pod-otázek (1-5, default: 1) */
+  subAnswerLines?: number;
+  /** Styl odpovědního prostoru: 'dotted' = tečkované linky, 'solid' = plné linky, 'space' = prázdný prostor, 'none' = nic, 'inline-line' = linka vedle textu */
+  subAnswerStyle?: 'dotted' | 'solid' | 'space' | 'none' | 'inline-line';
+  /** Odsadit pod-otázky od levého kraje (default: true – odsazeny pod číslem aktivity) */
+  subIndent?: boolean;
+  
+  // === FONT NASTAVENÍ POD-OTÁZEK ===
+  /** Velikost fontu pod-otázek v pt (default: dědí z bloku) */
+  subFontSize?: number;
+  /** Tloušťka fontu pod-otázek (default: 'normal') */
+  subFontWeight?: string;
+  /** Font family pod-otázek (default: dědí z bloku) */
+  subFontFamily?: string;
+  
+  // === VIZUÁLNÍ STYL KARET POD-OTÁZEK ===
+  /** Režim pozadí: 'fill' = plná výplň, 'outline' = jen obrys (default: 'fill') */
+  subBackgroundMode?: 'fill' | 'outline';
+  /** Zapnout obrys nezávisle na výplni */
+  subOutlineEnabled?: boolean;
+  /** Barvy obrysu (pole barev, cykluje se jako subQuestionColors) */
+  subOutlineColors?: string[];
+  /** Stín pod-otázek: 'none' | 'sm' | 'md' (default: 'none') */
+  subShadow?: 'none' | 'sm' | 'md';
+  /** Zakulacení rohů pod-otázek v px (default: 10) */
+  subBorderRadius?: number;
+  /** Poměr šířky sloupců v procentech pro 1. sloupec (default: 50 = rovnoměrně) */
+  subColumnRatio?: number;
+
+  // === VIZUÁLNÍ STYL OBRÁZKŮ POD-OTÁZEK (přenáší se z galerie při konverzi) ===
+  /** Tvar výřezu obrázků u pod-otázek */
+  subImageShape?: 'rectangle' | 'circle' | 'triangle' | 'star' | 'heart' | 'speech-bubble';
+  /** Zakulacení rohů obrázků u pod-otázek (px) */
+  subImageBorderRadius?: number;
+  /** Barva stroke obrázků u pod-otázek */
+  subImageStrokeColor?: string;
+  /** Šířka stroke obrázků u pod-otázek (px, 0 = vypnuto) */
+  subImageStrokeWidth?: number;
+  /** Náhodné natočení obrázků u pod-otázek */
+  subImageRotate?: boolean;
+  /** Max stupňů natočení obrázků u pod-otázek (1–15) */
+  subImageRotateMax?: number;
+  /** Výška obrázků u pod-otázek (px) */
+  subImageHeight?: number;
+
+  // === STYL KROUŽKU S ČÍSLEM AKTIVITY ===
+  /** Barva kroužku s číslem aktivity (výchozí: #1e293b) */
+  circleColor?: string;
 }
 
 /**
@@ -238,6 +425,22 @@ export interface ImageContent {
   imageActivityType?: 'none' | 'text-input' | 'checkbox-circle' | 'checkbox-square';
   /** Výška kontejneru pro ořez (v px) */
   containerHeight?: number;
+  /** Tvar výřezu jednotlivých obrázků v galerii */
+  galleryItemShape?: 'rectangle' | 'circle' | 'triangle' | 'star' | 'heart' | 'speech-bubble';
+  /** Zakulacení rohů (px, jen pro rectangle) */
+  galleryBorderRadius?: number;
+  /** Barva stroke/obrysu */
+  galleryStrokeColor?: string;
+  /** Šířka stroke (px, 0 = vypnuto) */
+  galleryStrokeWidth?: number;
+  /** Náhodné natočení obrázků */
+  galleryRotate?: boolean;
+  /** Max stupňů natočení (1–15) */
+  galleryRotateMax?: number;
+  /** Typ štítku (A/B/C nebo 1/2/3 nebo I/II/III) */
+  galleryLabelType?: 'none' | 'letters' | 'numbers' | 'roman';
+  /** Barva pozadí štítku */
+  galleryLabelColor?: string;
 }
 
 /**
@@ -490,13 +693,208 @@ export interface HeaderFooterContent {
 }
 
 // ============================================
+// VOLNÉ PLÁTNO - TYPY OBJEKTŮ
+// ============================================
+
+/**
+ * Typy objektů na volném plátně
+ */
+export type CanvasObjectType = 'rectangle' | 'ellipse' | 'line' | 'text' | 'image' | 'arrow' | 'group';
+
+/**
+ * Základní objekt na plátně
+ */
+export interface CanvasObjectBase {
+  /** Unikátní ID objektu */
+  id: string;
+  /** Typ objektu */
+  type: CanvasObjectType;
+  /** X pozice */
+  x: number;
+  /** Y pozice */
+  y: number;
+  /** Šířka */
+  width: number;
+  /** Výška */
+  height: number;
+  /** Rotace ve stupních */
+  rotation?: number;
+  /** Z-index pro vrstvení */
+  zIndex: number;
+  /** Je objekt zamčený? */
+  locked?: boolean;
+}
+
+/**
+ * Obdélník na plátně
+ */
+export interface CanvasRectangle extends CanvasObjectBase {
+  type: 'rectangle';
+  /** Barva výplně */
+  fill?: string;
+  /** Barva ohraničení */
+  stroke?: string;
+  /** Tloušťka ohraničení */
+  strokeWidth?: number;
+  /** Zaoblení rohů */
+  borderRadius?: number;
+}
+
+/**
+ * Elipsa/kruh na plátně
+ */
+export interface CanvasEllipse extends CanvasObjectBase {
+  type: 'ellipse';
+  /** Barva výplně */
+  fill?: string;
+  /** Barva ohraničení */
+  stroke?: string;
+  /** Tloušťka ohraničení */
+  strokeWidth?: number;
+}
+
+/**
+ * Čára na plátně
+ */
+export interface CanvasLine extends CanvasObjectBase {
+  type: 'line';
+  /** Barva čáry */
+  stroke: string;
+  /** Tloušťka čáry */
+  strokeWidth: number;
+  /** Styl čáry */
+  strokeStyle?: 'solid' | 'dashed' | 'dotted';
+  /** Koncové body (relativní k x,y) */
+  points: { x: number; y: number }[];
+}
+
+/**
+ * Šipka na plátně
+ */
+export interface CanvasArrow extends CanvasObjectBase {
+  type: 'arrow';
+  /** Barva šipky */
+  stroke: string;
+  /** Tloušťka čáry */
+  strokeWidth: number;
+  /** Typ šipky (na začátku, na konci, obě) */
+  arrowType: 'end' | 'start' | 'both';
+}
+
+/**
+ * Text na plátně
+ */
+export interface CanvasText extends CanvasObjectBase {
+  type: 'text';
+  /** Obsah textu */
+  text: string;
+  /** Velikost písma */
+  fontSize: number;
+  /** Rodina písma */
+  fontFamily?: string;
+  /** Barva textu */
+  fill: string;
+  /** Tučné */
+  bold?: boolean;
+  /** Kurzíva */
+  italic?: boolean;
+  /** Zarovnání */
+  align?: 'left' | 'center' | 'right';
+}
+
+/**
+ * Obrázek na plátně
+ */
+export interface CanvasImage extends CanvasObjectBase {
+  type: 'image';
+  /** URL obrázku */
+  url: string;
+  /** Alternativní text */
+  alt?: string;
+  /** Způsob vyplnění */
+  objectFit?: 'contain' | 'cover' | 'fill';
+}
+
+/**
+ * Skupina objektů na plátně
+ */
+export interface CanvasGroup extends CanvasObjectBase {
+  type: 'group';
+  /** ID objektů ve skupině */
+  children: string[];
+}
+
+/**
+ * Union type pro všechny objekty na plátně
+ */
+export type CanvasObject = 
+  | CanvasRectangle 
+  | CanvasEllipse 
+  | CanvasLine 
+  | CanvasArrow 
+  | CanvasText 
+  | CanvasImage
+  | CanvasGroup;
+
+/**
+ * Obsah bloku s volným plátnem
+ */
+export interface FreeCanvasContent {
+  /** Zadání aktivity */
+  instruction?: string;
+  /** Objekty na plátně */
+  objects: CanvasObject[];
+  /** Barva pozadí plátna */
+  backgroundColor?: string;
+  /** Šířka plátna v px (default = šířka bloku) */
+  canvasWidth?: number;
+  /** Výška plátna v px */
+  canvasHeight: number;
+  /** Zobrazit mřížku */
+  showGrid?: boolean;
+  /** Velikost mřížky v px */
+  gridSize?: number;
+  /** Styl kroužku s číslem */
+  circleColor?: string;
+  circleSize?: number;
+  /** Figma integrace */
+  figmaFileId?: string;       // ID Figma souboru (z URL)
+  figmaNodeId?: string;       // ID konkrétního frame/node
+  figmaFrameName?: string;    // Jméno frame ve Figmě
+  figmaSvgUrl?: string;       // URL synchronizovaného SVG v Supabase Storage
+  figmaSyncedAt?: string;     // ISO timestamp poslední synchronizace
+  /** Zobrazit blok přes celou šířku stránky (fullscreen) */
+  fullscreen?: boolean;
+}
+
+// ============================================
 // BLOKY
 // ============================================
 
 /**
- * Šířka bloku v layoutu
+ * Šířka bloku v layoutu (legacy)
  */
 export type BlockWidth = 'full' | 'half';
+
+/**
+ * PRO: Počet sloupců gridu
+ */
+export type GridColumns = 1 | 2 | 3 | 6 | 12;
+
+/**
+ * PRO: Mezera mezi sloupci gridu
+ */
+export type GridGap = 'none' | 'small' | 'medium' | 'large';
+
+/**
+ * PRO: Hodnoty mezer v pixelech
+ */
+export const GRID_GAP_VALUES: Record<GridGap, number> = {
+  none: 0,
+  small: 8,
+  medium: 16,
+  large: 24,
+};
 
 /**
  * Vizuální styly aplikovatelné na jakýkoliv blok
@@ -513,6 +911,8 @@ export interface BlockVisualStyles {
   borderColor?: string;
   /** Šířka ohraničení v pixelech */
   borderWidth?: number;
+  /** Styl ohraničení */
+  borderStyle?: 'solid' | 'dashed' | 'dotted';
   /** Zaoblení rohů v pixelech */
   borderRadius?: number;
   /** Stín (none, small, medium, large) */
@@ -527,14 +927,37 @@ interface BaseBlock {
   id: string;
   /** Pořadí bloku v pracovním listu */
   order: number;
-  /** Šířka bloku (plná nebo poloviční) */
+  /** Šířka bloku (plná nebo poloviční) - legacy */
   width: BlockWidth;
-  /** Procentuální šířka při half-width (10-90, default 50) */
+  /** Procentuální šířka při half-width (10-90, default 50) - legacy */
   widthPercent?: number;
+  /** PRO: Kolik sloupců gridu blok zabírá (1-12) */
+  gridSpan?: number;
+  /** PRO: Na kterém sloupci gridu blok začíná (1-12) */
+  gridStart?: number;
+  
+  // ========== FREEFORM CANVAS PROPERTIES ==========
+  /** Freeform: X position on canvas in pixels */
+  posX?: number;
+  /** Freeform: Y position on canvas in pixels */
+  posY?: number;
+  /** Freeform: Width of block in pixels (null = auto based on content) */
+  blockWidth?: number;
+  /** Freeform: Height of block in pixels (null = auto based on content) */
+  blockHeight?: number;
+  /** Freeform: Which page this block belongs to (0-indexed) */
+  pageIndex?: number;
+  /** Freeform: Z-index for layering */
+  zIndex?: number;
+  
   /** Spodní odsazení v pixelech */
   marginBottom?: number;
+  /** Pokud true, blok se nepočítá jako aktivita (bez čísla) */
+  noActivityNumber?: boolean;
   /** Styl spodního odsazení */
   marginStyle?: SpacerStyle;
+  /** Vnitřní odsazení bloku v pixelech */
+  padding?: number;
   /** Volitelný obrázek připojený k bloku */
   image?: BlockImage;
   /** Vizuální styly bloku */
@@ -662,6 +1085,14 @@ export interface HeaderFooterBlock extends BaseBlock {
 }
 
 /**
+ * Blok s volným plátnem (mini Figma canvas)
+ */
+export interface FreeCanvasBlock extends BaseBlock {
+  type: 'free-canvas';
+  content: FreeCanvasContent;
+}
+
+/**
  * Union type pro všechny typy bloků
  */
 export type WorksheetBlock = 
@@ -679,7 +1110,8 @@ export type WorksheetBlock =
   | ImageHotspotsBlock
   | VideoQuizBlock
   | QRCodeBlock
-  | HeaderFooterBlock;
+  | HeaderFooterBlock
+  | FreeCanvasBlock;
 
 // ============================================
 // METADATA A PRACOVNÍ LIST
@@ -709,10 +1141,64 @@ export interface WorksheetMetadata {
   keywords?: string[];
   /** Téma/kapitola */
   topic?: string;
-  /** Počet sloupců (1 nebo 2) */
+  /** Počet sloupců (1 nebo 2) - legacy */
   columns?: ColumnCount;
   /** Globální velikost písma */
   globalFontSize?: GlobalFontSize;
+  
+  // === PRO GRID SYSTEM ===
+  /** PRO: Počet sloupců gridu (default: 12) */
+  gridColumns?: GridColumns;
+  /** PRO: Mezera mezi sloupci */
+  gridGap?: GridGap;
+  
+  // === PRO LAYOUT MODE ===
+  /** PRO: Režim layoutu - grid (pro AI) nebo freeform (pro ruční úpravy) */
+  layoutMode?: 'grid' | 'freeform';
+  
+  // === PRO PAGE STYLING ===
+  /** PRO: Barva pozadí stránky (default: bílá) */
+  pageBackgroundColor?: string;
+  
+  // === PRO HEADER & FOOTER ===
+  /** PRO: Konfigurace hlavičky stránky */
+  pageHeader?: PageHeaderConfig;
+  /** PRO: Konfigurace patičky stránky */
+  pageFooter?: PageFooterConfig;
+}
+
+// ============================================
+// HLAVIČKA & PATIČKA STRÁNKY
+// ============================================
+
+export interface PageHeaderConfig {
+  enabled: boolean;
+  showName?: boolean;
+  showClass?: boolean;
+  showGrade?: boolean;
+  nameLabel?: string;
+  classLabel?: string;
+  gradeLabel?: string;
+  lineColor?: string;
+}
+
+export type FooterFeedbackStyle = 'faces' | 'smileys' | 'stars' | 'hearts';
+
+export interface PageFooterConfig {
+  enabled: boolean;
+  showSeparator?: boolean;
+  /** Left column content type */
+  leftType?: 'branding' | 'text' | 'none';
+  /** Custom text for left column */
+  leftText?: string;
+  /** Right column content type */
+  rightType?: 'feedback' | 'pageNumber' | 'text' | 'none';
+  /** Feedback visual style */
+  feedbackStyle?: FooterFeedbackStyle;
+  /** Feedback question text */
+  feedbackText?: string;
+  /** Custom text for right column */
+  rightText?: string;
 }
 
 /**
@@ -768,6 +1254,7 @@ export type BlockContentByType = {
   'image-hotspots': ImageHotspotsContent;
   'video-quiz': VideoQuizContent;
   'qr-code': QRCodeContent;
+  'free-canvas': FreeCanvasContent;
 };
 
 // ============================================
@@ -836,6 +1323,9 @@ export const DEFAULT_WORKSHEET_METADATA: WorksheetMetadata = {
   estimatedTime: 15,
   keywords: [],
   globalFontSize: 'small',
+  // PRO defaults
+  gridColumns: 12,
+  gridGap: 'medium',
 };
 
 /**
@@ -1217,6 +1707,24 @@ export function createEmptyBlock(type: BlockType, order: number): WorksheetBlock
           feedbackCount: 5,
           feedbackText: 'Tento pracovní list se mi vyplňoval:',
           showFooterInfo: true,
+        },
+      };
+    case 'free-canvas':
+      return {
+        id,
+        type: 'free-canvas',
+        order,
+        width: 'full',
+        content: {
+          instruction: '',
+          objects: [],
+          canvasWidth: 750,  // A4 width minus margins
+          canvasHeight: 400,
+          backgroundColor: '#ffffff',
+          showGrid: true,
+          gridSize: 20,
+          circleColor: '#1e293b',
+          circleSize: 21,
         },
       };
   }

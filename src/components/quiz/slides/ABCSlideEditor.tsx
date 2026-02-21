@@ -22,7 +22,7 @@ import {
 } from 'lucide-react';
 import { ABCActivitySlide, ABCOption, getOptionLabel } from '../../../types/quiz';
 import { MathText } from '../../math/MathText';
-import { MathInputModal } from '../../math/MathKeyboard';
+import MathKeyboard from '../../math/MathKeyboard';
 import { AssetPicker } from '../../shared/AssetPicker';
 import type { AssetPickerResult } from '../../../types/assets';
 import { getContrastColor } from '../../../utils/color-utils';
@@ -49,7 +49,8 @@ export function ABCSlideEditor({ slide, onUpdate }: ABCSlideEditorProps) {
   const [editingExplanation, setEditingExplanation] = useState(false);
   const [showAssetPicker, setShowAssetPicker] = useState(false);
   const [showMathKeyboard, setShowMathKeyboard] = useState(false);
-  const [mathTarget, setMathTarget] = useState<'question' | 'explanation' | string>('question'); // 'question', 'explanation', or option id
+  const [mathTarget, setMathTarget] = useState<'question' | 'explanation' | string>('question');
+  const [mathValue, setMathValue] = useState('');
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [emojiPickerTarget, setEmojiPickerTarget] = useState<string | null>(null);
   const [emojiCategory, setEmojiCategory] = useState<string>('Smajlíci');
@@ -82,28 +83,34 @@ export function ABCSlideEditor({ slide, onUpdate }: ABCSlideEditorProps) {
     setShowAssetPicker(false);
   };
   
-  // Handle inserting math expression
-  const handleMathInsert = (latex: string) => {
-    const mathExpression = `$${latex}$`;
+  // Handle inserting math expression from inline keyboard
+  const handleMathInsert = () => {
+    if (!mathValue.trim()) return;
+    const mathExpression = `$${mathValue}$`;
     
     if (mathTarget === 'question') {
       onUpdate(slide.id, { question: (slide.question || '') + mathExpression });
     } else if (mathTarget === 'explanation') {
       onUpdate(slide.id, { explanation: (slide.explanation || '') + mathExpression });
     } else {
-      // It's an option id
       const option = slide.options.find(o => o.id === mathTarget);
       if (option) {
         updateOption(mathTarget, { content: (option.content || '') + mathExpression });
       }
     }
+    setMathValue('');
     setShowMathKeyboard(false);
   };
   
   // Open math keyboard for a specific target
   const openMathKeyboard = (target: 'question' | 'explanation' | string) => {
-    setMathTarget(target);
-    setShowMathKeyboard(true);
+    if (showMathKeyboard && mathTarget === target) {
+      setShowMathKeyboard(false);
+    } else {
+      setMathTarget(target);
+      setMathValue('');
+      setShowMathKeyboard(true);
+    }
   };
   
   const updateOption = (optionId: string, updates: Partial<ABCOption>) => {
@@ -174,13 +181,39 @@ export function ABCSlideEditor({ slide, onUpdate }: ABCSlideEditorProps) {
         </div>
         <button
           onClick={() => openMathKeyboard('question')}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm bg-indigo-100 text-indigo-700 hover:bg-indigo-200 transition-colors"
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition-colors ${showMathKeyboard && mathTarget === 'question' ? 'bg-indigo-600 text-white' : 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200'}`}
           title="Vložit matematický zápis"
         >
           <Calculator className="w-4 h-4" />
           Matematika
         </button>
       </div>
+
+      {/* Inline Math Keyboard for question */}
+      {showMathKeyboard && mathTarget === 'question' && (
+        <div className="mx-4 mb-3 p-3 bg-slate-50 rounded-xl border border-slate-200" style={{ maxWidth: 340 }}>
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-medium text-slate-500">Matematický zápis → Otázka</span>
+            <button onClick={() => setShowMathKeyboard(false)} className="p-1 rounded-lg hover:bg-slate-200 text-slate-400">
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+          <MathKeyboard
+            value={mathValue}
+            onChange={setMathValue}
+            placeholder="Napiš výraz..."
+            showPreview={true}
+            compact={true}
+          />
+          <button
+            onClick={handleMathInsert}
+            disabled={!mathValue.trim()}
+            className="mt-2 w-full py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            Vložit do otázky
+          </button>
+        </div>
+      )}
       
       {/* Question and Image section - side by side */}
       <div className="px-6 pb-6 border-b border-slate-100">
@@ -283,42 +316,18 @@ export function ABCSlideEditor({ slide, onUpdate }: ABCSlideEditorProps) {
             Možnosti odpovědí
           </label>
           <div className="flex items-center gap-2">
-            {/* Answer type toggle */}
-            <div className="flex items-center rounded-lg border border-slate-200 overflow-hidden">
-              <button
-                onClick={() => onUpdate(slide.id, { answerType: 'text' } as any)}
-                className={`p-1.5 transition-colors ${
-                  (slide as any).answerType !== 'image' && (slide as any).answerType !== 'emoji'
-                    ? 'bg-slate-100 text-slate-700'
-                    : 'text-slate-400 hover:text-slate-600'
-                }`}
-                title="Text"
-              >
-                <Type className="w-4 h-4" />
-              </button>
-              <button
-                onClick={() => onUpdate(slide.id, { answerType: 'image' } as any)}
-                className={`p-1.5 transition-colors ${
-                  (slide as any).answerType === 'image'
-                    ? 'bg-slate-100 text-slate-700'
-                    : 'text-slate-400 hover:text-slate-600'
-                }`}
-                title="Obrázky"
-              >
-                <ImageIcon className="w-4 h-4" />
-              </button>
-              <button
-                onClick={() => onUpdate(slide.id, { answerType: 'emoji' } as any)}
-                className={`p-1.5 transition-colors ${
-                  (slide as any).answerType === 'emoji'
-                    ? 'bg-slate-100 text-slate-700'
-                    : 'text-slate-400 hover:text-slate-600'
-                }`}
-                title="Emoji"
-              >
-                <Smile className="w-4 h-4" />
-              </button>
-            </div>
+            {/* Answer type dropdown */}
+            <select
+              value={(slide as any).answerType || 'text'}
+              onChange={(e) => onUpdate(slide.id, { answerType: e.target.value } as any)}
+              className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-sm text-slate-700 font-medium focus:border-indigo-500 focus:outline-none transition-colors cursor-pointer"
+            >
+              <option value="text">📝 Text</option>
+              <option value="image">🖼️ Obrázky</option>
+              <option value="emoji">😀 Emoji</option>
+              <option value="bubbles">🫧 Bubliny</option>
+              <option value="squares">🟦 Čtverce</option>
+            </select>
             {/* Shuffle button */}
             <button
               onClick={() => {
@@ -339,8 +348,72 @@ export function ABCSlideEditor({ slide, onUpdate }: ABCSlideEditorProps) {
           </div>
         </div>
         
-        {/* IMAGE/EMOJI MODE - Clean square cards */}
-        {((slide as any).answerType === 'image' || (slide as any).answerType === 'emoji') ? (
+        {/* BUBBLES / SQUARES MODE - Colorful shapes */}
+        {(slide as any).answerType === 'bubbles' || (slide as any).answerType === 'squares' ? (
+          <div className="flex flex-wrap gap-3 justify-center">
+            {slide.options.map((option, idx) => {
+              const bubbleColors = ['#93C5FD', '#7DD3FC', '#A5B4FC', '#BAE6FD', '#C7D2FE', '#E0F2FE'];
+              const color = bubbleColors[idx % bubbleColors.length];
+              return (
+                <div key={option.id} className="flex flex-col items-center gap-1.5">
+                  <div
+                    className="relative flex items-center justify-center cursor-text transition-all"
+                    style={{
+                      width: 90,
+                      height: 90,
+                      borderRadius: (slide as any).answerType === 'squares' ? 16 : '50%',
+                      backgroundColor: color,
+                      transform: (slide as any).answerType === 'squares' ? `rotate(${(idx % 2 === 0 ? 1 : -1) * (3 + idx * 2)}deg)` : undefined,
+                      boxShadow: option.isCorrect ? '0 0 0 4px rgba(59,130,246,0.2), 0 4px 12px rgba(59,130,246,0.3)' : '0 2px 8px rgba(59,130,246,0.15)',
+                      border: option.isCorrect ? '3px solid #10b981' : '3px solid transparent',
+                    }}
+                    onClick={() => setEditingOption(option.id)}
+                  >
+                    <span style={{ position: 'absolute', top: 4, fontSize: 10, fontWeight: 800, opacity: 0.45, letterSpacing: 1, color: '#1e3a5f' }}>{String.fromCharCode(65 + idx)}</span>
+                    {editingOption === option.id ? (
+                      <input
+                        type="text"
+                        value={option.content}
+                        onChange={(e) => updateOption(option.id, { content: e.target.value })}
+                        onBlur={() => setEditingOption(null)}
+                        autoFocus
+                        className="bg-transparent border-none outline-none text-center font-bold"
+                        style={{ width: '80%', fontSize: 14, color: '#1e3a5f' }}
+                        placeholder="..."
+                      />
+                    ) : (
+                      <span className="font-bold text-sm text-center px-2 leading-tight" style={{ color: '#1e3a5f' }}>
+                        {option.content ? <MathText>{option.content}</MathText> : option.label}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => setCorrectOption(option.id)}
+                      className="w-5 h-5 rounded-full flex items-center justify-center"
+                      style={{ backgroundColor: option.isCorrect ? '#10b981' : '#e2e8f0' }}
+                      title="Správná odpověď"
+                    >
+                      {option.isCorrect && (
+                        <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                        </svg>
+                      )}
+                    </button>
+                    <button
+                      onClick={() => removeOption(option.id)}
+                      className="w-5 h-5 rounded-full flex items-center justify-center transition-colors hover:bg-red-200"
+                      style={{ backgroundColor: '#fecaca', color: '#dc2626' }}
+                      title="Smazat"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : ((slide as any).answerType === 'image' || (slide as any).answerType === 'emoji') ? (
           <div className="grid grid-cols-4 gap-4">
             {slide.options.map((option) => (
               <div
@@ -453,8 +526,8 @@ export function ABCSlideEditor({ slide, onUpdate }: ABCSlideEditorProps) {
           // TEXT MODE - List layout
           <div className="space-y-3">
             {slide.options.map((option) => (
+              <React.Fragment key={option.id}>
               <div
-                key={option.id}
                 className={`
                   group flex items-center gap-3 p-3 rounded-xl border-2 transition-all
                   ${option.isCorrect 
@@ -503,7 +576,7 @@ export function ABCSlideEditor({ slide, onUpdate }: ABCSlideEditorProps) {
                 {/* Math button */}
                 <button
                   onClick={() => openMathKeyboard(option.id)}
-                  className="p-2 rounded-lg text-indigo-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors opacity-0 group-hover:opacity-100"
+                  className={`p-2 rounded-lg transition-colors ${showMathKeyboard && mathTarget === option.id ? 'text-indigo-600 bg-indigo-100' : 'text-indigo-400 hover:text-indigo-600 hover:bg-indigo-50 opacity-0 group-hover:opacity-100'}`}
                   title="Vložit matematiku"
                 >
                   <Calculator className="w-4 h-4" />
@@ -539,6 +612,32 @@ export function ABCSlideEditor({ slide, onUpdate }: ABCSlideEditorProps) {
                   <X className="w-3.5 h-3.5" />
                 </button>
               </div>
+              {/* Inline Math Keyboard for this option */}
+              {showMathKeyboard && mathTarget === option.id && (
+                <div className="mt-2 p-3 bg-slate-50 rounded-xl border border-slate-200" style={{ maxWidth: 340 }}>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-medium text-slate-500">Matematický zápis → Odpověď {option.label}</span>
+                    <button onClick={() => setShowMathKeyboard(false)} className="p-1 rounded-lg hover:bg-slate-200 text-slate-400">
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                  <MathKeyboard
+                    value={mathValue}
+                    onChange={setMathValue}
+                    placeholder="Napiš výraz..."
+                    showPreview={true}
+                    compact={true}
+                  />
+                  <button
+                    onClick={handleMathInsert}
+                    disabled={!mathValue.trim()}
+                    className="mt-2 w-full py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    Vložit
+                  </button>
+                </div>
+              )}
+              </React.Fragment>
             ))}
           </div>
         )}
@@ -694,14 +793,6 @@ export function ABCSlideEditor({ slide, onUpdate }: ABCSlideEditorProps) {
         )}
       </div>
       
-      {/* Math Keyboard Modal */}
-      <MathInputModal
-        isOpen={showMathKeyboard}
-        onClose={() => setShowMathKeyboard(false)}
-        onSubmit={handleMathInsert}
-        title="Vložit matematický výraz"
-      />
-
       {/* Asset Picker Modal */}
       <AssetPicker
         isOpen={showAssetPicker}

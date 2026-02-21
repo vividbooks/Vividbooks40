@@ -107,20 +107,26 @@ export function BlockSettingsPanel({
     localStorage.setItem('vividboard-recent-colors', JSON.stringify(newRecent));
   };
 
-  const [expandedSection, setExpandedSection] = useState<string | null>(
-    initialSection || (block.type === 'image' ? 'image' : 'type')
-  );
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(() => {
+    const initial = new Set<string>();
+    if (initialSection) {
+      initial.add(initialSection);
+    } else {
+      initial.add('type');
+      if (block.type === 'text') initial.add('format');
+    }
+    return initial;
+  });
   const galleryInputRef = useRef<HTMLInputElement>(null);
   const backgroundSectionRef = useRef<HTMLDivElement>(null);
   const [showAssetPicker, setShowAssetPicker] = useState(false);
   const [assetPickerMode, setAssetPickerMode] = useState<'single' | 'gallery' | 'thumbnail'>('single');
   const [showFontDropdown, setShowFontDropdown] = useState(false);
 
-  // Update expanded section when initialSection prop changes
+  // Update expanded sections when initialSection prop changes
   useEffect(() => {
     if (initialSection) {
-      setExpandedSection(initialSection);
-      // Scroll to background section after a short delay
+      setExpandedSections(new Set([initialSection]));
       if (initialSection === 'background') {
         setTimeout(() => {
           backgroundSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -129,8 +135,18 @@ export function BlockSettingsPanel({
     }
   }, [initialSection]);
 
+  const expandedSection = (section: string) => expandedSections.has(section);
+
   const toggleSection = (section: string) => {
-    setExpandedSection(prev => prev === section ? null : section);
+    setExpandedSections(prev => {
+      const next = new Set(prev);
+      if (next.has(section)) {
+        next.delete(section);
+      } else {
+        next.add(section);
+      }
+      return next;
+    });
   };
 
   const handleTypeChange = (newType: SlideBlockType) => {
@@ -301,6 +317,7 @@ export function BlockSettingsPanel({
   return (
     <div
       className="flex flex-col overflow-hidden"
+      data-settings-panel="block"
       style={{ 
         position: 'fixed',
         top: 0,
@@ -340,7 +357,7 @@ export function BlockSettingsPanel({
             </div>
             <div className="flex items-center gap-2">
               <span className="text-sm text-slate-500">{getBlockTypeName()}</span>
-              {expandedSection === 'type' ? (
+              {expandedSection('type') ? (
                 <ChevronDown className="w-4 h-4 text-slate-400" />
               ) : (
                 <ChevronRight className="w-4 h-4 text-slate-400" />
@@ -348,7 +365,7 @@ export function BlockSettingsPanel({
             </div>
           </button>
 
-          {expandedSection === 'type' && (
+          {expandedSection('type') && (
             <div className="px-5 pb-4">
               <div className="flex gap-2">
                 <button
@@ -400,14 +417,14 @@ export function BlockSettingsPanel({
                 <Bold className="w-5 h-5 text-slate-400" />
                 <span className="font-medium text-slate-700">Formátování</span>
               </div>
-              {expandedSection === 'format' ? (
+              {expandedSection('format') ? (
                 <ChevronDown className="w-4 h-4 text-slate-400" />
               ) : (
                 <ChevronRight className="w-4 h-4 text-slate-400" />
               )}
             </button>
 
-            {expandedSection === 'format' && (
+            {expandedSection('format') && (
               <div className="px-5 pb-5 space-y-4">
                 {/* Row 1: Font + Size */}
                 <div className="flex gap-2">
@@ -673,14 +690,14 @@ export function BlockSettingsPanel({
                 <ImageIcon className="w-5 h-5 text-slate-400" />
                 <span className="font-medium text-slate-700">Nastavení média</span>
               </div>
-              {expandedSection === 'image' ? (
+              {expandedSection('image') ? (
                 <ChevronDown className="w-4 h-4 text-slate-400" />
               ) : (
                 <ChevronRight className="w-4 h-4 text-slate-400" />
               )}
             </button>
 
-            {expandedSection === 'image' && (
+            {expandedSection('image') && (
               <div className="px-5 pb-4 space-y-4">
                 {/* Lottie specific settings */}
                 {block.type === 'lottie' && (
@@ -939,14 +956,14 @@ export function BlockSettingsPanel({
                 <Link2 className="w-5 h-5 text-slate-400" />
                 <span className="font-medium text-slate-700">Nastavení odkazu</span>
             </div>
-              {expandedSection === 'link' ? (
+              {expandedSection('link') ? (
                 <ChevronDown className="w-4 h-4 text-slate-400" />
               ) : (
                 <ChevronRight className="w-4 h-4 text-slate-400" />
               )}
             </button>
 
-            {expandedSection === 'link' && (
+            {expandedSection('link') && (
               <div className="px-5 pb-4 space-y-5">
                 {/* URL Input */}
                 <div>
@@ -1101,7 +1118,7 @@ export function BlockSettingsPanel({
                 <span className="font-medium text-slate-700">Barva bloku</span>
               </div>
               <div className="flex items-center gap-2">
-              {expandedSection === 'background' ? (
+              {expandedSection('background') ? (
                 <ChevronDown className="w-4 h-4 text-slate-400" />
               ) : (
                 <ChevronRight className="w-4 h-4 text-slate-400" />
@@ -1130,7 +1147,7 @@ export function BlockSettingsPanel({
             </div>
           </div>
 
-          {expandedSection === 'background' && (
+          {expandedSection('background') && (
             <div className="px-5 pb-4">
               <BackgroundPicker
                 value={block.background}

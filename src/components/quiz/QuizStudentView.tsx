@@ -27,14 +27,16 @@ import {
   Play,
   Calculator,
 } from 'lucide-react';
-import { MathInputModal, MathDisplay } from '../math/MathKeyboard';
+import MathKeyboard, { MathInputModal, MathDisplay } from '../math/MathKeyboard';
 import { MathText } from '../math/MathText';
 import { AutoScaleQuestion } from './AutoScaleQuestion';
+import { ExampleActivityView } from './ExampleActivityView';
 import { 
   Quiz, 
   QuizSlide, 
   ABCActivitySlide, 
-  OpenActivitySlide, 
+  OpenActivitySlide,
+  ExampleActivitySlide,
   BoardActivitySlide,
   VotingActivitySlide,
   ConnectPairsActivitySlide,
@@ -42,7 +44,8 @@ import {
   ImageHotspotsActivitySlide,
   VideoQuizActivitySlide,
   SlideResponse,
-  InfoSlide 
+  InfoSlide,
+  ToolsSlide,
 } from '../../types/quiz';
 import { BlockLayoutView } from './QuizPreview';
 import { BoardSlideView } from './slides/BoardSlideView';
@@ -51,13 +54,18 @@ import { ConnectPairsView } from './slides/ConnectPairsView';
 import { FillBlanksView } from './slides/FillBlanksView';
 import { ImageHotspotsView } from './slides/ImageHotspotsView';
 import { VideoQuizView } from './slides/VideoQuizView';
+import { FormView } from './slides/FormView';
+import { CertificateView } from './slides/CertificateView';
 import { useBoardPosts } from '../../hooks/useBoardPosts';
 import { useVoting } from '../../hooks/useVoting';
 import { checkMathAnswer } from '../../utils/math-compare';
+import Lottie from 'lottie-react';
 
 // ============================================
 // CONSTANTS
 // ============================================
+
+const DRUM_LOTTIE_URL = 'https://njbtqmsxbyvpwigfceke.supabase.co/storage/v1/object/public/competition_files/Drum.json';
 
 const QUIZ_SHARES_PATH = 'quiz_shares';
 const STUDENT_SHARE_KEY = 'vivid-share-session';
@@ -72,6 +80,8 @@ interface ShareData {
   quizData: Quiz;
   sessionName: string;
   shareCode: string;
+  mode?: string;
+  startedAt?: string;
   settings: {
     anonymousAccess: boolean;
     showSolutionHints: boolean;
@@ -91,6 +101,7 @@ interface StudentShareData {
   lastActiveAt: string;
   currentSlide: number;
   isOnline: boolean;
+  isFocused?: boolean;
   completedAt?: string;
   responses: Record<string, SlideResponse>;
   deviceId: string;
@@ -184,6 +195,18 @@ async function retryOperation<T>(
 // MAIN COMPONENT
 // ============================================
 
+function UrlLottie({ url, loop = true }: { url: string; loop?: boolean }) {
+  const [data, setData] = React.useState<any>(null);
+  React.useEffect(() => {
+    fetch(url)
+      .then(r => r.json())
+      .then(json => setData(json))
+      .catch(() => {});
+  }, [url]);
+  if (!data) return null;
+  return <Lottie animationData={data} loop={loop} autoplay />;
+}
+
 export function QuizStudentView() {
   const { shareId } = useParams<{ shareId: string }>();
   
@@ -193,7 +216,7 @@ export function QuizStudentView() {
   const [isReconnecting, setIsReconnecting] = useState(false);
   
   // Mobile detection
-  const [isMobile, setIsMobile] = useState(false);
+  const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth < 768);
   
   useEffect(() => {
     const checkMobile = () => setIsMobile(window.innerWidth < 768);
@@ -222,6 +245,7 @@ export function QuizStudentView() {
   const [responses, setResponses] = useState<Record<string, SlideResponse>>({});
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
   const [textAnswer, setTextAnswer] = useState('');
+  const [formAnswer, setFormAnswer] = useState<Record<string, string | string[]>>({});
   const [showMathKeyboard, setShowMathKeyboard] = useState(false);
   
   // Time tracking
@@ -390,6 +414,7 @@ export function QuizStudentView() {
       lastActiveAt: new Date().toISOString(),
       currentSlide: 0,
       isOnline: true,
+      isFocused: true,
       responses: {},
       deviceId: getDeviceId(),
       // Time tracking
@@ -467,6 +492,39 @@ export function QuizStudentView() {
       });
     };
   }, [shareId, studentId]);
+
+  // ============================================
+  // FOCUS TRACKING (visibility API)
+  // ============================================
+  
+  useEffect(() => {
+    if (!shareId || !studentId || !hasStarted) return;
+    
+    const studentRef = ref(database, `${QUIZ_SHARES_PATH}/${shareId}/responses/${studentId}`);
+    
+    const handleVisibilityChange = () => {
+      const focused = document.visibilityState === 'visible';
+      update(studentRef, { isFocused: focused, lastActiveAt: new Date().toISOString() });
+    };
+    
+    const handleBlur = () => {
+      update(studentRef, { isFocused: false, lastActiveAt: new Date().toISOString() });
+    };
+    
+    const handleFocus = () => {
+      update(studentRef, { isFocused: true, lastActiveAt: new Date().toISOString() });
+    };
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('blur', handleBlur);
+    window.addEventListener('focus', handleFocus);
+    
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('blur', handleBlur);
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, [shareId, studentId, hasStarted]);
 
   // ============================================
   // START SESSION
@@ -562,10 +620,17 @@ export function QuizStudentView() {
       answer = textAnswer;
     } else if ((currentSlide as any).activityType === 'example') {
       const exampleSlide = currentSlide as ExampleActivitySlide;
-      // Use mathematical comparison for example answers
-      const correctAnswers = exampleSlide.finalAnswer ? [exampleSlide.finalAnswer] : [];
+      // Use mathematical comparison for example answers (including alternatives)
+      const correctAnswers = [
+        ...(exampleSlide.finalAnswer ? [exampleSlide.finalAnswer] : []),
+        ...(exampleSlide.alternativeAnswers || []).filter(Boolean),
+      ];
       isCorrect = checkMathAnswer(textAnswer, correctAnswers);
       answer = textAnswer;
+    } else if ((currentSlide as any).activityType === 'form') {
+      // Form answers are stored as JSON string
+      answer = JSON.stringify(formAnswer);
+      isCorrect = true; // Forms are not scored
     }
     
     // Calculate time spent on this slide in seconds
@@ -601,7 +666,7 @@ export function QuizStudentView() {
       console.error('Failed to save answer:', error);
       setConnectionError('Odpověď se možná neuložila');
     }
-  }, [quiz, shareId, studentId, currentSlideIndex, responses, selectedOption, textAnswer, slideStartTime, sessionStartTime]);
+  }, [quiz, shareId, studentId, currentSlideIndex, responses, selectedOption, textAnswer, formAnswer, slideStartTime, sessionStartTime]);
 
   // ============================================
   // NAVIGATION
@@ -675,6 +740,45 @@ export function QuizStudentView() {
   const currentSlide = quiz && quiz.slides ? quiz.slides[currentSlideIndex] : undefined;
   const currentResponse = currentSlide && responses ? responses[currentSlide.id] : undefined;
   const hasAnswered = !!currentResponse;
+
+  // Helper to collect form responses for certificate
+  const collectFormResponses = useCallback((): Record<string, Record<string, string | string[]>> => {
+    const formResponses: Record<string, Record<string, string | string[]>> = {};
+    
+    if (quiz) {
+      quiz.slides.forEach(slide => {
+        if (slide.type === 'activity' && (slide as any).activityType === 'form') {
+          const response = responses[slide.id];
+          // Try to parse saved response
+          if (response?.answer && typeof response.answer === 'string' && response.answer.trim()) {
+            try {
+              const parsed = JSON.parse(response.answer);
+              if (parsed && typeof parsed === 'object') {
+                formResponses[slide.id] = parsed;
+              }
+            } catch {
+              // If not valid JSON, skip
+            }
+          }
+          
+          // If formAnswer has data for this slide (user filled but maybe not saved yet, or saved with old code)
+          // Check if any field ID in formAnswer matches this slide's fields
+          const formSlide = slide as any;
+          if (formSlide.fields && formSlide.fields.length > 0) {
+            const slideFieldIds = formSlide.fields.map((f: any) => f.id);
+            const hasDataForThisSlide = Object.keys(formAnswer).some(key => slideFieldIds.includes(key));
+            
+            if (hasDataForThisSlide && Object.keys(formAnswer).length > 0) {
+              // Use formAnswer data for this slide
+              formResponses[slide.id] = formAnswer;
+            }
+          }
+        }
+      });
+    }
+    
+    return formResponses;
+  }, [quiz, responses, formAnswer]);
   
   // Board posts for current slide (if it's a board activity)
   const boardPosts = useBoardPosts({
@@ -948,6 +1052,28 @@ export function QuizStudentView() {
   }
 
   // ============================================
+  // RENDER: WAITING FOR TEACHER TO START (classroom mode)
+  // ============================================
+  
+  if (shareData?.mode === 'classroom' && !shareData?.startedAt) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center p-4" style={{ backgroundColor: '#4E5871' }}>
+        <div style={{ width: '55vmin', height: '55vmin' }}>
+          <UrlLottie url={DRUM_LOTTIE_URL} loop />
+        </div>
+        <h1 className="text-2xl font-bold text-white mb-2">Čekáme na zahájení</h1>
+        <p className="text-slate-300 mb-4">
+          Učitel brzy zahájí aktivitu. Držte se připraveni!
+        </p>
+        <div className="flex items-center justify-center gap-2 text-slate-400">
+          <div className="w-2 h-2 rounded-full bg-indigo-400 animate-pulse" />
+          <span className="text-sm">Připojeno jako <span className="font-semibold text-white">{studentName}</span></span>
+        </div>
+      </div>
+    );
+  }
+
+  // ============================================
   // RENDER: COMPLETED
   // ============================================
   
@@ -1069,7 +1195,8 @@ export function QuizStudentView() {
           >
             <div 
               className={`
-                w-full rounded-3xl shadow-md overflow-hidden flex flex-col bg-white
+                w-full rounded-3xl overflow-hidden flex flex-col
+                ${currentSlide?.type === 'tools' && (currentSlide as ToolsSlide).toolType === 'certificate' && (currentSlide as ToolsSlide).certificateConfig?.customPdfUrl ? '' : 'bg-white shadow-md'}
                 ${currentSlide?.type !== 'info' ? 'max-w-5xl mx-auto' : ''}
                 ${currentSlideIndex > prevSlideIndex && isAnimating ? 'animate-slide-in' : ''}
                 ${currentSlideIndex < prevSlideIndex && isAnimating ? 'animate-slide-in-left' : ''}
@@ -1088,8 +1215,8 @@ export function QuizStudentView() {
                 </div>
               ) : (
                 <>
-                  {/* Question - only for activity slides (except those with their own display) */}
-                  {currentSlide.type === 'activity' && currentSlide.activityType !== 'board' && currentSlide.activityType !== 'voting' && currentSlide.activityType !== 'connect-pairs' && currentSlide.activityType !== 'fill-blanks' && currentSlide.activityType !== 'image-hotspots' && currentSlide.activityType !== 'video-quiz' && (
+                  {/* Question - only for activity slides (except those with their own display, and bubbles ABC which renders question inline) */}
+                  {currentSlide.type === 'activity' && currentSlide.activityType !== 'board' && currentSlide.activityType !== 'voting' && currentSlide.activityType !== 'connect-pairs' && currentSlide.activityType !== 'fill-blanks' && currentSlide.activityType !== 'image-hotspots' && currentSlide.activityType !== 'video-quiz' && currentSlide.activityType !== 'form' && currentSlide.activityType !== 'example' && !((currentSlide as any).activityType === 'abc' && ((currentSlide as any).answerType === 'bubbles' || (currentSlide as any).answerType === 'squares')) && (
                     <div className="flex-1 flex flex-col items-center justify-center p-4 md:p-8">
                       <AutoScaleQuestion>
                         {(currentSlide as any).question || (currentSlide as any).title || ''}
@@ -1100,7 +1227,7 @@ export function QuizStudentView() {
                         <img 
                           src={(currentSlide as any).media.url} 
                           alt="Obrázek k otázce"
-                          className="mt-4 max-w-full max-h-48 md:max-h-64 rounded-xl shadow-lg object-contain"
+                          className="mt-4 max-w-full max-h-48 md:max-h-64 object-contain"
                         />
                       )}
                     </div>
@@ -1109,6 +1236,96 @@ export function QuizStudentView() {
               {/* ABC Options */}
               {currentSlide.type === 'activity' && (currentSlide as any).activityType === 'abc' && (
                 <>
+                  {((currentSlide as any).answerType === 'bubbles' || (currentSlide as any).answerType === 'squares') ? (
+                    <div className={isMobile ? "flex flex-col h-full w-full" : "flex h-full w-full p-6 gap-6"}>
+                      {/* Left/Top: Question + Image (identical to regular ABC) */}
+                      <div className="flex-1 flex flex-col items-center justify-center p-4 md:p-8">
+                        <AutoScaleQuestion>
+                          {(currentSlide as any).question || (currentSlide as any).title || ''}
+                        </AutoScaleQuestion>
+                        {(currentSlide as any).media?.url && (currentSlide as any).media?.type === 'image' && (
+                          <img 
+                            src={(currentSlide as any).media.url} 
+                            alt="Obrázek k otázce"
+                            className="mt-4 max-w-full max-h-48 md:max-h-64 object-contain"
+                          />
+                        )}
+                      </div>
+                      {/* Right/Bottom: Bubbles + submit */}
+                      <div
+                        className="flex flex-col items-center justify-center"
+                        style={{
+                          flex: isMobile ? undefined : '0 0 45%',
+                          padding: isMobile ? '4px 8px 20px' : 24,
+                          gap: isMobile ? 12 : 16,
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: 'grid',
+                            gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(auto-fill, minmax(160px, 1fr))',
+                            gap: isMobile ? 8 : 16,
+                            width: '100%',
+                            justifyItems: 'center',
+                            overflow: 'visible',
+                          }}
+                        >
+                        {(currentSlide as ABCActivitySlide).options.map((option, idx) => {
+                          const bubbleColors = ['#93C5FD', '#7DD3FC', '#A5B4FC', '#BAE6FD', '#C7D2FE', '#E0F2FE'];
+                          const color = bubbleColors[idx % bubbleColors.length];
+                          const isSelected = selectedOption === option.id;
+                          const showResult = hasAnswered && shareData.settings.showActivityResults;
+                          const isCorrect = showResult && option.isCorrect;
+                          const wasSelected = currentResponse?.answer === option.id;
+                          const isWrong = showResult && wasSelected && !option.isCorrect;
+                          const optCount = (currentSlide as ABCActivitySlide).options.length;
+                          const size = isMobile ? 130 : (optCount <= 3 ? 180 : 150);
+                          const sr = (i: number, s: number) => { const v = Math.sin(i * 127.1 + s * 311.7) * 43758.5453; return v - Math.floor(v); };
+                          const rot = (sr(idx, 1) - 0.5) * (isMobile ? 14 : 28);
+                          const ox = (sr(idx, 2) - 0.5) * (isMobile ? 10 : 36);
+                          const oy = (sr(idx, 3) - 0.5) * (isMobile ? 10 : 36);
+                          const sj = 0.95 + sr(idx, 4) * 0.10;
+                          return (
+                            <button
+                              key={option.id}
+                              onClick={() => !hasAnswered && setSelectedOption(option.id)}
+                              disabled={hasAnswered}
+                              className="flex items-center justify-center font-bold transition-all"
+                              style={{
+                                width: size, height: size,
+                                borderRadius: (currentSlide as any).answerType === 'squares' ? (isMobile ? 20 : 28) : '50%',
+                                backgroundColor: isCorrect ? '#10B981' : isWrong ? '#EF4444' : color,
+                                color: (isCorrect || isWrong) ? '#fff' : '#1e3a5f',
+                                fontSize: isMobile ? 18 : (size > 150 ? 26 : 22),
+                                border: isSelected && !hasAnswered ? '4px solid #1e40af' : isCorrect ? '4px solid #059669' : isWrong ? '4px solid #DC2626' : '4px solid transparent',
+                                boxShadow: isSelected ? '0 6px 24px rgba(59,130,246,0.3)' : '0 3px 12px rgba(59,130,246,0.15)',
+                                transform: `translate(${ox}px, ${oy}px) rotate(${isSelected ? 0 : rot}deg) scale(${isSelected ? 1.1 : sj})`,
+                                lineHeight: 1.2, textAlign: 'center', padding: isMobile ? 10 : 12,
+                              }}
+                            >
+                              <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, transform: (currentSlide as any).answerType === 'squares' ? undefined : `rotate(${isSelected ? 0 : -rot}deg)` }}>
+                                <span style={{ fontSize: isMobile ? 11 : 13, fontWeight: 800, opacity: 0.5, letterSpacing: 1 }}>{String.fromCharCode(65 + idx)}</span>
+                                <MathText>{option.content || option.label}</MathText>
+                                {(isCorrect || isWrong) && <span style={{ fontSize: isMobile ? 18 : 22 }}>{isCorrect ? '✓' : '✗'}</span>}
+                              </span>
+                            </button>
+                          );
+                        })}
+                        </div>
+                        {!hasAnswered && (
+                          <button
+                            onClick={submitAnswer}
+                            disabled={!selectedOption}
+                            className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-white font-semibold disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                            style={{ backgroundColor: '#4F46E5', boxShadow: '0 6px 12px rgba(99,102,241,0.25)', fontSize: isMobile ? 15 : 18 }}
+                          >
+                            <Send className="w-4 h-4" />
+                            Odpovědět
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4 p-4 md:p-6 max-w-4xl mx-auto w-full">
                     {(currentSlide as ABCActivitySlide).options.map((option) => {
                       const isSelected = selectedOption === option.id;
@@ -1155,6 +1372,7 @@ export function QuizStudentView() {
                       );
                     })}
                   </div>
+                  )}
                   
                   {/* Show explanation/hint for ABC after answer */}
                   {shareData.settings.showSolutionHints && hasAnswered && (currentSlide as ABCActivitySlide).explanation && (
@@ -1171,20 +1389,26 @@ export function QuizStudentView() {
                 </>
               )}
               
-              {/* Open question or Example */}
-              {currentSlide.type === 'activity' && ((currentSlide as any).activityType === 'open' || (currentSlide as any).activityType === 'example') && (
+              {/* Example activity - shared component */}
+              {currentSlide.type === 'activity' && (currentSlide as any).activityType === 'example' && (
+                <ExampleActivityView
+                  slide={currentSlide as ExampleActivitySlide}
+                  textAnswer={textAnswer}
+                  setTextAnswer={setTextAnswer}
+                  hasAnswered={hasAnswered}
+                  response={currentResponse}
+                  showResults={shareData.settings.showActivityResults}
+                  showExplanation={shareData.settings.showSolutionHints}
+                  onSubmit={submitAnswer}
+                  customKeys={quiz?.settings?.customKeys}
+                  extraKeys={quiz?.settings?.extraKeys}
+                />
+              )}
+
+              {/* Open question (separate from example now) */}
+              {currentSlide.type === 'activity' && (currentSlide as any).activityType === 'open' && (
                 <div className="w-full max-w-2xl mx-auto px-6">
                   <div className="relative">
-                    {/* Math icon for Example only */}
-                    {(currentSlide as any).activityType === 'example' && !hasAnswered && (
-                      <button
-                        onClick={() => setShowMathKeyboard(true)}
-                        className="absolute left-3 top-1/2 -translate-y-1/2 p-2 rounded-lg text-indigo-600 hover:bg-indigo-50 z-10"
-                        title="Otevřít matematickou klávesnici"
-                      >
-                        <Calculator className="w-5 h-5" />
-                      </button>
-                    )}
                     <input
                       type="text"
                       value={hasAnswered ? (currentResponse?.answer as string) : textAnswer}
@@ -1193,7 +1417,6 @@ export function QuizStudentView() {
                       placeholder="Napište svou odpověď..."
                       className={`
                         w-full px-6 py-4 rounded-2xl border-2 text-xl text-center outline-none transition-all
-                        ${(currentSlide as any).activityType === 'example' && !hasAnswered ? 'pl-12' : ''}
                         ${hasAnswered && shareData.settings.showActivityResults
                           ? currentResponse?.isCorrect 
                             ? 'bg-green-50 border-green-500' 
@@ -1203,16 +1426,6 @@ export function QuizStudentView() {
                       `}
                     />
                   </div>
-                  
-                  {/* Math preview - only when typing */}
-                  {textAnswer.includes('$') && !hasAnswered && (
-                    <div className="mt-3 p-3 bg-slate-50 rounded-xl text-center">
-                      <span className="text-xs text-slate-400 block mb-1">Náhled:</span>
-                      <div className="text-lg text-[#4E5871]">
-                        <MathText>{textAnswer}</MathText>
-                      </div>
-                    </div>
-                  )}
                   
                   {hasAnswered && shareData.settings.showActivityResults && (
                     <div className="mt-4 flex items-center justify-center gap-2">
@@ -1226,9 +1439,7 @@ export function QuizStudentView() {
                           <XCircle className="w-6 h-6 text-red-500" />
                           <span className="text-red-600">
                             Správně: <MathText>
-                              {(currentSlide as any).activityType === 'example' 
-                                ? (currentSlide as ExampleActivitySlide).finalAnswer 
-                                : (currentSlide as OpenActivitySlide).correctAnswers?.[0] || ''}
+                              {(currentSlide as OpenActivitySlide).correctAnswers?.[0] || ''}
                             </MathText>
                           </span>
                         </>
@@ -1236,7 +1447,6 @@ export function QuizStudentView() {
                     </div>
                   )}
                   
-                  {/* Show explanation/hint for open question after answer */}
                   {shareData.settings.showSolutionHints && hasAnswered && (currentSlide as any).explanation && (
                     <div className="mt-4 p-4 rounded-xl bg-amber-50 border border-amber-200">
                       <div className="flex items-center gap-2 text-amber-700 font-medium mb-2">
@@ -1340,6 +1550,33 @@ export function QuizStudentView() {
                 </div>
               )}
               
+              {/* Form activity */}
+              {currentSlide.type === 'activity' && currentSlide.activityType === 'form' && (
+                <div className="flex-1 overflow-y-auto">
+                  <FormView 
+                    slide={currentSlide as any}
+                    answer={formAnswer}
+                    onAnswerChange={(answer) => {
+                      setFormAnswer(answer);
+                      setTextAnswer(JSON.stringify(answer));
+                    }}
+                    isReadOnly={false}
+                  />
+                </div>
+              )}
+
+              {/* Tools slide - Certificate */}
+              {currentSlide.type === 'tools' && (currentSlide as ToolsSlide).toolType === 'certificate' && (
+                <div className="flex-1 overflow-y-auto">
+                  <CertificateView 
+                    slide={currentSlide as ToolsSlide}
+                    quiz={quiz}
+                    formResponses={collectFormResponses()}
+                    isPreview={false}
+                  />
+                </div>
+              )}
+              
               {/* Legacy info slide (without block layout) */}
               {currentSlide.type === 'info' && (!(currentSlide as InfoSlide).layout || (currentSlide as InfoSlide).layout!.blocks.length === 0) && (
                 <div className="flex-1 flex items-center justify-center p-8">
@@ -1352,8 +1589,8 @@ export function QuizStudentView() {
                 </div>
               )}
               
-              {/* Submit button - only for activity slides (except board and voting which have their own buttons) */}
-              {currentSlide.type === 'activity' && currentSlide.activityType !== 'board' && currentSlide.activityType !== 'voting' && (
+              {/* Submit button - only for activity slides (except board, voting, example, and bubbles ABC which have their own buttons) */}
+              {currentSlide.type === 'activity' && currentSlide.activityType !== 'board' && currentSlide.activityType !== 'voting' && currentSlide.activityType !== 'example' && !((currentSlide as any).activityType === 'abc' && ((currentSlide as any).answerType === 'bubbles' || (currentSlide as any).answerType === 'squares')) && (
               <div className="flex justify-center py-6 md:py-10">
                 {!hasAnswered ? (
                   <button
@@ -1361,7 +1598,18 @@ export function QuizStudentView() {
                     onClick={submitAnswer}
                     disabled={
                       ((currentSlide as any).activityType === 'abc' && !selectedOption) ||
-                      ((currentSlide as any).activityType === 'open' && !textAnswer.trim())
+                      ((currentSlide as any).activityType === 'open' && !textAnswer.trim()) ||
+                      ((currentSlide as any).activityType === 'example' && !textAnswer.trim()) ||
+                      // Form: disabled if required fields are not filled
+                      ((currentSlide as any).activityType === 'form' && 
+                        ((currentSlide as any).fields || []).some((field: any) => 
+                          field.required && (
+                            !formAnswer[field.id] || 
+                            (Array.isArray(formAnswer[field.id]) && (formAnswer[field.id] as string[]).length === 0) ||
+                            (typeof formAnswer[field.id] === 'string' && !(formAnswer[field.id] as string).trim())
+                          )
+                        )
+                      )
                     }
                     className={`flex items-center gap-2 px-8 py-4 rounded-xl text-white font-semibold text-lg disabled:opacity-40 disabled:cursor-not-allowed transition-all ${showWiggle ? 'animate-wiggle' : ''}`}
                     style={{ 
@@ -1370,7 +1618,7 @@ export function QuizStudentView() {
                     }}
                   >
                     <Send className="w-5 h-5" />
-                    Odpovědět
+                    {currentSlide.activityType === 'form' ? 'Odeslat formulář' : 'Odpovědět'}
                   </button>
                 ) : currentSlideIndex < quiz.slides.length - 1 ? (
                   <button

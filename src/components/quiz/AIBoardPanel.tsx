@@ -77,6 +77,7 @@ const SUBJECTS = [
   { id: 'chemie', label: 'Chemie', color: '#ef4444' },
   { id: 'prirodopis', label: 'Přírodopis', color: '#22c55e' },
   { id: 'matematika', label: 'Matematika', color: '#3b82f6' },
+  { id: 'dejepis', label: 'Dějepis', color: '#d97706' },
 ];
 
 // Quick prompts for create mode
@@ -480,7 +481,7 @@ Vrať POUZE JSON pole se slidy, žádný další text.`;
           { role: 'system', content: systemPrompt },
           { role: 'user', content: prompt }
         ],
-        'gemini-2.0-flash',
+        'gemini-3-flash',
         { temperature: 0.7, max_tokens: 32000 }
       );
       

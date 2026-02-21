@@ -40,17 +40,26 @@ import {
   MessageSquare,
   Vote,
   Monitor,
+  Swords,
+  Crosshair,
 } from 'lucide-react';
 import { useDeviceDetect } from '../../hooks/useDeviceDetect';
-import { Quiz, QuizSlide, ABCActivitySlide, OpenActivitySlide, ExampleActivitySlide, BoardActivitySlide, VotingActivitySlide, ConnectPairsActivitySlide, FillBlanksActivitySlide, ImageHotspotsActivitySlide, VideoQuizActivitySlide, InfoSlide, LiveQuizSession, SlideResponse } from '../../types/quiz';
+import { Quiz, QuizSlide, ABCActivitySlide, OpenActivitySlide, ExampleActivitySlide, BoardActivitySlide, VotingActivitySlide, ConnectPairsActivitySlide, FillBlanksActivitySlide, ImageHotspotsActivitySlide, VideoQuizActivitySlide, InfoSlide, LiveQuizSession, SlideResponse, ToolsSlide } from '../../types/quiz';
 import { BoardSlideView } from './slides/BoardSlideView';
 import { VotingSlideView } from './slides/VotingSlideView';
 import { ConnectPairsView } from './slides/ConnectPairsView';
 import { FillBlanksView } from './slides/FillBlanksView';
 import { ImageHotspotsView } from './slides/ImageHotspotsView';
 import { VideoQuizView } from './slides/VideoQuizView';
+import { FormView } from './slides/FormView';
+import { CertificateView } from './slides/CertificateView';
 import { useBoardPosts } from '../../hooks/useBoardPosts';
 import { ShareEditDialog } from './ShareEditDialog';
+import ClassroomDashboard from './ClassroomDashboard';
+import CompetitionView from './CompetitionView';
+import TeamCompetitionView from './TeamCompetitionView';
+import DuelCompetitionView from './DuelCompetitionView';
+import TacticalCompetitionView from './TacticalCompetitionView';
 import { useVoting } from '../../hooks/useVoting';
 import { getQuiz, saveQuiz, duplicateQuiz, moveQuizToFolder } from '../../utils/quiz-storage';
 import * as storage from '../../utils/profile-storage';
@@ -59,6 +68,7 @@ import { ref, set, onValue, off, update } from 'firebase/database';
 import { boardToWorksheet, getConversionSummary } from '../../utils/content-converter';
 import { saveWorksheet } from '../../utils/worksheet-storage';
 import { MathText } from '../math/MathText';
+import { ExampleActivityView } from './ExampleActivityView';
 import { AutoScaleQuestion } from './AutoScaleQuestion';
 import { QRCodeSVG } from 'qrcode.react';
 import { BlockLayoutView } from './QuizPreview';
@@ -133,19 +143,61 @@ function ABCSlideView({ slide, showHint, showSolution, selectedAnswer, onSelectA
   const hasImage = !!slide.media?.url;
   const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
   const answerType = (slide as any).answerType;
+  const isBubblesMode = answerType === 'bubbles' || answerType === 'squares';
+  const isSquaresStyle = answerType === 'squares';
   const isSquareMode = answerType === 'image' || answerType === 'emoji';
   const optionCount = slide.options.length;
+  const bubbleColors = ['#93C5FD', '#7DD3FC', '#A5B4FC', '#BAE6FD', '#C7D2FE', '#E0F2FE'];
   
-  // Dynamic size based on option count: 2 options = large, 4+ = smaller
-  // Increased by 20% for better visibility
   const getSquareSize = () => {
     if (isMobile) return optionCount <= 2 ? '168px' : '120px';
     if (optionCount <= 2) return '240px';
     if (optionCount <= 3) return '192px';
     return '168px';
   };
+
+  const seeded = (i: number, salt: number) => {
+    const x = Math.sin(i * 127.1 + salt * 311.7) * 43758.5453;
+    return x - Math.floor(x);
+  };
+
+  const renderBubbleOption = (option: any, idx: number) => {
+    const isSelected = selectedAnswer === option.id;
+    const isCorrect = showSolution && option.isCorrect;
+    const isWrong = showSolution && isSelected && !option.isCorrect;
+    const color = bubbleColors[idx % bubbleColors.length];
+    const size = isMobile ? 130 : optionCount <= 3 ? 220 : 180;
+    const rotation = (seeded(idx, 1) - 0.5) * (isMobile ? 14 : 28);
+    const offsetX = (seeded(idx, 2) - 0.5) * (isMobile ? 10 : 40);
+    const offsetY = (seeded(idx, 3) - 0.5) * (isMobile ? 10 : 40);
+    const scaleJitter = 0.95 + seeded(idx, 4) * 0.10;
+    return (
+      <button
+        key={option.id}
+        onClick={() => onSelectAnswer?.(option.id)}
+        disabled={showSolution}
+        className="flex items-center justify-center font-bold transition-all"
+        style={{
+          width: size, height: size,
+          borderRadius: isSquaresStyle ? (isMobile ? 20 : 28) : '50%',
+          backgroundColor: isCorrect ? '#10B981' : isWrong ? '#EF4444' : color,
+          color: (isCorrect || isWrong) ? '#fff' : '#1e3a5f',
+          fontSize: isMobile ? 18 : size > 180 ? 32 : 26,
+          border: isSelected && !showSolution ? '4px solid #1e40af' : isCorrect ? '4px solid #059669' : isWrong ? '4px solid #DC2626' : '4px solid transparent',
+          boxShadow: isSelected ? '0 6px 24px rgba(59,130,246,0.3)' : '0 3px 12px rgba(59,130,246,0.15)',
+          transform: `translate(${offsetX}px, ${offsetY}px) rotate(${isSelected ? 0 : rotation}deg) scale(${isSelected ? 1.1 : scaleJitter})`,
+          lineHeight: 1.2, textAlign: 'center', padding: isMobile ? 10 : 12,
+        }}
+      >
+        <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, transform: isSquaresStyle ? undefined : `rotate(${isSelected ? 0 : -rotation}deg)` }}>
+          <span style={{ fontSize: isMobile ? 11 : 13, fontWeight: 800, opacity: 0.5, letterSpacing: 1 }}>{String.fromCharCode(65 + idx)}</span>
+          <MathText>{option.textContent || option.content || option.label}</MathText>
+          {(isCorrect || isWrong) && <span style={{ fontSize: isMobile ? 18 : 24 }}>{isCorrect ? '✓' : '✗'}</span>}
+        </span>
+      </button>
+    );
+  };
   
-  // Render option button
   const renderOption = (option: any) => {
     const isSelected = selectedAnswer === option.id;
     const isCorrect = showSolution && option.isCorrect;
@@ -233,6 +285,72 @@ function ABCSlideView({ slide, showHint, showSolution, selectedAnswer, onSelectA
     );
   };
 
+  // Bubbles layout - two-column (question left, bubbles right)
+  if (isBubblesMode) {
+    return (
+      <div className={isMobile ? "flex flex-col h-full p-4 overflow-auto" : "flex h-full p-6 gap-6"}>
+        {/* Left/Top: Question + Image (identical to regular ABC) */}
+        {isMobile ? (
+          <>
+            <div className="flex-1 flex items-center justify-center py-6 px-2">
+              <h1 className="text-2xl font-bold leading-relaxed text-center" style={{ color: 'inherit' }}>
+                <MathText>{slide.question || ''}</MathText>
+              </h1>
+            </div>
+            {hasImage && (
+              <div className="flex justify-center py-4">
+                <img src={slide.media!.url} alt="" className="max-w-full max-h-40 object-contain" />
+              </div>
+            )}
+          </>
+        ) : hasImage ? (
+          <div className="flex-1 flex flex-col">
+            <div className="flex items-center justify-center p-4" style={{ height: '50%' }}>
+              <h1 className="text-3xl md:text-4xl font-bold text-center leading-tight" style={{ color: 'inherit' }}>
+                <MathText>{slide.question || ''}</MathText>
+              </h1>
+            </div>
+            <div className="flex items-center justify-center" style={{ height: '50%' }}>
+              <img src={slide.media!.url} alt="" className="max-w-full max-h-full object-contain" />
+            </div>
+          </div>
+        ) : (
+          <div className="flex-1 flex items-center justify-center p-6">
+            <AutoScaleQuestion targetFill={0.85} maxFontSize={150}>{slide.question || ''}</AutoScaleQuestion>
+          </div>
+        )}
+        {/* Right/Bottom: Bubbles */}
+        <div
+          className="flex flex-col items-center justify-center"
+          style={{
+            flex: isMobile ? undefined : '0 0 45%',
+            minHeight: isMobile ? undefined : '100%',
+            gap: isMobile ? 6 : 20,
+            padding: isMobile ? '4px 8px 16px' : 24,
+          }}
+        >
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(auto-fill, minmax(180px, 1fr))',
+              gap: isMobile ? 8 : 20,
+              width: '100%',
+              justifyItems: 'center',
+              overflow: 'visible',
+            }}
+          >
+            {slide.options.map((opt, i) => renderBubbleOption(opt, i))}
+          </div>
+        </div>
+        {showSolution && slide.explanation && (
+          <div className="absolute bottom-4 left-4 right-4 p-3 rounded-xl bg-blue-50 border border-blue-200">
+            <p className="text-sm text-blue-800"><MathText>{slide.explanation}</MathText></p>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   // Mobile layout - always vertical
   if (isMobile) {
     return (
@@ -250,12 +368,16 @@ function ABCSlideView({ slide, showHint, showSolution, selectedAnswer, onSelectA
             <img 
               src={slide.media!.url} 
               alt="Obrázek k otázce"
-              className="max-w-full max-h-40 object-contain rounded-xl shadow-lg"
+              className="max-w-full max-h-40 object-contain"
+              onError={(e) => {
+                // Hide broken images
+                (e.target as HTMLImageElement).style.display = 'none';
+              }}
             />
           </div>
         )}
         
-        {/* Options - mobile: vertical for text, 2x2 for image/emoji */}
+        {/* Options */}
         <div className={isSquareMode ? 'grid grid-cols-2 gap-2 pb-4' : 'flex flex-col gap-2 pb-4'}>
           {slide.options.map(renderOption)}
         </div>
@@ -288,14 +410,17 @@ function ABCSlideView({ slide, showHint, showSolution, selectedAnswer, onSelectA
             <img 
               src={slide.media!.url} 
               alt="Obrázek k otázce"
-              className="max-w-full max-h-full object-contain rounded-2xl shadow-lg"
+              className="max-w-full max-h-full object-contain"
+              onError={(e) => {
+                (e.target as HTMLImageElement).style.display = 'none';
+              }}
             />
           </div>
         </div>
         
         {/* Right side - Options */}
-        <div className={isSquareMode 
-          ? 'flex-shrink-0 flex flex-wrap gap-3 justify-center items-center' 
+        <div className={isSquareMode
+          ? 'flex-shrink-0 flex flex-wrap gap-3 justify-center items-center'
           : 'w-80 flex-shrink-0 flex flex-col gap-3 justify-center'
         }>
           {slide.options.map(renderOption)}
@@ -311,18 +436,16 @@ function ABCSlideView({ slide, showHint, showSolution, selectedAnswer, onSelectA
     );
   }
 
-  // Desktop layout WITHOUT image: Question on top (65%), Options below (35%)
+  // Desktop layout WITHOUT image
   return (
     <div className="flex flex-col h-full">
-      {/* Question - takes 65% of height for maximum visibility on projector */}
       <div className="flex items-center justify-center p-6" style={{ height: '65%' }}>
         <AutoScaleQuestion targetFill={0.85} maxFontSize={150}>{slide.question || ''}</AutoScaleQuestion>
       </div>
       
-      {/* Options - row for image/emoji on desktop, 2x2 for text */}
       <div className="flex-1 flex items-end pb-6">
-        <div className={isSquareMode 
-          ? 'flex gap-4 px-6 justify-center mx-auto' 
+        <div className={isSquareMode
+          ? 'flex gap-4 px-6 justify-center mx-auto'
           : 'grid grid-cols-2 gap-4 px-6 max-w-4xl mx-auto w-full'
         }>
           {slide.options.map(renderOption)}
@@ -342,8 +465,11 @@ function ABCSlideView({ slide, showHint, showSolution, selectedAnswer, onSelectA
 function OpenSlideView({ slide }: { slide: OpenActivitySlide }) {
   return (
     <div className="flex flex-col h-full items-center justify-center p-8">
-      <h1 className="text-4xl md:text-5xl font-bold text-[#4E5871] text-center leading-tight mb-4">
-        {slide.question || 'Otevřená otázka...'}
+      <h1 
+        className="text-4xl md:text-5xl font-bold text-center leading-tight mb-8"
+        style={{ overflowWrap: 'normal', wordBreak: 'normal', hyphens: 'none', color: '#4E5871' }}
+      >
+        <MathText>{slide.question || 'Otevřená otázka...'}</MathText>
       </h1>
       
       {/* Question image */}
@@ -351,7 +477,10 @@ function OpenSlideView({ slide }: { slide: OpenActivitySlide }) {
         <img 
           src={slide.media.url} 
           alt="Obrázek k otázce"
-          className="mb-6 max-w-full max-h-48 md:max-h-64 rounded-xl shadow-lg object-contain"
+          className="mb-6 max-w-full max-h-48 md:max-h-64 object-contain"
+          onError={(e) => {
+            (e.target as HTMLImageElement).style.display = 'none';
+          }}
         />
       )}
       
@@ -365,66 +494,45 @@ function OpenSlideView({ slide }: { slide: OpenActivitySlide }) {
   );
 }
 
-function ExampleSlideView({ slide }: { slide: ExampleActivitySlide }) {
-  const [currentStep, setCurrentStep] = useState(0);
-  
+/** Teacher-facing wrapper for ExampleActivityView with local answer state */
+function TeacherExampleView({ slide, customKeys, extraKeys }: { slide: ExampleActivitySlide; customKeys?: [import('../../types/quiz').CustomKeyboardKey | null, import('../../types/quiz').CustomKeyboardKey | null, import('../../types/quiz').CustomKeyboardKey | null]; extraKeys?: [import('../../types/quiz').CustomKeyboardKey | null, import('../../types/quiz').CustomKeyboardKey | null, import('../../types/quiz').CustomKeyboardKey | null] }) {
+  const [textAnswer, setTextAnswer] = useState('');
+  const [hasAnswered, setHasAnswered] = useState(false);
+  const [response, setResponse] = useState<SlideResponse | null>(null);
+
+  const handleSubmit = useCallback(() => {
+    const studentAns = textAnswer.trim().toLowerCase();
+    const allCorrect = [
+      ...(slide.finalAnswer ? [slide.finalAnswer] : []),
+      ...((slide as any).alternativeAnswers || []).filter(Boolean),
+    ];
+    const isCorrect = allCorrect.length > 0
+      ? allCorrect.some((a: string) => a.trim().toLowerCase() === studentAns)
+      : false;
+    setResponse({
+      visitorId: 'teacher',
+      visitorName: 'Učitel',
+      slideId: slide.id,
+      answer: textAnswer,
+      isCorrect,
+      timestamp: Date.now(),
+    });
+    setHasAnswered(true);
+  }, [textAnswer, slide]);
+
   return (
-    <div className="flex flex-col h-full p-8">
-      <h1 className="text-3xl font-bold text-[#4E5871] mb-6">
-        {slide.title || 'Příklad'}
-      </h1>
-      
-      <div className="bg-white rounded-xl p-6 shadow-sm mb-6">
-        <h2 className="text-lg font-medium text-slate-600 mb-2">Zadání</h2>
-        <p className="text-xl text-[#4E5871]">{slide.problem}</p>
-      </div>
-      
-      {slide.steps.length > 0 && (
-        <div className="flex-1">
-          <div className="flex items-center gap-4 mb-4">
-            <span className="text-sm font-medium text-slate-500">
-              Krok {currentStep + 1} z {slide.steps.length}
-            </span>
-            <div className="flex-1 h-2 bg-slate-200 rounded-full overflow-hidden">
-              <div 
-                className="h-full bg-indigo-500 transition-all"
-                style={{ width: `${((currentStep + 1) / slide.steps.length) * 100}%` }}
-              />
-            </div>
-          </div>
-          
-          <div className="bg-indigo-50 rounded-xl p-6 min-h-[200px]">
-            <p className="text-lg text-[#4E5871]">
-              {slide.steps[currentStep]?.content || ''}
-            </p>
-          </div>
-          
-          <div className="flex justify-between mt-4">
-            <button
-              onClick={() => setCurrentStep(Math.max(0, currentStep - 1))}
-              disabled={currentStep === 0}
-              className="px-4 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 disabled:opacity-50"
-            >
-              Předchozí krok
-            </button>
-            <button
-              onClick={() => setCurrentStep(Math.min(slide.steps.length - 1, currentStep + 1))}
-              disabled={currentStep === slide.steps.length - 1}
-              className="px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
-            >
-              Další krok
-            </button>
-          </div>
-        </div>
-      )}
-      
-      {slide.finalAnswer && (
-        <div className="bg-emerald-50 rounded-xl p-6 mt-4">
-          <h3 className="text-sm font-medium text-emerald-600 mb-2">Výsledek</h3>
-          <p className="text-xl font-bold text-emerald-800">{slide.finalAnswer}</p>
-        </div>
-      )}
-    </div>
+    <ExampleActivityView
+      slide={slide}
+      textAnswer={textAnswer}
+      setTextAnswer={setTextAnswer}
+      hasAnswered={hasAnswered}
+      response={response}
+      showResults={hasAnswered}
+      showExplanation={true}
+      onSubmit={handleSubmit}
+      customKeys={customKeys}
+      extraKeys={extraKeys}
+    />
   );
 }
 
@@ -440,22 +548,22 @@ function InfoSlideView({ slide }: { slide: InfoSlide }) {
 
   // Fallback to legacy format
   return (
-    <div className="flex flex-col h-full items-center justify-center p-8">
+    <div className="flex flex-col flex-1 h-full p-8">
       {slide.title && (
-        <h1 className="text-4xl md:text-5xl font-bold text-[#4E5871] text-center leading-tight mb-6">
-          {slide.title}
+        <h1 className="text-3xl md:text-4xl font-bold mb-6" style={{ color: '#4E5871' }}>
+          <MathText>{slide.title}</MathText>
         </h1>
       )}
       {slide.content && (
         <div 
-          className="prose prose-lg max-w-3xl text-center"
+          className="prose prose-lg max-w-none flex-1"
           dangerouslySetInnerHTML={{ __html: slide.content }}
         />
       )}
       {slide.media && (
         <div className="mt-8">
           {slide.media.type === 'image' && (
-            <img src={slide.media.url} alt={slide.media.caption || ''} className="max-h-96 rounded-xl" />
+            <img src={slide.media.url} alt={slide.media.caption || ''} className="max-h-96 object-contain" />
           )}
         </div>
       )}
@@ -482,6 +590,7 @@ export function QuizViewPage() {
   const [prevSlideIndex, setPrevSlideIndex] = useState(0);
   const [showMenu, setShowMenu] = useState(false);
   const [showStudentOptions, setShowStudentOptions] = useState(false);
+  const [showCompetitionPicker, setShowCompetitionPicker] = useState(false);
   const [showShareSettings, setShowShareSettings] = useState(false);
   const [loading, setLoading] = useState(true);
   const [isAnimating, setIsAnimating] = useState(false);
@@ -502,6 +611,7 @@ export function QuizViewPage() {
   const [showLiveSettings, setShowLiveSettings] = useState(false);
   const [showQRPopup, setShowQRPopup] = useState<'qr' | 'code' | null>(null);
   const [showModeDropdown, setShowModeDropdown] = useState(false);
+  const [formPreviewAnswer, setFormPreviewAnswer] = useState<Record<string, string | string[]>>({});
   
   // Live session settings
   const [liveShowSolutionHints, setLiveShowSolutionHints] = useState(true);
@@ -519,6 +629,19 @@ export function QuizViewPage() {
   const [requireAnswerToProgress, setRequireAnswerToProgress] = useState(false);
   const [showNotes, setShowNotes] = useState(false);
   const [shareLink, setShareLink] = useState<string | null>(null);
+  
+  // Classroom mode state
+  const [classroomShareId, setClassroomShareId] = useState<string | null>(null);
+  const [classroomShareCode, setClassroomShareCode] = useState<string | null>(null);
+  const [classroomShareLink, setClassroomShareLink] = useState<string | null>(null);
+  const [classroomStudents, setClassroomStudents] = useState<Record<string, any>>({});
+  const [classroomStarted, setClassroomStarted] = useState(false);
+  
+  // Competition mode
+  const [competitionActive, setCompetitionActive] = useState(false);
+  const [teamCompetitionActive, setTeamCompetitionActive] = useState(false);
+  const [duelCompetitionActive, setDuelCompetitionActive] = useState(false);
+  const [tacticalCompetitionActive, setTacticalCompetitionActive] = useState(false);
   
   // Share edit dialog
   const [showShareEditDialog, setShowShareEditDialog] = useState(false);
@@ -765,6 +888,209 @@ export function QuizViewPage() {
     }
   }, [quiz, profile, currentSlideIndex, isStartingSession]);
   
+  // Start competition session
+  const startCompetition = useCallback(async () => {
+    if (isStartingSession || !quiz) return;
+    setIsStartingSession(true);
+    
+    const code = generateSessionCode();
+    const newSessionId = `quiz_${code}_${Date.now()}`;
+    
+    const sessionData: LiveQuizSession = {
+      id: newSessionId,
+      quizId: quiz.id,
+      code: code,
+      teacherId: profile?.userId || 'anonymous',
+      teacherName: (profile as any)?.firstName || profile?.name || 'Učitel',
+      isActive: true,
+      currentSlideIndex: 0,
+      mode: 'competition',
+      isPaused: false,
+      showResults: false,
+      isLocked: true,
+      competitionPhase: 'lobby',
+      competitionData: {
+        currentQuestionIndex: 0,
+        questionSlideIds: quiz.slides.filter(s => s.type === 'activity').map(s => s.id),
+        timerDuration: 45,
+        timerPaused: false,
+        evaluated: false,
+        scores: {},
+      },
+      students: {},
+      createdAt: new Date().toISOString(),
+      settings: {
+        showSolutionHints: false,
+      },
+    };
+    
+    try {
+      await set(ref(database, getSessionPath(newSessionId)), sessionData);
+      await set(ref(database, `${QUIZ_SESSIONS_PATH}/${newSessionId}/quizData`), {
+        id: quiz.id,
+        title: quiz.title,
+        slides: quiz.slides,
+      });
+      await set(ref(database, `session_codes/${code}`), newSessionId);
+      
+      setSessionId(newSessionId);
+      setSessionCode(code);
+      setSession(sessionData);
+      setCompetitionActive(true);
+      setShowStudentOptions(false);
+    } catch (error) {
+      console.error('Failed to start competition:', error);
+    } finally {
+      setIsStartingSession(false);
+    }
+  }, [quiz, profile, isStartingSession]);
+  
+  // End competition
+  const endCompetition = useCallback(() => {
+    if (sessionId) {
+      update(ref(database, getSessionPath(sessionId)), { isActive: false, endedAt: new Date().toISOString() });
+    }
+    setCompetitionActive(false);
+    setSessionId(null);
+    setSessionCode(null);
+    setSession(null);
+  }, [sessionId]);
+
+  // Start team competition session
+  const startTeamCompetition = useCallback(async () => {
+    if (isStartingSession || !quiz) return;
+    setIsStartingSession(true);
+
+    const code = generateSessionCode();
+    const newSessionId = `quiz_${code}_${Date.now()}`;
+
+    const sessionData: LiveQuizSession = {
+      id: newSessionId,
+      quizId: quiz.id,
+      code: code,
+      teacherId: profile?.userId || 'anonymous',
+      teacherName: (profile as any)?.firstName || profile?.name || 'Učitel',
+      isActive: true,
+      currentSlideIndex: 0,
+      mode: 'team-competition',
+      competitionPhase: 'lobby',
+      isPaused: false,
+      showResults: false,
+      isLocked: true,
+      quizData: { id: quiz.id, title: quiz.title, slides: quiz.slides },
+      createdAt: new Date().toISOString(),
+    };
+
+    await set(ref(database, getSessionPath(newSessionId)), sessionData);
+    await set(ref(database, `session_codes/${code}`), newSessionId);
+
+    setSessionId(newSessionId);
+    setSessionCode(code);
+    setTeamCompetitionActive(true);
+    setIsStartingSession(false);
+  }, [quiz, profile, isStartingSession]);
+
+  // End team competition
+  const endTeamCompetition = useCallback(() => {
+    if (sessionId) {
+      update(ref(database, getSessionPath(sessionId)), { isActive: false, endedAt: new Date().toISOString() });
+    }
+    setTeamCompetitionActive(false);
+    setSessionId(null);
+    setSessionCode(null);
+    setSession(null);
+  }, [sessionId]);
+
+  // Start duel competition
+  const startDuelCompetition = useCallback(async () => {
+    if (isStartingSession || !quiz) return;
+    setIsStartingSession(true);
+
+    const code = generateSessionCode();
+    const newSessionId = `quiz_${code}_${Date.now()}`;
+
+    const sessionData: LiveQuizSession = {
+      id: newSessionId,
+      quizId: quiz.id,
+      code: code,
+      teacherId: profile?.userId || 'anonymous',
+      teacherName: (profile as any)?.firstName || profile?.name || 'Učitel',
+      isActive: true,
+      currentSlideIndex: 0,
+      mode: 'duel-competition',
+      competitionPhase: 'lobby',
+      isPaused: false,
+      showResults: false,
+      isLocked: true,
+      quizData: { id: quiz.id, title: quiz.title, slides: quiz.slides },
+      createdAt: new Date().toISOString(),
+    };
+
+    await set(ref(database, getSessionPath(newSessionId)), sessionData);
+    await set(ref(database, `session_codes/${code}`), newSessionId);
+
+    setSessionId(newSessionId);
+    setSessionCode(code);
+    setDuelCompetitionActive(true);
+    setIsStartingSession(false);
+  }, [quiz, profile, isStartingSession]);
+
+  // End duel competition
+  const endDuelCompetition = useCallback(() => {
+    if (sessionId) {
+      update(ref(database, getSessionPath(sessionId)), { isActive: false, endedAt: new Date().toISOString() });
+    }
+    setDuelCompetitionActive(false);
+    setSessionId(null);
+    setSessionCode(null);
+    setSession(null);
+  }, [sessionId]);
+
+  // Start tactical competition
+  const startTacticalCompetition = useCallback(async () => {
+    if (isStartingSession || !quiz) return;
+    setIsStartingSession(true);
+
+    const code = generateSessionCode();
+    const newSessionId = `quiz_${code}_${Date.now()}`;
+
+    const sessionData: LiveQuizSession = {
+      id: newSessionId,
+      quizId: quiz.id,
+      code: code,
+      teacherId: profile?.userId || 'anonymous',
+      teacherName: (profile as any)?.firstName || profile?.name || 'Učitel',
+      isActive: true,
+      currentSlideIndex: 0,
+      mode: 'tactical-competition',
+      competitionPhase: 'lobby',
+      isPaused: false,
+      showResults: false,
+      isLocked: true,
+      quizData: { id: quiz.id, title: quiz.title, slides: quiz.slides },
+      createdAt: new Date().toISOString(),
+    };
+
+    await set(ref(database, getSessionPath(newSessionId)), sessionData);
+    await set(ref(database, `session_codes/${code}`), newSessionId);
+
+    setSessionId(newSessionId);
+    setSessionCode(code);
+    setTacticalCompetitionActive(true);
+    setIsStartingSession(false);
+  }, [quiz, profile, isStartingSession]);
+
+  // End tactical competition
+  const endTacticalCompetition = useCallback(() => {
+    if (sessionId) {
+      update(ref(database, getSessionPath(sessionId)), { isActive: false, endedAt: new Date().toISOString() });
+    }
+    setTacticalCompetitionActive(false);
+    setSessionId(null);
+    setSessionCode(null);
+    setSession(null);
+  }, [sessionId]);
+  
   // Listen to session updates
   useEffect(() => {
     if (!sessionId) return;
@@ -934,9 +1260,243 @@ export function QuizViewPage() {
     }
   };
   
+  // Start classroom session (Zadat ve výuce)
+  const startClassroomSession = async () => {
+    const shareCode = generateShareCode();
+    const shareId = `share_${shareCode}_${Date.now()}`;
+    
+    const shareData = {
+      id: shareId,
+      quizId: quiz.id,
+      quizData: quiz,
+      sessionName: quiz.title || 'Výuka',
+      shareCode,
+      mode: 'classroom',
+      settings: {
+        anonymousAccess: false,
+        showSolutionHints: true,
+        showActivityResults: true,
+        requireAnswerToProgress: false,
+        showNotes: false,
+      },
+      createdAt: new Date().toISOString(),
+      createdBy: profile?.userId || 'anonymous',
+      responses: {},
+    };
+    
+    try {
+      const shareRef = ref(database, `quiz_shares/${shareId}`);
+      await set(shareRef, shareData);
+      
+      const baseUrl = import.meta.env.BASE_URL || '/';
+      const link = `${window.location.origin}${baseUrl}quiz/student/${shareId}`;
+      
+      setClassroomShareId(shareId);
+      setClassroomShareCode(shareCode);
+      setClassroomShareLink(link);
+      setShowStudentOptions(false);
+      setShowRightPanel(true);
+      
+      // Subscribe to student updates in real-time
+      const responsesRef = ref(database, `quiz_shares/${shareId}/responses`);
+      onValue(responsesRef, (snapshot) => {
+        const data = snapshot.val();
+        setClassroomStudents(data || {});
+      });
+    } catch (error) {
+      console.error('Error creating classroom session:', error);
+    }
+  };
+  
+  // Begin classroom (teacher clicks "Zahájit" — students can now proceed)
+  const beginClassroom = async () => {
+    if (!classroomShareId) return;
+    try {
+      await update(ref(database, `quiz_shares/${classroomShareId}`), {
+        startedAt: new Date().toISOString(),
+      });
+      setClassroomStarted(true);
+    } catch (error) {
+      console.error('Error starting classroom:', error);
+    }
+  };
+  
+  // End classroom session
+  const endClassroomSession = () => {
+    if (classroomShareId) {
+      const responsesRef = ref(database, `quiz_shares/${classroomShareId}/responses`);
+      off(responsesRef);
+    }
+    setClassroomShareId(null);
+    setClassroomShareCode(null);
+    setClassroomShareLink(null);
+    setClassroomStudents({});
+    setClassroomStarted(false);
+  };
+  
   
   // Render the right panel content
   const renderRightPanel = () => {
+    // Active classroom session panel
+    if (classroomShareId) {
+      const classroomOnline = Object.values(classroomStudents).filter((s: any) => s.isOnline);
+      const classroomCompleted = Object.values(classroomStudents).filter((s: any) => s.completedAt);
+      const classroomDistracted = Object.values(classroomStudents).filter((s: any) => s.isOnline && s.isFocused === false);
+      const classroomTotal = Object.keys(classroomStudents).length;
+      const classroomJoinLink = classroomShareLink || '';
+      
+      // --- LOBBY (before teacher starts) ---
+      if (!classroomStarted) {
+        return (
+          <div className="flex flex-col h-full text-white" style={{ backgroundColor: '#1e2533' }}>
+            {/* Header */}
+            <div className="px-4 py-3" style={{ borderBottom: '1px solid #334155' }}>
+              <div className="flex items-center gap-3 p-3 rounded-xl" style={{ backgroundColor: '#334155' }}>
+                <Users className="w-5 h-5" style={{ color: '#94a3b8' }} />
+                <div className="text-left">
+                  <p className="text-xs" style={{ color: '#64748b' }}>Režim:</p>
+                  <p className="text-sm font-medium" style={{ color: '#ffffff' }}>Zadáno ve výuce</p>
+                </div>
+              </div>
+            </div>
+            
+            {/* Joining students list — only content in lobby panel */}
+            <div className="flex-1 overflow-y-auto p-4">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2" style={{ color: '#94a3b8' }}>
+                  <Users className="w-4 h-4" />
+                  <span className="text-sm">Připojení studenti</span>
+                </div>
+                <span className="font-bold" style={{ color: '#ffffff' }}>{classroomTotal}</span>
+              </div>
+              
+              {classroomTotal === 0 ? (
+                <div className="text-center py-8" style={{ color: '#64748b' }}>
+                  <Users className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                  <p className="text-sm">Čekám na studenty...</p>
+                </div>
+              ) : (
+                <div className="space-y-1.5">
+                  {Object.values(classroomStudents).map((s: any, i: number) => (
+                    <div key={i} className="flex items-center gap-2 px-3 py-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
+                      <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 flex-shrink-0" />
+                      <span className="text-sm text-white truncate">{s.studentName || 'Student'}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            
+            {/* Cancel only */}
+            <div className="p-4" style={{ borderTop: '1px solid #334155' }}>
+              <button
+                onClick={endClassroomSession}
+                className="w-full py-2 rounded-xl text-sm text-red-300 hover:bg-red-500/20 hover:text-red-200 transition-colors"
+              >
+                Zrušit
+              </button>
+            </div>
+          </div>
+        );
+      }
+      
+      // --- STARTED (dashboard mode) ---
+      return (
+        <div className="flex flex-col h-full text-white" style={{ backgroundColor: '#1e2533' }}>
+          {/* Header */}
+          <div className="px-4 py-3" style={{ borderBottom: '1px solid #334155' }}>
+            <div className="flex items-center gap-3 p-3 rounded-xl" style={{ backgroundColor: '#334155' }}>
+              <Users className="w-5 h-5" style={{ color: '#94a3b8' }} />
+              <div className="text-left">
+                <p className="text-xs" style={{ color: '#64748b' }}>Režim:</p>
+                <p className="text-sm font-medium" style={{ color: '#ffffff' }}>Zadáno ve výuce</p>
+              </div>
+            </div>
+          </div>
+          
+          {/* Code + QR */}
+          <div className="p-4" style={{ borderBottom: '1px solid #334155' }}>
+            <div className="text-center mb-3">
+              <span className="text-white/70 text-xl">Kód: </span>
+              <span className="text-yellow-400 text-xl font-bold tracking-wider">{classroomShareCode}</span>
+            </div>
+            <div 
+              className="flex justify-center mb-3 cursor-pointer transition-all group"
+              onClick={() => setShowQRPopup('qr')}
+            >
+              <div className="bg-white p-3 rounded-xl transition-all group-hover:ring-4 group-hover:ring-orange-400">
+                <QRCodeSVG value={classroomJoinLink} size={180} level="M" />
+              </div>
+            </div>
+            <div className="flex justify-center">
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(classroomJoinLink);
+                  setCopied(true);
+                  setTimeout(() => setCopied(false), 2000);
+                }}
+                className="py-2 px-3 rounded-lg transition-colors flex items-center justify-center gap-2 text-sm font-medium hover:opacity-90"
+                style={{ backgroundColor: '#f59e0b', color: '#1e293b', width: '206px' }}
+              >
+                {copied ? (
+                  <><CheckCircle className="w-4 h-4" /><span>Zkopírováno!</span></>
+                ) : (
+                  <><Copy className="w-4 h-4" /><span>Kopírovat odkaz</span></>
+                )}
+              </button>
+            </div>
+          </div>
+          
+          {/* Stats summary */}
+          <div className="p-4 flex-1">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2" style={{ color: '#94a3b8' }}>
+                <Users className="w-4 h-4" />
+                <span className="text-sm">Připojení studenti</span>
+              </div>
+              <span className="font-bold" style={{ color: '#ffffff' }}>{classroomTotal}</span>
+            </div>
+            
+            <div className="rounded-xl p-3" style={{ backgroundColor: '#334155' }}>
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-xs flex items-center gap-1.5" style={{ color: '#94a3b8' }}>
+                  <div className="w-2 h-2 rounded-full bg-emerald-400" />
+                  Online
+                </span>
+                <span className="text-xs font-bold text-emerald-400">{classroomOnline.length}</span>
+              </div>
+              {classroomDistracted.length > 0 && (
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-xs flex items-center gap-1.5" style={{ color: '#94a3b8' }}>
+                    <div className="w-2 h-2 rounded-full bg-amber-400" />
+                    Rozptýlení
+                  </span>
+                  <span className="text-xs font-bold text-amber-400">{classroomDistracted.length}</span>
+                </div>
+              )}
+              <div className="flex items-center justify-between">
+                <span className="text-xs flex items-center gap-1.5" style={{ color: '#94a3b8' }}>
+                  <div className="w-2 h-2 rounded-full bg-blue-400" />
+                  Dokončili
+                </span>
+                <span className="text-xs font-bold text-blue-400">{classroomCompleted.length}</span>
+              </div>
+            </div>
+          </div>
+          
+          {/* End button */}
+          <div className="p-4" style={{ borderTop: '1px solid #334155' }}>
+            <button
+              onClick={endClassroomSession}
+              className="w-full py-3 rounded-xl font-semibold text-red-300 hover:bg-red-500/20 hover:text-red-200 transition-colors border border-red-500/30"
+            >
+              Ukončit výuku
+            </button>
+          </div>
+        </div>
+      );
+    }
+    
     // Active live session panel
     if (sessionId && sessionCode) {
       return (
@@ -998,13 +1558,43 @@ export function QuizViewPage() {
                   </button>
                   <button
                     onClick={() => {
-                      // TODO: Competition mode
+                      startCompetition();
                       setShowModeDropdown(false);
                     }}
                     className="w-full flex items-center gap-3 p-3 text-left hover:bg-slate-600/50 transition-colors"
                   >
                     <BarChart2 className="w-4 h-4" style={{ color: '#94a3b8' }} />
                     <span className="text-sm text-white">Soutěž</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      startTeamCompetition();
+                      setShowModeDropdown(false);
+                    }}
+                    className="w-full flex items-center gap-3 p-3 text-left hover:bg-slate-600/50 transition-colors"
+                  >
+                    <Users className="w-4 h-4" style={{ color: '#94a3b8' }} />
+                    <span className="text-sm text-white">Týmová soutěž</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      startDuelCompetition();
+                      setShowModeDropdown(false);
+                    }}
+                    className="w-full flex items-center gap-3 p-3 text-left hover:bg-slate-600/50 transition-colors"
+                  >
+                    <Swords className="w-4 h-4" style={{ color: '#94a3b8' }} />
+                    <span className="text-sm text-white">Duely</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      startTacticalCompetition();
+                      setShowModeDropdown(false);
+                    }}
+                    className="w-full flex items-center gap-3 p-3 text-left hover:bg-slate-600/50 transition-colors"
+                  >
+                    <Crosshair className="w-4 h-4" style={{ color: '#94a3b8' }} />
+                    <span className="text-sm text-white">Taktik</span>
                   </button>
                   <button
                     onClick={() => {
@@ -1531,6 +2121,108 @@ export function QuizViewPage() {
       );
     }
     
+    // Competition mode picker panel
+    if (showCompetitionPicker) {
+      return (
+        <div className="flex flex-col h-full text-white" style={{ backgroundColor: '#1e2533' }}>
+          <div className="p-6">
+            <button 
+              onClick={() => setShowCompetitionPicker(false)}
+              className="flex items-center gap-2 text-white/70 hover:text-white mb-4"
+            >
+              <ArrowLeft className="w-5 h-5" />
+            </button>
+            <h2 className="text-xl font-bold text-white text-center leading-snug">
+              Vyberte soutěžní mód:
+            </h2>
+          </div>
+          
+          <div className="flex-1 px-5">
+            <div className="grid grid-cols-1 gap-3">
+              {/* Classic competition */}
+              <button 
+                onClick={() => {
+                  setShowCompetitionPicker(false);
+                  startCompetition();
+                }}
+                className="flex items-center gap-4 p-5 rounded-2xl transition-all hover:scale-[1.02] active:scale-[0.98]"
+                style={{ backgroundColor: '#4eebc0' }}
+              >
+                <div className="w-14 h-14 flex items-center justify-center flex-shrink-0">
+                  <svg viewBox="0 0 64 64" className="w-full h-full">
+                    <polygon points="32,8 38,24 56,24 42,34 47,50 32,40 17,50 22,34 8,24 26,24" fill="#4E5871" opacity="0.8" />
+                  </svg>
+                </div>
+                <div className="text-left">
+                  <span className="text-lg font-bold text-slate-800 block">Soutěž</span>
+                  <span className="text-sm text-slate-600">Každý sám za sebe</span>
+                </div>
+              </button>
+
+              {/* Team competition */}
+              <button 
+                onClick={() => {
+                  setShowCompetitionPicker(false);
+                  startTeamCompetition();
+                }}
+                className="flex items-center gap-4 p-5 rounded-2xl transition-all hover:scale-[1.02] active:scale-[0.98]"
+                style={{ backgroundColor: '#a78bfa' }}
+              >
+                <div className="w-14 h-14 flex items-center justify-center flex-shrink-0">
+                  <svg viewBox="0 0 64 64" className="w-full h-full">
+                    <circle cx="20" cy="20" r="8" fill="#fff" opacity="0.8" />
+                    <circle cx="44" cy="20" r="8" fill="#fff" opacity="0.8" />
+                    <circle cx="20" cy="44" r="8" fill="#fff" opacity="0.8" />
+                    <circle cx="44" cy="44" r="8" fill="#fff" opacity="0.8" />
+                  </svg>
+                </div>
+                <div className="text-left">
+                  <span className="text-lg font-bold text-white block">Týmová soutěž</span>
+                  <span className="text-sm text-white/70">Hráči v týmech proti sobě</span>
+                </div>
+              </button>
+
+              {/* Duel competition */}
+              <button 
+                onClick={() => {
+                  setShowCompetitionPicker(false);
+                  startDuelCompetition();
+                }}
+                className="flex items-center gap-4 p-5 rounded-2xl transition-all hover:scale-[1.02] active:scale-[0.98]"
+                style={{ backgroundColor: '#FF6B35' }}
+              >
+                <div className="w-14 h-14 flex items-center justify-center flex-shrink-0">
+                  <Swords className="w-10 h-10" style={{ color: '#fff' }} />
+                </div>
+                <div className="text-left">
+                  <span className="text-lg font-bold text-white block">Duely</span>
+                  <span className="text-sm text-white/70">1 vs 1 souboje ve dvojicích</span>
+                </div>
+              </button>
+
+              {/* Tactical competition */}
+              <button 
+                onClick={() => {
+                  setShowCompetitionPicker(false);
+                  startTacticalCompetition();
+                }}
+                className="flex items-center gap-4 p-5 rounded-2xl transition-all hover:scale-[1.02] active:scale-[0.98]"
+                style={{ backgroundColor: '#10B981' }}
+              >
+                <div className="w-14 h-14 flex items-center justify-center flex-shrink-0">
+                  <Crosshair className="w-10 h-10" style={{ color: '#fff' }} />
+                </div>
+                <div className="text-left">
+                  <span className="text-lg font-bold text-white block">Taktik</span>
+                  <span className="text-sm text-white/70">Body nebo truhly s power-upy</span>
+                </div>
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     // Student connection options panel
     if (showStudentOptions) {
       return (
@@ -1539,62 +2231,102 @@ export function QuizViewPage() {
           <div className="p-6">
             <button 
               onClick={() => setShowStudentOptions(false)}
-              className="flex items-center gap-2 text-white/70 hover:text-white mb-6"
+              className="flex items-center gap-2 text-white/70 hover:text-white mb-4"
             >
               <ArrowLeft className="w-5 h-5" />
             </button>
-            <h2 className="text-2xl font-bold text-white text-center">
+            <h2 className="text-xl font-bold text-white text-center leading-snug">
               Vyberte, jakým způsobem<br />zapojit studenty:
             </h2>
           </div>
           
-          {/* Options */}
-          <div className="flex-1 px-6 space-y-4">
-            {/* Live projection - show settings first */}
-            <button 
-              onClick={() => setShowLiveSettings(true)}
-              className="w-full flex items-center gap-4 p-5 rounded-2xl transition-colors"
-              style={{ backgroundColor: '#e8f84a' }}
-            >
-              <div className="w-14 h-14 flex items-center justify-center">
-                <svg viewBox="0 0 64 64" className="w-full h-full">
-                  <circle cx="32" cy="20" r="10" fill="#4E5871" opacity="0.3" />
-                  <circle cx="18" cy="38" r="8" fill="#4E5871" opacity="0.5" />
-                  <circle cx="46" cy="38" r="8" fill="#4E5871" opacity="0.5" />
-                  <circle cx="32" cy="48" r="8" fill="#4E5871" />
-                  <rect x="26" y="10" width="12" height="10" rx="2" fill="#4E5871" />
-                  <polygon points="32,6 38,12 26,12" fill="#4E5871" />
-                </svg>
-              </div>
-              <div className="text-left">
-                <span className="text-lg font-bold text-slate-800 block">Živé promítání</span>
-                <span className="text-sm text-slate-600">Studenti sledují společně</span>
-              </div>
-            </button>
+          {/* Together section */}
+          <div className="flex-1 px-5">
+            <p className="text-center text-sm font-semibold text-slate-400 uppercase tracking-wide mb-3">Společně:</p>
+            <div className="grid grid-cols-2 gap-3 mb-6">
+              {/* Live projection */}
+              <button 
+                onClick={() => setShowLiveSettings(true)}
+                className="flex flex-col items-center justify-center p-4 rounded-2xl transition-all hover:scale-[1.03] active:scale-[0.97]"
+                style={{ backgroundColor: '#e8f84a', aspectRatio: '1', minHeight: 130 }}
+              >
+                <div className="w-16 h-16 flex items-center justify-center mb-2">
+                  <svg viewBox="0 0 64 64" className="w-full h-full">
+                    <circle cx="32" cy="20" r="10" fill="#4E5871" opacity="0.3" />
+                    <circle cx="18" cy="38" r="8" fill="#4E5871" opacity="0.5" />
+                    <circle cx="46" cy="38" r="8" fill="#4E5871" opacity="0.5" />
+                    <circle cx="32" cy="48" r="8" fill="#4E5871" />
+                    <rect x="26" y="10" width="12" height="10" rx="2" fill="#4E5871" />
+                    <polygon points="32,6 38,12 26,12" fill="#4E5871" />
+                  </svg>
+                </div>
+                <span className="text-sm font-bold text-slate-700 text-center leading-tight">Připojit do promítání</span>
+              </button>
+              
+              {/* Competition / Contest — opens mode picker */}
+              <button 
+                onClick={() => setShowCompetitionPicker(true)}
+                className="flex flex-col items-center justify-center p-4 rounded-2xl transition-all hover:scale-[1.03] active:scale-[0.97]"
+                style={{ backgroundColor: '#4eebc0', aspectRatio: '1', minHeight: 130 }}
+              >
+                <div className="w-16 h-16 flex items-center justify-center mb-2">
+                  <svg viewBox="0 0 64 64" className="w-full h-full">
+                    <polygon points="32,8 38,24 56,24 42,34 47,50 32,40 17,50 22,34 8,24 26,24" fill="#4E5871" opacity="0.8" />
+                    <rect x="20" y="42" width="24" height="14" rx="3" fill="#4E5871" opacity="0.5" />
+                    <rect x="24" y="46" width="16" height="6" rx="2" fill="#4E5871" opacity="0.3" />
+                  </svg>
+                </div>
+                <span className="text-sm font-bold text-slate-700 text-center leading-tight">Zahájit soutěž</span>
+              </button>
+            </div>
             
-            {/* Share / Assign task */}
-            <button 
-              onClick={() => setShowShareSettings(true)}
-              className="w-full flex items-center gap-4 p-5 rounded-2xl transition-colors"
-              style={{ backgroundColor: '#b5d4ff' }}
-            >
-              <div className="w-14 h-14 flex items-center justify-center">
-                <Share2 className="w-10 h-10 text-slate-800" />
-              </div>
-              <div className="text-left">
-                <span className="text-lg font-bold text-slate-800 block">Sdílet (Zadat úkol)</span>
-                <span className="text-sm text-slate-600">Studenti pracují samostatně</span>
-              </div>
-            </button>
+            {/* Solo section */}
+            <p className="text-center text-sm font-semibold text-slate-400 uppercase tracking-wide mb-3">Každý sám:</p>
+            <div className="grid grid-cols-2 gap-3">
+              {/* Assign in class */}
+              <button 
+                onClick={startClassroomSession}
+                className="flex flex-col items-center justify-center p-4 rounded-2xl transition-all hover:scale-[1.03] active:scale-[0.97]"
+                style={{ backgroundColor: '#fecaca', aspectRatio: '1', minHeight: 130 }}
+              >
+                <div className="w-16 h-16 flex items-center justify-center mb-2">
+                  <svg viewBox="0 0 64 64" className="w-full h-full">
+                    <rect x="12" y="8" width="20" height="28" rx="3" fill="#4E5871" opacity="0.6" transform="rotate(-8 22 22)" />
+                    <rect x="32" y="8" width="20" height="28" rx="3" fill="#4E5871" opacity="0.4" transform="rotate(8 42 22)" />
+                    <circle cx="22" cy="44" r="6" fill="#4E5871" opacity="0.3" />
+                    <polygon points="22,38 26,42 18,42" fill="#4E5871" opacity="0.5" />
+                    <circle cx="42" cy="44" r="6" fill="#4E5871" opacity="0.3" />
+                    <polygon points="42,38 46,42 38,42" fill="#4E5871" opacity="0.5" />
+                  </svg>
+                </div>
+                <span className="text-sm font-bold text-slate-700 text-center leading-tight">Zadat ve výuce</span>
+              </button>
+              
+              {/* Share content */}
+              <button 
+                onClick={() => setShowShareSettings(true)}
+                className="flex flex-col items-center justify-center p-4 rounded-2xl transition-all hover:scale-[1.03] active:scale-[0.97]"
+                style={{ backgroundColor: '#bfdbfe', aspectRatio: '1', minHeight: 130 }}
+              >
+                <div className="w-16 h-16 flex items-center justify-center mb-2">
+                  <svg viewBox="0 0 64 64" className="w-full h-full">
+                    <rect x="16" y="20" width="32" height="24" rx="4" fill="#4E5871" opacity="0.3" />
+                    <path d="M32 18 L32 8 L40 16 L36 16 L36 26 L28 26 L28 16 L24 16 Z" fill="#4E5871" opacity="0.7" />
+                  </svg>
+                </div>
+                <span className="text-sm font-bold text-slate-700 text-center leading-tight">Sdílet obsah</span>
+              </button>
+            </div>
           </div>
           
-          {/* Cancel button */}
-          <div className="p-6">
+          {/* Cancel / Skip button */}
+          <div className="p-5">
             <button 
               onClick={() => setShowStudentOptions(false)}
-              className="w-full py-4 rounded-xl text-white/70 font-medium hover:text-white hover:bg-white/10 transition-colors"
+              className="w-full py-3.5 rounded-xl font-semibold transition-colors"
+              style={{ backgroundColor: '#1a2236', color: '#cbd5e1', border: '1px solid rgba(255,255,255,0.1)' }}
             >
-              Zrušit
+              Nezapojovat studenty
             </button>
           </div>
         </div>
@@ -1784,31 +2516,7 @@ export function QuizViewPage() {
           </button>
           )}
           
-          {/* Copy to my content - only show for own boards (they might want another copy) */}
-          {canDirectEdit && (
-          <button 
-            onClick={() => {
-              if (!quiz) return;
-              // Create a duplicate with new ID
-              const newQuiz = {
-                ...quiz,
-                id: crypto.randomUUID(),
-                title: `${quiz.title || 'Board'} (kopie)`,
-                createdAt: new Date().toISOString(),
-                updatedAt: new Date().toISOString(),
-                  createdBy: profile?.userId,
-              };
-              saveQuiz(newQuiz);
-              // Navigate to the new board in editor
-              navigate(`/quiz/edit/${newQuiz.id}`);
-            }}
-            className="w-full flex items-center gap-4 px-5 py-4 rounded-xl text-white font-medium hover:bg-white/20 transition-colors"
-            style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}
-          >
-            <Copy className="w-6 h-6 text-slate-400" />
-              <span>Vytvořit kopii</span>
-          </button>
-          )}
+          {/* Copy to my content removed - "Kopírovat a upravit" already shows for non-owners */}
           
           {/* Spacer */}
           <div className="flex-1" />
@@ -1981,7 +2689,7 @@ export function QuizViewPage() {
           case 'open':
             return <OpenSlideView slide={slide as OpenActivitySlide} />;
           case 'example':
-            return <ExampleSlideView slide={slide as ExampleActivitySlide} />;
+            return <TeacherExampleView slide={slide as ExampleActivitySlide} customKeys={quiz?.settings?.customKeys} extraKeys={quiz?.settings?.extraKeys} />;
           case 'board':
             return (
               <BoardSlideView 
@@ -2036,8 +2744,31 @@ export function QuizViewPage() {
                 readOnly={true}
               />
             );
+          case 'form':
+            return (
+              <FormView 
+                slide={slide as any}
+                answer={formPreviewAnswer}
+                onAnswerChange={setFormPreviewAnswer}
+                isReadOnly={false}
+              />
+            );
           default:
             return <div className="text-slate-500 text-center">Nepodporovaný typ aktivity</div>;
+        }
+      case 'tools':
+        const toolsSlide = slide as ToolsSlide;
+        switch (toolsSlide.toolType) {
+          case 'certificate':
+            return (
+              <CertificateView 
+                slide={toolsSlide}
+                quiz={quiz}
+                isPreview={true}
+              />
+            );
+          default:
+            return <div className="text-slate-500 text-center">Nepodporovaný typ nástroje</div>;
         }
       default:
         return <div className="text-slate-500 text-center">Nepodporovaný typ slidu</div>;
@@ -2048,10 +2779,90 @@ export function QuizViewPage() {
   const bgColor = sessionId ? '#1e2533' : '#F0F1F8';
   const isDarkMode = !!sessionId;
   
+  // ============================================
+  // RENDER: COMPETITION MODE (full-screen takeover)
+  // ============================================
+  if (competitionActive && session && sessionId && sessionCode && quiz) {
+    return (
+      <div className="h-screen w-screen overflow-hidden">
+        <CompetitionView
+          session={session}
+          sessionId={sessionId}
+          quiz={quiz}
+          sessionCode={sessionCode}
+          onEnd={endCompetition}
+          renderSlide={renderSlideView}
+        />
+      </div>
+    );
+  }
+  
+  // ============================================
+  // RENDER: TEAM COMPETITION MODE (full-screen takeover)
+  // ============================================
+  if (teamCompetitionActive && session && sessionId && sessionCode && quiz) {
+    return (
+      <div className="h-screen w-screen overflow-hidden">
+        <TeamCompetitionView
+          session={session}
+          sessionId={sessionId}
+          quiz={quiz}
+          sessionCode={sessionCode}
+          onEnd={endTeamCompetition}
+          renderSlide={renderSlideView}
+        />
+      </div>
+    );
+  }
+  
+  // ============================================
+  // RENDER: DUEL COMPETITION MODE (full-screen takeover)
+  // ============================================
+  if (duelCompetitionActive && session && sessionId && sessionCode && quiz) {
+    return (
+      <div className="h-screen w-screen overflow-hidden">
+        <DuelCompetitionView
+          session={session}
+          sessionId={sessionId}
+          quiz={quiz}
+          sessionCode={sessionCode}
+          onEnd={endDuelCompetition}
+          renderSlide={renderSlideView}
+        />
+      </div>
+    );
+  }
+  
+  // ============================================
+  // RENDER: TACTICAL COMPETITION MODE (full-screen takeover)
+  // ============================================
+  if (tacticalCompetitionActive && session && sessionId && sessionCode && quiz) {
+    return (
+      <div className="h-screen w-screen overflow-hidden">
+        <TacticalCompetitionView
+          session={session}
+          sessionId={sessionId}
+          quiz={quiz}
+          sessionCode={sessionCode}
+          onEnd={endTacticalCompetition}
+          renderSlide={renderSlideView}
+        />
+      </div>
+    );
+  }
+  
   return (
     <div className="flex h-screen overflow-hidden" style={{ backgroundColor: bgColor }}>
       {/* QR/Code Popup - displays over entire presentation area */}
-      {showQRPopup && sessionCode && (
+      {showQRPopup && (sessionCode || classroomShareId) && (() => {
+        const isClassroom = !!classroomShareId;
+        const popupCode = isClassroom ? (classroomShareCode || '') : (sessionCode || '');
+        const popupLink = isClassroom
+          ? (classroomShareLink || '')
+          : `${window.location.origin}${import.meta.env.BASE_URL || '/'}go/${popupCode}`;
+        // For classroom mode, always show QR (no code-only popup)
+        const effectivePopup = isClassroom ? 'qr' : showQRPopup;
+        return (
         <div 
           className="absolute inset-0 z-50 flex items-center justify-center"
           style={{ 
@@ -2059,7 +2870,6 @@ export function QuizViewPage() {
             right: showRightPanel ? '320px' : '0' 
           }}
         >
-          {/* Close button in corner */}
           <button
             onClick={() => setShowQRPopup(null)}
             className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full transition-colors z-10"
@@ -2068,39 +2878,51 @@ export function QuizViewPage() {
           </button>
           
           <div className="flex flex-col items-center justify-center h-full w-full p-8">
-            {showQRPopup === 'qr' ? (
-              /* QR Code - as large as possible */
+            {effectivePopup === 'qr' ? (
               <div className="flex flex-col items-center">
                 <QRCodeSVG 
-                  value={`${window.location.origin}${import.meta.env.BASE_URL || '/'}go/${sessionCode}`}
+                  value={popupLink}
                   size={Math.min(window.innerWidth * 0.6, window.innerHeight * 0.75, 700)}
                   level="M"
                 />
-                <p className="mt-6 text-slate-400 text-lg">
-                  {window.location.origin}{import.meta.env.BASE_URL || '/'}go/{sessionCode}
-                </p>
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(popupLink);
+                    setCopied(true);
+                    setTimeout(() => setCopied(false), 2000);
+                  }}
+                  className="mt-8 px-6 py-3 rounded-xl font-medium transition-colors flex items-center gap-2"
+                  style={{ backgroundColor: '#f59e0b', color: 'white' }}
+                >
+                  {copied ? (
+                    <>
+                      <CheckCircle className="w-5 h-5" />
+                      <span>Zkopírováno!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-5 h-5" />
+                      <span>Zkopírovat odkaz</span>
+                    </>
+                  )}
+                </button>
               </div>
             ) : (
-              /* Code - large display */
               <div className="flex flex-col items-center">
-                {/* URL above code */}
                 <p className="mb-6 text-slate-500 text-xl">
                   Připojte se na <span className="font-medium text-slate-700">{window.location.host}{import.meta.env.BASE_URL || ''}/go</span>
                 </p>
                 
-                {/* Large code */}
                 <div 
                   className="font-mono font-bold tracking-[0.4em] text-slate-800"
                   style={{ fontSize: 'min(25vw, 250px)' }}
                 >
-                  {sessionCode}
+                  {popupCode}
                 </div>
                 
-                {/* Copy button below code */}
                 <button
                   onClick={() => {
-                    const fullLink = `${window.location.origin}${import.meta.env.BASE_URL || '/'}go/${sessionCode}`;
-                    navigator.clipboard.writeText(fullLink);
+                    navigator.clipboard.writeText(popupLink);
                     setCopied(true);
                     setTimeout(() => setCopied(false), 2000);
                   }}
@@ -2123,7 +2945,8 @@ export function QuizViewPage() {
             )}
           </div>
         </div>
-      )}
+        );
+      })()}
       
       {/* Main content area */}
       <div className="flex-1 flex flex-col relative">
@@ -2154,8 +2977,8 @@ export function QuizViewPage() {
           </button>
         </div>
         
-        {/* Mobile: Top navigation - exact same as QuizStudentView */}
-        <div className="flex lg:hidden items-center gap-3 px-4 py-4" style={{ backgroundColor: '#F0F1F8' }}>
+        {/* Mobile: Top navigation - exact same as QuizStudentView (hidden in classroom mode) */}
+        <div className={`${classroomShareId ? 'hidden' : 'flex'} lg:hidden items-center gap-3 px-4 py-4`} style={{ backgroundColor: '#F0F1F8' }}>
           {/* Left arrow */}
           <button
             onClick={goToPrevSlide}
@@ -2189,7 +3012,79 @@ export function QuizViewPage() {
           </button>
         </div>
         
-        {/* Main content area with arrows */}
+        {/* Main content area */}
+        {classroomShareId ? (
+          classroomStarted ? (
+            <div className="flex-1 overflow-hidden" style={{ minHeight: 0 }}>
+              <ClassroomDashboard
+                students={classroomStudents}
+                quiz={quiz}
+                sessionCode={classroomShareCode || ''}
+                shareLink={classroomShareLink || ''}
+                onEnd={endClassroomSession}
+              />
+            </div>
+          ) : (
+            /* Lobby — waiting for teacher to start */
+            <div className="flex-1 flex flex-col items-center justify-center overflow-hidden" style={{ backgroundColor: '#0f172a', minHeight: 0 }}>
+              <div className="flex flex-col items-center gap-6 max-w-lg w-full px-6">
+                <h1 className="text-3xl font-bold text-white text-center">Čekání na studenty</h1>
+                <p className="text-slate-400 text-center">Studenti se připojují. Až budou všichni, klikněte na Zahájit.</p>
+                
+                {/* QR code */}
+                <div 
+                  className="bg-white p-4 rounded-2xl shadow-xl cursor-pointer transition-all group"
+                  onClick={() => setShowQRPopup('qr')}
+                >
+                  <QRCodeSVG value={classroomShareLink || ''} size={Math.min(280, window.innerWidth * 0.35)} level="M" />
+                </div>
+                
+                {/* Copy link */}
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(classroomShareLink || '');
+                    setCopied(true);
+                    setTimeout(() => setCopied(false), 2000);
+                  }}
+                  className="py-2.5 px-5 rounded-xl transition-colors flex items-center gap-2 text-sm font-medium hover:opacity-90"
+                  style={{ backgroundColor: '#f59e0b', color: '#1e293b' }}
+                >
+                  {copied ? (
+                    <>
+                      <CheckCircle className="w-4 h-4" />
+                      <span>Zkopírováno!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-4 h-4" />
+                      <span>Kopírovat odkaz</span>
+                    </>
+                  )}
+                </button>
+                
+                {/* Connected students count */}
+                <div className="flex items-center gap-2 text-white text-lg mt-2">
+                  <Users className="w-5 h-5 text-emerald-400" />
+                  <span className="font-bold">{Object.keys(classroomStudents).length}</span>
+                  <span className="text-slate-400">
+                    {Object.keys(classroomStudents).length === 1 ? 'student připojen' : 'studentů připojeno'}
+                  </span>
+                </div>
+                
+                {/* Start button */}
+                <button
+                  onClick={beginClassroom}
+                  disabled={Object.keys(classroomStudents).length === 0}
+                  className="mt-4 py-4 rounded-2xl text-white font-bold text-lg transition-all flex items-center justify-center gap-3 shadow-lg disabled:opacity-40 disabled:cursor-not-allowed hover:scale-[1.03] active:scale-[0.97]"
+                  style={{ backgroundColor: '#7C3AED', width: '100%', maxWidth: 400 }}
+                >
+                  <Play className="w-6 h-6" />
+                  Zahájit
+                </button>
+              </div>
+            </div>
+          )
+        ) : (
         <div 
           className="flex-1 flex flex-col overflow-hidden" 
           style={{ 
@@ -2252,6 +3147,30 @@ export function QuizViewPage() {
               {currentSlide ? (
                 <div className="flex-1 flex flex-col" style={{ minHeight: 0 }}>
                   {renderSlideView(currentSlide)}
+                  
+                  {/* Submit button for form activity */}
+                  {currentSlide.type === 'activity' && (currentSlide as any).activityType === 'form' && (
+                    <div className="p-6 flex justify-center border-t border-slate-100">
+                      <button
+                        onClick={() => {
+                          // In teacher view, just reset the form for testing
+                          setFormPreviewAnswer({});
+                        }}
+                        disabled={
+                          ((currentSlide as any).fields || []).some((field: any) => 
+                            field.required && (
+                              !formPreviewAnswer[field.id] || 
+                              (Array.isArray(formPreviewAnswer[field.id]) && (formPreviewAnswer[field.id] as string[]).length === 0) ||
+                              (typeof formPreviewAnswer[field.id] === 'string' && !(formPreviewAnswer[field.id] as string).trim())
+                            )
+                          )
+                        }
+                        className="px-8 py-3 rounded-xl font-medium transition-colors bg-indigo-600 hover:bg-indigo-700 text-white disabled:bg-slate-300 disabled:cursor-not-allowed"
+                      >
+                        Odeslat formulář
+                      </button>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="flex items-center justify-center h-full text-white/70">
@@ -2286,6 +3205,7 @@ export function QuizViewPage() {
           </div>
           </div>
         </div>
+        )}
       </div>
       
       {/* Right panel - dark background */}

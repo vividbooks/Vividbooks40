@@ -659,7 +659,7 @@ export function VotingSlideView({
               <img
                 src={slide.media.url}
                 alt="Obrázek k otázce"
-                className="max-w-full max-h-64 rounded-2xl shadow-lg object-contain"
+                className="max-w-full max-h-64 object-contain"
               />
             </div>
           )}

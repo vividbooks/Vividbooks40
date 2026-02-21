@@ -4,7 +4,7 @@
  * Vykresluje pracovní list ve formátu A4 s podporou všech typů bloků
  */
 
-import React, { forwardRef } from 'react';
+import React, { forwardRef, useId } from 'react';
 import { 
   Worksheet, 
   WorksheetBlock,
@@ -21,7 +21,44 @@ import {
   ConnectPairsContent,
   ImageHotspotsContent,
   VideoQuizContent,
+  SubQuestionLabelType,
+  SubQuestionLabelStyle,
 } from '../../types/worksheet';
+import { PageHeader, PageFooter, DEFAULT_HEADER, DEFAULT_FOOTER } from '../worksheet-editor-pro/PageHeaderFooter';
+import { preventOrphans } from '../math/MathText';
+import { preventOrphansInHtml } from './LatexRenderer';
+
+// Print-safe SVG pattern (same as EditableBlock)
+function PrintSafePattern({ variant, lineSpacing = 40 }: { variant: 'dotted' | 'lined'; lineSpacing?: number }) {
+  const id = useId().replace(/:/g, '');
+  const patternId = `${variant}-print-${id}`;
+  const dotColor = '#94a3b8';
+  const lineColor = '#cbd5e1';
+
+  if (variant === 'dotted') {
+    return (
+      <svg className="absolute inset-0 w-full h-full" aria-hidden="true" style={{ display: 'block' }}>
+        <defs>
+          <pattern id={patternId} patternUnits="userSpaceOnUse" width="16" height="16">
+            <circle cx="2" cy="2" r="1" fill={dotColor} />
+          </pattern>
+        </defs>
+        <rect y="8" width="100%" height="calc(100% - 8px)" fill={`url(#${patternId})`} />
+      </svg>
+    );
+  }
+
+  return (
+    <svg className="absolute inset-0 w-full h-full" aria-hidden="true" style={{ display: 'block' }}>
+      <defs>
+        <pattern id={patternId} patternUnits="userSpaceOnUse" width="1" height={lineSpacing}>
+          <line x1="0" y1={lineSpacing - 1} x2="2000" y2={lineSpacing - 1} stroke={lineColor} strokeWidth="1" />
+        </pattern>
+      </defs>
+      <rect y="4" width="100%" height="calc(100% - 4px)" fill={`url(#${patternId})`} />
+    </svg>
+  );
+}
 
 // Size to width mapping for block images (print)
 const printImageSizeToWidth: Record<ImageSize, string> = {
@@ -53,8 +90,13 @@ function getSubjectLabel(subject: string): string {
   return labels[subject] || subject || 'Pracovní list';
 }
 
+/** Renders HTML safely with orphan prevention */
+function htmlProps(html: string | undefined): { dangerouslySetInnerHTML: { __html: string } } {
+  return { dangerouslySetInnerHTML: { __html: preventOrphansInHtml(html || '') } };
+}
+
 /**
- * Helper pro odstranění HTML tagů
+ * Helper pro odstranění HTML tagů (používat jen kde je plain text nutný)
  */
 function stripHtml(html: string | undefined): string {
   if (!html) return '';
@@ -112,24 +154,11 @@ export const PrintableWorksheet = forwardRef<HTMLDivElement, PrintableWorksheetP
         }}
       >
         {/* Header */}
-        <div 
-          className="no-break"
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            borderBottom: '1px solid #e2e8f0',
-            paddingBottom: '10px',
-            marginBottom: '15px',
-          }}
-        >
-          <div style={{ fontSize: '10pt', color: '#64748b' }}>
-            {subject} • {grade}. ročník
-            {time ? ` • ${time} minut` : ''}
-          </div>
-          <div style={{ fontSize: '10pt', color: '#64748b' }}>
-            Jméno: _________________ Datum: _________
-          </div>
-        </div>
+        <PageHeader
+          config={worksheet.metadata?.pageHeader}
+          padding={0}
+          style={{ marginBottom: '15px', height: 'auto', paddingTop: 0, paddingBottom: '10px' }}
+        />
 
         {/* Title */}
         <h1 
@@ -167,22 +196,20 @@ export const PrintableWorksheet = forwardRef<HTMLDivElement, PrintableWorksheetP
         </div>
 
         {/* Footer */}
-        <div 
+        <PageFooter
+          config={worksheet.metadata?.pageFooter}
+          pageNumber={1}
+          totalPages={1}
+          padding={0}
           style={{
             position: 'absolute',
             bottom: '10mm',
             left: '20mm',
             right: '20mm',
-            display: 'flex',
-            justifyContent: 'space-between',
-            fontSize: '9pt',
-            color: '#94a3b8',
-            borderTop: '1px solid #e2e8f0',
+            height: 'auto',
             paddingTop: '5px',
           }}
-        >
-          <span>Vytvořeno na Vividbooks.cz</span>
-        </div>
+        />
       </div>
     );
   }
@@ -359,19 +386,87 @@ function PrintableBlock({ block, activityNumber }: BlockProps) {
  */
 function PrintableHeading({ block, style }: BlockWithStyleProps) {
   const content = block.content as HeadingContent;
+  const headingText = preventOrphans(content.text || '');
   const sizes: Record<string, React.CSSProperties> = {
     h1: { fontSize: '18pt', marginTop: '16px', marginBottom: '10px' },
     h2: { fontSize: '14pt', marginTop: '14px', marginBottom: '8px' },
     h3: { fontSize: '12pt', marginTop: '12px', marginBottom: '6px' },
   };
   const levelStyle = sizes[content.level] || sizes.h2;
+  const hStyle = content.headingStyle || 'plain';
+  const textColor = content.textColor || '#1e293b';
+  const highlightColor = content.highlightColor || 'transparent';
+
+  const baseStyle: React.CSSProperties = {
+    ...style,
+    ...levelStyle,
+    fontWeight: content.isBold === false ? 'normal' : 'bold',
+    color: textColor,
+    fontStyle: content.isItalic ? 'italic' : undefined,
+    textDecoration: content.isUnderline ? 'underline' : undefined,
+  };
+
+  if (hStyle === 'pill') {
+    const pillBg = highlightColor !== 'transparent' ? highlightColor : '#dcfce7';
+    return (
+      <div style={{ ...style, ...levelStyle }} className="no-break">
+        <span
+          style={{
+            ...baseStyle,
+            backgroundColor: pillBg,
+            padding: '4px 16px',
+            borderRadius: '10px',
+            display: 'inline-block',
+            marginTop: 0,
+            marginBottom: 0,
+          }}
+        >
+          {headingText || ' '}
+        </span>
+      </div>
+    );
+  }
+
+  if (hStyle === 'left-border') {
+    const borderColor = highlightColor !== 'transparent' ? highlightColor : '#3b82f6';
+    return (
+      <div
+        className="no-break"
+        style={{
+          ...baseStyle,
+          borderLeft: `4px solid ${borderColor}`,
+          paddingLeft: '10px',
+          backgroundColor: 'transparent',
+        }}
+      >
+        {headingText || ' '}
+      </div>
+    );
+  }
+
+  if (hStyle === 'underline') {
+    const lineColor = highlightColor !== 'transparent' ? highlightColor : '#e2e8f0';
+    return (
+      <div
+        className="no-break"
+        style={{
+          ...baseStyle,
+          borderBottom: `3px solid ${lineColor}`,
+          paddingBottom: '4px',
+          backgroundColor: 'transparent',
+        }}
+      >
+        {headingText || ' '}
+      </div>
+    );
+  }
 
   return (
     <div 
-      style={{ ...style, ...levelStyle, fontWeight: 'bold' }} 
+      style={{ ...baseStyle, backgroundColor: highlightColor }} 
       className="no-break"
     >
-      {content.text || ' '}
+      {headingText || ' '}
     </div>
   );
 }
@@ -381,12 +476,13 @@ function PrintableHeading({ block, style }: BlockWithStyleProps) {
  */
 function PrintableParagraph({ block, style }: BlockWithStyleProps) {
   const content = block.content as ParagraphContent;
-  const text = stripHtml(content.html);
+  const columns = content.columns || 1;
 
   return (
-    <p style={{ ...style, textAlign: 'left', margin: 0 }}>
-      {text || ' '}
-    </p>
+    <div
+      style={{ ...style, margin: 0, columnCount: columns > 1 ? columns : undefined }}
+      {...htmlProps(content.html || content.text)}
+    />
   );
 }
 
@@ -395,7 +491,6 @@ function PrintableParagraph({ block, style }: BlockWithStyleProps) {
  */
 function PrintableInfobox({ block, style }: BlockWithStyleProps) {
   const content = block.content as InfoboxContent;
-  const text = stripHtml(content.html);
   
   const colors: Record<string, { bg: string; border: string }> = {
     blue: { bg: '#eff6ff', border: '#3b82f6' },
@@ -403,25 +498,27 @@ function PrintableInfobox({ block, style }: BlockWithStyleProps) {
     yellow: { bg: '#fefce8', border: '#eab308' },
     purple: { bg: '#faf5ff', border: '#a855f7' },
   };
-  const color = colors[content.variant] || colors.blue;
+  const vs = block.visualStyles as any;
+  const borderColor = vs?.borderColor || colors[content.variant]?.border || '#3b82f6';
+  const bgColor = vs?.backgroundColor || colors[content.variant]?.bg || '#eff6ff';
 
   return (
     <div
       className="no-break"
       style={{
         ...style,
-        backgroundColor: color.bg,
-        borderLeft: `4px solid ${color.border}`,
+        backgroundColor: bgColor,
+        borderLeft: `4px solid ${borderColor}`,
         padding: '12px',
         borderRadius: '4px',
       }}
     >
       {content.title && (
-        <div style={{ fontWeight: 'bold', marginBottom: '4px' }}>
-          {content.title}
-        </div>
+        <div style={{ fontWeight: 'bold', marginBottom: '4px' }}
+          {...htmlProps(content.title)}
+        />
       )}
-      <div>{text || ' '}</div>
+      <div {...htmlProps(content.html)} />
     </div>
   );
 }
@@ -453,9 +550,9 @@ function PrintableMultipleChoice({ block, style, activityNumber }: BlockWithStyl
             {activityNumber}
           </span>
         )}
-        <span style={{ fontWeight: '500' }}>
-          {content.question || ' '}
-        </span>
+        <span style={{ fontWeight: '500' }}
+          {...htmlProps(content.question)}
+        />
       </div>
       <div style={{ paddingLeft: activityNumber ? '34px' : '8px' }}>
         {(content.options || []).map((option, i) => (
@@ -483,7 +580,7 @@ function PrintableMultipleChoice({ block, style, activityNumber }: BlockWithStyl
             }}>
               {letters[i]}
             </span>
-            <span>{option.text || ' '}</span>
+            <span {...htmlProps(option.text)} />
           </div>
         ))}
       </div>
@@ -549,12 +646,56 @@ function PrintableFillBlank({ block, style, activityNumber }: BlockWithStyleProp
   );
 }
 
+function toRomanPrint(num: number): string {
+  const vals = [1000, 900, 500, 400, 100, 90, 50, 40, 10, 9, 5, 4, 1];
+  const syms = ['M', 'CM', 'D', 'CD', 'C', 'XC', 'L', 'XL', 'X', 'IX', 'V', 'IV', 'I'];
+  let r = '';
+  for (let i = 0; i < vals.length; i++) { while (num >= vals[i]) { r += syms[i]; num -= vals[i]; } }
+  return r;
+}
+
+function getPrintSubQuestionLabel(index: number, labelType: SubQuestionLabelType): string {
+  if (labelType === 'letters') return String.fromCharCode(65 + index);
+  if (labelType === 'numbers') return String(index + 1);
+  if (labelType === 'roman') return toRomanPrint(index + 1);
+  return '';
+}
+
+const PRINT_DEFAULT_SUB_COLORS = ['#dbeafe', '#dbeafe', '#dbeafe', '#dbeafe', '#dbeafe', '#dbeafe', '#fef3c7', '#fef3c7'];
+const PRINT_DEFAULT_LABEL_COLOR = '#e11d48';
+
 /**
  * Free Answer block
  */
 function PrintableFreeAnswer({ block, style, activityNumber }: BlockWithStyleProps) {
   const content = block.content as FreeAnswerContent;
   const lines = content.lines || 3;
+  const hasSubQuestions = content.subQuestions && content.subQuestions.length > 0;
+  const showBg = content.subShowBackground !== false;
+  const answerStyle = content.subAnswerStyle || (content.subShowLines === false ? 'none' : 'dotted');
+  const globalLines = content.subAnswerLines || 1;
+  const labelStyle: SubQuestionLabelStyle = content.subLabelStyle || 'text';
+  const bgMode = content.subBackgroundMode || 'fill';
+  const subShadow = content.subShadow || 'none';
+  const subBorderRadius = content.subBorderRadius ?? 10;
+
+  // Question font styles from content
+  const questionFontStyle: React.CSSProperties = {
+    fontFamily: (content as any).fontFamily || "'Fenomen Sans', sans-serif",
+    fontSize: (content as any).fontSize ? `${(content as any).fontSize}pt` : undefined,
+    fontWeight: (content as any).fontWeight || '500',
+    lineHeight: (content as any).lineHeight || undefined,
+    letterSpacing: (content as any).letterSpacing ? `${(content as any).letterSpacing}%` : undefined,
+    color: (content as any).textColor || undefined,
+  };
+
+  // Sub-question font styles
+  const subFontStyle: React.CSSProperties = {
+    fontFamily: content.subFontFamily || (content as any).fontFamily || "'Fenomen Sans', sans-serif",
+    fontSize: content.subFontSize ? `${content.subFontSize}pt` : ((content as any).fontSize ? `${(content as any).fontSize}pt` : '10pt'),
+    fontWeight: content.subFontWeight || (content as any).fontWeight || 'normal',
+    color: (content as any).textColor || '#334155',
+  };
 
   return (
     <div style={style} className="no-break">
@@ -576,33 +717,179 @@ function PrintableFreeAnswer({ block, style, activityNumber }: BlockWithStylePro
             {activityNumber}
           </span>
         )}
-        <span style={{ fontWeight: '500' }}>
-          {content.question || ' '}
-        </span>
+        <span style={{ ...questionFontStyle }}
+          {...htmlProps(content.question)}
+        />
       </div>
       {content.hint && (
         <div style={{ 
           fontSize: '10pt', 
-          color: '#64748b', 
+          color: (content as any).textColor ? `${(content as any).textColor}99` : '#64748b', 
           fontStyle: 'italic', 
           marginBottom: '8px',
           paddingLeft: activityNumber ? '34px' : 0,
+          fontFamily: questionFontStyle.fontFamily,
         }}>
           Nápověda: {content.hint}
         </div>
       )}
-      <div style={{ paddingLeft: activityNumber ? '34px' : 0 }}>
-        {Array.from({ length: lines }).map((_, i) => (
-          <div
-            key={i}
-            style={{
-              height: '24px',
-              borderBottom: '1px dotted #cbd5e1',
-              marginBottom: '2px',
-            }}
-          />
-        ))}
-      </div>
+
+      {hasSubQuestions ? (() => {
+        const printCols = content.subColumns || 2;
+        const printDefaultW = Math.floor(100 / printCols);
+        const printGap = showBg ? 6 : 8;
+        const printGapAdjust = printCols > 1 ? `${printGap * (printCols - 1) / printCols}px` : '0px';
+        return (
+        <div style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          alignItems: 'flex-start',
+          gap: `${printGap}px`,
+          paddingLeft: (activityNumber && content.subIndent !== false) ? '34px' : 0,
+          marginTop: '4px',
+        }}>
+          {content.subQuestions!.map((sq, i) => {
+            const bgColors = content.subQuestionColors || PRINT_DEFAULT_SUB_COLORS;
+            const bgColor = showBg ? (bgColors[i % bgColors.length] || '#dbeafe') : 'transparent';
+            const labelType = content.subLabelType || 'letters';
+            const label = getPrintSubQuestionLabel(i, labelType);
+            const labelColors = content.subLabelColors || [PRINT_DEFAULT_LABEL_COLOR];
+            const labelColor = sq.labelColor || labelColors[i % labelColors.length] || PRINT_DEFAULT_LABEL_COLOR;
+            const isOutline = labelStyle === 'circle-outline';
+            const isCircle = labelStyle === 'circle' || isOutline;
+
+            const isBeside = sq.imagePosition === 'beside';
+
+            const sqLines = sq.lines || globalLines;
+            const shadowMap = { none: 'none', sm: '0 1px 3px rgba(0,0,0,0.1)', md: '0 3px 8px rgba(0,0,0,0.12)' };
+            const pWidth = sq.widthPercent ?? printDefaultW;
+
+            return (
+              <div
+                key={sq.id}
+                style={{
+                  width: `calc(${pWidth}% - ${printGapAdjust})`,
+                  boxSizing: 'border-box',
+                  backgroundColor: showBg && bgMode === 'fill' ? bgColor : 'transparent',
+                  border: (() => {
+                    const outlineOn = content.subOutlineEnabled === true;
+                    const outlineColors = content.subOutlineColors || ['#3b82f6'];
+                    const oColor = outlineColors[i % outlineColors.length];
+                    if (outlineOn) return `2px solid ${oColor}`;
+                    if (showBg && bgMode === 'outline') return `2px solid ${bgColor}`;
+                    return 'none';
+                  })(),
+                  borderRadius: (showBg || content.subOutlineEnabled) ? `${subBorderRadius}px` : '0',
+                  padding: (showBg || content.subOutlineEnabled) ? '8px 10px' : '4px 0',
+                  display: 'flex',
+                  flexDirection: isBeside && sq.imageUrl ? 'row' : 'column',
+                  gap: isBeside && sq.imageUrl ? '8px' : '0',
+                  boxShadow: (showBg || content.subOutlineEnabled) ? shadowMap[subShadow] : 'none',
+                }}
+              >
+                <div style={{ flex: 1 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    {label && isCircle && (
+                      <div style={{
+                        width: '22px',
+                        height: '22px',
+                        minWidth: '22px',
+                        borderRadius: '50%',
+                        backgroundColor: isOutline ? 'transparent' : labelColor,
+                        border: isOutline ? `2px solid ${labelColor}` : 'none',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: isOutline ? labelColor : 'white',
+                        fontSize: '9pt',
+                        fontWeight: 700,
+                        flexShrink: 0,
+                      }}>
+                        {label}
+                      </div>
+                    )}
+                    {label && !isCircle && (
+                      <span style={{ fontWeight: 700, fontSize: subFontStyle.fontSize || '10pt', color: subFontStyle.color || '#334155', fontFamily: subFontStyle.fontFamily, flexShrink: 0 }}>
+                        {label})
+                      </span>
+                    )}
+                    <span style={{ ...subFontStyle, whiteSpace: answerStyle === 'inline-line' ? 'nowrap' : undefined, flexShrink: answerStyle === 'inline-line' ? 0 : undefined }}
+                      {...htmlProps(sq.text)}
+                    />
+                    {/* Inline line next to text */}
+                    {answerStyle === 'inline-line' && (
+                      <div
+                        style={{
+                          flex: 1,
+                          height: '3px',
+                          backgroundColor: `${labelColor}33`,
+                          borderRadius: '2px',
+                          minWidth: '30px',
+                          alignSelf: 'center',
+                        }}
+                      />
+                    )}
+                  </div>
+                  {/* Image below text */}
+                  {sq.imageUrl && !isBeside && (
+                    <div style={{ marginTop: '4px' }}>
+                      <img
+                        src={sq.imageUrl}
+                        alt=""
+                        style={{
+                          maxWidth: '100%',
+                          maxHeight: '80px',
+                          borderRadius: '4px',
+                          objectFit: 'contain',
+                        }}
+                      />
+                    </div>
+                  )}
+                  {answerStyle !== 'none' && answerStyle !== 'inline-line' && (
+                    <div style={{ marginTop: '4px', height: `${sqLines * 24}px`, position: 'relative' }}>
+                      {answerStyle === 'dotted' && (
+                        <PrintSafePattern variant="dotted" />
+                      )}
+                      {answerStyle === 'solid' && (
+                        <PrintSafePattern variant="lined" lineSpacing={24} />
+                      )}
+                    </div>
+                  )}
+                </div>
+                {/* Image beside text */}
+                {sq.imageUrl && isBeside && (
+                  <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center' }}>
+                    <img
+                      src={sq.imageUrl}
+                      alt=""
+                      style={{
+                        maxWidth: '80px',
+                        maxHeight: '80px',
+                        borderRadius: '4px',
+                        objectFit: 'contain',
+                      }}
+                    />
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+        );
+      })() : (
+        <div style={{ paddingLeft: activityNumber ? '34px' : 0 }}>
+          {Array.from({ length: lines }).map((_, i) => (
+            <div
+              key={i}
+              style={{
+                height: '24px',
+                borderBottom: '1px dotted #cbd5e1',
+                marginBottom: '2px',
+              }}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -673,7 +960,7 @@ function PrintableImage({ block, style }: BlockWithStyleProps) {
  */
 function PrintableTable({ block, style }: BlockWithStyleProps) {
   const content = block.content as TableContent;
-  const { html, hasBorder, hasRoundedCorners } = content;
+  const { html, hasBorder, hasRoundedCorners, colorStyle } = content;
 
   if (!html) return null;
 
@@ -683,9 +970,25 @@ function PrintableTable({ block, style }: BlockWithStyleProps) {
     !hasRoundedCorners ? 'no-rounded' : '',
   ].filter(Boolean).join(' ');
 
+  const colorMap: Record<string, { header: string; border: string }> = {
+    blue: { header: '#dbeafe', border: '#3b82f6' },
+    green: { header: '#dcfce7', border: '#22c55e' },
+    purple: { header: '#f3e8ff', border: '#a855f7' },
+    yellow: { header: '#fef3c7', border: '#f59e0b' },
+    red: { header: '#fee2e2', border: '#ef4444' },
+    pink: { header: '#fce7f3', border: '#ec4899' },
+    cyan: { header: '#cffafe', border: '#06b6d4' },
+  };
+
+  const colorVars: Record<string, string> = {};
+  if (colorStyle && colorStyle !== 'default' && colorMap[colorStyle]) {
+    colorVars['--table-header-bg'] = colorMap[colorStyle].header;
+    colorVars['--table-border-color'] = colorMap[colorStyle].border;
+  }
+
   return (
     <div
-      style={style}
+      style={{ ...style, ...colorVars } as React.CSSProperties}
       className={tableClasses}
       dangerouslySetInnerHTML={{ __html: html }}
     />

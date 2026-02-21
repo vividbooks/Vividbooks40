@@ -149,28 +149,68 @@ function saveWorksheetToLocalStorageOnly(worksheet: Worksheet): void {
  * Uložit/aktualizovat pracovní list do localStorage a Supabase
  */
 export function saveWorksheet(worksheet: Worksheet): void {
-  saveWorksheetToLocalStorageOnly(worksheet);
+  // Pokusit se uložit do localStorage (může selhat při quota exceeded)
+  try {
+    saveWorksheetToLocalStorageOnly(worksheet);
+  } catch (e) {
+    console.warn('[WorksheetStorage] localStorage failed, continuing with Supabase sync:', e);
+  }
 
   // Remove from deleted IDs if re-saving
-  if (deletedWorksheetIds.has(worksheet.id)) {
-    deletedWorksheetIds.delete(worksheet.id);
-    localStorage.setItem(DELETED_IDS_KEY, JSON.stringify([...deletedWorksheetIds]));
+  try {
+    if (deletedWorksheetIds.has(worksheet.id)) {
+      deletedWorksheetIds.delete(worksheet.id);
+      localStorage.setItem(DELETED_IDS_KEY, JSON.stringify([...deletedWorksheetIds]));
+    }
+  } catch (e) {
+    // Ignore localStorage errors
   }
 
   // Get folder ID from list
   const folderId = getWorksheetList().find(w => w.id === worksheet.id)?.folderId ?? null;
 
-  // Queue for sync
-  queueUpsert('teacher_worksheets', worksheet.id, {
-    name: worksheet.title || 'Nový pracovní list',
-    worksheet_type: worksheet.metadata?.subject || null,
-    content: worksheet.blocks || [],
-    pdf_settings: (worksheet as any).pdfSettings || {},
-    folder_id: folderId,
-    created_at: worksheet.createdAt || new Date().toISOString(),
-  });
+  // Přímo uložit do Supabase (ne přes queue která také používá localStorage)
+  saveWorksheetDirectToSupabase(worksheet, folderId);
+  
+  console.log('[WorksheetStorage] Worksheet saved:', worksheet.id);
+}
 
-  console.log('[WorksheetStorage] Queued worksheet for sync:', worksheet.id);
+/**
+ * Přímé uložení do Supabase (bypass localStorage queue)
+ */
+async function saveWorksheetDirectToSupabase(worksheet: Worksheet, folderId: string | null): Promise<void> {
+  try {
+    const { supabase } = await import('./supabase/client');
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    if (!user) {
+      console.warn('[WorksheetStorage] No user, cannot save to Supabase');
+      return;
+    }
+    
+    const { error } = await supabase
+      .from('teacher_worksheets')
+      .upsert({
+        id: worksheet.id,
+        teacher_id: user.id,
+        name: worksheet.title || 'Nový pracovní list',
+        worksheet_type: worksheet.metadata?.subject || null,
+        // Store full worksheet JSON so print/export can reconstruct everything
+        content: worksheet,
+        pdf_settings: (worksheet as any).pdfSettings || {},
+        folder_id: folderId,
+        created_at: worksheet.createdAt || new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'id' });
+    
+    if (error) {
+      console.error('[WorksheetStorage] Supabase save error:', error);
+    } else {
+      console.log('[WorksheetStorage] ✅ Saved to Supabase:', worksheet.id);
+    }
+  } catch (err) {
+    console.error('[WorksheetStorage] Supabase save failed:', err);
+  }
 }
 
 /**
@@ -372,24 +412,37 @@ export async function syncFromSupabase(passedUserId?: string, accessToken?: stri
       // If locally deleted, skip adding to local and try to delete remotely later
       if (deletedWorksheetIds.has(row.id)) continue;
 
-      // Save full content for editor
-      // NOTE: Supabase stores only a subset of Worksheet fields (name/content/pdf_settings/etc).
-      // We hydrate missing fields with safe defaults.
-      const full: Worksheet = {
-        id: row.id,
-        title: row.name || 'Nový pracovní list',
-        description: '',
-        blocks: row.content || [],
-        metadata: {
-          subject: row.worksheet_type || 'other',
-          grade: 6,
-        },
-        createdAt: row.created_at || new Date().toISOString(),
-        updatedAt: row.updated_at || new Date().toISOString(),
-        status: 'draft',
-      } as Worksheet;
-      // Preserve PDF settings (not part of Worksheet type in all places, but used by editor/storage)
-      (full as any).pdfSettings = row.pdf_settings || {};
+      // Reconstruct full Worksheet from Supabase row.
+      // New format: content = full Worksheet JSON
+      // Old format: content = blocks array only (backward compat)
+      const rawContent = row.content;
+      let full: Worksheet;
+
+      if (rawContent && typeof rawContent === 'object' && !Array.isArray(rawContent) && rawContent.blocks) {
+        // New format – full worksheet stored in content
+        full = rawContent as Worksheet;
+        // Ensure top-level id/title are consistent with DB row
+        full.id = row.id;
+        full.title = row.name || full.title || 'Nový pracovní list';
+      } else {
+        // Old format – only blocks stored
+        full = {
+          id: row.id,
+          title: row.name || 'Nový pracovní list',
+          description: '',
+          blocks: Array.isArray(rawContent) ? rawContent : [],
+          metadata: {
+            subject: row.worksheet_type || 'other',
+            grade: 6,
+          },
+          createdAt: row.created_at || new Date().toISOString(),
+          updatedAt: row.updated_at || new Date().toISOString(),
+          status: 'draft',
+        } as Worksheet;
+      }
+
+      // Preserve PDF settings
+      (full as any).pdfSettings = row.pdf_settings || (full as any).pdfSettings || {};
       localStorage.setItem(`${WORKSHEET_PREFIX}${row.id}`, JSON.stringify(full));
 
       remoteList.push({
@@ -502,7 +555,7 @@ export async function migrateToSupabase(): Promise<{ success: boolean; migrated:
           teacher_id: userId,
           name: worksheet.title || 'Nový pracovní list',
           worksheet_type: worksheet.metadata?.subject,
-          content: worksheet.blocks,
+          content: worksheet,
           pdf_settings: (worksheet as any).pdfSettings,
           folder_id: wsMeta.folderId,
           created_at: wsMeta.createdAt,

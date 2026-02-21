@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Vividbooks Sync</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0f172a;
+    --surface: #1e293b;
+    --surface2: #334155;
+    --border: #475569;
+    --accent: #5C5CFF;
+    --accent-hover: #4f4fe8;
+    --green: #22c55e;
+    --red: #ef4444;
+    --text: #f1f5f9;
+    --muted: #94a3b8;
+    --radius: 10px;
+  }
+
+  body {
+    font-family: 'Inter', -apple-system, sans-serif;
+    font-size: 13px;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── Layout ── */
+  .screen { display: none; flex-direction: column; gap: 16px; padding: 20px; flex: 1; }
+  .screen.active { display: flex; }
+
+  /* ── Header ── */
+  .header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--surface2);
+  }
+  .logo { font-size: 18px; }
+  .header h1 { font-size: 14px; font-weight: 700; color: var(--text); }
+  .header span { font-size: 11px; color: var(--muted); display: block; }
+
+  /* ── Form ── */
+  label { font-size: 11px; color: var(--muted); font-weight: 600; display: block; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.05em; }
+  input[type=email], input[type=password] {
+    width: 100%;
+    padding: 9px 12px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    font-size: 13px;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  input:focus { border-color: var(--accent); }
+
+  /* ── Buttons ── */
+  .btn {
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+    padding: 10px 16px;
+    border-radius: 8px;
+    border: none;
+    font-size: 13px; font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.15s, background 0.15s;
+    width: 100%;
+  }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-primary { background: var(--accent); color: white; }
+  .btn-primary:hover:not(:disabled) { background: var(--accent-hover); }
+  .btn-ghost { background: var(--surface2); color: var(--text); }
+  .btn-ghost:hover:not(:disabled) { background: var(--border); }
+  .btn-green { background: var(--green); color: white; }
+  .btn-sm { padding: 6px 12px; font-size: 11px; width: auto; border-radius: 6px; }
+
+  /* ── Error / Info ── */
+  .alert { padding: 10px 12px; border-radius: 8px; font-size: 12px; line-height: 1.5; }
+  .alert-error { background: #450a0a; border: 1px solid var(--red); color: #fca5a5; }
+  .alert-info  { background: #0c1a33; border: 1px solid #1d4ed8; color: #93c5fd; }
+  .alert-success { background: #052e16; border: 1px solid var(--green); color: #86efac; }
+
+  /* ── Folder nav ── */
+  .breadcrumb { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--muted); flex-wrap: wrap; }
+  .breadcrumb button { background: none; border: none; color: var(--accent); cursor: pointer; font-size: 11px; padding: 0; }
+  .breadcrumb .sep { color: var(--border); }
+
+  /* ── Worksheet list ── */
+  .ws-list { display: flex; flex-direction: column; gap: 4px; max-height: 260px; overflow-y: auto; }
+  .ws-item {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 10px;
+    background: var(--surface);
+    border: 1px solid transparent;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: border-color 0.12s, background 0.12s;
+  }
+  .ws-item:hover { background: var(--surface2); }
+  .ws-item.selected { border-color: var(--accent); background: #1a1a4e; }
+  .ws-item input[type=checkbox] { accent-color: var(--accent); width: 15px; height: 15px; flex-shrink: 0; }
+  .ws-item .ws-name { flex: 1; font-size: 12px; font-weight: 500; }
+  .ws-item .ws-meta { font-size: 10px; color: var(--muted); }
+  .ws-item .ws-icon { font-size: 14px; }
+
+  .folder-item { cursor: pointer; }
+  .folder-item .ws-name { color: #fbbf24; }
+
+  /* ── Selection bar ── */
+  .sel-bar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 12px;
+    background: var(--surface);
+    border-radius: 8px;
+    font-size: 11px; color: var(--muted);
+  }
+  .sel-bar .sel-actions { display: flex; gap: 6px; }
+
+  /* ── Progress ── */
+  .progress-wrap { display: flex; flex-direction: column; gap: 8px; }
+  .progress-bar-bg { background: var(--surface2); border-radius: 4px; height: 8px; overflow: hidden; }
+  .progress-bar { background: var(--accent); height: 100%; transition: width 0.3s; border-radius: 4px; }
+  .progress-log { font-size: 11px; color: var(--muted); max-height: 120px; overflow-y: auto; }
+
+  /* ── Spinner ── */
+  .spin { animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── Scrollbar ── */
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--surface2); border-radius: 2px; }
+
+  /* ── User pill ── */
+  .user-pill {
+    display: flex; align-items: center; gap: 6px;
+    padding: 4px 10px 4px 6px;
+    background: var(--surface);
+    border-radius: 20px;
+    font-size: 11px; color: var(--muted);
+  }
+  .user-pill .avatar {
+    width: 22px; height: 22px; border-radius: 50%;
+    background: var(--accent); color: white;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10px; font-weight: 700; flex-shrink: 0;
+  }
+</style>
+</head>
+<body>
+
+<!-- ══ SCREEN: Login ══════════════════════════════════════════════════════ -->
+<div id="screen-login" class="screen active">
+  <div class="header">
+    <span class="logo">📚</span>
+    <div>
+      <h1>Vividbooks Sync</h1>
+      <span>Přihlaste se svým Vividbooks účtem</span>
+    </div>
+  </div>
+
+  <div id="login-error" class="alert alert-error" style="display:none"></div>
+
+  <div style="display:flex;flex-direction:column;gap:12px">
+    <div>
+      <label for="email">E-mail</label>
+      <input type="email" id="email" placeholder="vas@email.cz" autocomplete="email" />
+    </div>
+    <div>
+      <label for="password">Heslo</label>
+      <input type="password" id="password" placeholder="••••••••" autocomplete="current-password" />
+    </div>
+  </div>
+
+  <button class="btn btn-primary" id="btn-login">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+    Přihlásit se
+  </button>
+
+  <div class="alert alert-info" style="margin-top:auto">
+    Tento plugin přistupuje k vašim worksheetům uloženým v Supabase a přenáší je do Figmy jako strukturované sekce.
+  </div>
+</div>
+
+<!-- ══ SCREEN: Picker ════════════════════════════════════════════════════ -->
+<div id="screen-picker" class="screen">
+  <div class="header">
+    <span class="logo">📚</span>
+    <div style="flex:1">
+      <h1>Vybrat worksheety</h1>
+      <span>Označte listy pro import do Figmy</span>
+    </div>
+    <div class="user-pill" id="user-pill">
+      <div class="avatar" id="user-avatar">?</div>
+      <span id="user-email-short">...</span>
+    </div>
+  </div>
+
+  <!-- Breadcrumb -->
+  <div class="breadcrumb" id="breadcrumb">
+    <button id="bc-root">🏠 Kořen</button>
+  </div>
+
+  <!-- List -->
+  <div class="ws-list" id="ws-list">
+    <div style="color:var(--muted);text-align:center;padding:20px;font-size:12px">Načítám...</div>
+  </div>
+
+  <!-- Selection bar -->
+  <div class="sel-bar">
+    <span id="sel-count">0 vybráno</span>
+    <div class="sel-actions">
+      <button class="btn btn-ghost btn-sm" id="btn-select-all">Vše</button>
+      <button class="btn btn-ghost btn-sm" id="btn-deselect-all">Žádné</button>
+    </div>
+  </div>
+
+  <button class="btn btn-primary" id="btn-sync" disabled>
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.51"/></svg>
+    Syncing do Figmy
+  </button>
+
+  <button class="btn btn-ghost btn-sm" id="btn-logout" style="opacity:0.6">Odhlásit se</button>
+</div>
+
+<!-- ══ SCREEN: Progress ══════════════════════════════════════════════════ -->
+<div id="screen-progress" class="screen">
+  <div class="header">
+    <span class="logo">📚</span>
+    <div><h1>Přenáším do Figmy...</h1><span id="progress-subtitle">Připravuji obrázky</span></div>
+  </div>
+
+  <div class="progress-wrap">
+    <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted)">
+      <span id="progress-label">0 / 0</span>
+      <span id="progress-pct">0 %</span>
+    </div>
+    <div class="progress-bar-bg">
+      <div class="progress-bar" id="progress-bar" style="width:0%"></div>
+    </div>
+    <div class="progress-log" id="progress-log"></div>
+  </div>
+</div>
+
+<!-- ══ SCREEN: Done ══════════════════════════════════════════════════════ -->
+<div id="screen-done" class="screen">
+  <div style="text-align:center;padding:20px 0">
+    <div style="font-size:48px;margin-bottom:12px">✅</div>
+    <h1 style="font-size:16px;font-weight:700;margin-bottom:6px">Hotovo!</h1>
+    <p id="done-msg" style="font-size:12px;color:var(--muted);line-height:1.6"></p>
+  </div>
+
+  <div class="alert alert-success">
+    Worksheety jsou nyní ve Figmě jako sekce. Každý blok je samostatný frame — můžete je libovolně upravovat.
+  </div>
+
+  <div style="display:flex;gap:8px;margin-top:auto">
+    <button class="btn btn-ghost" id="btn-back-picker">← Importovat další</button>
+    <button class="btn btn-primary" id="btn-close">Zavřít plugin</button>
+  </div>
+</div>
+
+<!-- ══ SCREEN: Error ════════════════════════════════════════════════════ -->
+<div id="screen-error" class="screen">
+  <div style="text-align:center;padding:20px 0">
+    <div style="font-size:48px;margin-bottom:12px">⚠️</div>
+    <h1 style="font-size:16px;font-weight:700;margin-bottom:6px">Chyba</h1>
+    <p id="error-msg" style="font-size:12px;color:var(--muted);line-height:1.6"></p>
+  </div>
+  <button class="btn btn-ghost" id="btn-back-error">← Zpět</button>
+</div>
+
+<!-- __BUNDLE__ -->
+</body>
+</html>

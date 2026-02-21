@@ -306,6 +306,7 @@ export function PageSettingsPanel({ slide, onClose, onUpdate, onTypeChange, init
   return (
     <div 
       className="flex flex-col overflow-hidden"
+      data-settings-panel="page"
       style={{ 
         position: 'fixed',
         top: 0,

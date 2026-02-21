@@ -9,7 +9,11 @@ import { MyContentLayout } from './components/MyContentLayout';
 import { MyContentEditor } from './components/MyContentEditor';
 import { MyClassesLayout } from './components/MyClassesLayout';
 import { WorksheetEditorLayout } from './components/WorksheetEditorLayout';
+import { ProEditorLayout } from './components/worksheet-editor-pro';
+import { ImportAgentStudio } from './components/admin/ImportAgentStudio';
+import { WorkbookProLayout } from './components/workbook-editor-pro';
 import { PaperTestPage } from './components/worksheet-editor/PaperTestPage';
+import { PrintPage } from './components/worksheet-editor-pro/PrintPage';
 import { PaperTestUploadPage } from './components/worksheet-editor/PaperTestUploadPage';
 import { QuizEditorLayout } from './components/quiz/QuizEditorLayout';
 import { QuizViewPage } from './components/quiz/QuizViewPage';
@@ -31,6 +35,9 @@ import { JoinSession } from './components/classroom/JoinSession';
 import { CustomerSuccess } from './components/admin/CustomerSuccess';
 import { MigrationAgent } from './components/admin/MigrationAgent';
 import { RAGBulkUpload } from './components/admin/RAGBulkUpload';
+import { CurriculumFactory } from './components/admin/CurriculumFactory';
+import { CurriculumFactoryV2 } from './components/admin/CurriculumFactoryV2';
+import { DataSetCreator } from './components/admin/DataSetCreator';
 import { StudentProfilePage } from './components/classroom/StudentProfilePage';
 import ClassChatLayout from './components/classroom/ClassChatLayout';
 import { StudentLoginPage, StudentSetupPassword, StudentDashboard, LiveSessionNotification } from './components/student';
@@ -61,10 +68,20 @@ function QuizNewRedirect() {
   return <Navigate to={targetUrl} replace />;
 }
 
+// OFFLINE MODE: Disabled - always use Supabase auth
+const isOfflineMode = () => {
+  // Clear any stored offline mode flag
+  if (typeof window !== 'undefined') {
+    localStorage.removeItem('vividbooks-offline-mode');
+  }
+  return false;
+};
+
 export default function App() {
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
+  const [offlineMode] = useState(isOfflineMode);
 
   useEffect(() => {
     // Check for saved theme preference
@@ -74,10 +91,22 @@ export default function App() {
       document.documentElement.classList.toggle('dark', savedTheme === 'dark');
     }
 
+    // OFFLINE MODE: Skip auth check entirely
+    if (offlineMode) {
+      console.log('[App] 🔌 OFFLINE MODE - skipping Supabase auth');
+      setIsCheckingAuth(false);
+      setIsAuthenticated(true); // Pretend we're authenticated for admin routes
+      return;
+    }
+
     // Check for existing session
     checkAuth();
     
-    // Listen for auth state changes (login/logout)
+    // Listen for auth state changes (login/logout) - skip in offline mode
+    if (offlineMode) {
+      return; // No cleanup needed
+    }
+    
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       console.log('[App] Auth state change:', event, session?.user?.email);
       if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION') && session?.user) {
@@ -93,7 +122,7 @@ export default function App() {
     return () => {
       subscription.unsubscribe();
     };
-  }, []);
+  }, [offlineMode]);
 
   // Track if sync is already running
   const syncInProgress = useRef(false);
@@ -477,6 +506,18 @@ export default function App() {
           } 
         />
         
+        {/* Import Agent Studio */}
+        <Route 
+          path="/admin/import-agent" 
+          element={
+            isAuthenticated || isOfflineMode() ? (
+              <ImportAgentStudio theme={theme} toggleTheme={toggleTheme} />
+            ) : (
+              <Navigate to="/admin/login" replace />
+            )
+          } 
+        />
+
         <Route 
           path="/admin/customer-success" 
           element={
@@ -488,11 +529,62 @@ export default function App() {
           } 
         />
         
+        {/* Worksheet Editor Pro - Advanced internal editor */}
+        <Route 
+          path="/admin/worksheet-pro/:id" 
+          element={
+            isAuthenticated || isOfflineMode() ? (
+              <ProEditorLayout theme={theme} toggleTheme={toggleTheme} />
+            ) : (
+              <Navigate to="/admin/login" replace />
+            )
+          } 
+        />
+        
+        {/* Worksheet Editor Pro - New worksheet */}
+        <Route 
+          path="/admin/worksheet-pro" 
+          element={
+            isAuthenticated || isOfflineMode() ? (
+              <Navigate to={`/admin/worksheet-pro/${Date.now()}`} replace />
+            ) : (
+              <Navigate to="/admin/login" replace />
+            )
+          } 
+        />
+        
+        {/* Workbook Editor Pro - Figma-style workbook editor */}
+        <Route 
+          path="/admin/workbook-pro/:id" 
+          element={
+            isAuthenticated || isOfflineMode() ? (
+              <WorkbookProLayout theme={theme} toggleTheme={toggleTheme} />
+            ) : (
+              <Navigate to="/admin/login" replace />
+            )
+          } 
+        />
+        
+        {/* Workbook Editor Pro - New workbook */}
+        <Route 
+          path="/admin/workbook-pro" 
+          element={
+            isAuthenticated || isOfflineMode() ? (
+              <Navigate to={`/admin/workbook-pro/${Date.now()}`} replace />
+            ) : (
+              <Navigate to="/admin/login" replace />
+            )
+          } 
+        />
+        
         <Route 
           path="/library/my-content/worksheet-editor/:id" 
           element={<WorksheetEditorLayout theme={theme} toggleTheme={toggleTheme} />} 
         />
         
+        {/* Print / PDF export page */}
+        <Route path="/print/:worksheetId" element={<PrintPage />} />
+
         {/* Paper Test with AI Grading */}
         <Route 
           path="/worksheet/paper-test/:worksheetId" 
@@ -580,6 +672,87 @@ export default function App() {
           element={
             isAuthenticated ? (
               <MigrationAgent />
+            ) : (
+              <Navigate to="/admin/login" replace />
+            )
+          } 
+        />
+        
+        {/* Worksheet Editor Pro - Advanced internal editor */}
+        <Route 
+          path="/admin/worksheet-pro/:id" 
+          element={
+            isAuthenticated || isOfflineMode() ? (
+              <ProEditorLayout theme={theme} toggleTheme={toggleTheme} />
+            ) : (
+              <Navigate to="/admin/login" replace />
+            )
+          } 
+        />
+        
+        {/* Worksheet Editor Pro - New worksheet */}
+        <Route 
+          path="/admin/worksheet-pro" 
+          element={
+            isAuthenticated || isOfflineMode() ? (
+              <Navigate to={`/admin/worksheet-pro/${Date.now()}`} replace />
+            ) : (
+              <Navigate to="/admin/login" replace />
+            )
+          } 
+        />
+        
+        {/* Workbook Editor Pro - Figma-style workbook editor */}
+        <Route 
+          path="/admin/workbook-pro/:id" 
+          element={
+            isAuthenticated || isOfflineMode() ? (
+              <WorkbookProLayout theme={theme} toggleTheme={toggleTheme} />
+            ) : (
+              <Navigate to="/admin/login" replace />
+            )
+          } 
+        />
+        
+        {/* Workbook Editor Pro - New workbook */}
+        <Route 
+          path="/admin/workbook-pro" 
+          element={
+            isAuthenticated || isOfflineMode() ? (
+              <Navigate to={`/admin/workbook-pro/${Date.now()}`} replace />
+            ) : (
+              <Navigate to="/admin/login" replace />
+            )
+          } 
+        />
+        
+        <Route 
+          path="/admin/curriculum-factory" 
+          element={
+            isAuthenticated ? (
+              <CurriculumFactoryV2 />
+            ) : (
+              <Navigate to="/admin/login" replace />
+            )
+          } 
+        />
+        
+        <Route 
+          path="/admin/curriculum-factory-old" 
+          element={
+            isAuthenticated ? (
+              <CurriculumFactory />
+            ) : (
+              <Navigate to="/admin/login" replace />
+            )
+          } 
+        />
+        
+        <Route 
+          path="/admin/data-sets" 
+          element={
+            isAuthenticated ? (
+              <DataSetCreator />
             ) : (
               <Navigate to="/admin/login" replace />
             )

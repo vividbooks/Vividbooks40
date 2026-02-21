@@ -46,10 +46,10 @@ function ScaledMath({ children, scale = 1.3 }: { children: React.ReactNode; scal
  * Common Czech prepositions: a, i, o, u, v, z, k, s
  */
 export function preventOrphans(text: string): string {
-  // Match a space, then a single letter (Czech prepositions), then a space
-  // Replace the space AFTER the letter with non-breaking space
-  // This keeps the letter attached to the following word
-  return text.replace(/(\s)([aioukvszAIOUKVSZ])(\s)/g, '$1$2\u00A0');
+  // Match a space (or start of string), then a single Czech preposition/conjunction, then a space.
+  // Replace the trailing space with a non-breaking space to keep the word attached to what follows.
+  // The (^|\s) handles words at the very start of a text node (e.g. inside <strong>k word</strong>).
+  return text.replace(/(^|\s)([aioukvszAIOUKVSZ])(\s)/g, '$1$2\u00A0');
 }
 
 export function MathText({ children, className, mathScale = 1.3, style }: MathTextProps) {
@@ -191,6 +191,36 @@ export function MathText({ children, className, mathScale = 1.3, style }: MathTe
   // This handles \textbf{}, \textit{}, \underline{} etc. that are not inside $...$
   
   // Function to process text commands
+  // Highlight ellipsis ("..." or "…") with a colored box to indicate where the answer goes
+  const highlightEllipsis = (text: string, baseKey: string): React.ReactNode[] => {
+    const ellipsisRegex = /(\.{2,}|…)/g;
+    const result: React.ReactNode[] = [];
+    let last = 0;
+    let m;
+    while ((m = ellipsisRegex.exec(text)) !== null) {
+      if (m.index > last) result.push(text.slice(last, m.index));
+      result.push(
+        <span
+          key={`ell-${baseKey}-${m.index}`}
+          style={{
+            display: 'inline-block',
+            backgroundColor: '#e0e7ff',
+            color: '#4338ca',
+            borderRadius: '0.2em',
+            padding: '0 0.25em',
+            margin: '0 0.05em',
+            fontWeight: 700,
+          }}
+        >
+          {m[0]}
+        </span>
+      );
+      last = m.index + m[0].length;
+    }
+    if (last < text.length) result.push(text.slice(last));
+    return result.length > 0 ? result : [text];
+  };
+
   const processTextCommands = (text: string): React.ReactNode[] => {
     const result: React.ReactNode[] = [];
     
@@ -201,9 +231,9 @@ export function MathText({ children, className, mathScale = 1.3, style }: MathTe
     let cmdMatch;
     
     while ((cmdMatch = textCmdRegex.exec(text)) !== null) {
-      // Add text before the match
+      // Add text before the match (with ellipsis highlighting)
       if (cmdMatch.index > lastIdx) {
-        result.push(text.slice(lastIdx, cmdMatch.index));
+        highlightEllipsis(text.slice(lastIdx, cmdMatch.index), `pre-${cmdMatch.index}`).forEach(p => result.push(p));
       }
       
       const fullMatch = cmdMatch[0];
@@ -220,9 +250,9 @@ export function MathText({ children, className, mathScale = 1.3, style }: MathTe
       lastIdx = cmdMatch.index + fullMatch.length;
     }
     
-    // Add remaining text
+    // Add remaining text (with ellipsis highlighting)
     if (lastIdx < text.length) {
-      result.push(text.slice(lastIdx));
+      highlightEllipsis(text.slice(lastIdx), `rem-${lastIdx}`).forEach(p => result.push(p));
     }
     
     return result.length > 0 ? result : [text];

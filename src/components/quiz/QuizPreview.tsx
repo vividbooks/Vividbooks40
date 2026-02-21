@@ -39,17 +39,21 @@ import {
   VideoQuizActivitySlide,
   InfoSlide,
   SlideResponse,
+  ToolsSlide,
   calculateQuizScore,
   getTemplateById,
 } from '../../types/quiz';
 import { MathText } from '../math/MathText';
 import { AutoScaleQuestion } from './AutoScaleQuestion';
+import { ExampleActivityView } from './ExampleActivityView';
 import { BoardSlideView } from './slides/BoardSlideView';
 import { VotingSlideView } from './slides/VotingSlideView';
 import { ConnectPairsView } from './slides/ConnectPairsView';
 import { FillBlanksView } from './slides/FillBlanksView';
 import { ImageHotspotsView } from './slides/ImageHotspotsView';
 import { VideoQuizView } from './slides/VideoQuizView';
+import { FormView } from './slides/FormView';
+import { CertificateView } from './slides/CertificateView';
 import Lottie from 'lottie-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { checkMathAnswer } from '../../utils/math-compare';
@@ -139,19 +143,26 @@ function ABCSlideView({
   slide, 
   showSolution, 
   selectedAnswer, 
-  onSelectAnswer 
+  onSelectAnswer,
+  onSubmit,
+  hasAnswered,
 }: { 
   slide: ABCActivitySlide;
   showSolution: boolean;
   selectedAnswer?: string;
   onSelectAnswer?: (id: string) => void;
+  onSubmit?: () => void;
+  hasAnswered?: boolean;
 }) {
   const hasImage = !!slide.media?.url;
   const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
   
   const answerType = (slide as any).answerType;
+  const isBubblesMode = answerType === 'bubbles' || answerType === 'squares';
+  const isSquaresStyle = answerType === 'squares';
   const isSquareMode = answerType === 'image' || answerType === 'emoji';
   const optionCount = slide.options.length;
+  const bubbleColors = ['#93C5FD', '#7DD3FC', '#A5B4FC', '#BAE6FD', '#C7D2FE', '#E0F2FE'];
   
   // Dynamic size based on option count: 2 options = large, 4+ = smaller
   // Increased by 20% for better visibility
@@ -162,6 +173,56 @@ function ABCSlideView({
     return '168px';
   };
   
+  // Seeded random for consistent playful positioning
+  const seeded = (i: number, salt: number) => {
+    const x = Math.sin(i * 127.1 + salt * 311.7) * 43758.5453;
+    return x - Math.floor(x);
+  };
+
+  // Render bubble option with playful rotation/offset
+  const renderBubbleOption = (option: any, idx: number) => {
+    const isSelected = selectedAnswer === option.id;
+    const isCorrect = showSolution && option.isCorrect;
+    const isWrong = showSolution && isSelected && !option.isCorrect;
+    const color = bubbleColors[idx % bubbleColors.length];
+    const size = isMobile ? 130 : optionCount <= 3 ? 220 : 180;
+    const rotation = (seeded(idx, 1) - 0.5) * (isMobile ? 14 : 28);
+    const offsetX = (seeded(idx, 2) - 0.5) * (isMobile ? 10 : 40);
+    const offsetY = (seeded(idx, 3) - 0.5) * (isMobile ? 10 : 40);
+    const scaleJitter = 0.95 + seeded(idx, 4) * 0.10;
+
+    return (
+      <button
+        key={option.id}
+        onClick={() => onSelectAnswer?.(option.id)}
+        disabled={showSolution}
+        className="flex items-center justify-center font-bold transition-all"
+        style={{
+          width: size,
+          height: size,
+          borderRadius: isSquaresStyle ? (isMobile ? 20 : 28) : '50%',
+          backgroundColor: isCorrect ? '#10B981' : isWrong ? '#EF4444' : color,
+          color: (isCorrect || isWrong) ? '#fff' : '#1e3a5f',
+          fontSize: isMobile ? 18 : size > 180 ? 32 : 26,
+          border: isSelected && !showSolution ? '4px solid #1e40af' : isCorrect ? '4px solid #059669' : isWrong ? '4px solid #DC2626' : '4px solid transparent',
+          boxShadow: isSelected ? '0 6px 24px rgba(59,130,246,0.3)' : '0 3px 12px rgba(59,130,246,0.15)',
+          transform: `translate(${offsetX}px, ${offsetY}px) rotate(${isSelected ? 0 : rotation}deg) scale(${isSelected ? 1.1 : scaleJitter})`,
+          lineHeight: 1.2,
+          textAlign: 'center',
+          padding: isMobile ? 10 : 12,
+        }}
+      >
+        <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, transform: isSquaresStyle ? undefined : `rotate(${isSelected ? 0 : -rotation}deg)` }}>
+          <span style={{ fontSize: isMobile ? 11 : 13, fontWeight: 800, opacity: 0.5, letterSpacing: 1 }}>{String.fromCharCode(65 + idx)}</span>
+          <MathText>{option.textContent || option.content || option.label}</MathText>
+          {(isCorrect || isWrong) && (
+            <span style={{ fontSize: isMobile ? 18 : 24 }}>{isCorrect ? '✓' : '✗'}</span>
+          )}
+        </span>
+      </button>
+    );
+  };
+
   // Render option button
   const renderOption = (option: any) => {
     const isSelected = selectedAnswer === option.id;
@@ -250,6 +311,83 @@ function ABCSlideView({
     );
   };
 
+  // Bubbles layout - always two-column (question left, bubbles right)
+  if (isBubblesMode) {
+    return (
+      <div className={isMobile ? "flex flex-col h-full p-4 overflow-auto" : "flex h-full p-6 gap-6"}>
+        {/* Left/Top: Question + Image (identical to regular ABC) */}
+        {isMobile ? (
+          <>
+            <div className="flex-1 flex items-center justify-center py-6 px-2">
+              <h1 className="text-2xl font-bold leading-relaxed text-center" style={{ color: 'inherit' }}>
+                <MathText>{slide.question || ''}</MathText>
+              </h1>
+            </div>
+            {hasImage && (
+              <div className="flex justify-center py-4">
+                <img src={slide.media!.url} alt="" className="max-w-full max-h-40 object-contain" />
+              </div>
+            )}
+          </>
+        ) : hasImage ? (
+          <div className="flex-1 flex flex-col">
+            <div className="flex items-center justify-center p-4" style={{ height: '50%' }}>
+              <h1 className="text-3xl md:text-4xl font-bold text-center leading-tight" style={{ color: 'inherit' }}>
+                <MathText>{slide.question || ''}</MathText>
+              </h1>
+            </div>
+            <div className="flex items-center justify-center" style={{ height: '50%' }}>
+              <img src={slide.media!.url} alt="" className="max-w-full max-h-full object-contain" />
+            </div>
+          </div>
+        ) : (
+          <div className="flex-1 flex items-center justify-center p-6">
+            <AutoScaleQuestion targetFill={0.85} maxFontSize={150}>{slide.question || ''}</AutoScaleQuestion>
+          </div>
+        )}
+        {/* Right/Bottom: Bubbles + submit */}
+        {/* Right/Bottom: Bubbles + submit */}
+        <div
+          className="flex flex-col items-center justify-center"
+          style={{
+            flex: isMobile ? undefined : '0 0 45%',
+            minHeight: isMobile ? undefined : '100%',
+            padding: isMobile ? '4px 8px 16px' : 24,
+            gap: isMobile ? 10 : 16,
+          }}
+        >
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(auto-fill, minmax(180px, 1fr))',
+              gap: isMobile ? 8 : 20,
+              width: '100%',
+              justifyItems: 'center',
+              overflow: 'visible',
+            }}
+          >
+            {slide.options.map((opt, i) => renderBubbleOption(opt, i))}
+          </div>
+          {onSubmit && !hasAnswered && !showSolution && (
+            <button
+              onClick={onSubmit}
+              disabled={!selectedAnswer}
+              className="flex items-center gap-2 rounded-xl text-white font-semibold disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+              style={{ backgroundColor: '#4F46E5', boxShadow: '0 6px 12px rgba(99,102,241,0.25)', padding: isMobile ? '8px 20px' : '12px 32px', fontSize: isMobile ? 14 : 18 }}
+            >
+              Odpovědět
+            </button>
+          )}
+        </div>
+        {showSolution && slide.explanation && (
+          <div className="absolute bottom-4 left-4 right-4 p-3 rounded-xl bg-blue-50 border border-blue-200">
+            <p className="text-sm text-blue-800"><MathText>{slide.explanation}</MathText></p>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   // Mobile layout - always vertical
   if (isMobile) {
     return (
@@ -267,7 +405,7 @@ function ABCSlideView({
             <img 
               src={slide.media!.url} 
               alt="Obrázek k otázce"
-              className="max-w-full max-h-40 object-contain rounded-xl shadow-lg"
+              className="max-w-full max-h-40 object-contain"
             />
           </div>
         )}
@@ -305,14 +443,14 @@ function ABCSlideView({
             <img 
               src={slide.media!.url} 
               alt="Obrázek k otázce"
-              className="max-w-full max-h-full object-contain rounded-2xl shadow-lg"
+              className="max-w-full max-h-full object-contain"
             />
           </div>
         </div>
         
         {/* Right side - Options */}
-        <div className={isSquareMode 
-          ? 'flex-shrink-0 flex flex-wrap gap-3 justify-center items-center' 
+        <div className={isSquareMode
+          ? 'flex-shrink-0 flex flex-wrap gap-3 justify-center items-center'
           : 'w-80 flex-shrink-0 flex flex-col gap-3 justify-center'
         }>
           {slide.options.map(renderOption)}
@@ -338,8 +476,8 @@ function ABCSlideView({
       
       {/* Options - row for image/emoji on desktop, 2x2 for text */}
       <div className="flex-1 flex items-end pb-6">
-        <div className={isSquareMode 
-          ? 'flex gap-4 px-6 justify-center mx-auto' 
+        <div className={isSquareMode
+          ? 'flex gap-4 px-6 justify-center mx-auto'
           : 'grid grid-cols-2 gap-4 px-6 max-w-4xl mx-auto w-full'
         }>
           {slide.options.map(renderOption)}
@@ -432,105 +570,7 @@ function OpenSlideView({
   );
 }
 
-function ExampleSlideView({ 
-  slide,
-  textAnswer,
-  setTextAnswer,
-  showResult,
-  response,
-  onSubmit,
-  onOpenMathPanel
-}: { 
-  slide: ExampleActivitySlide;
-  textAnswer: string;
-  setTextAnswer: (text: string) => void;
-  showResult: boolean;
-  response?: SlideResponse;
-  onSubmit?: () => void;
-  onOpenMathPanel?: () => void;
-}) {
-  const [isHovered, setIsHovered] = useState(false);
-  
-  return (
-    <div className="flex flex-col h-full items-center justify-center p-8">
-      {/* Problem with auto-scaling */}
-      <h1 
-        className="text-4xl md:text-5xl font-bold text-center leading-tight mb-8"
-        style={{ overflowWrap: 'normal', wordBreak: 'normal', hyphens: 'none', color: 'inherit' }}
-      >
-        <MathText>{slide.problem || 'Zadání...'}</MathText>
-      </h1>
-      
-      {/* Answer input */}
-      <div className="w-full max-w-2xl">
-        <div 
-          className="relative"
-          onMouseEnter={() => setIsHovered(true)}
-          onMouseLeave={() => setIsHovered(false)}
-        >
-          {/* Math keyboard icon - shown on hover */}
-              <button
-            onClick={onOpenMathPanel}
-            className={`
-              absolute left-3 top-1/2 -translate-y-1/2 p-2 rounded-lg transition-all z-10
-              ${isHovered && !showResult ? 'opacity-100' : 'opacity-0'}
-              hover:bg-indigo-100 text-indigo-600
-            `}
-            title="Otevřít matematickou klávesnici"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
-              <path d="M4 2h16a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"/>
-              <path d="M9 7h6"/>
-              <path d="M12 7v10"/>
-              <path d="M7 11h10"/>
-            </svg>
-              </button>
-          
-          <input
-            type="text"
-            value={textAnswer}
-            onChange={(e) => setTextAnswer(e.target.value)}
-            disabled={showResult}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && textAnswer.trim() && onSubmit) {
-                onSubmit();
-              }
-            }}
-            className={`
-              w-full px-6 py-4 text-xl text-center rounded-2xl border-2 outline-none transition-all
-              ${showResult 
-                ? response?.isCorrect 
-                  ? 'bg-green-50 border-green-500' 
-                  : 'bg-red-50 border-red-500'
-                : 'border-slate-200 focus:border-indigo-400 hover:border-indigo-300'
-              }
-            `}
-            placeholder="Vaše odpověď"
-          />
-              </div>
-        
-        {/* Result */}
-        {showResult && (
-          <div className="mt-4 flex items-center justify-center gap-2">
-            {response?.isCorrect ? (
-              <>
-                <CheckCircle className="w-6 h-6 text-green-500" />
-                <span className="font-medium text-green-600">Správně!</span>
-              </>
-            ) : (
-              <>
-                <XCircle className="w-6 h-6 text-red-500" />
-                <span className="font-medium text-red-600">
-                  Správná odpověď: <MathText>{slide.finalAnswer || ''}</MathText>
-                </span>
-              </>
-            )}
-        </div>
-      )}
-      </div>
-    </div>
-  );
-}
+// ExampleSlideView has been moved to shared ExampleActivityView component
 
 function InfoSlideView({ slide }: { slide: InfoSlide }) {
   // If slide has new block-based layout, render it
@@ -1365,6 +1405,7 @@ export function QuizPreview({ quiz, onClose, isLive = false, onComplete, initial
   const [responses, setResponses] = useState<SlideResponse[]>([]);
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
   const [textAnswer, setTextAnswer] = useState('');
+  const [formAnswer, setFormAnswer] = useState<Record<string, string | string[]>>({});
   const [showResult, setShowResult] = useState(false);
   const [isCompleted, setIsCompleted] = useState(false);
   const [showChapterMenu, setShowChapterMenu] = useState(false);
@@ -1556,13 +1597,14 @@ export function QuizPreview({ quiz, onClose, isLive = false, onComplete, initial
   }, [quiz, currentSlideIndex, isAnimating, responses, onComplete]);
   
   const goToPrevSlide = useCallback(() => {
-    if (currentSlideIndex > 0 && !isAnimating && quiz.settings.allowBack) {
+    const allowBack = quiz?.settings?.allowBack ?? true;
+    if (currentSlideIndex > 0 && !isAnimating && allowBack) {
       setIsAnimating(true);
       setPrevSlideIndex(currentSlideIndex);
       setCurrentSlideIndex(prev => prev - 1);
       setTimeout(() => setIsAnimating(false), 500);
     }
-  }, [currentSlideIndex, isAnimating, quiz.settings.allowBack]);
+  }, [currentSlideIndex, isAnimating, quiz?.settings?.allowBack]);
   
   // Submit answer
   const submitAnswer = () => {
@@ -1583,8 +1625,11 @@ export function QuizPreview({ quiz, onClose, isLive = false, onComplete, initial
       answer = textAnswer;
     } else if (currentSlide.activityType === 'example') {
       const exampleSlide = currentSlide as ExampleActivitySlide;
-      // Use mathematical comparison for example answers
-      const correctAnswers = exampleSlide.finalAnswer ? [exampleSlide.finalAnswer] : [];
+      // Use mathematical comparison for example answers (including alternatives)
+      const correctAnswers = [
+        ...(exampleSlide.finalAnswer ? [exampleSlide.finalAnswer] : []),
+        ...(exampleSlide.alternativeAnswers || []).filter(Boolean),
+      ];
       isCorrect = checkMathAnswer(textAnswer, correctAnswers);
       answer = textAnswer;
     }
@@ -1748,6 +1793,8 @@ export function QuizPreview({ quiz, onClose, isLive = false, onComplete, initial
                 showSolution={showResult}
                 selectedAnswer={selectedOption || undefined}
                 onSelectAnswer={setSelectedOption}
+                onSubmit={(slide as any).answerType === 'bubbles' ? submitAnswer : undefined}
+                hasAnswered={hasAnswered}
               />
             );
           case 'open':
@@ -1763,14 +1810,17 @@ export function QuizPreview({ quiz, onClose, isLive = false, onComplete, initial
             );
           case 'example':
             return (
-              <ExampleSlideView 
+              <ExampleActivityView 
                 slide={slide as ExampleActivitySlide}
                 textAnswer={textAnswer}
                 setTextAnswer={setTextAnswer}
-                showResult={showResult}
+                hasAnswered={showResult}
                 response={currentResponse}
+                showResults={showResult}
+                showExplanation={true}
                 onSubmit={submitAnswer}
-                onOpenMathPanel={() => setShowMathPanel(true)}
+                customKeys={quiz?.settings?.customKeys}
+                extraKeys={quiz?.settings?.extraKeys}
               />
             );
           case 'board':
@@ -1824,8 +1874,35 @@ export function QuizPreview({ quiz, onClose, isLive = false, onComplete, initial
                 readOnly={false}
               />
             );
+          case 'form':
+            return (
+              <FormView 
+                slide={slide as any}
+                answer={formAnswer}
+                onAnswerChange={(answer) => {
+                  setFormAnswer(answer);
+                  // Also store as text answer for saving
+                  setTextAnswer(JSON.stringify(answer));
+                }}
+                isReadOnly={false}
+              />
+            );
           default:
             return <div className="text-slate-500 text-center">Nepodporovaný typ aktivity</div>;
+        }
+      case 'tools':
+        const toolsSlide = slide as ToolsSlide;
+        switch (toolsSlide.toolType) {
+          case 'certificate':
+            return (
+              <CertificateView 
+                slide={toolsSlide}
+                quiz={quiz}
+                isPreview={true}
+              />
+            );
+          default:
+            return <div className="text-slate-500 text-center">Nepodporovaný typ nástroje</div>;
         }
       default:
         return <div className="text-slate-500 text-center">Nepodporovaný typ slidu</div>;
@@ -2156,8 +2233,8 @@ export function QuizPreview({ quiz, onClose, isLive = false, onComplete, initial
           {/* Left arrow - exact copy from QuizStudentView */}
           <button
             onClick={goToPrevSlide}
-            disabled={currentSlideIndex === 0 || !quiz.settings.allowBack}
-            className={`w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 ${currentSlideIndex === 0 || !quiz.settings.allowBack ? 'opacity-30 cursor-not-allowed' : ''} bg-[#CBD5E1] text-slate-600`}
+            disabled={currentSlideIndex === 0 || !(quiz?.settings?.allowBack ?? true)}
+            className={`w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 ${currentSlideIndex === 0 || !(quiz?.settings?.allowBack ?? true) ? 'opacity-30 cursor-not-allowed' : ''} bg-[#CBD5E1] text-slate-600`}
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
@@ -2213,9 +2290,9 @@ export function QuizPreview({ quiz, onClose, isLive = false, onComplete, initial
           >
             <button
               onClick={goToPrevSlide}
-              disabled={currentSlideIndex === 0 || !quiz.settings.allowBack}
+              disabled={currentSlideIndex === 0 || !(quiz?.settings?.allowBack ?? true)}
               className={`w-12 h-12 rounded-full flex items-center justify-center transition-all duration-300 ease-out bg-[#CBD5E1] text-slate-600 ${
-                currentSlideIndex === 0 || !quiz.settings.allowBack ? 'opacity-30 cursor-not-allowed' : 'hover:h-28'
+                currentSlideIndex === 0 || !(quiz?.settings?.allowBack ?? true) ? 'opacity-30 cursor-not-allowed' : 'hover:h-28'
               }`}
             >
               <ArrowLeft className="w-5 h-5" />
@@ -2267,14 +2344,29 @@ export function QuizPreview({ quiz, onClose, isLive = false, onComplete, initial
                 </div>
               )}
               
-              {/* Submit button for activities */}
-              {currentSlide?.type === 'activity' && !hasAnswered && (selectedOption || textAnswer.trim()) && (
+              {/* Submit button for activities (except example and bubbles ABC - they have their own) */}
+              {currentSlide?.type === 'activity' && currentSlide.activityType !== 'example' && !((currentSlide as any).activityType === 'abc' && ((currentSlide as any).answerType === 'bubbles' || (currentSlide as any).answerType === 'squares')) && !hasAnswered && (
+                // Show for regular activities when answer is provided
+                (currentSlide.activityType !== 'form' && (selectedOption || textAnswer.trim())) ||
+                // Show for form when it has fields
+                (currentSlide.activityType === 'form' && (currentSlide as any).fields?.length > 0)
+              ) && (
                 <div className="p-6 flex justify-center border-t border-slate-100">
                   <button
                     onClick={submitAnswer}
-                    className="px-8 py-3 rounded-xl font-medium transition-colors bg-indigo-600 hover:bg-indigo-700 text-white"
+                    disabled={
+                      currentSlide.activityType === 'form' && 
+                      ((currentSlide as any).fields || []).some((field: any) => 
+                        field.required && (
+                          !formAnswer[field.id] || 
+                          (Array.isArray(formAnswer[field.id]) && (formAnswer[field.id] as string[]).length === 0) ||
+                          (typeof formAnswer[field.id] === 'string' && !(formAnswer[field.id] as string).trim())
+                        )
+                      )
+                    }
+                    className="px-8 py-3 rounded-xl font-medium transition-colors bg-indigo-600 hover:bg-indigo-700 text-white disabled:bg-slate-300 disabled:cursor-not-allowed"
                   >
-                    Odpovědět
+                    {currentSlide.activityType === 'form' ? 'Odeslat formulář' : 'Odpovědět'}
                   </button>
                 </div>
               )}
@@ -2456,71 +2548,7 @@ export function QuizPreview({ quiz, onClose, isLive = false, onComplete, initial
         </div>
       )}
       
-      {/* Math Keyboard Panel - slides in from right */}
-      <div 
-        className={`
-          hidden lg:flex flex-col transition-all duration-300 ease-out flex-shrink-0
-        `}
-        style={{ 
-          backgroundColor: '#1e2533', 
-          overflow: 'hidden',
-          width: showMathPanel ? '320px' : '0px',
-        }}
-      >
-        {showMathPanel && (
-          <div className="flex flex-col h-full p-3" style={{ width: '320px' }}>
-            {/* Header */}
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-base font-semibold text-white">Kalkulačka</h3>
-              <button
-                onClick={() => setShowMathPanel(false)}
-                className="w-7 h-7 rounded-full flex items-center justify-center text-white/70 hover:bg-white/10 hover:text-white transition-colors"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            
-            {/* Math Keyboard - fits panel width */}
-            <div className="flex-1 overflow-hidden" style={{ maxWidth: '100%' }}>
-              <MathKeyboard
-                value={textAnswer}
-                onChange={setTextAnswer}
-                onClose={() => setShowMathPanel(false)}
-                showPreview={true}
-                mode="inline"
-                compact={true}
-              />
-            </div>
-          </div>
-        )}
-      </div>
-      
-      {/* Mobile Math Keyboard - modal overlay */}
-      {showMathPanel && isMobile && (
-        <div className="lg:hidden fixed inset-0 z-50 flex items-end justify-center bg-black/50">
-          <div className="w-full max-w-md bg-white rounded-t-2xl shadow-2xl">
-            <div className="flex items-center justify-between p-4 border-b border-slate-100">
-              <h3 className="font-semibold text-slate-700">Kalkulačka</h3>
-              <button
-                onClick={() => setShowMathPanel(false)}
-                className="w-8 h-8 rounded-full flex items-center justify-center bg-slate-100 text-slate-500"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="p-2 overflow-auto">
-              <MathKeyboard
-                value={textAnswer}
-                onChange={setTextAnswer}
-                onClose={() => setShowMathPanel(false)}
-                showPreview={true}
-                mode="inline"
-                compact={true}
-              />
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Old math panel removed - calculator is now inline in ExampleSlideView */}
     </div>
   );
 }

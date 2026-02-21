@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { LogOut, Moon, Sun, Save, BookOpen, CheckCircle2, Loader2, ChevronDown, ChevronUp, Settings, User, GraduationCap, ExternalLink, BarChart3, Play, Pencil, Plus, Download, ArrowLeft } from 'lucide-react';
+import { LogOut, Moon, Sun, Save, BookOpen, CheckCircle2, Loader2, ChevronDown, ChevronUp, Settings, User, GraduationCap, ExternalLink, BarChart3, Play, Pencil, Plus, Download, ArrowLeft, Layout } from 'lucide-react';
 import { CategoryOverview } from './admin/CategoryOverview';
 import { AdminColumnBrowser } from './admin/AdminColumnBrowser';
 import { RichTextEditor } from './RichTextEditor';
@@ -139,6 +139,34 @@ function ViewModeDropdown() {
             <span className="text-xs text-slate-500">Zobrazení pro studenty</span>
           </div>
           <ExternalLink className="w-3.5 h-3.5 ml-auto text-slate-400" />
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem 
+          onClick={() => window.open(import.meta.env.BASE_URL + 'admin/curriculum-factory', '_blank')} 
+          className="cursor-pointer"
+        >
+          <div className="flex items-center gap-2">
+            <div className="p-1 bg-purple-100 rounded text-purple-600">
+              <Plus className="w-3.5 h-3.5" />
+            </div>
+            <span className="font-medium text-purple-700">Curriculum Factory</span>
+          </div>
+        </DropdownMenuItem>
+        <DropdownMenuItem 
+          onClick={() => window.open(import.meta.env.BASE_URL + 'admin/workbook-pro/1770063965010?offline=1', '_blank')} 
+          className="cursor-pointer"
+        >
+          <div className="flex items-center gap-2">
+            <div className="p-1 bg-indigo-100 rounded text-indigo-600">
+              <Layout className="w-3.5 h-3.5" />
+            </div>
+            <span className="font-medium text-indigo-700">Editor PRO</span>
+          </div>
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={onLogout} className="cursor-pointer text-red-600 focus:text-red-700 focus:bg-red-50">
+          <LogOut className="w-4 h-4 mr-2" />
+          <span>Odhlásit se</span>
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

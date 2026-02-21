@@ -174,7 +174,8 @@ Musíš VŽDY odhadnout cílovou věkovou skupinu podle tématu a přizpůsobit:
    }
    \`\`\`
 
-7. **image** - Obrázek (pro ilustrace, diagramy, fotografie)
+7. **image** - Obrázek nebo galerie obrázků
+   Jeden obrázek:
    \`\`\`json
    {
      "type": "image",
@@ -182,14 +183,41 @@ Musíš VŽDY odhadnout cílovou věkovou skupinu podle tématu a přizpůsobit:
        "url": "https://example.com/obrazek.jpg",
        "alt": "Popis obrázku pro přístupnost",
        "caption": "Volitelný titulek pod obrázkem",
-       "size": "medium",
-       "alignment": "center"
+       "size": 100,
+       "alignment": "center",
+       "gallery": ["https://example.com/obrazek.jpg"],
+       "galleryCaptions": ["Popisek k obrázku"],
+       "gridColumns": 1
      }
    }
    \`\`\`
-   - size: "small" | "medium" | "large" | "full"
-   - alignment: "left" | "center" | "right"
-   - Používej pouze pokud máš k dispozici URL obrázku v kontextu
+   Galerie více obrázků vedle sebe (např. 4 obrázky ve 2 sloupcích):
+   \`\`\`json
+   {
+     "type": "image",
+     "content": {
+       "url": "https://example.com/img1.jpg",
+       "alt": "Popis galerie",
+       "caption": "Volitelný společný popisek",
+       "size": 100,
+       "alignment": "center",
+       "gallery": [
+         "https://example.com/img1.jpg",
+         "https://example.com/img2.jpg",
+         "https://example.com/img3.jpg",
+         "https://example.com/img4.jpg"
+       ],
+       "galleryCaptions": ["Popisek 1", "Popisek 2", "Popisek 3", "Popisek 4"],
+       "gridColumns": 2
+     }
+   }
+   \`\`\`
+   - size: číslo 10–200 (100 = původní velikost, <100 = zmenšení, >100 = ořez)
+   - alignment: "left" | "center" | "right" (platí jen pro 1 obrázek)
+   - gallery: pole URL adres obrázků (vždy vyplnit, i pro 1 obrázek)
+   - gridColumns: 1 | 2 | 3 | 4 (počet sloupců v galerii)
+   - Pro 4 obrázky vedle sebe použij gridColumns: 4; pro 2×2 použij gridColumns: 2
+   - Používej pouze pokud máš k dispozici URL obrázků v kontextu
 
 8. **table** - Tabulka (pro přehledné zobrazení dat, porovnání, seznamy)
    \`\`\`json
@@ -515,20 +543,35 @@ function transformBlocks(blocks: AIBlockOutput[], startOrder: number): Worksheet
           } as FreeAnswerContent,
         };
 
-      case 'image':
+      case 'image': {
+        const rawGallery: string[] = Array.isArray(block.content?.gallery) ? block.content.gallery : [];
+        const mainUrl = block.content?.url || rawGallery[0] || '';
+        // Normalise gallery: always an array; if empty, seed with mainUrl
+        const gallery = rawGallery.length > 0 ? rawGallery : (mainUrl ? [mainUrl] : []);
+        // Normalise size: convert string variants to numeric
+        const rawSize = block.content?.size;
+        const size = typeof rawSize === 'number' ? rawSize
+          : rawSize === 'small' ? 50
+          : rawSize === 'large' ? 100
+          : rawSize === 'full' ? 100
+          : 100; // default / 'medium'
         return {
           id,
           type: 'image',
           order,
           width: 'full' as const,
           content: {
-            url: block.content?.url || '',
+            url: mainUrl,
             alt: block.content?.alt,
             caption: block.content?.caption,
-            size: block.content?.size || 'medium',
+            size,
             alignment: block.content?.alignment || 'center',
+            gallery,
+            galleryCaptions: Array.isArray(block.content?.galleryCaptions) ? block.content.galleryCaptions : [],
+            gridColumns: typeof block.content?.gridColumns === 'number' ? block.content.gridColumns : (gallery.length > 1 ? 2 : 1),
           } as ImageContent,
         };
+      }
 
       default:
         // Fallback to paragraph

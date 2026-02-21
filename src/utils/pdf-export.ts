@@ -1,156 +1,60 @@
 /**
- * PDF Export pomocí html2pdf.js
- * 
- * Převádí HTML element přímo na PDF s plnou podporou českých znaků
+ * pdf-export – klientská utilita pro generování PDF přes Supabase Edge Function
+ * (která volá Browserless.io headless Chrome)
  */
 
-import html2pdf from 'html2pdf.js';
+import { supabase } from './supabase/client';
 
-interface ExportOptions {
+const SUPABASE_URL = 'https://njbtqmsxbyvpwigfceke.supabase.co';
+const ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5qYnRxbXN4Ynl2cHdpZ2ZjZWtlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI4MzczODksImV4cCI6MjA3ODQxMzM4OX0.nY0THq2YU9wrjYsPoxYwXRXczE3Vh7cB1opzAV8c50g';
+
+export interface PDFExportOptions {
+  worksheetId: string;
+  /** Suggested filename for the downloaded file */
   filename?: string;
-  format?: 'a4' | 'letter';
-  orientation?: 'portrait' | 'landscape';
-  margin?: number;
-  timeout?: number;
+  /** Open /print page preview in a new tab instead of generating PDF */
+  preview?: boolean;
 }
 
 /**
- * Helper pro timeout promise
+ * Generates a print-quality PDF via Browserless.io edge function
+ * and triggers a browser download.
  */
-function withTimeout<T>(promise: Promise<T>, ms: number, errorMsg: string): Promise<T> {
-  return Promise.race([
-    promise,
-    new Promise<T>((_, reject) => 
-      setTimeout(() => reject(new Error(errorMsg)), ms)
-    )
-  ]);
-}
+export async function exportWorksheetPDF(opts: PDFExportOptions): Promise<void> {
+  const { worksheetId, filename = 'pracovni-list.pdf', preview = false } = opts;
 
-/**
- * Exportuje HTML element do PDF a stáhne soubor
- */
-export async function exportToPDF(
-  element: HTMLElement,
-  options: ExportOptions = {}
-): Promise<void> {
-  const {
-    filename = 'pracovni-list.pdf',
-    format = 'a4',
-    orientation = 'portrait',
-    margin = 10,
-    timeout = 30000 // 30 sekund timeout
-  } = options;
+  if (preview) {
+    const base = import.meta.env.PROD ? '/Vividbooks40' : '';
+    window.open(`${base}/print/${worksheetId}`, '_blank');
+    return;
+  }
 
-  const opt = {
-    margin,
-    filename,
-    image: { type: 'jpeg', quality: 0.92 },
-    html2canvas: { 
-      scale: 1.5, // Sníženo z 2 pro rychlejší export
-      useCORS: true,
-      letterRendering: true,
-      scrollY: 0,
-      logging: false,
-      allowTaint: true,
-      removeContainer: true,
+  const { data: { session } } = await supabase.auth.getSession();
+  const authToken = session?.access_token;
+
+  const response = await fetch(`${SUPABASE_URL}/functions/v1/pdf-export`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'apikey': ANON_KEY,
+      ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
     },
-    jsPDF: { 
-      unit: 'mm', 
-      format, 
-      orientation 
-    },
-    pagebreak: { 
-      mode: ['avoid-all', 'css', 'legacy'],
-      before: '.page-break-before',
-      after: '.page-break-after',
-      avoid: '.no-break'
-    }
-  };
+    body: JSON.stringify({ worksheetId, filename }),
+  });
 
-  const exportPromise = html2pdf().set(opt).from(element).save();
-  
-  await withTimeout(
-    exportPromise, 
-    timeout, 
-    'Export PDF trval příliš dlouho. Zkuste zmenšit obsah nebo použijte tisk prohlížeče (Ctrl+P).'
-  );
-}
+  if (!response.ok) {
+    let errMsg = `HTTP ${response.status}`;
+    try { errMsg = (await response.json()).error ?? errMsg; } catch { /* ignore */ }
+    throw new Error(errMsg);
+  }
 
-/**
- * Exportuje HTML element do PDF blobu
- */
-export async function exportToPDFBlob(
-  element: HTMLElement,
-  options: ExportOptions = {}
-): Promise<Blob> {
-  const {
-    format = 'a4',
-    orientation = 'portrait',
-    margin = 10,
-    timeout = 30000
-  } = options;
-
-  const opt = {
-    margin,
-    image: { type: 'jpeg', quality: 0.92 },
-    html2canvas: { 
-      scale: 1.5,
-      useCORS: true,
-      letterRendering: true,
-      logging: false,
-      allowTaint: true,
-      removeContainer: true,
-    },
-    jsPDF: { 
-      unit: 'mm', 
-      format, 
-      orientation 
-    },
-    pagebreak: { 
-      mode: ['avoid-all', 'css', 'legacy'],
-      avoid: '.no-break'
-    }
-  };
-
-  const exportPromise = html2pdf().set(opt).from(element).outputPdf('blob');
-  
-  return await withTimeout(
-    exportPromise,
-    timeout,
-    'Export PDF trval příliš dlouho.'
-  );
-}
-
-/**
- * Exportuje worksheet jako JSON soubor
- */
-export function exportToJSON(worksheet: any): void {
-  const json = JSON.stringify(worksheet, null, 2);
-  const blob = new Blob([json], { type: 'application/json' });
+  const blob = await response.blob();
   const url = URL.createObjectURL(blob);
-  
-  const fileName = (worksheet.title || 'pracovni-list')
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
-  
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = `${fileName}.json`;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  
-  setTimeout(() => URL.revokeObjectURL(url), 100);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
-
-/**
- * Otevře tiskový dialog prohlížeče
- */
-export function printWorksheet(): void {
-  window.print();
-}
-
-
