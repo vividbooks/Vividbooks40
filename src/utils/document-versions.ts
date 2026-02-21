@@ -300,6 +300,68 @@ export async function saveVersion(options: SaveVersionOptions): Promise<{
     const contentHash = hashContent(content);
     const docKey = getDocumentKey(documentId, documentType);
 
+    // Check if user is authenticated before attempting any Supabase calls.
+    // In offline mode auth.uid() is NULL which would violate RLS on document_versions.
+    // Skip directly to localStorage to avoid a noisy 42501 error.
+    if (!supabaseAvailable) {
+      const versionNumber = Date.now();
+      const localVersion: DocumentVersion = {
+        id: `local_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        document_id: documentId,
+        document_type: documentType,
+        category,
+        title,
+        content,
+        content_type: contentType ?? getContentType(documentType),
+        version_number: versionNumber,
+        content_hash: contentHash,
+        content_size: content.length,
+        created_by: userId,
+        created_by_type: userType,
+        created_by_name: userName,
+        created_at: new Date().toISOString(),
+        change_type: changeType,
+        change_description: changeDescription,
+        metadata,
+      };
+      saveLocalVersion(documentId, documentType, localVersion);
+      lastSaveTimestamps.set(docKey, Date.now());
+      lastContentHashes.set(docKey, contentHash);
+      return { success: true, version: localVersion };
+    }
+
+    // Check auth state – don't attempt Supabase if no session
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        supabaseAvailable = false;
+        const versionNumber = Date.now();
+        const localVersion: DocumentVersion = {
+          id: `local_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          document_id: documentId,
+          document_type: documentType,
+          category,
+          title,
+          content,
+          content_type: contentType ?? getContentType(documentType),
+          version_number: versionNumber,
+          content_hash: contentHash,
+          content_size: content.length,
+          created_by: userId,
+          created_by_type: userType,
+          created_by_name: userName,
+          created_at: new Date().toISOString(),
+          change_type: changeType,
+          change_description: changeDescription,
+          metadata,
+        };
+        saveLocalVersion(documentId, documentType, localVersion);
+        lastSaveTimestamps.set(docKey, Date.now());
+        lastContentHashes.set(docKey, contentHash);
+        return { success: true, version: localVersion };
+      }
+    } catch { /* if getSession throws, proceed – Supabase will return error and we fall back */ }
+
     // Helper function with timeout for Supabase queries
     const withTimeout = <T>(promise: Promise<T>, ms: number): Promise<T> => {
       return Promise.race([
