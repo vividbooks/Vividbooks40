@@ -1,31 +1,42 @@
 <!DOCTYPE html>
-<html>
+<html lang="cs">
   <head>
-    <meta charset="utf-8">
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/Vividbooks40/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Vividbooks</title>
-    <script>
-      // Single Page App redirect for GitHub Pages
-      // Converts path to query string and redirects to index.html
-      // e.g., /quiz/public/123 -> /?p=/quiz/public/123
-      var pathSegmentsToKeep = 1; // Keep /Vividbooks40/
-      var l = window.location;
-      var repo = l.pathname.split('/')[1]; // Get repo name (Vividbooks40)
-      var path = l.pathname.slice(('/' + repo).length); // Get path after repo
-      
-      if (path && path !== '/') {
-        l.replace(
-          l.protocol + '//' + l.hostname + (l.port ? ':' + l.port : '') +
-          '/' + repo + '/?p=' + encodeURIComponent(path) +
-          (l.search ? '&q=' + encodeURIComponent(l.search.slice(1)) : '') +
-          l.hash
-        );
-      } else {
-        // Just redirect to home
-        l.replace(l.protocol + '//' + l.hostname + (l.port ? ':' + l.port : '') + '/' + repo + '/');
-      }
+    <script type="text/javascript">
+      // Single Page Apps for GitHub Pages
+      // Handle redirect from 404.html
+      (function(l) {
+        // Handle ?p= redirect from 404.html
+        var params = new URLSearchParams(l.search);
+        var redirectPath = params.get('p');
+        if (redirectPath) {
+          var newUrl = l.pathname.replace(/\/$/, '') + redirectPath + l.hash;
+          window.history.replaceState(null, null, newUrl);
+        }
+        // Also handle legacy ?/ format
+        else if (l.search[1] === '/' ) {
+          var decoded = l.search.slice(1).split('&').map(function(s) { 
+            return s.replace(/~and~/g, '&')
+          }).join('?');
+          window.history.replaceState(null, null,
+              l.pathname.slice(0, -1) + decoded + l.hash
+          );
+        }
+      }(window.location))
     </script>
+    <!-- Preload Cooper Light font ASAP so it's available before first render -->
+    <link rel="preload" href="https://jjpiguuubvmiobmixwgh.supabase.co/storage/v1/object/public/Admin%20math/Cooper-Light.otf" as="font" type="font/otf" crossorigin="anonymous">
+    <!-- Google Fonts for Vividboard templates -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Itim&family=Lora:ital,wght@0,400..700;1,400..700&family=Oswald:wght@200..700&family=Playfair+Display:ital,wght@0,400..900;1,400..900&family=Sacramento&family=Sora:wght@100..800&family=Space+Grotesk:wght@300..700&display=swap" rel="stylesheet">
+    <script type="module" crossorigin src="/Vividbooks40/assets/index-BzzP4_mS.js"></script>
+    <link rel="stylesheet" crossorigin href="/Vividbooks40/assets/index-C1rg2CaK.css">
   </head>
   <body>
-    <p>Redirecting...</p>
+    <div id="root"></div>
   </body>
 </html>
