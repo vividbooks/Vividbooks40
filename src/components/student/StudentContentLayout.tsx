@@ -698,9 +698,13 @@ export function StudentContentLayout({ theme, toggleTheme }: StudentContentLayou
         // Create a share session for the board and open in student view
         // This gives the EXACT same UI as when teacher shares with link
         try {
+          if (!database) {
+            navigate(`/quiz/practice/${contentId}`);
+            return;
+          }
           // Check if share session already exists for this board
           const existingShareId = `shared_${contentId}_${student?.class_id || 'class'}`;
-          const existingRef = ref(database!, `quiz_shares/${existingShareId}`);
+          const existingRef = ref(database, `quiz_shares/${existingShareId}`);
           const existingSnapshot = await get(existingRef);
           
           if (!existingSnapshot.exists()) {
