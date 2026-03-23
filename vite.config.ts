@@ -2,10 +2,26 @@
   import { defineConfig } from 'vite';
   import react from '@vitejs/plugin-react-swc';
   import path from 'path';
+  import fs from 'fs';
+
+  /** GitHub Pages: neexistující cesty (např. /laiout) musí vrátit stejný HTML jako index — jinak prázdná stránka. */
+  function githubPagesSpa404() {
+    return {
+      name: 'github-pages-spa-404',
+      closeBundle() {
+        const outDir = path.resolve(__dirname, 'build');
+        const indexHtml = path.join(outDir, 'index.html');
+        const notFoundHtml = path.join(outDir, '404.html');
+        if (fs.existsSync(indexHtml)) {
+          fs.copyFileSync(indexHtml, notFoundHtml);
+        }
+      },
+    };
+  }
 
   export default defineConfig(({ command }) => ({
     base: command === 'build' ? '/Vividbooks40/' : '/',
-    plugins: [react()],
+    plugins: [react(), ...(command === 'build' ? [githubPagesSpa404()] : [])],
     resolve: {
       extensions: ['.js', '.jsx', '.ts', '.tsx', '.json'],
       alias: {
