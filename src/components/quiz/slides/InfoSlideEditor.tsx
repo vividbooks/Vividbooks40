@@ -30,9 +30,10 @@ interface InfoSlideEditorProps {
   onSlideClick?: () => void;
   selectedBlockIndex: number | null;
   onBlockSelect: (index: number | null) => void;
-  onOpenBlockSettings?: (blockIndex: number) => void;
+  onOpenBlockSettings?: (blockIndex: number, initialSection?: string) => void;
   onTextEditStart?: (blockIndex: number) => void;
   onTextEditEnd?: () => void;
+  datasetImages?: Array<{ url: string; title?: string; alt?: string }>;
 }
 
 export function InfoSlideEditor({ 
@@ -43,7 +44,8 @@ export function InfoSlideEditor({
   onBlockSelect,
   onOpenBlockSettings,
   onTextEditStart, 
-  onTextEditEnd 
+  onTextEditEnd,
+  datasetImages,
 }: InfoSlideEditorProps) {
   const [showLayoutPanel, setShowLayoutPanel] = useState(false);
   const [showBackgroundPicker, setShowBackgroundPicker] = useState(false);
@@ -285,9 +287,9 @@ export function InfoSlideEditor({
         onSelect={() => {
           onBlockSelect(blockIndex);
         }}
-        onSettingsClick={() => {
+        onSettingsClick={(initialSection) => {
           onBlockSelect(blockIndex);
-          onOpenBlockSettings?.(blockIndex);
+          onOpenBlockSettings?.(blockIndex, initialSection);
         }}
         onTextEditStart={() => {
           onTextEditStart?.(blockIndex);
@@ -297,6 +299,7 @@ export function InfoSlideEditor({
         placeholder={placeholder}
         templateColor={getBlockColor(blockIndex)}
         borderRadius={getBlockRadius()}
+        datasetImages={datasetImages}
       />
     );
   };
@@ -362,6 +365,10 @@ export function InfoSlideEditor({
       style.backgroundImage = `url(${bg.imageUrl})`;
       style.backgroundSize = 'cover';
       style.backgroundPosition = 'center';
+    }
+
+    if (bg.strokeColor && (bg.strokeWidth ?? 0) > 0) {
+      style.border = `${bg.strokeWidth}px solid ${bg.strokeColor}`;
     }
     
     return style;

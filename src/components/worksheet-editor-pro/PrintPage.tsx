@@ -13,57 +13,14 @@
  *   5. Only then we set window.__PRINT_READY__ = true for Browserless
  */
 
-import React, { useEffect, useState, useCallback } from 'react';
-import { useParams } from 'react-router-dom';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { Worksheet } from '../../types/worksheet';
 import { PrintGridCanvas } from './PrintGridCanvas';
-import { PAGE_DIMENSIONS } from '../../utils/page-layout';
+import { MM_TO_PX, PAGE_DIMENSIONS, type PageFormat } from '../../utils/page-layout';
 
 const SUPABASE_URL = 'https://njbtqmsxbyvpwigfceke.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5qYnRxbXN4Ynl2cHdpZ2ZjZWtlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI4MzczODksImV4cCI6MjA3ODQxMzM4OX0.nY0THq2YU9wrjYsPoxYwXRXczE3Vh7cB1opzAV8c50g';
-
-const PAGE_W = PAGE_DIMENSIONS.a4.width; // 794px
-
-const printStyles = `
-  *, *::before, *::after {
-    box-sizing: border-box;
-    -webkit-print-color-adjust: exact !important;
-    print-color-adjust: exact !important;
-    color-adjust: exact !important;
-  }
-  html, body {
-    margin: 0;
-    padding: 0;
-    background: white;
-    width: ${PAGE_W}px;
-    font-size: 16px; /* Explicitly match editor's var(--font-size) */
-  }
-  @page {
-    size: 210mm 297mm;
-    margin: 0;
-  }
-  @media screen {
-    html, body {
-      background: #d1d5db;
-      width: auto;
-    }
-    body {
-      padding: 40px 0;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 40px;
-    }
-    .a4-page {
-      box-shadow: 0 4px 40px rgba(0,0,0,0.25);
-    }
-  }
-  @media print {
-    .a4-page {
-      box-shadow: none !important;
-    }
-  }
-`;
 
 async function fetchWorksheetViaProxy(worksheetId: string): Promise<Worksheet | null> {
   try {
@@ -85,9 +42,63 @@ async function fetchWorksheetViaProxy(worksheetId: string): Promise<Worksheet | 
 
 export function PrintPage() {
   const { worksheetId } = useParams<{ worksheetId: string }>();
+  const [searchParams] = useSearchParams();
   const [worksheet, setWorksheet] = useState<Worksheet | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const pageFormat = (worksheet?.metadata?.pageFormat as PageFormat | undefined) || 'a4';
+  const pageDimensions = PAGE_DIMENSIONS[pageFormat] || PAGE_DIMENSIONS.a4;
+  const showBleed = searchParams.get('bleed') === '1' || Boolean((window as any).__PRINT_BLEED__);
+  const bleedPx = showBleed ? 3 * MM_TO_PX : 0;
+  const pageWidthPx = pageDimensions.width + bleedPx * 2;
+  const pageHeightPx = pageDimensions.height + bleedPx * 2;
+  const pageWidthMm = showBleed ? (pageFormat === 'a4' ? 216 : pageFormat === 'a5' ? 154 : 182) : (pageFormat === 'a4' ? 210 : pageFormat === 'a5' ? 148 : 176);
+  const pageHeightMm = showBleed ? (pageFormat === 'a4' ? 303 : pageFormat === 'a5' ? 216 : 256) : (pageFormat === 'a4' ? 297 : pageFormat === 'a5' ? 210 : 250);
+  const printStyles = useMemo(() => `
+  *, *::before, *::after {
+    box-sizing: border-box;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color-adjust: exact !important;
+    transition: none !important;
+    animation: none !important;
+  }
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: white;
+    width: ${pageWidthPx}px;
+    font-size: 16px;
+  }
+  @page {
+    size: ${pageWidthMm}mm ${pageHeightMm}mm;
+    margin: 0;
+  }
+  @media screen {
+    html, body {
+      background: #d1d5db;
+      width: auto;
+    }
+    body {
+      padding: 40px 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 40px;
+    }
+    .print-sheet {
+      box-shadow: 0 4px 40px rgba(0,0,0,0.25);
+    }
+  }
+  @media print {
+    .print-sheet {
+      box-shadow: none !important;
+    }
+  }
+  .a4-page .overflow-hidden {
+    overflow: hidden !important;
+  }
+`, [pageHeightMm, pageWidthMm, pageWidthPx]);
 
   useEffect(() => {
     if (!worksheetId) {
@@ -163,13 +174,29 @@ export function PrintPage() {
     tryLoad();
   }, [worksheetId]);
 
-  // Signal readiness ONLY after layout stabilisation + font loading
+  // Signal readiness ONLY after layout stabilisation + font loading + image loading
   const handleStable = useCallback(() => {
-    document.fonts.ready.then(() => {
-      // Small buffer to let the final repaint settle
+    const waitForImages = (): Promise<void> => {
+      const images = Array.from(document.querySelectorAll('img'));
+      if (images.length === 0) return Promise.resolve();
+
+      return Promise.all(
+        images.map((img) => {
+          if (img.complete && img.naturalWidth > 0) return Promise.resolve();
+          return new Promise<void>((resolve) => {
+            img.addEventListener('load', () => resolve(), { once: true });
+            img.addEventListener('error', () => resolve(), { once: true });
+            setTimeout(resolve, 10_000);
+          });
+        }),
+      ).then(() => {});
+    };
+
+    Promise.all([document.fonts.ready, waitForImages()]).then(() => {
       setTimeout(() => {
         (window as any).__PRINT_READY__ = true;
-      }, 200);
+        console.log('[PrintPage] __PRINT_READY__ set (fonts + images loaded)');
+      }, 500);
     });
   }, []);
 
@@ -190,7 +217,7 @@ export function PrintPage() {
       )}
 
       {worksheet && (
-        <PrintGridCanvas worksheet={worksheet} onStable={handleStable} />
+        <PrintGridCanvas worksheet={worksheet} onStable={handleStable} bleed={showBleed} />
       )}
     </>
   );

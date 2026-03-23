@@ -115,7 +115,7 @@ Vrať POUZE validní JSON, nic jiného.`;
 /**
  * Sbírá informace o cílové skupině
  */
-async function collectTargetGroupInfo(
+export async function collectTargetGroupInfo(
   grade: number,
   onProgress?: ProgressCallback
 ): Promise<TargetGroupInfo> {
@@ -241,7 +241,7 @@ Vrať POUZE validní JSON.`;
 /**
  * Sbírá média - obrázky, emoji, barvy
  */
-async function collectMediaInfo(
+export async function collectMediaInfo(
   topic: string,
   subjectCode: string,
   onProgress?: ProgressCallback

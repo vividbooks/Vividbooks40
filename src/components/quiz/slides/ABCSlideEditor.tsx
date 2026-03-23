@@ -11,8 +11,6 @@ import {
   CheckCircle,
   Circle,
   Image as ImageIcon,
-  Clock,
-  Star,
   Calculator,
   Upload,
   X,
@@ -43,10 +41,8 @@ const EMOJI_CATEGORIES = {
 };
 
 export function ABCSlideEditor({ slide, onUpdate }: ABCSlideEditorProps) {
-  const [showAdvanced, setShowAdvanced] = useState(false);
   const [editingOption, setEditingOption] = useState<string | null>(null);
   const [editingQuestion, setEditingQuestion] = useState(false);
-  const [editingExplanation, setEditingExplanation] = useState(false);
   const [showAssetPicker, setShowAssetPicker] = useState(false);
   const [showMathKeyboard, setShowMathKeyboard] = useState(false);
   const [mathTarget, setMathTarget] = useState<'question' | 'explanation' | string>('question');
@@ -107,9 +103,9 @@ export function ABCSlideEditor({ slide, onUpdate }: ABCSlideEditorProps) {
     if (showMathKeyboard && mathTarget === target) {
       setShowMathKeyboard(false);
     } else {
-      setMathTarget(target);
+    setMathTarget(target);
       setMathValue('');
-      setShowMathKeyboard(true);
+    setShowMathKeyboard(true);
     }
   };
   
@@ -215,96 +211,80 @@ export function ABCSlideEditor({ slide, onUpdate }: ABCSlideEditorProps) {
         </div>
       )}
       
-      {/* Question and Image section - side by side */}
+      {/* Question and Image section */}
       <div className="px-6 pb-6 border-b border-slate-100">
-        <div className="flex gap-4">
-          {/* Question input - flexible width */}
-          <div className="flex-1 min-w-0">
-            <label className="block text-sm font-medium text-slate-700 mb-2">
-              Otázka *
-            </label>
-            {editingQuestion ? (
-              <div className="space-y-2">
-                <textarea
-                  value={slide.question}
-                  onChange={(e) => onUpdate(slide.id, { question: e.target.value })}
-                  onBlur={() => setEditingQuestion(false)}
-                  autoFocus
-                  placeholder="Zadej otázku... (můžeš použít LaTeX: $\\frac{8}{30}$)"
-                  className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none transition-all resize-none text-lg"
-                  rows={4}
-                />
-                {slide.question && (slide.question.includes('$') || slide.question.includes('\\')) && (
-                  <div className="px-4 py-2 bg-slate-50 rounded-lg border border-slate-200">
-                    <div className="text-xs text-slate-500 mb-1">Náhled:</div>
-                    <div className="text-lg">
-                      <MathText>{slide.question}</MathText>
-                    </div>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div
-                onClick={() => setEditingQuestion(true)}
-                className="w-full px-4 py-3 rounded-xl border border-slate-200 hover:border-emerald-300 cursor-text min-h-[120px] text-lg"
-              >
-                {slide.question ? (
+        <label className="block text-sm font-medium text-slate-700 mb-2">
+          Otázka *
+        </label>
+        {editingQuestion ? (
+          <div className="space-y-2">
+            <textarea
+              value={slide.question}
+              onChange={(e) => onUpdate(slide.id, { question: e.target.value })}
+              onBlur={() => setEditingQuestion(false)}
+              autoFocus
+              placeholder="Zadej otázku... (můžeš použít LaTeX: $\\frac{8}{30}$)"
+              className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none transition-all resize-none text-lg"
+              rows={4}
+            />
+            {slide.question && (slide.question.includes('$') || slide.question.includes('\\')) && (
+              <div className="px-4 py-2 bg-slate-50 rounded-lg border border-slate-200">
+                <div className="text-xs text-slate-500 mb-1">Náhled:</div>
+                <div className="text-lg">
                   <MathText>{slide.question}</MathText>
-                ) : (
-                  <span className="text-slate-400">Zadej otázku... (klikni pro editaci)</span>
-                )}
+                </div>
               </div>
             )}
           </div>
-          
-          {/* Image section - fixed 250x250 */}
-          <div className="flex-shrink-0" style={{ width: '270px' }}>
-            <div className="flex items-center justify-between mb-2">
-              <label className="block text-sm font-medium text-slate-700">
-                Obrázek
-              </label>
-              {slide.media?.url && (
-                <button
-                  onClick={() => onUpdate(slide.id, { media: undefined })}
-                  className="w-6 h-6 rounded-full transition-colors shadow flex items-center justify-center"
-                  style={{
-                    backgroundColor: '#ef4444',
-                    color: 'white',
-                  }}
-                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#dc2626'}
-                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#ef4444'}
-                  title="Smazat obrázek"
-                >
-                  <X className="w-4 h-4" strokeWidth={3} />
-                </button>
-              )}
-            </div>
-            {slide.media?.url ? (
+        ) : (
+          <div
+            onClick={() => setEditingQuestion(true)}
+            className="w-full px-4 py-3 rounded-xl border border-slate-200 hover:border-emerald-300 cursor-text min-h-[80px] text-lg"
+          >
+            {slide.question ? (
+              <MathText>{slide.question}</MathText>
+            ) : (
+              <span className="text-slate-400">Zadej otázku... (klikni pro editaci)</span>
+            )}
+          </div>
+        )}
+
+        <div className="mt-4">
+          {slide.media?.url ? (
+            <div className="space-y-2">
               <div className="relative rounded-xl border border-slate-200 overflow-hidden bg-slate-50" style={{ width: '250px', height: '250px' }}>
                 <img 
                   src={slide.media.url} 
                   alt="Obrázek k otázce"
                   className="w-full h-full object-cover"
                 />
-                {/* Change image button - bottom right corner */}
+              </div>
+              <div className="flex gap-2">
                 <button
                   onClick={() => setShowAssetPicker(true)}
-                  className="absolute bottom-2 right-2 p-1.5 bg-white/90 text-slate-600 rounded-full hover:bg-white transition-colors shadow-md"
-                  title="Změnit obrázek"
+                  className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors"
                 >
                   <Upload className="w-4 h-4" />
+                  <span>Nahradit obrázek</span>
+                </button>
+                <button
+                  onClick={() => onUpdate(slide.id, { media: undefined })}
+                  className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm text-red-600 bg-red-50 hover:bg-red-100 transition-colors"
+                >
+                  <X className="w-4 h-4" strokeWidth={3} />
+                  <span>Smazat</span>
                 </button>
               </div>
-            ) : (
-              <button 
-                onClick={() => setShowAssetPicker(true)}
-                className="w-full aspect-square rounded-xl border-2 border-dashed border-slate-300 hover:border-indigo-400 hover:bg-indigo-50/50 transition-colors flex flex-col items-center justify-center gap-2 text-slate-400 hover:text-indigo-500"
-              >
-                <Upload className="w-6 h-6" />
-                <span className="text-xs font-medium">Přidat</span>
-              </button>
-            )}
-          </div>
+            </div>
+          ) : (
+            <button 
+              onClick={() => setShowAssetPicker(true)}
+              className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors"
+            >
+              <Upload className="w-4 h-4" />
+              <span>Přidat obrázek k otázce</span>
+            </button>
+          )}
         </div>
       </div>
       
@@ -654,145 +634,100 @@ export function ABCSlideEditor({ slide, onUpdate }: ABCSlideEditorProps) {
         )}
       </div>
       
-      {/* Explanation */}
-      <div className="px-6 pb-6">
-        <label className="block text-sm font-medium text-slate-700 mb-2">
-          Vysvětlení (zobrazí se po odpovědi)
-        </label>
-        {editingExplanation ? (
-          <textarea
-            value={slide.explanation || ''}
-            onChange={(e) => onUpdate(slide.id, { explanation: e.target.value })}
-            onBlur={() => setEditingExplanation(false)}
-            autoFocus
-            placeholder="Proč je tato odpověď správná... (můžeš použít LaTeX: $\frac{1}{2}$)"
-            className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none transition-all resize-none text-sm"
-            rows={2}
-          />
-        ) : (
-          <div
-            onClick={() => setEditingExplanation(true)}
-            className="w-full px-4 py-3 rounded-xl border border-slate-200 hover:border-emerald-300 cursor-text min-h-[56px] text-sm"
-          >
-            {slide.explanation ? (
-              <MathText>{slide.explanation}</MathText>
-            ) : (
-              <span className="text-slate-400">Proč je tato odpověď správná... (klikni pro editaci)</span>
-            )}
+      <div className="border-t border-slate-100 px-6 py-6 space-y-4">
+        <label className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 cursor-pointer hover:bg-slate-50 transition-colors">
+          <div className="flex-1">
+            <div className="flex items-center gap-2">
+              <CheckCircle className="w-4 h-4 text-emerald-500" />
+              <span className="font-medium text-slate-700">Více správných odpovědí</span>
+            </div>
           </div>
-        )}
-      </div>
-      
-      {/* Advanced settings */}
-      <div className="border-t border-slate-100">
-        <button
-          onClick={() => setShowAdvanced(!showAdvanced)}
-          className="w-full p-4 text-left text-sm text-slate-500 hover:bg-slate-50 transition-colors flex items-center justify-between"
-        >
-          <span>Pokročilá nastavení</span>
-          <span className="text-xs">{showAdvanced ? '▲' : '▼'}</span>
-        </button>
-        
-        {showAdvanced && (
-          <div className="px-6 pb-6 space-y-4">
-            {/* Multiple correct toggle */}
-            <label className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 cursor-pointer hover:bg-slate-50 transition-colors">
-              <div className="flex-1">
-                <div className="flex items-center gap-2">
-                  <CheckCircle className="w-4 h-4 text-emerald-500" />
-                  <span className="font-medium text-slate-700">Více správných odpovědí</span>
-                </div>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  {slide.allowMultipleCorrect 
-                    ? 'Student musí vybrat všechny správné odpovědi' 
-                    : 'Pouze jedna odpověď je správná'}
-                </p>
-              </div>
-              <div 
-                className="relative flex-shrink-0"
-                style={{ 
-                  width: '52px', 
-                  height: '28px', 
-                  borderRadius: '14px',
-                  backgroundColor: slide.allowMultipleCorrect ? '#10b981' : '#94a3b8',
-                  transition: 'background-color 0.2s ease',
-                  boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.2)'
-                }}
-              >
-                <div 
-                  style={{ 
-                    position: 'absolute',
-                    top: '2px',
-                    left: slide.allowMultipleCorrect ? '26px' : '2px',
-                    width: '24px', 
-                    height: '24px', 
-                    borderRadius: '12px',
-                    backgroundColor: '#ffffff',
-                    boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
-                    transition: 'left 0.2s ease'
-                  }}
-                />
-              </div>
-              <input
-                type="checkbox"
-                checked={slide.allowMultipleCorrect || false}
-                onChange={(e) => {
-                  // When switching off, ensure only one option is correct
-                  if (!e.target.checked) {
-                    const firstCorrectIdx = slide.options.findIndex(o => o.isCorrect);
-                    const newOptions = slide.options.map((opt, idx) => ({
-                      ...opt,
-                      isCorrect: idx === (firstCorrectIdx >= 0 ? firstCorrectIdx : 0)
-                    }));
-                    onUpdate(slide.id, { allowMultipleCorrect: false, options: newOptions });
-                  } else {
-                    onUpdate(slide.id, { allowMultipleCorrect: true });
-                  }
-                }}
-                className="sr-only"
-              />
+          <div 
+            className="relative flex-shrink-0"
+            style={{ 
+              width: '52px', 
+              height: '28px', 
+              borderRadius: '14px',
+              backgroundColor: slide.allowMultipleCorrect ? '#10b981' : '#94a3b8',
+              transition: 'background-color 0.2s ease',
+              boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.2)'
+            }}
+          >
+            <div 
+              style={{ 
+                position: 'absolute',
+                top: '2px',
+                left: slide.allowMultipleCorrect ? '26px' : '2px',
+                width: '24px', 
+                height: '24px', 
+                borderRadius: '12px',
+                backgroundColor: '#ffffff',
+                boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
+                transition: 'left 0.2s ease'
+              }}
+            />
+          </div>
+          <input
+            type="checkbox"
+            checked={slide.allowMultipleCorrect || false}
+            onChange={(e) => {
+              if (!e.target.checked) {
+                const firstCorrectIdx = slide.options.findIndex(o => o.isCorrect);
+                const newOptions = slide.options.map((opt, idx) => ({
+                  ...opt,
+                  isCorrect: idx === (firstCorrectIdx >= 0 ? firstCorrectIdx : 0)
+                }));
+                onUpdate(slide.id, {
+                  allowMultipleCorrect: false,
+                  multipleCorrectRequirement: undefined,
+                  options: newOptions,
+                });
+              } else {
+                onUpdate(slide.id, {
+                  allowMultipleCorrect: true,
+                  multipleCorrectRequirement: slide.multipleCorrectRequirement || 'all',
+                });
+              }
+            }}
+            className="sr-only"
+          />
+        </label>
+
+        {slide.allowMultipleCorrect && (
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-2">
+              Pro správnou odpověď je potřeba
             </label>
-            
-            <div className="grid grid-cols-2 gap-4">
-              {/* Points */}
-              <div>
-                <label className="flex items-center gap-2 text-sm font-medium text-slate-700 mb-2">
-                  <Star className="w-4 h-4 text-amber-500" />
-                  Body
-                </label>
-                <input
-                  type="number"
-                  value={slide.points}
-                  onChange={(e) => onUpdate(slide.id, { points: parseInt(e.target.value) || 1 })}
-                  min={1}
-                  max={10}
-                  className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none"
-                />
-              </div>
-              
-              {/* Time limit */}
-              <div>
-                <label className="flex items-center gap-2 text-sm font-medium text-slate-700 mb-2">
-                  <Clock className="w-4 h-4 text-blue-500" />
-                  Časový limit (s)
-                </label>
-                <input
-                  type="number"
-                  value={slide.timeLimit || ''}
-                  onChange={(e) => onUpdate(slide.id, { 
-                    timeLimit: e.target.value ? parseInt(e.target.value) : undefined 
-                  })}
-                  placeholder="Bez limitu"
-                  min={5}
-                  max={300}
-                  className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none"
-                />
-              </div>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => onUpdate(slide.id, { multipleCorrectRequirement: 'all' })}
+                className={`p-3 rounded-2xl text-left transition-all ${
+                  (slide.multipleCorrectRequirement || 'all') === 'all'
+                    ? 'text-white shadow-sm'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+                style={(slide.multipleCorrectRequirement || 'all') === 'all' ? { backgroundColor: '#59627B' } : undefined}
+              >
+                <span className="font-medium">Zaškrtnout všechno</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => onUpdate(slide.id, { multipleCorrectRequirement: 'any' })}
+                className={`p-3 rounded-2xl text-left transition-all ${
+                  slide.multipleCorrectRequirement === 'any'
+                    ? 'text-white shadow-sm'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+                style={slide.multipleCorrectRequirement === 'any' ? { backgroundColor: '#59627B' } : undefined}
+              >
+                <span className="font-medium">Zaškrtnout alespoň jeden</span>
+              </button>
             </div>
           </div>
         )}
       </div>
-      
+
       {/* Asset Picker Modal */}
       <AssetPicker
         isOpen={showAssetPicker}

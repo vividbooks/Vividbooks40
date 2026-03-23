@@ -16,8 +16,10 @@ import {
   Heart,
 } from 'lucide-react';
 import { VotingActivitySlide, VotingOption, VotingType } from '../../../types/quiz';
+import { VOTE_COLORS } from './ABCSlideView';
+import { AutoScaleQuestion } from '../AutoScaleQuestion';
 
-// Option colors for the chart
+// Option colors for the chart (teacher/student chart view)
 const OPTION_COLORS = [
   '#10b981', // emerald
   '#f59e0b', // amber
@@ -44,6 +46,8 @@ interface VotingSlideViewProps {
   totalVoters?: number;
   onVote?: (optionIds: string[]) => void;
   readOnly?: boolean;
+  /** Present mode: teacher clicks options to count raised hands, no correct answer reveal */
+  presentMode?: boolean;
 }
 
 // Calculate dynamic font size based on question length
@@ -489,6 +493,7 @@ export function VotingSlideView({
   totalVoters = 0,
   onVote,
   readOnly = false,
+  presentMode = false,
 }: VotingSlideViewProps) {
   const [selectedOptions, setSelectedOptions] = useState<string[]>(myVote || []);
   const [showResults, setShowResults] = useState(false);
@@ -637,6 +642,211 @@ export function VotingSlideView({
       </div>
     );
   };
+
+  // ── Present mode: clickable colored options with vote badges ──────────────
+  if (presentMode) {
+    const total = Object.values(voteCounts).reduce((a, b) => a + b, 0);
+    const isScale = votingType === 'scale';
+    const isFeedback = votingType === 'feedback';
+    const isEqualizer = isScale || isFeedback;
+
+    return (
+      <div className="flex flex-col h-full overflow-y-auto">
+        {/* Question — large area at top */}
+        <div className={`flex items-center justify-center px-8 py-6 ${isEqualizer ? 'flex-shrink-0' : 'flex-1 min-h-0'}`}>
+          <div className="w-full">
+            <AutoScaleQuestion targetFill={0.85} maxFontSize={isEqualizer ? 80 : 150}>
+              {slide.question || ''}
+            </AutoScaleQuestion>
+            {slide.media?.url && (
+              <div className="flex justify-center mt-4">
+                <img src={slide.media.url} alt="" className="max-h-36 object-contain rounded-2xl" />
+              </div>
+            )}
+          </div>
+        </div>
+
+        {isFeedback ? (
+          /* Feedback equalizer — bars grow upward, emoji/hearts at bottom */
+          <div className="flex-1 flex flex-col justify-end px-6 pb-6 min-h-0">
+            <div className="flex gap-4 items-end" style={{ height: 200 }}>
+              {slide.options.map((option, idx) => {
+                const count = voteCounts[option.id] ?? 0;
+                const maxCount = Math.max(...slide.options.map(o => voteCounts[o.id] ?? 0), 1);
+                const barPct = total > 0 ? count / maxCount : 0;
+                const barH = barPct > 0 ? Math.max(barPct * 180, 28) : 0;
+                const color = slide.feedbackStyle === 'hearts' ? '#ef4444' : VOTE_COLORS[idx % VOTE_COLORS.length];
+                return (
+                  <div key={option.id} className="flex flex-col items-center flex-1" style={{ height: 200, justifyContent: 'flex-end' }}>
+                    <div
+                      className="w-full rounded-xl flex items-start justify-center transition-all duration-500"
+                      style={{
+                        height: barH,
+                        backgroundColor: color,
+                        opacity: count > 0 ? 1 : 0,
+                        boxShadow: count > 0 ? `0 -4px 16px ${color}55` : 'none',
+                        marginBottom: 4,
+                      }}
+                    >
+                      {count > 0 && (
+                        <span className="text-white font-extrabold text-sm pt-1 tabular-nums leading-none">{count}</span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Clickable emoji/heart buttons */}
+            <div className="flex gap-4">
+              {slide.options.map((option, idx) => {
+                const count = voteCounts[option.id] ?? 0;
+                const color = slide.feedbackStyle === 'hearts' ? '#ef4444' : VOTE_COLORS[idx % VOTE_COLORS.length];
+                return (
+                  <button
+                    key={option.id}
+                    onClick={() => onVote?.([option.id])}
+                    className="flex-1 flex flex-col items-center justify-center transition-all hover:scale-110 active:scale-95 rounded-2xl py-3"
+                    style={{
+                      backgroundColor: count > 0 ? `${color}18` : 'transparent',
+                      border: `2px solid ${count > 0 ? color : 'transparent'}`,
+                    }}
+                  >
+                    {slide.feedbackStyle === 'hearts' ? (
+                      <Heart
+                        style={{
+                          width: 48, height: 48,
+                          fill: '#ef4444',
+                          color: '#ef4444',
+                          filter: 'drop-shadow(0 2px 6px rgba(239,68,68,0.4))',
+                        }}
+                      />
+                    ) : (
+                      <span style={{ fontSize: 44, lineHeight: 1 }}>{option.emoji || option.content}</span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            {total > 0 && (
+              <p className="text-center text-sm text-slate-400 mt-3">
+                Celkem hlasů: <strong className="text-slate-600">{total}</strong>
+              </p>
+            )}
+          </div>
+        ) : isScale ? (
+          /* Scale equalizer — bars grow upward, squares at bottom */
+          <div className="flex-1 flex flex-col justify-end px-6 pb-6 min-h-0">
+            {/* Equalizer bars area */}
+            <div className="flex gap-2 items-end" style={{ height: 200 }}>
+              {slide.options.map((option, idx) => {
+                const color = option.color || SCALE_COLORS[idx % SCALE_COLORS.length];
+                const count = voteCounts[option.id] ?? 0;
+                const maxCount = Math.max(...slide.options.map(o => voteCounts[o.id] ?? 0), 1);
+                const barPct = total > 0 ? count / maxCount : 0;
+                const barH = barPct > 0 ? Math.max(barPct * 180, 28) : 0;
+                return (
+                  <div key={option.id} className="flex flex-col items-center flex-1" style={{ height: 200, justifyContent: 'flex-end' }}>
+                    {/* Bar */}
+                    <div
+                      className="w-full rounded-xl flex items-start justify-center transition-all duration-500"
+                      style={{
+                        height: barH,
+                        backgroundColor: color,
+                        opacity: count > 0 ? 1 : 0,
+                        boxShadow: count > 0 ? `0 -4px 16px ${color}55` : 'none',
+                        marginBottom: 4,
+                      }}
+                    >
+                      {count > 0 && (
+                        <span className="text-white font-extrabold text-sm pt-1 tabular-nums leading-none">{count}</span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Clickable squares */}
+            <div className="flex gap-2">
+              {slide.options.map((option, idx) => {
+                const color = option.color || SCALE_COLORS[idx % SCALE_COLORS.length];
+                const count = voteCounts[option.id] ?? 0;
+                return (
+                  <button
+                    key={option.id}
+                    onClick={() => onVote?.([option.id])}
+                    className="flex-1 rounded-xl font-bold text-white text-xl transition-all hover:scale-105 active:scale-95 flex items-center justify-center"
+                    style={{
+                      backgroundColor: color,
+                      aspectRatio: '1',
+                      boxShadow: count > 0 ? `0 4px 16px ${color}55` : 'none',
+                    }}
+                  >
+                    {option.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Min/Max labels */}
+            {(slide.scaleMinLabel || slide.scaleMaxLabel) && (
+              <div className="flex justify-between px-1 mt-2">
+                <span className="text-sm font-bold text-orange-500">{slide.scaleMinLabel}</span>
+                <span className="text-sm font-bold text-indigo-500">{slide.scaleMaxLabel}</span>
+              </div>
+            )}
+
+            {total > 0 && (
+              <p className="text-center text-sm text-slate-400 mt-2">
+                Celkem hlasů: <strong className="text-slate-600">{total}</strong>
+              </p>
+            )}
+          </div>
+        ) : (
+          /* Standard options grid */
+          <div className={`grid gap-3 px-6 pb-6 ${slide.options.length <= 2 ? 'grid-cols-1' : 'grid-cols-2'}`}>
+            {slide.options.map((option, idx) => {
+              const count = voteCounts[option.id] ?? 0;
+              const pct = total > 0 ? Math.round((count / total) * 100) : 0;
+              const accent = VOTE_COLORS[idx % VOTE_COLORS.length];
+              return (
+                <button
+                  key={option.id}
+                  onClick={() => onVote?.([option.id])}
+                  className="relative flex items-center gap-3 p-4 rounded-2xl border-2 text-left transition-all active:scale-95 select-none hover:shadow-md"
+                  style={{ borderColor: accent, backgroundColor: `${accent}14`, cursor: 'pointer' }}
+                >
+                  <span
+                    className="w-10 h-10 rounded-xl flex items-center justify-center font-bold text-base flex-shrink-0 text-white"
+                    style={{ backgroundColor: accent }}
+                  >
+                    {option.emoji || option.label}
+                  </span>
+                  <span className="flex-1 text-base font-medium text-[#4E5871] leading-snug">
+                    {option.content || option.label}
+                  </span>
+                  <span
+                    className="flex-shrink-0 flex items-center justify-center font-extrabold text-white"
+                    style={{ width: 40, height: 40, borderRadius: '50%', backgroundColor: accent, fontSize: 18, boxShadow: `0 2px 8px ${accent}55` }}
+                  >
+                    {count}
+                  </span>
+                  {total > 0 && (
+                    <div
+                      className="absolute bottom-0 left-0 h-1 rounded-b-2xl transition-all duration-500"
+                      style={{ width: `${pct}%`, backgroundColor: accent, opacity: 0.45 }}
+                    />
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="w-full h-full bg-gradient-to-br from-slate-50 via-white to-sky-50/30 rounded-3xl overflow-auto">

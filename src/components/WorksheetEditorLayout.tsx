@@ -11,7 +11,6 @@ import {
   DragStartEvent,
 } from '@dnd-kit/core';
 import {
-  arrayMove,
   sortableKeyboardCoordinates,
 } from '@dnd-kit/sortable';
 import { 
@@ -41,10 +40,8 @@ import {
   BlockType,
   BlockWidth,
   BlockImage,
-  createEmptyWorksheet,
   createEmptyBlock,
 } from '../types/worksheet';
-import { SaveStatus } from '../types/worksheet-editor';
 import { MiniSidebar, ActivePanel } from './worksheet-editor/MiniSidebar';
 import { SettingsPanel } from './worksheet-editor/SettingsPanel';
 import { StructurePanel } from './worksheet-editor/StructurePanel';
@@ -54,16 +51,25 @@ import { DraggableCanvas } from './worksheet-editor/DraggableCanvas';
 import { BlockSettingsOverlay } from './worksheet-editor/BlockSettingsOverlay';
 import { PrintableWorksheet } from './worksheet-editor/PrintableWorksheet';
 import { usePDFExport } from '../hooks/usePDFExport';
+import { useWorksheetHistory } from '../hooks/useWorksheetHistory';
 import { useVersionHistory } from '../hooks/useVersionHistory';
-import { saveWorksheet as saveToStorage, getWorksheet } from '../utils/worksheet-storage';
 import { generateWorksheetFromText } from '../utils/pdf-worksheet-generator';
 import { supabase } from '../utils/supabase/client';
 import { extractTextFromPDF } from '../utils/pdf-text-extractor';
 import { extractTextFromPPTX, isPPTX, isLegacyPPT } from '../utils/pptx-text-extractor';
 import { STORAGE_LIMITS } from '../types/file-storage';
+import {
+  duplicateWorksheetBlock,
+  moveWorksheetBlock,
+  moveWorksheetBlockByOffset,
+  removeWorksheetBlock,
+  updateWorksheetBlock,
+} from '../utils/worksheet-blocks';
 import { useAnalytics } from '../hooks/useAnalytics';
+import { useWorksheetEditorRuntime } from '../hooks/useWorksheetEditorRuntime';
 import { VersionHistoryPanel } from './shared/VersionHistoryPanel';
 import { getCurrentUserProfile } from '../utils/profile-storage';
+import { persistWorksheetForEditor } from '../utils/worksheet-editor-runtime';
 
 interface WorksheetEditorLayoutProps {
   theme: 'light' | 'dark';
@@ -75,13 +81,8 @@ export function WorksheetEditorLayout({ theme, toggleTheme }: WorksheetEditorLay
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { trackEvent } = useAnalytics();
-  
-  // Editor state
-  const [worksheet, setWorksheet] = useState<Worksheet | null>(null);
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
   const [hoveredBlockId, setHoveredBlockId] = useState<string | null>(null);
-  const [isDirty, setIsDirty] = useState(false);
-  const [saveStatus, setSaveStatus] = useState<SaveStatus>('saved');
   
   // PDF/File generation state
   const [isGeneratingFromFile, setIsGeneratingFromFile] = useState(false);
@@ -93,6 +94,54 @@ export function WorksheetEditorLayout({ theme, toggleTheme }: WorksheetEditorLay
   
   // Get current user profile
   const profile = getCurrentUserProfile();
+
+  // Check if worksheet has been modified from placeholder state
+  const isWorksheetModified = useCallback((ws: Worksheet | null) => {
+    if (!ws) return false;
+    
+    // Title changed?
+    if (ws.title !== 'Nový pracovní list') return true;
+    
+    // Number of blocks changed? (Initial has 4: header, h1, paragraph, multiple-choice)
+    if (ws.blocks.length !== 4) return true;
+    
+    // Check if initial blocks content was changed
+    const header = ws.blocks.find(b => b.type === 'header-footer');
+    const h1 = ws.blocks.find(b => b.type === 'heading');
+    const paragraph = ws.blocks.find(b => b.type === 'paragraph');
+    const question = ws.blocks.find(b => b.type === 'multiple-choice');
+    
+    if (!header || !h1 || !paragraph || !question) return true;
+    
+    if (h1.content.text !== 'Nadpis pracovního listu') return true;
+    if (paragraph.content.html !== '<p>Zde začněte psát text k tématu. Tento blok je nastaven na polovinu šířky stránky, aby mohl být vedle něj další obsah.</p>') return true;
+    if (question.content.question !== 'Zde zadejte otázku, která se vztahuje k textu vlevo...') return true;
+    
+    return false;
+  }, []);
+
+  const hasPendingChanges = useCallback((ws: Worksheet | null, dirty: boolean) => {
+    return dirty && isWorksheetModified(ws);
+  }, [isWorksheetModified]);
+
+  const handleWorksheetLoaded = useCallback(({ source }: { source: 'local' | 'remote' | 'new' }) => {
+    if (id && source === 'new') {
+      trackEvent('worksheet_created', 'worksheet', { worksheetId: id, isNew: true });
+    }
+  }, [id, trackEvent]);
+
+  const {
+    worksheet,
+    setWorksheet,
+    setIsDirty,
+    saveStatus,
+    updateWorksheet,
+    saveIfPendingChanges,
+  } = useWorksheetEditorRuntime({
+    id,
+    hasPendingChanges,
+    onLoaded: handleWorksheetLoaded,
+  });
   
   // Version history hook
   const versionHistory = useVersionHistory({
@@ -108,12 +157,11 @@ export function WorksheetEditorLayout({ theme, toggleTheme }: WorksheetEditorLay
     onVersionRestored: useCallback((version) => {
       try {
         const restoredWorksheet = JSON.parse(version.content);
-        setWorksheet(restoredWorksheet);
-        setIsDirty(true);
+        updateWorksheet(() => restoredWorksheet);
       } catch (e) {
         console.error('Failed to parse restored worksheet:', e);
       }
-    }, []),
+    }, [updateWorksheet]),
   });
   
   // Panel state - default to 'structure'
@@ -135,16 +183,12 @@ export function WorksheetEditorLayout({ theme, toggleTheme }: WorksheetEditorLay
   const [classes, setClasses] = useState<ClassGroup[]>([]);
   const [selectedClass, setSelectedClass] = useState<ClassGroup | null>(null);
   const [isLoadingClasses, setIsLoadingClasses] = useState(false);
-  
-  // Undo/Redo history
-  const [history, setHistory] = useState<Worksheet[]>([]);
-  const [historyIndex, setHistoryIndex] = useState(-1);
-  const isUndoRedoAction = useRef(false);
-  const MAX_HISTORY = 50;
-  
-  // Refs
-  const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const worksheetRef = useRef<Worksheet | null>(null);
+
+  const { canUndo, canRedo, handleUndo, handleRedo } = useWorksheetHistory({
+    worksheet,
+    setWorksheet,
+    maxHistory: 50,
+  });
   
   // Keyboard shortcut for export: Ctrl+Shift+E
   useEffect(() => {
@@ -176,53 +220,6 @@ export function WorksheetEditorLayout({ theme, toggleTheme }: WorksheetEditorLay
     }
   }, []);
   
-  // Keep ref in sync
-  useEffect(() => {
-    worksheetRef.current = worksheet;
-  }, [worksheet]);
-  
-  // Track worksheet changes for undo/redo history
-  useEffect(() => {
-    if (!worksheet || isUndoRedoAction.current) {
-      isUndoRedoAction.current = false;
-      return;
-    }
-    
-    // Add current state to history
-    setHistory(prev => {
-      // Remove any future states (redo stack) when making a new change
-      const newHistory = prev.slice(0, historyIndex + 1);
-      // Add new state
-      newHistory.push(JSON.parse(JSON.stringify(worksheet)));
-      // Keep only last MAX_HISTORY states
-      if (newHistory.length > MAX_HISTORY) {
-        newHistory.shift();
-      }
-      return newHistory;
-    });
-    setHistoryIndex(prev => Math.min(prev + 1, MAX_HISTORY - 1));
-  }, [worksheet]);
-  
-  // Undo function
-  const handleUndo = useCallback(() => {
-    if (historyIndex > 0) {
-      isUndoRedoAction.current = true;
-      const prevState = history[historyIndex - 1];
-      setWorksheet(JSON.parse(JSON.stringify(prevState)));
-      setHistoryIndex(historyIndex - 1);
-    }
-  }, [history, historyIndex]);
-  
-  // Redo function
-  const handleRedo = useCallback(() => {
-    if (historyIndex < history.length - 1) {
-      isUndoRedoAction.current = true;
-      const nextState = history[historyIndex + 1];
-      setWorksheet(JSON.parse(JSON.stringify(nextState)));
-      setHistoryIndex(historyIndex + 1);
-    }
-  }, [history, historyIndex]);
-  
   // Keyboard shortcuts for undo/redo
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -241,19 +238,6 @@ export function WorksheetEditorLayout({ theme, toggleTheme }: WorksheetEditorLay
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleUndo, handleRedo]);
-  
-  // Inicializace - načíst existující worksheet nebo vytvořit nový
-  useEffect(() => {
-    if (!id) return;
-    
-    const saved = getWorksheet(id);
-    if (saved) {
-      setWorksheet(saved);
-    } else {
-      setWorksheet(createEmptyWorksheet(id));
-      trackEvent('worksheet_created', 'worksheet', { worksheetId: id, isNew: true });
-    }
-  }, [id]);
   
   // Zpracování source=file - generování pracovního listu z PDF/dokumentu
   useEffect(() => {
@@ -365,16 +349,11 @@ export function WorksheetEditorLayout({ theme, toggleTheme }: WorksheetEditorLay
           setGenerationProgress('Vytvářím pracovní list...');
           
           // Aktualizovat worksheet s vygenerovaným obsahem
-          setWorksheet(prev => {
-            if (!prev) return prev;
-            return {
-              ...prev,
-              title: result.title || fileInfo.fileName.replace(/\.[^.]+$/, ''),
-              blocks: result.blocks!,
-              updatedAt: new Date().toISOString()
-            };
-          });
-          setIsDirty(true);
+          updateWorksheet(prev => ({
+            ...prev,
+            title: result.title || fileInfo.fileName.replace(/\.[^.]+$/, ''),
+            blocks: result.blocks!,
+          }));
           
           toast.success(`Pracovní list vytvořen z "${fileInfo.fileName}"`, {
             description: `Vygenerováno ${result.blocks.length} bloků`
@@ -468,17 +447,11 @@ export function WorksheetEditorLayout({ theme, toggleTheme }: WorksheetEditorLay
         }
         
         // Aktualizovat worksheet
-        setWorksheet(prev => {
-          if (!prev) return prev;
-          return {
-            ...prev,
-            title: worksheetResult.title || `Pracovní list: ${linkInfo.title}`,
-            blocks: worksheetResult.blocks!,
-            updatedAt: new Date().toISOString()
-          };
-        });
-        
-        setIsDirty(true);
+        updateWorksheet(prev => ({
+          ...prev,
+          title: worksheetResult.title || `Pracovní list: ${linkInfo.title}`,
+          blocks: worksheetResult.blocks!,
+        }));
         toast.success('Pracovní list vytvořen!', {
           description: `Vygenerováno ${worksheetResult.blocks.length} bloků z videa`
         });
@@ -490,8 +463,7 @@ export function WorksheetEditorLayout({ theme, toggleTheme }: WorksheetEditorLay
         });
         
         // Fallback - vytvořit alespoň základní pracovní list s QR kódem
-        setWorksheet(prev => {
-          if (!prev) return prev;
+        updateWorksheet(prev => {
           const fallbackText = `Tento pracovní list byl vytvořen z videa. Nepodařilo se automaticky vygenerovat obsah - můžete přidat vlastní bloky pomocí tlačítka "Přidat blok".`;
           return {
             ...prev,
@@ -529,7 +501,6 @@ export function WorksheetEditorLayout({ theme, toggleTheme }: WorksheetEditorLay
             ]
           };
         });
-        setIsDirty(true);
       } finally {
         setIsGeneratingFromLink(false);
         setGenerationProgress('');
@@ -538,113 +509,8 @@ export function WorksheetEditorLayout({ theme, toggleTheme }: WorksheetEditorLay
     
     generateFromLink();
     
-  }, [worksheet, searchParams]);
+  }, [searchParams, updateWorksheet]);
   
-  // Check if worksheet has been modified from placeholder state
-  const isWorksheetModified = useCallback((ws: Worksheet | null) => {
-    if (!ws) return false;
-    
-    // Title changed?
-    if (ws.title !== 'Nový pracovní list') return true;
-    
-    // Number of blocks changed? (Initial has 4: header, h1, paragraph, multiple-choice)
-    if (ws.blocks.length !== 4) return true;
-    
-    // Check if initial blocks content was changed
-    const header = ws.blocks.find(b => b.type === 'header-footer');
-    const h1 = ws.blocks.find(b => b.type === 'heading');
-    const paragraph = ws.blocks.find(b => b.type === 'paragraph');
-    const question = ws.blocks.find(b => b.type === 'multiple-choice');
-    
-    if (!header || !h1 || !paragraph || !question) return true;
-    
-    if (h1.content.text !== 'Nadpis pracovního listu') return true;
-    if (paragraph.content.html !== '<p>Zde začněte psát text k tématu. Tento blok je nastaven na polovinu šířky stránky, aby mohl být vedle něj další obsah.</p>') return true;
-    if (question.content.question !== 'Zde zadejte otázku, která se vztahuje k textu vlevo...') return true;
-    
-    return false;
-  }, []);
-
-  // Autosave s debounce
-  useEffect(() => {
-    if (!worksheet || !isDirty || !isWorksheetModified(worksheet)) return;
-    
-    if (autoSaveTimerRef.current) {
-      clearTimeout(autoSaveTimerRef.current);
-    }
-    
-    setSaveStatus('unsaved');
-    
-    autoSaveTimerRef.current = setTimeout(() => {
-      performSave();
-    }, 2000);
-    
-    return () => {
-      if (autoSaveTimerRef.current) {
-        clearTimeout(autoSaveTimerRef.current);
-      }
-    };
-  }, [worksheet, isDirty, isWorksheetModified]);
-  
-  // Varování před odchodem pokud jsou neuložené změny
-  useEffect(() => {
-    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      if ((saveStatus === 'unsaved' || isDirty) && isWorksheetModified(worksheet)) {
-        e.preventDefault();
-        e.returnValue = '';
-      }
-    };
-
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, [saveStatus, isDirty, worksheet, isWorksheetModified]);
-  
-  // Uložit při unmountu
-  useEffect(() => {
-    return () => {
-      if (worksheetRef.current && isDirty && isWorksheetModified(worksheetRef.current)) {
-        saveToStorage(worksheetRef.current);
-      }
-    };
-  }, [isWorksheetModified]);
-  
-  // Perform save
-  const performSave = useCallback(() => {
-    if (!worksheet) return;
-    
-    setSaveStatus('saving');
-    
-    const updated: Worksheet = {
-      ...worksheet,
-      updatedAt: new Date().toISOString(),
-    };
-    
-    saveToStorage(updated);
-    
-    setTimeout(() => {
-      setSaveStatus('saved');
-      setIsDirty(false);
-    }, 500);
-  }, [worksheet]);
-  
-  // Manuální uložení
-  const handleManualSave = useCallback(() => {
-    if (autoSaveTimerRef.current) {
-      clearTimeout(autoSaveTimerRef.current);
-    }
-    performSave();
-  }, [performSave]);
-  
-  // Update worksheet - using functional updates for stability
-  const updateWorksheet = useCallback((updates: Partial<Worksheet> | ((prev: Worksheet) => Worksheet)) => {
-    setWorksheet(prev => {
-      if (!prev) return prev;
-      const updated = typeof updates === 'function' ? updates(prev) : { ...prev, ...updates };
-      return { ...updated, updatedAt: new Date().toISOString() };
-    });
-    setIsDirty(true);
-  }, []); // Stable callback
-
   // Block operations
   const addBlock = useCallback((type: BlockType, afterBlockId?: string) => {
     updateWorksheet(prev => {
@@ -723,11 +589,7 @@ export function WorksheetEditorLayout({ theme, toggleTheme }: WorksheetEditorLay
   
   const deleteBlock = useCallback((blockId: string) => {
     updateWorksheet(prev => {
-      const newBlocks = prev.blocks
-        .filter(b => b.id !== blockId)
-        .map((b, i) => ({ ...b, order: i }));
-      
-      return { ...prev, blocks: newBlocks };
+      return { ...prev, blocks: removeWorksheetBlock(prev.blocks, blockId) };
     });
     
     if (selectedBlockId === blockId) {
@@ -738,128 +600,73 @@ export function WorksheetEditorLayout({ theme, toggleTheme }: WorksheetEditorLay
   const updateBlock = useCallback((blockId: string, content: any) => {
     updateWorksheet(prev => ({
       ...prev,
-      blocks: prev.blocks.map(b =>
-        b.id === blockId ? { ...b, content } : b
-      )
+      blocks: updateWorksheetBlock(prev.blocks, blockId, (block) => ({ ...block, content }))
     }));
   }, [updateWorksheet]);
   
   const updateBlockWidth = useCallback((blockId: string, width: BlockWidth, widthPercent?: number) => {
     updateWorksheet(prev => ({
       ...prev,
-      blocks: prev.blocks.map(b =>
-        b.id === blockId 
-          ? { ...b, width, ...(widthPercent !== undefined && { widthPercent }) } 
-          : b
-      )
+      blocks: updateWorksheetBlock(prev.blocks, blockId, (block) => ({
+        ...block,
+        width,
+        ...(widthPercent !== undefined && { widthPercent }),
+      }))
     }));
   }, [updateWorksheet]);
 
   const updateBlockMargin = useCallback((blockId: string, marginBottom: number) => {
     updateWorksheet(prev => ({
       ...prev,
-      blocks: prev.blocks.map(b =>
-        b.id === blockId 
-          ? { ...b, marginBottom } 
-          : b
-      )
+      blocks: updateWorksheetBlock(prev.blocks, blockId, (block) => ({ ...block, marginBottom }))
     }));
   }, [updateWorksheet]);
 
   const updateBlockMarginStyle = useCallback((blockId: string, marginStyle: 'empty' | 'dotted' | 'lined') => {
     updateWorksheet(prev => ({
       ...prev,
-      blocks: prev.blocks.map(b =>
-        b.id === blockId
-          ? { ...b, marginStyle }
-          : b
-      )
+      blocks: updateWorksheetBlock(prev.blocks, blockId, (block) => ({ ...block, marginStyle }))
     }));
   }, [updateWorksheet]);
 
   const updateBlockImage = useCallback((blockId: string, image: BlockImage | undefined) => {
     updateWorksheet(prev => ({
       ...prev,
-      blocks: prev.blocks.map(b =>
-        b.id === blockId
-          ? { ...b, image }
-          : b
-      )
+      blocks: updateWorksheetBlock(prev.blocks, blockId, (block) => ({ ...block, image }))
     }));
   }, [updateWorksheet]);
 
   const updateBlockVisualStyles = useCallback((blockId: string, visualStyles: any) => {
     updateWorksheet(prev => ({
       ...prev,
-      blocks: prev.blocks.map(b =>
-        b.id === blockId
-          ? { ...b, visualStyles }
-          : b
-      )
+      blocks: updateWorksheetBlock(prev.blocks, blockId, (block) => ({ ...block, visualStyles }))
     }));
   }, [updateWorksheet]);
 
   const duplicateBlock = useCallback((blockId: string) => {
     updateWorksheet(prev => {
-      const blockIndex = prev.blocks.findIndex(b => b.id === blockId);
-      if (blockIndex === -1) return prev;
-      
-      const originalBlock = prev.blocks[blockIndex];
-      const newBlock: WorksheetBlock = {
-        ...JSON.parse(JSON.stringify(originalBlock)),
-        id: `block-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      };
-      
-      const newBlocks = [
-        ...prev.blocks.slice(0, blockIndex + 1),
-        newBlock,
-        ...prev.blocks.slice(blockIndex + 1),
-      ].map((b, i) => ({ ...b, order: i }));
-      
-      return { ...prev, blocks: newBlocks };
+      return { ...prev, blocks: duplicateWorksheetBlock(prev.blocks, blockId) };
     });
   }, [updateWorksheet]);
 
   // Move block (for drag & drop)
   const moveBlock = useCallback((activeId: string, overId: string) => {
     updateWorksheet(prev => {
-      if (activeId === overId) return prev;
-      
-      const oldIndex = prev.blocks.findIndex(b => b.id === activeId);
-      const newIndex = prev.blocks.findIndex(b => b.id === overId);
-      
-      if (oldIndex === -1 || newIndex === -1) return prev;
-      
-      const newBlocks = arrayMove(prev.blocks, oldIndex, newIndex)
-        .map((b, i) => ({ ...b, order: i }));
-      
-      return { ...prev, blocks: newBlocks };
+      return { ...prev, blocks: moveWorksheetBlock(prev.blocks, activeId, overId) };
     });
   }, [updateWorksheet]);
 
   // Move block up
   const moveBlockUp = useCallback((blockId: string) => {
     updateWorksheet(prev => {
-      const currentIndex = prev.blocks.findIndex(b => b.id === blockId);
-      if (currentIndex <= 0) return prev;
-      
-      const newBlocks = arrayMove(prev.blocks, currentIndex, currentIndex - 1)
-        .map((b, i) => ({ ...b, order: i }));
-      
-      return { ...prev, blocks: newBlocks };
+      return { ...prev, blocks: moveWorksheetBlockByOffset(prev.blocks, blockId, -1) };
     });
   }, [updateWorksheet]);
 
   // Move block down
   const moveBlockDown = useCallback((blockId: string) => {
     updateWorksheet(prev => {
-      const currentIndex = prev.blocks.findIndex(b => b.id === blockId);
-      if (currentIndex === -1 || currentIndex >= prev.blocks.length - 1) return prev;
-      
-      const newBlocks = arrayMove(prev.blocks, currentIndex, currentIndex + 1)
-        .map((b, i) => ({ ...b, order: i }));
-      
-      return { ...prev, blocks: newBlocks };
+      return { ...prev, blocks: moveWorksheetBlockByOffset(prev.blocks, blockId, 1) };
     });
   }, [updateWorksheet]);
 
@@ -916,14 +723,10 @@ export function WorksheetEditorLayout({ theme, toggleTheme }: WorksheetEditorLay
   // Handle back navigation
   const handleBack = useCallback(() => {
     if (saveStatus === 'saving') return;
-    
-    // Uložit před odchodem pokud jsou změny a není to jen placeholder
-    if (isDirty && worksheet && isWorksheetModified(worksheet)) {
-      saveToStorage(worksheet);
-    }
-    
+
+    saveIfPendingChanges();
     navigate('/library/my-content');
-  }, [saveStatus, isDirty, worksheet, navigate, isWorksheetModified]);
+  }, [saveIfPendingChanges, saveStatus, navigate]);
 
   // Get selected block
   const selectedBlock = worksheet?.blocks.find(b => b.id === selectedBlockId);
@@ -984,6 +787,7 @@ export function WorksheetEditorLayout({ theme, toggleTheme }: WorksheetEditorLay
               saveStatus={saveStatus === 'error' ? 'unsaved' : saveStatus}
               onOpenHistory={() => setShowVersionHistory(true)}
               hasUnsavedVersions={versionHistory.hasUnsavedChanges}
+              onBack={handleBack}
             />
           )}
           
@@ -1005,28 +809,22 @@ export function WorksheetEditorLayout({ theme, toggleTheme }: WorksheetEditorLay
                   onHoverBlock={handleHoverBlock}
                   onAddBlock={addBlock}
                   onUpdateColumns={(columns) => {
-                    setWorksheet(prev => {
-                      if (!prev) return prev;
-                      return {
-                        ...prev,
-                        metadata: { ...prev.metadata, columns },
-                        // Set all blocks to half-width when 2 columns, full-width when 1 column
-                        blocks: prev.blocks.map(block => ({
-                          ...block,
-                          width: columns === 2 ? 'half' : 'full',
-                          widthPercent: columns === 2 ? 50 : undefined,
-                        }))
-                      };
-                    });
+                    updateWorksheet(prev => ({
+                      ...prev,
+                      metadata: { ...prev.metadata, columns },
+                      // Keep block widths in sync with the selected column layout.
+                      blocks: prev.blocks.map(block => ({
+                        ...block,
+                        width: columns === 2 ? 'half' : 'full',
+                        widthPercent: columns === 2 ? 50 : undefined,
+                      })),
+                    }));
                   }}
                   onUpdateGlobalFontSize={(globalFontSize) => {
-                    setWorksheet(prev => {
-                      if (!prev) return prev;
-                      return {
-                        ...prev,
-                        metadata: { ...prev.metadata, globalFontSize }
-                      };
-                    });
+                    updateWorksheet(prev => ({
+                      ...prev,
+                      metadata: { ...prev.metadata, globalFontSize }
+                    }));
                   }}
                 />
               )}
@@ -1045,13 +843,18 @@ export function WorksheetEditorLayout({ theme, toggleTheme }: WorksheetEditorLay
             </aside>
           )}
           
-          {/* AI Panel - Replaces sidebar when active */}
-          {activePanel === 'ai' && (
-<aside
+          {/* AI Panel - always mounted to preserve chat history, hidden via CSS when inactive */}
+          {worksheet && (
+            <aside
               data-sidebar
               data-print-hide="true"
-              className="flex-shrink-0 border-r border-slate-200 bg-white flex flex-col right-toolbar print:!hidden"
-              style={{ width: '420px', minWidth: '420px', maxWidth: '420px' }}
+              className="flex-shrink-0 border-r border-slate-200 bg-white flex-col right-toolbar print:!hidden"
+              style={{
+                width: '420px',
+                minWidth: '420px',
+                maxWidth: '420px',
+                display: activePanel === 'ai' ? 'flex' : 'none',
+              }}
             >
               {/* AI Chat Panel - has its own back/close buttons */}
               <div className="flex-1 overflow-hidden">
@@ -1133,9 +936,9 @@ export function WorksheetEditorLayout({ theme, toggleTheme }: WorksheetEditorLay
             {/* Undo/Redo buttons */}
             <button
               onClick={handleUndo}
-              disabled={historyIndex <= 0}
+              disabled={!canUndo}
               className={`w-10 h-10 rounded-lg transition-colors flex items-center justify-center ${
-                historyIndex > 0 
+                canUndo
                   ? 'bg-slate-200 text-slate-600 hover:bg-slate-300' 
                   : 'bg-slate-100 text-slate-300 cursor-not-allowed'
               }`}
@@ -1145,9 +948,9 @@ export function WorksheetEditorLayout({ theme, toggleTheme }: WorksheetEditorLay
             </button>
             <button
               onClick={handleRedo}
-              disabled={historyIndex >= history.length - 1}
+              disabled={!canRedo}
               className={`w-10 h-10 rounded-lg transition-colors flex items-center justify-center ${
-                historyIndex < history.length - 1 
+                canRedo
                   ? 'bg-slate-200 text-slate-600 hover:bg-slate-300' 
                   : 'bg-slate-100 text-slate-300 cursor-not-allowed'
               }`}
@@ -1317,7 +1120,7 @@ export function WorksheetEditorLayout({ theme, toggleTheme }: WorksheetEditorLay
                           onClick={() => {
                             setShowAssignPopup(false);
                             if (worksheet) {
-                              saveToStorage(worksheet);
+                              persistWorksheetForEditor(worksheet);
                               toast.info('Připravuji board z pracovního listu...');
                               navigate(`/quiz/new?fromWorksheet=${worksheet.id}&classId=${selectedClass.id}`);
                             }
@@ -1338,7 +1141,7 @@ export function WorksheetEditorLayout({ theme, toggleTheme }: WorksheetEditorLay
                           onClick={() => {
                             setShowAssignPopup(false);
                             if (worksheet) {
-                              saveToStorage(worksheet);
+                              persistWorksheetForEditor(worksheet);
                               navigate(`/worksheet/paper-test/${worksheet.id}?classId=${selectedClass.id}`);
                             }
                           }}
@@ -1403,6 +1206,8 @@ export function WorksheetEditorLayout({ theme, toggleTheme }: WorksheetEditorLay
             globalFontSize={worksheet.metadata.globalFontSize}
             pendingInsertType={pendingInsertType}
             onInsertBefore={confirmInsertBefore}
+            pageHeader={worksheet.metadata.pageHeader}
+            pageFooter={worksheet.metadata.pageFooter}
           />
           
           {/* Block Settings Overlay - absolute positioned within relative container */}

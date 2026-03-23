@@ -6,8 +6,9 @@
 
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { GripVertical, Type, AlignLeft, Info, ListChecks, TextCursorInput, MessageSquare, Square, Calculator, ImageIcon, Table, FileText, QrCode } from 'lucide-react';
+import { GripVertical, Type, AlignLeft, Info, ListChecks, TextCursorInput, MessageSquare, Square, Calculator, ImageIcon, Table, FileText, QrCode, LayoutGrid } from 'lucide-react';
 import { WorksheetBlock, BlockType } from '../../types/worksheet';
+import { getQuestionHtml, richHtmlToPlainText } from '../../utils/worksheet-text';
 
 interface SortableBlockProps {
   block: WorksheetBlock;
@@ -21,6 +22,7 @@ const BLOCK_TYPE_CONFIG: Record<BlockType, { label: string; icon: typeof Type; c
   'heading': { label: 'Nadpis', icon: Type, color: 'text-blue-500' },
   'paragraph': { label: 'Odstavec', icon: AlignLeft, color: 'text-slate-500' },
   'infobox': { label: 'Infobox', icon: Info, color: 'text-amber-500' },
+  'layout-section': { label: 'Layout sekce', icon: LayoutGrid, color: 'text-violet-500' },
   'multiple-choice': { label: 'Výběr odpovědi', icon: ListChecks, color: 'text-green-500' },
   'fill-blank': { label: 'Doplňování', icon: TextCursorInput, color: 'text-purple-500' },
   'free-answer': { label: 'Volná odpověď', icon: MessageSquare, color: 'text-rose-500' },
@@ -45,12 +47,14 @@ function getBlockPreview(block: WorksheetBlock): string {
       return block.content.html?.replace(/<[^>]*>/g, '').slice(0, 30) || 'Odstavec...';
     case 'infobox':
       return block.content.title || block.content.html?.replace(/<[^>]*>/g, '').slice(0, 30) || 'Infobox...';
+    case 'layout-section':
+      return `${(block.content.columns || 2)} sloupce`;
     case 'multiple-choice':
-      return block.content.question?.slice(0, 30) || 'Otázka...';
+      return richHtmlToPlainText(getQuestionHtml(block.content)).slice(0, 30) || 'Otázka...';
     case 'fill-blank':
       return block.content.instruction || 'Doplňování...';
     case 'free-answer':
-      return block.content.question?.slice(0, 30) || 'Volná odpověď...';
+      return richHtmlToPlainText(getQuestionHtml(block.content)).slice(0, 30) || 'Volná odpověď...';
     case 'connect-pairs':
       return block.content.instruction?.slice(0, 30) || `${block.content.pairs.length} dvojic`;
     case 'image-hotspots':

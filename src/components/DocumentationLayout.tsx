@@ -383,7 +383,9 @@ export function DocumentationLayout({ theme, toggleTheme }: DocumentationLayoutP
         { id: 'matematika', label: 'Matematika' },
         { id: 'fyzika', label: 'Fyzika' },
         { id: 'prirodopis', label: 'Přírodopis' },
-        { id: 'chemie', label: 'Chemie' }
+        { id: 'chemie', label: 'Chemie' },
+        { id: 'dejepis', label: 'Dějepis' },
+        { id: 'zemepis', label: 'Zeměpis' }
       ]
     },
     {
@@ -407,6 +409,7 @@ export function DocumentationLayout({ theme, toggleTheme }: DocumentationLayoutP
   const [extractedLessonImages, setExtractedLessonImages] = useState<ExtractedImage[]>([]);
   const [activeMediaItem, setActiveMediaItem] = useState<SectionMediaItem | null>(null);
   const [imageTransition, setImageTransition] = useState(false);
+  const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [menuHovered, setMenuHovered] = useState(false);
   const [logoHovered, setLogoHovered] = useState(false);
   const [slideDirection, setSlideDirection] = useState<'left' | 'right' | null>(null);
@@ -598,7 +601,7 @@ export function DocumentationLayout({ theme, toggleTheme }: DocumentationLayoutP
       localStorage.setItem('lastCategory', activeCategory);
       
       // Track subject access when navigating to a subject category (only once per subject)
-      const subjectCategories = ['fyzika', 'chemie', 'prirodopis', 'matematika', 'matematika-1', 'matematika-2', 'prvouka'];
+      const subjectCategories = ['fyzika', 'chemie', 'prirodopis', 'matematika', 'matematika-1', 'matematika-2', 'prvouka', 'zemepis', 'dejepis', 'cestina', 'anglictina', 'obcanska'];
       if (subjectCategories.includes(activeCategory) && activeCategory !== lastTrackedSubject.current) {
         lastTrackedSubject.current = activeCategory;
         const subjectLabels: Record<string, string> = {
@@ -609,6 +612,11 @@ export function DocumentationLayout({ theme, toggleTheme }: DocumentationLayoutP
           'matematika-1': 'Matematika 1. st.',
           'matematika-2': 'Matematika 2. st.',
           'prvouka': 'Prvouka',
+          'zemepis': 'Zeměpis',
+          'dejepis': 'Dějepis',
+          'cestina': 'Čeština',
+          'anglictina': 'Angličtina',
+          'obcanska': 'Občanská výchova',
         };
         analytics.trackSubjectAccessed(activeCategory, subjectLabels[activeCategory] || activeCategory, 'navigation');
       }
@@ -803,6 +811,7 @@ export function DocumentationLayout({ theme, toggleTheme }: DocumentationLayoutP
           
           setTimeout(() => {
             setActiveMediaItem(foundMedia);
+            setActiveImageIndex(0);
             setImageTransition(false);
           }, delay);
         } else {
@@ -1121,6 +1130,83 @@ export function DocumentationLayout({ theme, toggleTheme }: DocumentationLayoutP
              return;
            }
            
+           // ── Teacher-generated materials (worksheets, boards, documents) ──────
+           // Menu items generated from datasets use the material's own ID as slug.
+           // CMS has no record for them, so we load them directly from Supabase.
+           if (menuItem) {
+             const itemType = (menuItem as any).type as string | undefined;
+
+             // Boards (practice / test / interactive / lesson) → redirect to quiz viewer
+             if (itemType && ['practice', 'test', 'interactive'].includes(itemType)) {
+               navigate(`/quiz/view/${actualSlug}`, { replace: true });
+               return;
+             }
+
+             // Worksheet → load from teacher_worksheets and create virtual page
+             if (itemType === 'worksheet' || actualSlug.startsWith('worksheet-')) {
+               try {
+                 const { data: wsRow } = await supabase
+                   .from('teacher_worksheets')
+                   .select('id, name, content')
+                   .eq('id', actualSlug)
+                   .single();
+                 if (wsRow) {
+                   const wsContent = wsRow.content as Record<string, any> | null ?? {};
+                   // Map menu item's externalUrl (board://) and coverImage into WorksheetData fields
+                   const boardUrl = menuItem.externalUrl ||
+                     (wsContent.linkedBoardId ? `board://${wsContent.linkedBoardId}` : undefined);
+                   const enrichedContent = {
+                     ...wsContent,
+                     ...(boardUrl ? { interactiveUrl: boardUrl } : {}),
+                     previewImageUrl: menuItem.coverImage || wsContent.thumbnailUrl || wsContent.previewImageUrl,
+                   };
+                   const virtualPage: Page = {
+                     id: wsRow.id,
+                     slug: actualSlug,
+                     title: wsRow.name || menuItem.label,
+                     content: JSON.stringify(enrichedContent),
+                     description: '',
+                     documentType: 'worksheet',
+                     sectionImages: [],
+                     showTOC: false,
+                     worksheetData: enrichedContent,
+                   } as any;
+                   setPage(virtualPage);
+                   return;
+                 }
+               } catch (e) {
+                 console.warn('[DocumentationLayout] Failed to load teacher worksheet:', e);
+               }
+             }
+
+             // Documents (ucebni-text / methodology / textbook-page) → load from teacher_documents
+             if (itemType && ['ucebni-text', 'methodology', 'textbook-page', 'lesson'].includes(itemType)) {
+               try {
+                 const { data: docRow } = await supabase
+                   .from('teacher_documents')
+                   .select('id, title, content, document_type, section_images')
+                   .eq('id', actualSlug)
+                   .single();
+                 if (docRow) {
+                   const virtualPage: Page = {
+                     id: docRow.id,
+                     slug: actualSlug,
+                     title: docRow.title || menuItem.label,
+                     content: typeof docRow.content === 'string' ? docRow.content : JSON.stringify(docRow.content || ''),
+                     description: '',
+                     documentType: docRow.document_type || 'lesson',
+                     sectionImages: docRow.section_images || [],
+                     showTOC: true,
+                   };
+                   setPage(virtualPage);
+                   return;
+                 }
+               } catch (e) {
+                 console.warn('[DocumentationLayout] Failed to load teacher document:', e);
+               }
+             }
+           }
+
            // Don't set error for 404, so we can fallback to Folder View (CategoryOverview)
            setPage(null);
            return;
@@ -2786,7 +2872,7 @@ Ujisti se, že všechny otázky a úlohy vycházejí přímo z obsahu dokumentu 
 
                         {/* Active section media - card flip effect */}
                         {activeMediaItem && (
-                          <div className={`rounded-lg overflow-hidden border border-border bg-card print:border-gray-300 perspective-1000 transition-opacity duration-300 mt-[30px] ${
+                          <div className={`rounded-lg overflow-hidden ${activeMediaItem.type === 'image' || (!activeMediaItem.type && activeMediaItem.imageUrl) ? '' : 'border border-border bg-card print:border-gray-300'} perspective-1000 transition-opacity duration-300 mt-[30px] ${
                             menuHovered ? 'opacity-0' : 'opacity-100'
                           }`}>
                             <div className={`transition-all duration-300 ${
@@ -2811,20 +2897,57 @@ Ujisti se, že všechny otázky a úlohy vycházejí přímo z obsahu dokumentu 
                                     backgroundImage={activeMediaItem.lottieConfig.backgroundImage}
                                   />
                                 </div>
-                              ) : (
-                                <img 
-                                  key={activeMediaItem.imageUrl}
-                                  src={activeMediaItem.imageUrl} 
-                                  alt={`Illustration for ${activeMediaItem.heading}`}
-                                  className={`${
-                                    readerMode 
-                                      ? 'max-h-[85vh] w-auto mx-auto object-contain' 
-                                      : videoExpanded 
-                                        ? 'max-h-[calc(100vh-240px)] w-auto mx-auto object-contain' 
-                                        : 'w-full h-auto'
-                                  }`}
-                                />
-                              )}
+                              ) : (() => {
+                                const imgSteps = activeMediaItem.imageSteps?.filter(s => s.url) || [];
+                                const displaySteps = imgSteps.length > 0 ? imgSteps : (activeMediaItem.imageUrl ? [{ id: 'legacy', url: activeMediaItem.imageUrl, description: activeMediaItem.imageDescription }] : []);
+                                const currentStep = displaySteps[activeImageIndex] || displaySteps[0];
+                                const hasMultiple = displaySteps.length > 1;
+                                return (
+                                  <div className="relative flex w-full rounded-lg border border-gray-200 overflow-hidden shadow-sm bg-white">
+                                    {/* Left sidebar — numbered step buttons (same as LottieSequencePlayer) */}
+                                    {hasMultiple && (
+                                      <div className="w-16 border-r border-gray-200 bg-gray-50 flex flex-col items-center py-4 gap-4 shrink-0 overflow-y-auto">
+                                        {displaySteps.map((_, i) => (
+                                          <button
+                                            key={i}
+                                            onClick={() => setActiveImageIndex(i)}
+                                            className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium transition-all duration-300 shrink-0 ${
+                                              i === activeImageIndex
+                                                ? 'bg-primary text-primary-foreground scale-110 ring-2 ring-primary/30'
+                                                : 'bg-gray-200 text-gray-500 hover:bg-gray-300'
+                                            }`}
+                                            aria-label={`Obrázek ${i + 1}`}
+                                          >
+                                            {i + 1}
+                                          </button>
+                                        ))}
+                                      </div>
+                                    )}
+                                    {/* Main content */}
+                                    <div className="flex-1 min-w-0">
+                                    <div className="w-full bg-white">
+                                      <img
+                                        key={activeImageIndex}
+                                        src={currentStep?.url}
+                                        alt={currentStep?.description || `Illustration for ${activeMediaItem.heading}`}
+                                        className="w-full h-auto object-contain"
+                                      />
+                                    </div>
+                                      {/* Bottom bar — caption instead of play controls */}
+                                      <div className="h-12 border-t border-gray-200 bg-white flex items-center px-4">
+                                        <p className="text-xs text-slate-500 line-clamp-2 flex-1">
+                                          {currentStep?.description || `${activeImageIndex + 1} / ${displaySteps.length}`}
+                                        </p>
+                                        {hasMultiple && (
+                                          <span className="text-xs text-slate-400 font-medium shrink-0 ml-2">
+                                            {activeImageIndex + 1} / {displaySteps.length}
+                                          </span>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              })()}
                             </div>
                           </div>
                         )}

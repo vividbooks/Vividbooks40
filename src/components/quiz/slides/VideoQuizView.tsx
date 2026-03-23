@@ -22,6 +22,7 @@ interface VideoQuizViewProps {
   readOnly?: boolean;
   onSubmit?: (result: { correct: number; total: number; answers: Record<string, string> }) => void;
   showResults?: boolean;
+  deferEvaluation?: boolean;
 }
 
 // Format seconds to mm:ss
@@ -116,6 +117,7 @@ export function VideoQuizView({
   readOnly = false,
   onSubmit,
   showResults = false,
+  deferEvaluation = false,
 }: VideoQuizViewProps) {
   // State
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState<number | null>(null);
@@ -168,6 +170,20 @@ export function VideoQuizView({
   const confirmAnswer = () => {
     if (!currentQuestion || !currentAnswer) return;
 
+    if (deferEvaluation) {
+      setCurrentQuestionIndex(null);
+      const answeredCount = Object.keys(answers).length;
+      if (answeredCount >= sortedQuestions.length) {
+        setIsComplete(true);
+        onSubmit?.({
+          correct: score.correct,
+          total: score.total,
+          answers,
+        });
+      }
+      return;
+    }
+
     // Show result briefly
     setShowQuestionResult(true);
 
@@ -193,7 +209,7 @@ export function VideoQuizView({
     setCurrentQuestionIndex(index);
   };
 
-  const showFinalResults = showResults || isComplete;
+  const showFinalResults = showResults || (!deferEvaluation && isComplete);
 
   // If no video, show message
   if (!videoId) {
@@ -312,6 +328,7 @@ export function VideoQuizView({
           <div className="flex flex-wrap gap-2">
             {sortedQuestions.map((question, index) => {
               const isAnswered = !!answers[question.id];
+              const shouldRevealResult = showFinalResults;
               const correctOption = question.options.find(o => o.isCorrect);
               const isCorrect = answers[question.id] === correctOption?.id;
 
@@ -323,15 +340,17 @@ export function VideoQuizView({
                   className={`
                     flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all
                     ${isAnswered 
-                      ? isCorrect 
-                        ? 'bg-green-500/20 text-green-300' 
-                        : 'bg-red-500/20 text-red-300'
+                      ? shouldRevealResult
+                        ? isCorrect 
+                          ? 'bg-green-500/20 text-green-300' 
+                          : 'bg-red-500/20 text-red-300'
+                        : 'bg-white/15 text-white'
                       : 'bg-white/10 text-white/80 hover:bg-white/20 cursor-pointer'
                     }
                   `}
                 >
                   <span className="font-mono text-xs opacity-70">{formatTime(question.timestamp)}</span>
-                  {isAnswered && (
+                  {isAnswered && shouldRevealResult && (
                     isCorrect ? <Check className="w-4 h-4" /> : <X className="w-4 h-4" />
                   )}
                   {!isAnswered && <Play className="w-3 h-3" />}

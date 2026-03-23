@@ -19,6 +19,7 @@ import {
 import { Quiz } from '../../types/quiz';
 import { getQuizAsync, saveQuiz } from '../../utils/quiz-storage';
 import { supabase } from '../../utils/supabase/client';
+import { boardRoutes } from '../../features/board-v2';
 
 export function BoardCopyPage() {
   const { boardId } = useParams<{ boardId: string }>();
@@ -102,7 +103,7 @@ export function BoardCopyPage() {
       saveQuiz(copiedQuiz);
 
       // Redirect to editor
-      navigate(`/quiz/editor/${newId}`);
+      navigate(boardRoutes.edit(newId));
     } catch (e) {
       console.error('Error copying board:', e);
       setError('Nepodařilo se zkopírovat board');
@@ -113,7 +114,7 @@ export function BoardCopyPage() {
   // Redirect to login
   const goToLogin = () => {
     // Store the return URL for after login
-    localStorage.setItem('post-login-redirect', `/quiz/copy/${boardId}`);
+    localStorage.setItem('post-login-redirect', boardRoutes.copy(boardId || ''));
     navigate('/login');
   };
 

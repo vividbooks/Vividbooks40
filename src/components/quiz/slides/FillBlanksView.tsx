@@ -19,6 +19,7 @@ interface FillBlanksViewProps {
   readOnly?: boolean;
   onSubmit?: (result: { correct: number; total: number; answers: Record<string, string> }) => void;
   showResults?: boolean;
+  deferEvaluation?: boolean;
 }
 
 // Shuffle array helper
@@ -98,6 +99,7 @@ export function FillBlanksView({
   readOnly = false,
   onSubmit,
   showResults = false,
+  deferEvaluation = false,
 }: FillBlanksViewProps) {
   // State
   const [filledBlanks, setFilledBlanks] = useState<Record<string, string>>({});
@@ -212,7 +214,7 @@ export function FillBlanksView({
     shuffledOptionsRef.current = null;
   };
 
-  const showResultsNow = showResults || isSubmitted;
+  const showResultsNow = showResults || (isSubmitted && !deferEvaluation);
   const score = calculateScore();
 
   // Render sentence with clickable blanks
@@ -333,7 +335,7 @@ export function FillBlanksView({
             </div>
           )}
           
-          {!showResultsNow && !isTeacher && (
+          {!showResultsNow && !isTeacher && !isSubmitted && (
             <>
               <button
                 onClick={handleReset}
@@ -353,7 +355,7 @@ export function FillBlanksView({
                     : '#94a3b8',
                 }}
               >
-                Vyhodnotit
+                {deferEvaluation ? 'Odevzdat' : 'Vyhodnotit'}
               </button>
             </>
           )}

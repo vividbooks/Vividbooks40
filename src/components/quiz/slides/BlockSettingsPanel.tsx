@@ -28,6 +28,10 @@ import {
   Youtube,
   Layout,
   MessageSquare,
+  Code2,
+  MousePointer,
+  Layers,
+  Volume2,
 } from 'lucide-react';
 import { SlideBlock, SlideBlockType } from '../../../types/quiz';
 import { BackgroundPicker } from './BackgroundPicker';
@@ -71,6 +75,68 @@ const ColorIcon = ({ className = "w-5 h-5 text-slate-400" }: { className?: strin
   </svg>
 );
 
+function ToggleSwitch({
+  checked,
+  onToggle,
+  label,
+  labelClassName = 'text-sm text-slate-600',
+}: {
+  checked: boolean;
+  onToggle: () => void;
+  label: string;
+  labelClassName?: string;
+}) {
+  return (
+    <label className="flex items-center gap-3 cursor-pointer select-none">
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        aria-label={label}
+        onClick={onToggle}
+        className="relative inline-flex shrink-0 items-center rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2"
+        style={{
+          width: 40,
+          height: 24,
+          padding: 2,
+          backgroundColor: checked ? '#6366f1' : '#e5e7eb',
+        }}
+      >
+        <span
+          className="pointer-events-none block rounded-full bg-white shadow-sm transition-transform"
+          style={{
+            width: 20,
+            height: 20,
+            transform: checked ? 'translateX(16px)' : 'translateX(0)',
+          }}
+        />
+      </button>
+      <span className={labelClassName}>{label}</span>
+    </label>
+  );
+}
+
+function getSidebarChoiceButtonClass(active: boolean, layout: 'row' | 'tile' = 'row') {
+  const base =
+    layout === 'row'
+      ? 'flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-2xl transition-all'
+      : 'flex flex-col items-center justify-center gap-2 p-3 rounded-2xl transition-all';
+
+  return `${base} ${
+    active
+      ? 'text-white shadow-sm'
+      : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+  }`;
+}
+
+function getSidebarActionButtonClass() {
+  return 'flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-slate-100 text-slate-600 hover:bg-slate-200 transition-all';
+}
+
+function getSidebarChoiceButtonStyle(active: boolean): React.CSSProperties | undefined {
+  return active ? { backgroundColor: '#59627B' } : undefined;
+}
+
 interface BlockSettingsPanelProps {
   block: SlideBlock;
   blockIndex: number;
@@ -80,6 +146,7 @@ interface BlockSettingsPanelProps {
   onGalleryImageUpload?: (files: File[]) => void;
   initialSection?: string;
   onPaddingPreview?: () => void;
+  datasetImages?: Array<{ url: string; title?: string; alt?: string }>;
 }
 
 export function BlockSettingsPanel({
@@ -91,6 +158,7 @@ export function BlockSettingsPanel({
   onPaddingPreview,
   onGalleryImageUpload,
   initialSection,
+  datasetImages,
 }: BlockSettingsPanelProps) {
   const { uploadFile } = useFileStorage();
   const [recentColors, setRecentColors] = useState<string[]>(() => {
@@ -113,6 +181,7 @@ export function BlockSettingsPanel({
       initial.add(initialSection);
     } else {
       initial.add('type');
+      if (block.type === 'image' || block.type === 'lottie') initial.add('image');
       if (block.type === 'text') initial.add('format');
     }
     return initial;
@@ -370,36 +439,27 @@ export function BlockSettingsPanel({
               <div className="flex gap-2">
                 <button
                   onClick={() => handleTypeChange('text')}
-                  className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl border-2 transition-all ${
-                    block.type === 'text'
-                      ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
-                      : 'border-slate-200 hover:border-slate-300 text-slate-600'
-                  }`}
+                  className={getSidebarChoiceButtonClass(block.type === 'text')}
+                  style={getSidebarChoiceButtonStyle(block.type === 'text')}
                 >
                   <Type className="w-5 h-5" />
                   <span className="font-medium">Text</span>
                 </button>
                 <button
                   onClick={() => handleTypeChange('image')}
-                  className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl border-2 transition-all ${
-                    (block.type === 'image' || block.type === 'lottie')
-                      ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
-                      : 'border-slate-200 hover:border-slate-300 text-slate-600'
-                  }`}
+                  className={getSidebarChoiceButtonClass(block.type === 'image' || block.type === 'lottie')}
+                  style={getSidebarChoiceButtonStyle(block.type === 'image' || block.type === 'lottie')}
                 >
                   <ImageIcon className="w-5 h-5" />
                   <span className="font-medium">Média</span>
                 </button>
                 <button
                   onClick={() => handleTypeChange('link')}
-                  className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl border-2 transition-all ${
-                    block.type === 'link'
-                      ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
-                      : 'border-slate-200 hover:border-slate-300 text-slate-600'
-                  }`}
+                  className={getSidebarChoiceButtonClass(block.type === 'link' || block.type === 'table')}
+                  style={getSidebarChoiceButtonStyle(block.type === 'link' || block.type === 'table')}
                 >
-                  <Link2 className="w-5 h-5" />
-                  <span className="font-medium">Odkaz</span>
+                  <MousePointer className="w-5 h-5" />
+                  <span className="font-medium">Interaktivní</span>
                 </button>
               </div>
             </div>
@@ -445,6 +505,8 @@ export function BlockSettingsPanel({
                           sacramento: '"Sacramento", cursive',
                           lora: '"Lora", serif',
                           oswald: '"Oswald", sans-serif',
+                          visby: '"Visby Round", sans-serif',
+                          vividscript: '"Vividbooks Script", cursive',
                         }[block.fontFamily || 'fenomen'],
                       }}
                     >
@@ -459,6 +521,8 @@ export function BlockSettingsPanel({
                           sacramento: 'Sacramento',
                           lora: 'Lora',
                           oswald: 'Oswald',
+                          visby: 'Visby Round',
+                          vividscript: 'Vividbooks Script',
                         }[block.fontFamily || 'fenomen']}
                       </span>
                       <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform shrink-0 ${showFontDropdown ? 'rotate-180' : ''}`} />
@@ -470,6 +534,8 @@ export function BlockSettingsPanel({
                         <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-xl shadow-xl border border-slate-200 py-1 z-50 max-h-[280px] overflow-y-auto">
                           {[
                             { value: 'fenomen', label: 'Fenomen', family: '"Fenomen Sans", sans-serif' },
+                            { value: 'visby', label: 'Visby Round', family: '"Visby Round", sans-serif' },
+                            { value: 'vividscript', label: 'Vividbooks Script', family: '"Vividbooks Script", cursive' },
                             { value: 'cooper', label: 'Cooper', family: '"Cooper Light", serif' },
                             { value: 'space', label: 'Space Grotesk', family: '"Space Grotesk", sans-serif' },
                             { value: 'sora', label: 'Sora', family: '"Sora", sans-serif' },
@@ -571,10 +637,10 @@ export function BlockSettingsPanel({
                   </div>
                 </div>
 
-                {/* Row 3: Horizontal + Vertical Alignment */}
+                {/* Row 3: Horizontal + Vertical Alignment + Text Padding */}
                 <div className="flex gap-3">
                   {/* Horizontal Alignment */}
-                  <div>
+                  <div className="flex-1 min-w-0">
                     <label className="text-[10px] font-medium text-slate-400 uppercase tracking-wide mb-1 block">Vodorovně</label>
                     <div className="flex gap-0.5 p-1 bg-slate-100 rounded-xl">
                       <button
@@ -614,7 +680,7 @@ export function BlockSettingsPanel({
                   </div>
 
                   {/* Vertical Alignment */}
-                  <div>
+                  <div className="flex-1 min-w-0">
                     <label className="text-[10px] font-medium text-slate-400 uppercase tracking-wide mb-1 block">Svisle</label>
                     <div className="flex gap-0.5 p-1 bg-slate-100 rounded-xl">
                       <button
@@ -652,28 +718,176 @@ export function BlockSettingsPanel({
                       </button>
                     </div>
                   </div>
-                </div>
 
-                {/* Text Padding / Margins - Slider */}
-                <div>
-                  <label className="text-[10px] font-medium text-slate-400 uppercase tracking-wide mb-1 block">Okraje textu</label>
-                  <div className="flex items-center gap-2 py-2 px-3 rounded-xl bg-slate-50 border border-slate-100">
-                    <svg className="w-4 h-4 text-slate-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                      <rect x="3" y="3" width="18" height="18" rx="2" />
-                      <rect x="7" y="7" width="10" height="10" rx="1" strokeDasharray="2 2" />
-                    </svg>
-                    <input
-                      type="range"
-                      min="0"
-                      max="48"
-                      step="4"
-                      value={block.textPadding ?? 20}
-                      onChange={(e) => onUpdate({ textPadding: parseInt(e.target.value) })}
-                      className="flex-1 h-1 bg-slate-200 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:h-3.5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-blue-500 [&::-webkit-slider-thumb]:shadow-sm [&::-webkit-slider-thumb]:cursor-pointer"
-                    />
-                    <span className="text-xs font-medium text-slate-600 w-8 text-right shrink-0">{block.textPadding ?? 20}px</span>
+                  {/* Text Padding / Margins */}
+                  <div className="flex-1 min-w-0">
+                    <label className="text-[10px] font-medium text-slate-400 uppercase tracking-wide mb-1 block">Okraje textu</label>
+                    <div className="flex items-center gap-2 py-2 px-3 rounded-xl bg-slate-50 border border-slate-100">
+                      <svg className="w-4 h-4 text-slate-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                        <rect x="3" y="3" width="18" height="18" rx="2" />
+                        <rect x="7" y="7" width="10" height="10" rx="1" strokeDasharray="2 2" />
+                      </svg>
+                      <input
+                        type="range"
+                        min="0"
+                        max="48"
+                        step="4"
+                        value={block.textPadding ?? 20}
+                        onChange={(e) => onUpdate({ textPadding: parseInt(e.target.value) })}
+                        className="flex-1 min-w-0 h-1 bg-slate-200 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:h-3.5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-blue-500 [&::-webkit-slider-thumb]:shadow-sm [&::-webkit-slider-thumb]:cursor-pointer"
+                      />
+                      <span className="text-xs font-medium text-slate-600 w-8 text-right shrink-0">{block.textPadding ?? 20}px</span>
+                    </div>
                   </div>
                 </div>
+
+                {/* Vizuální styl — pill / underline / left-border */}
+                <div className="space-y-3">
+                  <label className="text-[10px] font-medium text-slate-400 uppercase tracking-wide block">Vizuální styl</label>
+                  <div className="flex gap-1.5 flex-wrap">
+                    {([
+                      { id: 'plain',       label: 'Prostý' },
+                      { id: 'pill',        label: '⬭ Pilulka' },
+                      { id: 'underline',   label: '_ Podtrž.' },
+                      { id: 'left-border', label: '| Lišta' },
+                    ] as const).map(({ id, label }) => {
+                      const active = ((block as any).headingStyle ?? 'plain') === id;
+                      return (
+                        <button
+                          key={id}
+                          onClick={() => {
+                            const updates: Record<string, any> = { headingStyle: id === 'plain' ? undefined : id };
+                            updates.textDecoration = id === 'underline' ? 'underline' : 'none';
+                            onUpdate(updates as any);
+                          }}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors border ${
+                            active
+                              ? 'bg-indigo-600 text-white border-indigo-600'
+                              : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {(block as any).headingStyle && (block as any).headingStyle !== 'plain' && (
+                    <div>
+                      <label className="text-[10px] font-medium text-slate-400 uppercase tracking-wide block mb-2">Barva stylu</label>
+                      <div className="flex gap-2 flex-wrap items-center">
+                        {[
+                          '#fce7f3', '#dbeafe', '#dcfce7', '#fef9c3', '#f3e8ff', '#fee2e2',
+                          '#ccfbf1', '#e0f2fe', '#3b82f6', '#ec4899', '#22c55e', '#f59e0b',
+                        ].map(color => (
+                          <button
+                            key={color}
+                            onClick={() => onUpdate({ headingStyleColor: color } as any)}
+                            className={`w-8 h-8 rounded-full border-2 transition-all hover:scale-110 shadow-sm shrink-0 ${
+                              (block as any).headingStyleColor === color
+                                ? 'border-indigo-500 ring-2 ring-indigo-100'
+                                : 'border-slate-100'
+                            }`}
+                            style={{ backgroundColor: color }}
+                            title={color}
+                          />
+                        ))}
+                        <label
+                          className="w-8 h-8 rounded-full border-2 border-slate-200 flex items-center justify-center cursor-pointer hover:scale-110 transition-all shadow-sm shrink-0 overflow-hidden"
+                          style={{ background: 'conic-gradient(red, yellow, lime, cyan, blue, magenta, red)' }}
+                          title="Vlastní barva"
+                        >
+                          <input
+                            type="color"
+                            value={(block as any).headingStyleColor || '#e0f2fe'}
+                            onChange={(e) => onUpdate({ headingStyleColor: e.target.value } as any)}
+                            className="opacity-0 w-0 h-0 absolute"
+                          />
+                        </label>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* TTS – Mluvené slovo */}
+        {block.type === 'text' && (
+          <div className="border-b border-slate-100">
+            <button
+              onClick={() => toggleSection('tts')}
+              className="w-full flex items-center justify-between px-5 py-4 hover:bg-slate-50 transition-colors"
+            >
+              <div className="flex items-center gap-3">
+                <Volume2 className="w-5 h-5 text-slate-400" />
+                <span className="font-medium text-slate-700">Mluvené slovo</span>
+                {block.ttsEnabled && (
+                  <span className="text-[10px] font-semibold uppercase tracking-wide bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded-full">
+                    Zapnuto
+                  </span>
+                )}
+              </div>
+              {expandedSection('tts') ? (
+                <ChevronDown className="w-4 h-4 text-slate-400" />
+              ) : (
+                <ChevronRight className="w-4 h-4 text-slate-400" />
+              )}
+            </button>
+
+            {expandedSection('tts') && (
+              <div className="px-5 pb-5 space-y-4">
+                {/* Enable toggle */}
+                <ToggleSwitch
+                  checked={!!block.ttsEnabled}
+                  onToggle={() => onUpdate({ ttsEnabled: !block.ttsEnabled })}
+                  label="Zobrazit tlačítko přehrát"
+                  labelClassName="text-sm font-medium text-slate-700"
+                />
+
+                {block.ttsEnabled && (
+                  <>
+                    {/* Language picker */}
+                    <div>
+                      <label className="text-[10px] font-medium text-slate-400 uppercase tracking-wide mb-1.5 block">
+                        Jazyk
+                      </label>
+                      <select
+                        value={block.ttsLang || 'cs-CZ'}
+                        onChange={(e) => onUpdate({ ttsLang: e.target.value as any })}
+                        className="w-full py-2 px-3 rounded-xl bg-slate-50 border border-slate-100 hover:border-slate-200 text-sm text-slate-700 focus:outline-none focus:border-indigo-400"
+                      >
+                        <option value="cs-CZ">🇨🇿 Čeština</option>
+                        <option value="sk-SK">🇸🇰 Slovenština</option>
+                        <option value="en-US">🇺🇸 Angličtina (US)</option>
+                        <option value="en-GB">🇬🇧 Angličtina (UK)</option>
+                        <option value="de-DE">🇩🇪 Němčina</option>
+                      </select>
+                    </div>
+
+                    {/* Custom TTS text (optional) */}
+                    <div>
+                      <label className="text-[10px] font-medium text-slate-400 uppercase tracking-wide mb-1.5 block">
+                        Vlastní text pro přehrání <span className="normal-case text-slate-300">(prázdné = obsah bloku)</span>
+                      </label>
+                      <textarea
+                        value={block.ttsText || ''}
+                        onChange={(e) => onUpdate({ ttsText: e.target.value })}
+                        placeholder="Přepište nebo doplňte text..."
+                        rows={3}
+                        className="w-full py-2 px-3 rounded-xl bg-slate-50 border border-slate-100 hover:border-slate-200 text-sm text-slate-700 focus:outline-none focus:border-indigo-400 resize-none placeholder-slate-300"
+                      />
+                    </div>
+
+                    {/* Autoplay toggle */}
+                    <ToggleSwitch
+                      checked={!!block.ttsAutoplay}
+                      onToggle={() => onUpdate({ ttsAutoplay: !block.ttsAutoplay })}
+                      label="Přehrát automaticky při zobrazení slidu"
+                    />
+                  </>
+                )}
               </div>
             )}
           </div>
@@ -768,10 +982,10 @@ export function BlockSettingsPanel({
                 <div className="flex gap-2">
                   <button
                     onClick={() => openAssetPicker('single')}
-                    className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl border-2 border-slate-200 hover:border-indigo-400 hover:bg-indigo-50 cursor-pointer transition-colors"
+                    className={getSidebarActionButtonClass()}
                   >
                     <Sparkles className="w-5 h-5 text-indigo-500" />
-                    <span className="text-sm text-slate-600">
+                    <span className="text-sm">
                       {block.content || hasGallery ? 'Změnit' : 'Vybrat obrázek / animaci'}
                     </span>
                   </button>
@@ -784,10 +998,10 @@ export function BlockSettingsPanel({
                       }
                       openAssetPicker('gallery');
                     }}
-                    className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl border-2 border-slate-200 hover:border-indigo-400 hover:bg-indigo-50 transition-colors"
+                    className={getSidebarActionButtonClass()}
                   >
                     <Images className="w-5 h-5 text-slate-500" />
-                    <span className="text-sm text-slate-600">
+                    <span className="text-sm">
                       {hasGallery ? 'Přidat' : 'Galerie'}
                     </span>
                   </button>
@@ -814,25 +1028,97 @@ export function BlockSettingsPanel({
                   className="hidden"
                 />
 
-                {/* Gallery navigation type (only if gallery has 2+ images) */}
-                {hasGallery && block.gallery && block.gallery.length > 1 && (
-                  <div>
-                    <label className="text-xs font-medium text-slate-600 mb-2 block">Tlačítka</label>
-                    <select
-                      value={block.galleryNavType || 'dots-bottom'}
-                      onChange={(e) => onUpdate({ galleryNavType: e.target.value as any })}
-                      className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    >
-                      <option value="dots-bottom">Tečky dole</option>
-                      <option value="dots-side">Tečky na boku</option>
-                      <option value="arrows">Šipky na stranách</option>
-                      <option value="solution">Řešení</option>
-                    </select>
-                  </div>
-                )}
+                {/* Gallery display mode toggle + mode-specific settings */}
+                {hasGallery && block.gallery && block.gallery.length > 1 && (() => {
+                  const displayMode = block.galleryDisplayMode || 'carousel';
+                  const gridCols = (block as any).galleryGridColumns ?? 2;
+                  const gridHeight = (block as any).galleryContainerHeight ?? 200;
+                  return (
+                    <>
+                      {/* Mode toggle */}
+                      <div>
+                        <label className="text-xs font-medium text-slate-600 mb-2 block">Zobrazení galerie</label>
+                        <div className="flex rounded-lg overflow-hidden border border-slate-200">
+                          {([
+                            { id: 'carousel', label: 'Přepínání' },
+                            { id: 'grid', label: 'Grid' },
+                          ] as const).map(({ id, label }) => (
+                            <button
+                              key={id}
+                              onClick={() => onUpdate({ galleryDisplayMode: id } as any)}
+                              className={`flex-1 py-2 text-sm font-medium transition-colors ${
+                                displayMode === id
+                                  ? 'bg-indigo-600 text-white'
+                                  : 'bg-white text-slate-600 hover:bg-slate-50'
+                              }`}
+                            >
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
 
-                {/* Image scale slider (only if image exists) */}
-                {(block.content || hasGallery) && (
+                      {/* Carousel: nav type */}
+                      {displayMode === 'carousel' && (
+                        <div>
+                          <label className="text-xs font-medium text-slate-600 mb-2 block">Tlačítka</label>
+                          <select
+                            value={block.galleryNavType || 'dots-bottom'}
+                            onChange={(e) => onUpdate({ galleryNavType: e.target.value as any })}
+                            className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                          >
+                            <option value="dots-bottom">Tečky dole</option>
+                            <option value="dots-side">Tečky na boku</option>
+                            <option value="arrows">Šipky na stranách</option>
+                            <option value="solution">Řešení</option>
+                          </select>
+                        </div>
+                      )}
+
+                      {/* Grid: columns + height */}
+                      {displayMode === 'grid' && (
+                        <>
+                          <div>
+                            <label className="text-xs font-medium text-slate-600 mb-2 block">Sloupce</label>
+                            <div className="flex gap-2">
+                              {[1, 2, 3, 4].map(n => (
+                                <button
+                                  key={n}
+                                  onClick={() => onUpdate({ galleryGridColumns: n } as any)}
+                                  className={`flex-1 py-1.5 rounded-lg text-sm font-medium border transition-colors ${
+                                    gridCols === n
+                                      ? 'bg-indigo-600 text-white border-indigo-600'
+                                      : 'bg-white text-slate-600 border-slate-200 hover:border-indigo-400'
+                                  }`}
+                                >
+                                  {n}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                          <div>
+                            <div className="flex items-center justify-between mb-2">
+                              <label className="text-xs font-medium text-slate-600">Výška obrázků</label>
+                              <span className="text-xs font-medium text-indigo-600">{gridHeight}px</span>
+                            </div>
+                            <input
+                              type="range"
+                              min={80}
+                              max={500}
+                              step={10}
+                              value={gridHeight}
+                              onChange={(e) => onUpdate({ galleryContainerHeight: Number(e.target.value) } as any)}
+                              className="w-full accent-indigo-600"
+                            />
+                          </div>
+                        </>
+                      )}
+                    </>
+                  );
+                })()}
+
+                {/* Image scale slider (only in carousel mode — grid uses its own height slider) */}
+                {(block.content || hasGallery) && (block.galleryDisplayMode !== 'grid') && (
                   <>
                     <div>
                       <div className="flex items-center justify-between mb-2">
@@ -915,13 +1201,38 @@ export function BlockSettingsPanel({
                       )}
                     </div>
 
-                    {/* Image caption */}
+                  </>
+                )}
+
+                {/* Image caption — always visible, per-image when gallery is active */}
+                {(block.content || hasGallery) && (
+                  <>
                     <div>
-                      <label className="text-xs font-medium text-slate-600 mb-2 block">Popisek obrázku</label>
+                      <label className="text-xs font-medium text-slate-600 mb-2 block">
+                        Popisek obrázku
+                        {hasGallery && (
+                          <span className="ml-1 text-slate-400 font-normal">
+                            ({(block.galleryIndex || 0) + 1}/{block.gallery!.length})
+                          </span>
+                        )}
+                      </label>
                       <input
                         type="text"
-                        value={block.imageCaption || ''}
-                        onChange={(e) => onUpdate({ imageCaption: e.target.value })}
+                        value={
+                          hasGallery
+                            ? (((block as any).galleryCaptions as string[] | undefined)?.[block.galleryIndex || 0] ?? '')
+                            : (block.imageCaption || '')
+                        }
+                        onChange={(e) => {
+                          if (hasGallery) {
+                            const idx = block.galleryIndex || 0;
+                            const caps = [...(((block as any).galleryCaptions as string[] | undefined) || Array(block.gallery!.length).fill(''))];
+                            caps[idx] = e.target.value;
+                            onUpdate({ galleryCaptions: caps } as any);
+                          } else {
+                            onUpdate({ imageCaption: e.target.value });
+                          }
+                        }}
                         placeholder="Popis obrázku..."
                         className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
                       />
@@ -942,6 +1253,70 @@ export function BlockSettingsPanel({
                 )}
               </div>
             )}
+          </div>
+        )}
+
+        {/* HTML settings (for link blocks in html mode) */}
+        {block.type === 'link' && block.linkMode === 'html' && (
+          <div className="border-b border-slate-100">
+            <div className="px-5 py-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <Code2 className="w-4 h-4 text-violet-500" />
+                <span className="text-sm font-medium text-slate-700">HTML kód</span>
+              </div>
+              <p className="text-xs text-slate-500 leading-snug">
+                Vložte libovolný HTML kód. Zobrazí se přesně tak, jak je napsán. Použijte pro 1:1 přenos složitých bloků z pracovního listu.
+              </p>
+              <textarea
+                value={block.content || ''}
+                onChange={(e) => onUpdate({ content: e.target.value })}
+                rows={12}
+                className="w-full text-xs font-mono border border-slate-200 rounded-lg p-3 resize-y focus:outline-none focus:ring-2 focus:ring-violet-400"
+                style={{ backgroundColor: '#f8fafc', color: '#334155', lineHeight: 1.5 }}
+                placeholder="<div class=&quot;...&quot;>...</div>"
+                spellCheck={false}
+              />
+              {block.content && (
+                <button
+                  onClick={() => onUpdate({ content: '' })}
+                  className="text-xs text-red-400 hover:text-red-600 transition-colors"
+                >
+                  Vymazat HTML
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* SVG / Figma settings */}
+        {block.type === 'link' && block.linkMode === 'svg' && (
+          <div className="border-b border-slate-100">
+            <div className="px-5 py-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <Layers className="w-4 h-4 text-violet-500" />
+                <span className="text-sm font-medium text-slate-700">SVG / Figma</span>
+              </div>
+              <p className="text-xs text-slate-500 leading-snug">
+                Vložte SVG kód zkopírovaný z Figmy nebo jiného nástroje. V Figmě: vyberte vrstvu → pravý klik → Copy as SVG.
+              </p>
+              <textarea
+                value={block.content || ''}
+                onChange={(e) => onUpdate({ content: e.target.value })}
+                rows={12}
+                className="w-full text-xs font-mono border border-slate-200 rounded-lg p-3 resize-y focus:outline-none focus:ring-2 focus:ring-violet-400"
+                style={{ backgroundColor: '#f8fafc', color: '#334155', lineHeight: 1.5 }}
+                placeholder="<svg xmlns=&quot;http://www.w3.org/2000/svg&quot; ...>...</svg>"
+                spellCheck={false}
+              />
+              {block.content && (
+                <button
+                  onClick={() => onUpdate({ content: '' })}
+                  className="text-xs text-red-400 hover:text-red-600 transition-colors"
+                >
+                  Vymazat SVG
+                </button>
+              )}
+            </div>
           </div>
         )}
 
@@ -988,22 +1363,16 @@ export function BlockSettingsPanel({
                   <div className="grid grid-cols-2 gap-2">
                     <button
                       onClick={() => onUpdate({ linkMode: 'button' })}
-                      className={`flex flex-col items-center gap-2 p-3 rounded-xl border-2 transition-all ${
-                        (block.linkMode === 'button' || !block.linkMode)
-                          ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
-                          : 'border-slate-100 hover:border-slate-200 text-slate-500'
-                      }`}
+                      className={getSidebarChoiceButtonClass(block.linkMode === 'button' || !block.linkMode, 'tile')}
+                      style={getSidebarChoiceButtonStyle(block.linkMode === 'button' || !block.linkMode)}
                     >
                       <ExternalLink className="w-5 h-5" />
                       <span className="text-[10px] font-bold uppercase">Tlačítko</span>
                     </button>
                     <button
                       onClick={() => onUpdate({ linkMode: 'preview' })}
-                      className={`flex flex-col items-center gap-2 p-3 rounded-xl border-2 transition-all ${
-                        block.linkMode === 'preview'
-                          ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
-                          : 'border-slate-100 hover:border-slate-200 text-slate-500'
-                      }`}
+                      className={getSidebarChoiceButtonClass(block.linkMode === 'preview', 'tile')}
+                      style={getSidebarChoiceButtonStyle(block.linkMode === 'preview')}
                     >
                       <Layout className="w-5 h-5" />
                       <span className="text-[10px] font-bold uppercase">Náhled</span>
@@ -1011,33 +1380,24 @@ export function BlockSettingsPanel({
                     <button
                       onClick={() => onUpdate({ linkMode: 'video' })}
                       disabled={!getYoutubeId(block.content)}
-                      className={`flex flex-col items-center gap-2 p-3 rounded-xl border-2 transition-all ${
-                        block.linkMode === 'video'
-                          ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
-                          : 'border-slate-100 hover:border-slate-200 text-slate-500'
-                      } ${!getYoutubeId(block.content) ? 'opacity-40 cursor-not-allowed grayscale' : ''}`}
+                      className={`${getSidebarChoiceButtonClass(block.linkMode === 'video', 'tile')} ${!getYoutubeId(block.content) ? 'opacity-40 cursor-not-allowed grayscale' : ''}`}
+                      style={getSidebarChoiceButtonStyle(block.linkMode === 'video')}
                     >
                       <Youtube className="w-5 h-5" />
                       <span className="text-[10px] font-bold uppercase">Video</span>
                     </button>
                     <button
                       onClick={() => onUpdate({ linkMode: 'qr' })}
-                      className={`flex flex-col items-center gap-2 p-3 rounded-xl border-2 transition-all ${
-                        block.linkMode === 'qr'
-                          ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
-                          : 'border-slate-100 hover:border-slate-200 text-slate-500'
-                      }`}
+                      className={getSidebarChoiceButtonClass(block.linkMode === 'qr', 'tile')}
+                      style={getSidebarChoiceButtonStyle(block.linkMode === 'qr')}
                     >
                       <QrCode className="w-5 h-5" />
                       <span className="text-[10px] font-bold uppercase">QR kód</span>
                     </button>
                     <button
                       onClick={() => onUpdate({ linkMode: 'embed' })}
-                      className={`flex flex-col items-center gap-2 p-3 rounded-xl border-2 transition-all col-span-2 ${
-                        block.linkMode === 'embed'
-                          ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
-                          : 'border-slate-100 hover:border-slate-200 text-slate-500'
-                      }`}
+                      className={`${getSidebarChoiceButtonClass(block.linkMode === 'embed', 'tile')} col-span-2`}
+                      style={getSidebarChoiceButtonStyle(block.linkMode === 'embed')}
                     >
                       <Globe className="w-5 h-5" />
                       <span className="text-[10px] font-bold uppercase">Webová stránka (Embed)</span>
@@ -1107,6 +1467,107 @@ export function BlockSettingsPanel({
             )}
           </div>
         )}
+        {/* ── Chart settings ── */}
+        {block.type === 'chart' && (
+          <div className="border-b border-slate-100">
+            <button
+              onClick={() => toggleSection('chart')}
+              className="w-full flex items-center justify-between px-5 py-4 hover:bg-slate-50 transition-colors"
+            >
+              <div className="flex items-center gap-3">
+                <span className="text-slate-400">📊</span>
+                <span className="font-medium text-slate-700">Graf a data</span>
+              </div>
+              {expandedSection('chart') ? <ChevronDown className="w-4 h-4 text-slate-400" /> : <ChevronRight className="w-4 h-4 text-slate-400" />}
+            </button>
+            {expandedSection('chart') && (
+              <div className="px-5 pb-5 space-y-4">
+                {/* Chart title */}
+                <div>
+                  <label className="text-[10px] font-medium text-slate-400 uppercase tracking-wide mb-1 block">Název grafu</label>
+                  <input
+                    type="text"
+                    value={block.chartTitle ?? ''}
+                    onChange={e => onUpdate({ chartTitle: e.target.value })}
+                    placeholder="Název grafu (nepovinný)"
+                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                  />
+                </div>
+                {/* Chart type */}
+                <div>
+                  <label className="text-[10px] font-medium text-slate-400 uppercase tracking-wide mb-1 block">Typ grafu</label>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {(['bar', 'line', 'area', 'pie', 'radar', 'timeline'] as const).map(t => (
+                      <button
+                        key={t}
+                        onClick={() => onUpdate({ chartType: t })}
+                        className="px-2 py-1.5 text-xs font-medium rounded-lg border-2 transition-all"
+                        style={{
+                          borderColor: (block.chartType ?? 'bar') === t ? '#6366f1' : '#e2e8f0',
+                          background: (block.chartType ?? 'bar') === t ? '#eef2ff' : 'white',
+                          color: (block.chartType ?? 'bar') === t ? '#4338ca' : '#64748b',
+                        }}
+                      >
+                        {t === 'bar' ? '📊 Sloupce' : t === 'line' ? '📈 Linie' : t === 'area' ? '🌊 Oblast' : t === 'pie' ? '🥧 Koláč' : t === 'radar' ? '🕸️ Pavučina' : '⏳ Timeline'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {/* Data table editor */}
+                <div>
+                  <label className="text-[10px] font-medium text-slate-400 uppercase tracking-wide mb-2 block">Data</label>
+                  {block.chartType === 'timeline' ? (
+                    /* Timeline: label = year/period, value = description, category */
+                    <div className="space-y-2">
+                      <div className="grid text-[9px] font-semibold text-slate-400 uppercase" style={{ gridTemplateColumns: '80px 1fr 80px 28px', gap: 4 }}>
+                        <span>Rok / Období</span><span>Popis události</span><span>Kategorie</span><span />
+                      </div>
+                      {(block.chartRows ?? []).map((row: string[], ri: number) => (
+                        <div key={ri} className="grid items-center" style={{ gridTemplateColumns: '80px 1fr 80px 28px', gap: 4 }}>
+                          <input value={row[0] ?? ''} onChange={e => { const r = [...(block.chartRows ?? [])]; r[ri] = [...r[ri]]; r[ri][0] = e.target.value; onUpdate({ chartRows: r }); }} className="px-2 py-1 text-xs border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-300" placeholder="1914" />
+                          <input value={row[1] ?? ''} onChange={e => { const r = [...(block.chartRows ?? [])]; r[ri] = [...r[ri]]; r[ri][1] = e.target.value; onUpdate({ chartRows: r }); }} className="px-2 py-1 text-xs border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-300" placeholder="Popis…" />
+                          <input value={row[2] ?? ''} onChange={e => { const r = [...(block.chartRows ?? [])]; r[ri] = [...r[ri]]; r[ri][2] = e.target.value; onUpdate({ chartRows: r }); }} className="px-2 py-1 text-xs border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-300" placeholder="Kategorie" />
+                          <button onClick={() => { const r = (block.chartRows ?? []).filter((_: any, i: number) => i !== ri); onUpdate({ chartRows: r }); }} className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-red-50 text-slate-400 hover:text-red-500 transition-colors"><Trash2 className="w-3 h-3" /></button>
+                        </div>
+                      ))}
+                      <button onClick={() => onUpdate({ chartRows: [...(block.chartRows ?? []), ['', '', '']] })} className="w-full flex items-center justify-center gap-1 py-1.5 text-xs text-indigo-600 hover:bg-indigo-50 rounded-lg border border-dashed border-indigo-200 transition-colors">
+                        <Plus className="w-3 h-3" />Přidat událost
+                      </button>
+                    </div>
+                  ) : (
+                    /* Regular chart: editable column headers + rows */
+                    <div className="space-y-2">
+                      {/* Column headers */}
+                      <div className="flex gap-1 items-center">
+                        {(block.chartColumns ?? ['Kategorie', 'Hodnota']).map((col: string, ci: number) => (
+                          <input key={ci} value={col} onChange={e => { const c = [...(block.chartColumns ?? [])]; c[ci] = e.target.value; onUpdate({ chartColumns: c }); }} className="flex-1 min-w-0 px-2 py-1 text-xs font-semibold border border-indigo-200 bg-indigo-50 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-300 text-indigo-700" placeholder={ci === 0 ? 'Kategorie' : `Řada ${ci}`} />
+                        ))}
+                        {/* Add/remove series */}
+                        <button onClick={() => { const c = [...(block.chartColumns ?? [])]; c.push(`Řada ${c.length}`); const r = (block.chartRows ?? []).map((row: string[]) => [...row, '']); onUpdate({ chartColumns: c, chartRows: r }); }} className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-indigo-50 text-indigo-400 border border-dashed border-indigo-200" title="Přidat řadu"><Plus className="w-3 h-3" /></button>
+                        {(block.chartColumns ?? []).length > 2 && (
+                          <button onClick={() => { const c = (block.chartColumns ?? []).slice(0, -1); const r = (block.chartRows ?? []).map((row: string[]) => row.slice(0, -1)); onUpdate({ chartColumns: c, chartRows: r }); }} className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-red-50 text-red-400 border border-dashed border-red-200" title="Odebrat řadu"><Trash2 className="w-3 h-3" /></button>
+                        )}
+                      </div>
+                      {/* Data rows */}
+                      {(block.chartRows ?? []).map((row: string[], ri: number) => (
+                        <div key={ri} className="flex gap-1 items-center">
+                          {row.map((cell: string, ci: number) => (
+                            <input key={ci} value={cell} onChange={e => { const r = [...(block.chartRows ?? [])]; r[ri] = [...r[ri]]; r[ri][ci] = e.target.value; onUpdate({ chartRows: r }); }} className="flex-1 min-w-0 px-2 py-1 text-xs border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-300" placeholder={ci === 0 ? 'Název' : '0'} />
+                          ))}
+                          <button onClick={() => { const r = (block.chartRows ?? []).filter((_: any, i: number) => i !== ri); onUpdate({ chartRows: r }); }} className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-red-50 text-slate-400 hover:text-red-500 transition-colors"><Trash2 className="w-3 h-3" /></button>
+                        </div>
+                      ))}
+                      <button onClick={() => onUpdate({ chartRows: [...(block.chartRows ?? []), new Array((block.chartColumns ?? ['Kategorie', 'Hodnota']).length).fill('')] })} className="w-full flex items-center justify-center gap-1 py-1.5 text-xs text-indigo-600 hover:bg-indigo-50 rounded-lg border border-dashed border-indigo-200 transition-colors">
+                        <Plus className="w-3 h-3" />Přidat řádek
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="border-b border-slate-100" ref={backgroundSectionRef}>
           <div className="px-5 py-4">
             <button
@@ -1162,7 +1623,7 @@ export function BlockSettingsPanel({
                 }}
                 onClose={() => {}}
                 showBlur={false}
-                showUpload={false}
+                showUpload={true}
                 showOpacity={false}
                 inline={true}
               />
@@ -1170,6 +1631,21 @@ export function BlockSettingsPanel({
           )}
         </div>
       </div>
+
+      {/* Map info */}
+      {block.type === 'map' && (
+        <div className="px-5 py-4 border-b border-slate-100">
+          <div className="flex items-center gap-2 text-slate-500 text-xs">
+            <span>🗺️</span>
+            <span>Mapový blok – editujte data přímo v bloku kliknutím na <strong>✏️ Editovat data</strong></span>
+          </div>
+          {block.mapData && (
+            <div className="mt-2 text-[11px] text-slate-400">
+              Oblast: {block.mapData.region} · Styl: {block.mapData.style} · {block.mapData.markers?.length || 0} bodů
+            </div>
+          )}
+        </div>
+      )}
 
       {/* AssetPicker Modal */}
       <AssetPicker
@@ -1182,6 +1658,7 @@ export function BlockSettingsPanel({
         showGoogle={true}
         showVividbooks={true}
         defaultTab="upload"
+        datasetImages={datasetImages}
       />
     </div>
   );

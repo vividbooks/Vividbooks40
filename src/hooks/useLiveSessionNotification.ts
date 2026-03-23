@@ -1,15 +1,10 @@
 /**
  * Hook to listen for live session notifications from teachers
- * 
- * Uses Firebase Realtime Database for reliable notifications.
- * When a teacher selects a class and starts sharing, all online students
- * in that class receive a notification and are automatically connected.
  */
 
 import { useEffect, useState, useCallback } from 'react';
-import { database } from '../utils/firebase-config';
-import { ref, onValue, off } from 'firebase/database';
 import { useStudentAuth } from '../contexts/StudentAuthContext';
+import { supabase } from '../utils/supabase/client';
 
 interface LiveSessionNotification {
   sessionId: string;
@@ -72,7 +67,7 @@ export function useLiveSessionNotification(): UseLiveSessionNotificationReturn {
   const [pendingSession, setPendingSession] = useState<LiveSessionNotification | null>(null);
   const [isConnected, setIsConnected] = useState(false);
 
-  // Subscribe to class live session channel via Firebase
+  // Subscribe to class live session channel via Supabase
   useEffect(() => {
     if (!student) {
       console.log('[LiveSession] No student profile yet, waiting...');
@@ -84,13 +79,18 @@ export function useLiveSessionNotification(): UseLiveSessionNotificationReturn {
       return;
     }
 
-    console.log('[LiveSession] Subscribing to Firebase notifications for class:', student.class_id, 'student:', student.name);
+    console.log('[LiveSession] Subscribing to Supabase notifications for class:', student.class_id, 'student:', student.name);
 
-    const notificationRef = ref(database, `class-notifications/${student.class_id}`);
-    
-    const unsubscribe = onValue(notificationRef, (snapshot) => {
-      const data = snapshot.val() as LiveSessionNotification | null;
-      console.log('[LiveSession] Firebase notification received:', data);
+    const handleClassRow = (row: any) => {
+      const data: LiveSessionNotification | null = row?.active_session_id ? {
+        sessionId: row.active_session_id,
+        documentPath: row.active_session_path || `/quiz/join/${row.active_session_id}`,
+        documentTitle: row.active_session_title || 'Live session',
+        timestamp: row.updated_at || new Date().toISOString(),
+        active: true,
+      } : null;
+
+      console.log('[LiveSession] Supabase notification received:', data);
       
       // Check if session is valid
       if (data && data.active && data.sessionId) {
@@ -126,17 +126,40 @@ export function useLiveSessionNotification(): UseLiveSessionNotificationReturn {
         console.log('[LiveSession] No active session or session ended');
         setPendingSession(null);
       }
-    }, (error) => {
-      console.error('[LiveSession] Firebase error:', error);
-      setIsConnected(false);
-    });
+    };
+
+    supabase
+      .from('classes')
+      .select('id, active_session_id, active_session_path, active_session_title, updated_at')
+      .eq('id', student.class_id)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (error) throw error;
+        handleClassRow(data);
+      })
+      .catch((error) => {
+        console.error('[LiveSession] Supabase bootstrap error:', error);
+        setIsConnected(false);
+      });
+
+    const channel = supabase
+      .channel(`class-live-session:${student.class_id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'classes', filter: `id=eq.${student.class_id}` }, async (payload) => {
+        handleClassRow(payload.new);
+      })
+      .subscribe((status) => {
+        if (status === 'CHANNEL_ERROR') {
+          console.error('[LiveSession] Supabase channel error');
+          setIsConnected(false);
+        }
+      });
 
     setIsConnected(true);
-    console.log('[LiveSession] Subscribed to Firebase notifications');
+    console.log('[LiveSession] Subscribed to Supabase notifications');
 
     return () => {
-      console.log('[LiveSession] Unsubscribing from Firebase notifications');
-      off(notificationRef);
+      console.log('[LiveSession] Unsubscribing from Supabase notifications');
+      supabase.removeChannel(channel);
       setIsConnected(false);
     };
   }, [student?.class_id, student?.name]);

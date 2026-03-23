@@ -12,6 +12,9 @@ export interface LicenseAccess {
   needsSchoolConnection: boolean; // User needs to connect to a school
 }
 
+// ⚠️ TESTING FLAG – when true, all users get full access, no school connection required
+const BYPASS_LICENSE_CHECK = true;
+
 /**
  * Hook to check user's license access for a specific subject/category
  * @param category - The category/subject to check (e.g., 'fyzika', 'chemie')
@@ -29,6 +32,19 @@ export function useLicenseAccess(category: string): LicenseAccess {
 
   useEffect(() => {
     const checkAccess = async () => {
+      // ⚠️ Testing bypass – grant full access to everyone
+      if (BYPASS_LICENSE_CHECK) {
+        setAccess({
+          hasAccess: true,
+          tier: 'vividbooks-knihovna',
+          canViewFolders: true,
+          license: null,
+          loading: false,
+          needsSchoolConnection: false,
+        });
+        return;
+      }
+
       // Helper to wrap supabase calls with timeout
       const withTimeout = <T,>(promise: Promise<T>, ms: number): Promise<T | null> => {
         return Promise.race([

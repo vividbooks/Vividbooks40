@@ -5,6 +5,20 @@
 import { useState } from 'react';
 import { Plus, X } from 'lucide-react';
 import { Worksheet, Subject, Grade } from '../../types/worksheet';
+import {
+  SIDEBAR_COLORS,
+  sidebarContentStyle,
+  sectionTitleStyle,
+  sectionHeaderRowStyle,
+  subtleCardStyle,
+  inputStyle,
+  textareaStyle,
+  selectStyle,
+  labelStyle,
+  buttonStyle,
+  iconButtonStyle,
+  getSegmentedButtonStyle,
+} from './block-settings/shared';
 
 interface ProSettingsPanelProps {
   worksheet: Worksheet;
@@ -24,27 +38,6 @@ const SUBJECTS: { value: Subject; label: string }[] = [
 ];
 
 const GRADES: Grade[] = [1, 2, 3, 4, 5, 6, 7, 8, 9];
-
-const inputStyle: React.CSSProperties = {
-  width: '100%',
-  padding: '8px 10px',
-  backgroundColor: '#334155',
-  border: '1px solid #475569',
-  borderRadius: '6px',
-  color: '#E5E5E5',
-  fontSize: '12px',
-  outline: 'none',
-};
-
-const labelStyle: React.CSSProperties = {
-  display: 'block',
-  fontSize: '10px',
-  fontWeight: 500,
-  color: '#808080',
-  marginBottom: '4px',
-  textTransform: 'uppercase',
-  letterSpacing: '0.5px',
-};
 
 export function ProSettingsPanel({ worksheet, onUpdateWorksheet }: ProSettingsPanelProps) {
   const [keywordInput, setKeywordInput] = useState('');
@@ -72,24 +65,16 @@ export function ProSettingsPanel({ worksheet, onUpdateWorksheet }: ProSettingsPa
 
   return (
     <div style={{ 
-      padding: '12px', 
-      height: '100%', 
-      overflowY: 'auto', 
       backgroundColor: '#1e293b',
+      height: '100%',
     }}>
-      <h2 style={{ 
-        fontSize: '11px', 
-        fontWeight: 600, 
-        color: '#808080', 
-        textTransform: 'uppercase', 
-        letterSpacing: '0.5px',
-        marginBottom: '16px',
-      }}>
-        Nastavení listu
-      </h2>
+      <div style={sidebarContentStyle}>
+      <div style={{ ...sectionHeaderRowStyle, marginBottom: '16px' }}>
+        <span style={sectionTitleStyle}>Nastavení listu</span>
+      </div>
 
       {/* Title */}
-      <div style={{ marginBottom: '16px' }}>
+      <div style={{ ...subtleCardStyle, marginBottom: '16px' }}>
         <label style={labelStyle}>Název</label>
         <input
           type="text"
@@ -101,7 +86,7 @@ export function ProSettingsPanel({ worksheet, onUpdateWorksheet }: ProSettingsPa
       </div>
 
       {/* Description */}
-      <div style={{ marginBottom: '16px' }}>
+      <div style={{ ...subtleCardStyle, marginBottom: '16px' }}>
         <label style={labelStyle}>Popis</label>
         <textarea
           value={worksheet.metadata.description || ''}
@@ -110,19 +95,19 @@ export function ProSettingsPanel({ worksheet, onUpdateWorksheet }: ProSettingsPa
           })}
           placeholder="Krátký popis..."
           rows={3}
-          style={{ ...inputStyle, resize: 'vertical' }}
+          style={textareaStyle}
         />
       </div>
 
       {/* Subject */}
-      <div style={{ marginBottom: '16px' }}>
+      <div style={{ ...subtleCardStyle, marginBottom: '16px' }}>
         <label style={labelStyle}>Předmět</label>
         <select
           value={worksheet.metadata.subject || ''}
           onChange={(e) => onUpdateWorksheet({ 
             metadata: { ...worksheet.metadata, subject: e.target.value as Subject } 
           })}
-          style={inputStyle}
+          style={selectStyle}
         >
           <option value="">Vyberte předmět</option>
           {SUBJECTS.map(({ value, label }) => (
@@ -132,7 +117,7 @@ export function ProSettingsPanel({ worksheet, onUpdateWorksheet }: ProSettingsPa
       </div>
 
       {/* Grade */}
-      <div style={{ marginBottom: '16px' }}>
+      <div style={{ ...subtleCardStyle, marginBottom: '16px' }}>
         <label style={labelStyle}>Ročník</label>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
           {GRADES.map((grade) => (
@@ -142,14 +127,9 @@ export function ProSettingsPanel({ worksheet, onUpdateWorksheet }: ProSettingsPa
                 metadata: { ...worksheet.metadata, grade } 
               })}
               style={{
-                padding: '6px 10px',
-                backgroundColor: worksheet.metadata.grade === grade ? '#5C5CFF' : '#334155',
-                color: worksheet.metadata.grade === grade ? 'white' : '#94a3b8',
-                border: 'none',
-                borderRadius: '4px',
-                cursor: 'pointer',
+                ...buttonStyle,
+                ...getSegmentedButtonStyle(worksheet.metadata.grade === grade),
                 fontSize: '11px',
-                fontWeight: 500,
               }}
             >
               {grade}.
@@ -159,7 +139,7 @@ export function ProSettingsPanel({ worksheet, onUpdateWorksheet }: ProSettingsPa
       </div>
 
       {/* Time */}
-      <div style={{ marginBottom: '16px' }}>
+      <div style={{ ...subtleCardStyle, marginBottom: '16px' }}>
         <label style={labelStyle}>Časová náročnost (min)</label>
         <input
           type="number"
@@ -175,7 +155,7 @@ export function ProSettingsPanel({ worksheet, onUpdateWorksheet }: ProSettingsPa
       </div>
 
       {/* Keywords */}
-      <div style={{ marginBottom: '16px' }}>
+      <div style={{ ...subtleCardStyle, marginBottom: '16px' }}>
         <label style={labelStyle}>Klíčová slova</label>
         <div style={{ display: 'flex', gap: '4px', marginBottom: '8px' }}>
           <input
@@ -188,14 +168,7 @@ export function ProSettingsPanel({ worksheet, onUpdateWorksheet }: ProSettingsPa
           />
           <button
             onClick={addKeyword}
-            style={{
-              padding: '8px',
-              backgroundColor: '#334155',
-              border: 'none',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              color: '#94a3b8',
-            }}
+            style={iconButtonStyle}
           >
             <Plus size={16} />
           </button>
@@ -209,10 +182,10 @@ export function ProSettingsPanel({ worksheet, onUpdateWorksheet }: ProSettingsPa
                 alignItems: 'center',
                 gap: '4px',
                 padding: '4px 8px',
-                backgroundColor: '#334155',
-                borderRadius: '4px',
+                backgroundColor: SIDEBAR_COLORS.panelSoft,
+                borderRadius: '6px',
                 fontSize: '11px',
-                color: '#E5E5E5',
+                color: SIDEBAR_COLORS.text,
               }}
             >
               {keyword}
@@ -232,6 +205,7 @@ export function ProSettingsPanel({ worksheet, onUpdateWorksheet }: ProSettingsPa
             </span>
           ))}
         </div>
+      </div>
       </div>
     </div>
   );

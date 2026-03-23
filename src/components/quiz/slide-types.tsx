@@ -11,6 +11,7 @@ import {
   Film,
   FileText,
   Award,
+  Layers,
 } from 'lucide-react';
 import { SlideType, ActivityType, ToolType } from '../../types/quiz';
 
@@ -167,6 +168,17 @@ export const SLIDE_TYPES: SlideTypeOption[] = [
     icon: <ActivityIcon />,
     color: '#03CA90',
     description: 'Průzkum a zpětná vazba',
+  },
+  // NON-EVALUABLE — Flashcard
+  {
+    id: 'flashcard',
+    type: 'activity',
+    activityType: 'flashcard',
+    category: 'non-evaluable',
+    label: 'Kartička',
+    icon: <Layers className="w-5 h-5" />,
+    color: '#6366f1',
+    description: 'Slovíčko – otočení karty',
   },
   // Tool slides
   {

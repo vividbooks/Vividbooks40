@@ -59,7 +59,7 @@ export interface AssetUsage {
 
 // Výsledek výběru z AssetPickeru
 export interface AssetPickerResult {
-  type: 'upload' | 'library' | 'giphy' | 'google' | 'vividbooks';
+  type: 'upload' | 'library' | 'giphy' | 'google' | 'vividbooks' | 'generated';
   url: string;
   thumbnailUrl?: string;
   name?: string;
@@ -96,10 +96,16 @@ export interface AssetPickerConfig {
   
   // Callback po zavření
   onClose?: () => void;
+
+  // Obrázky z linked datasetu (zobrazí se jako extra tab)
+  datasetImages?: Array<{ url: string; title?: string; alt?: string }>;
+
+  // Zobrazit tab "Generované" — AI ilustrace z celé galerie
+  showGenerated?: boolean;
 }
 
 // Tab v AssetPickeru
-export type AssetPickerTab = 'upload' | 'library' | 'giphy' | 'google' | 'vividbooks';
+export type AssetPickerTab = 'upload' | 'library' | 'giphy' | 'google' | 'vividbooks' | 'dataset' | 'generated';
 
 // Filter pro Vividbooks assets
 export interface VividbooksAssetFilter {

@@ -11,7 +11,7 @@
  */
 
 import React, { useRef, useState, useEffect, useCallback, ReactNode } from 'react';
-import { ZoomIn, ZoomOut, Maximize, Hand, MousePointer2 } from 'lucide-react';
+import { Hand } from 'lucide-react';
 
 interface InfiniteCanvasProps {
   children: ReactNode;
@@ -29,7 +29,7 @@ export function InfiniteCanvas({
   children,
   initialZoom = 0.8,
   minZoom = 0.4,
-  maxZoom = 1.5,
+  maxZoom = 4,
   gridSize = 50,
   showControls = true,
   showMinimap = false,
@@ -283,85 +283,75 @@ export function InfiniteCanvas({
         {children}
       </div>
       
-      {/* Zoom controls - inline styles for proper fill */}
+      {/* Zoom controls - aligned with worksheet editor UX */}
       {showControls && (
         <div 
-          className="flex items-center gap-2 rounded-xl p-2 shadow-xl"
+          className="flex flex-col items-center gap-1"
           style={{ 
             position: 'absolute',
-            bottom: '24px',
+            top: '12px',
             right: '24px',
-            backgroundColor: 'rgba(30, 41, 59, 0.95)', 
-            backdropFilter: 'blur(8px)',
-            border: '1px solid rgba(71, 85, 105, 0.5)',
+            backgroundColor: '#1e293b',
+            padding: '4px',
+            borderRadius: '8px',
+            border: '1px solid #334155',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
             zIndex: 100,
           }}
         >
           <button
-            onClick={handleZoomOut}
-            style={{
-              width: '36px',
-              height: '36px',
-              borderRadius: '8px',
-              backgroundColor: '#334155',
-              border: 'none',
-              color: '#cbd5e1',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: 'pointer',
-            }}
-            title="Oddálit (Ctrl+-)"
-          >
-            <ZoomOut size={18} />
-          </button>
-          
-          <div style={{ padding: '0 12px', minWidth: '60px', textAlign: 'center' }}>
-            <span style={{ fontSize: '14px', fontWeight: 500, color: '#cbd5e1' }}>
-              {Math.round(zoom * 100)}%
-            </span>
-          </div>
-          
-          <button
             onClick={handleZoomIn}
             style={{
-              width: '36px',
-              height: '36px',
-              borderRadius: '8px',
-              backgroundColor: '#334155',
+              padding: '6px',
+              background: 'transparent',
               border: 'none',
-              color: '#cbd5e1',
+              borderRadius: 4,
+              color: '#94a3b8',
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'center',
               cursor: 'pointer',
             }}
             title="Přiblížit (Ctrl++)"
+            onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#334155')}
+            onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
           >
-            <ZoomIn size={18} />
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="11" cy="11" r="8" />
+              <line x1="21" y1="21" x2="16.65" y2="16.65" />
+              <line x1="11" y1="8" x2="11" y2="14" />
+              <line x1="8" y1="11" x2="14" y2="11" />
+            </svg>
           </button>
-          
-          <div style={{ width: '1px', height: '24px', backgroundColor: '#475569', margin: '0 4px' }} />
-          
+
+          <span style={{ fontSize: 10, color: '#64748b', fontWeight: 600, minWidth: 32, textAlign: 'center' }}>
+            {Math.round(zoom * 100)}%
+          </span>
+
           <button
-            onClick={handleZoomFit}
+            onClick={handleZoomOut}
             style={{
-              width: '36px',
-              height: '36px',
-              borderRadius: '8px',
-              backgroundColor: '#334155',
+              padding: '6px',
+              background: 'transparent',
               border: 'none',
-              color: '#cbd5e1',
+              borderRadius: 4,
+              color: '#94a3b8',
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'center',
               cursor: 'pointer',
             }}
-            title="Přizpůsobit (Ctrl+1)"
+            title="Oddálit (Ctrl+-)"
+            onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#334155')}
+            onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
           >
-            <Maximize size={18} />
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="11" cy="11" r="8" />
+              <line x1="21" y1="21" x2="16.65" y2="16.65" />
+              <line x1="8" y1="11" x2="14" y2="11" />
+            </svg>
           </button>
-          
+
+          <div style={{ height: '1px', width: '60%', backgroundColor: '#334155', margin: '2px 0' }} />
+
           {isSpacePressed && (
             <div 
               style={{ 

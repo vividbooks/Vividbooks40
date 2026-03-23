@@ -16,6 +16,7 @@ export type BlockType =
   | 'heading'
   | 'paragraph'
   | 'infobox'
+  | 'layout-section'
   | 'multiple-choice'
   | 'fill-blank'
   | 'free-answer'
@@ -28,7 +29,8 @@ export type BlockType =
   | 'video-quiz'        // Video quiz with questions at timestamps
   | 'qr-code'           // QR kód s popiskem
   | 'header-footer'     // Hlavička a patička
-  | 'free-canvas';      // Volné plátno - mini Figma canvas
+  | 'free-canvas'       // Volné plátno - mini Figma canvas
+  | 'chart';            // Graf a data – interaktivní Recharts vizualizace
 
 /**
  * Pozice obrázku v bloku
@@ -133,11 +135,143 @@ export type ParagraphImagePosition = 'left' | 'right' | 'top' | 'bottom' | 'none
 export type ParagraphImageShape = 'square' | 'circle' | 'rounded';
 
 /**
+ * Skupina symbolů na jedné straně příkladu — nálepka ze Vividboardu + počet.
+ */
+export interface CompareCountsItemGroup {
+  count: number;
+  /** Veřejná https URL nálepky (Supabase Storage, katalog jako u anotací). */
+  stickerUrl?: string;
+  /** ID z katalogu nálepek (volitelné). */
+  stickerId?: string;
+}
+
+/**
+ * Jeden pod-příklad v rámci jedné aktivity „porovnávání počtů“ (max 9 na aktivitu).
+ */
+export interface CompareCountsExample {
+  id: string;
+  leftGroups: CompareCountsItemGroup[];
+  rightGroups: CompareCountsItemGroup[];
+}
+
+/**
+ * Miniaplikace v odstavci — nastavení v pravém panelu, HTML se generuje z dat.
+ */
+export interface CompareCountsMiniAppContent {
+  type: 'compare-counts';
+  /** 1–9 příkladů; společné je jen vzhled karty (rámeček, střed, barvy). */
+  examples: CompareCountsExample[];
+  showCenterSlot: boolean;
+  /** Řádek s číselným zápisem pod vizuálem (např. 4 + 2 … 3 + 2). */
+  showNumericRow?: boolean;
+  /** Když je vypnuto, čísla a znaménka v číselném řádku jsou neviditelná (opacity 0), zůstane prostor na zápis. */
+  showNumericSolution?: boolean;
+  /** Více typů v jednom poli — emoji se skládají ze všech skupin, v číselném řádku je + mezi počty. */
+  combineMultipleTypesPerSide?: boolean;
+  /** Náhodné (deterministické) posuny a mírná rotace symbolů v polích — stejné pořád pro daný příklad. */
+  randomSymbolPositions?: boolean;
+  innerBorderColor: string;
+  innerBackground: string;
+  emojiSizePx: number;
+  /** Spodní hranice velikosti symbolu při velkém počtu kusů na straně (px). */
+  emojiMinSizePx: number;
+  minHeightPx: number;
+  centerSlotSizePx: number;
+  textColor: string;
+  /** Pozadí buňky pro zápis &gt;, &lt;, = v číselném řádku */
+  numericCompareHighlight?: string;
+  /** Zadání úlohy (jako otázka u klasické otázky) */
+  question: string;
+  questionHtml?: string;
+  /** Kroužek s číslem aktivity */
+  circleColor?: string;
+  circleSize?: number;
+  /** Typografie zadání (stejná logika jako u multiple-choice otázky) */
+  qFontFamily?: string;
+  qFontSize?: number;
+  qFontWeight?: string;
+  qTextColor?: string;
+  qLineHeight?: number;
+  qLetterSpacing?: number;
+  qAlign?: 'left' | 'center' | 'right' | 'justify';
+  qIsBold?: boolean;
+  qIsItalic?: boolean;
+  qIsUnderline?: boolean;
+}
+
+/** Režim písanky — zatím v UI primárně vázané. */
+export type PisankaScriptMode = 'vazane' | 'nevazane';
+
+/**
+ * Typ linkování (vázané): řádek = horní / střední / spodní část, každá stejně vysoká
+ * — buď 0,8 cm (3x08), nebo 0,6 cm (3x06). Mezi částmi jsou tlusté linky; střední pás je světle modrý.
+ */
+export type PisankaLineTemplate = '3x08' | '3x06';
+
+/**
+ * Vzor linek na řádku (globálně pro celou písanku).
+ * 1 = klasická plná (šatečky + horní/spodní část + modrý pás)
+ * 2 = kompaktní — jen střední pásmo (x-výška) se dvěma tlustými linkami
+ * 3 = jako 1, ale bez vybarveného středního pásu
+ */
+export type PisankaLinePattern = '1' | '2' | '3';
+
+/** Písmo předepsaného textu na řádku písanky */
+export type PisankaTraceFont = 'vividbooks' | 'cooper';
+
+/** Vodící tečky: výška podle prvního písmene řádku, opakování podle šířky celého předpisu. */
+export type PisankaGuideDotsMode = 'off' | 'on';
+
+/** Odhadovaná výška začátku tahu pro tečku (viz geometrie řádku písanky). */
+export type PisankaGuideAnchor = 'baseline' | 'bandTop' | 'ascender' | 'capTop';
+
+/** Jedna linkovaná řádka — text, písmo a volitelný obrázek vzadu (URL, ne base64). */
+export interface PisankaRowItem {
+  text: string;
+  traceFont: PisankaTraceFont;
+  /** Vodící tečky: zapnuto = podle prvního písmene a šířky celého předpisu. */
+  guideDots?: PisankaGuideDotsMode;
+  /** V editoru: zobrazit sekci „Vybrat obrázek“ (povolí se v Nastavení řádku). */
+  allowRowImage?: boolean;
+  imageUrl?: string;
+  /** Pokud je false, obrázek se nevykreslí i při uložené URL (např. dočasně vypnuto). Výchozí true při imageUrl. */
+  imageEnabled?: boolean;
+  /** Panáček vlevo na začátku linky (vizuální vodítko výšky řádku). */
+  showMascot?: boolean;
+  /** Tužka mířící na začátek předpisu na tomto řádku (viz public/pisanka-start-pencil.svg). */
+  showStartPencil?: boolean;
+}
+
+export interface PisankaMiniAppContent {
+  type: 'pisanka';
+  scriptMode: PisankaScriptMode;
+  lineTemplate: PisankaLineTemplate;
+  /** Vzor linek (1–3), výchozí 1. */
+  linePattern?: PisankaLinePattern;
+  /** Každý prvek = jeden řádek; prázdný text = jen linky. */
+  rows: PisankaRowItem[];
+  /** Nadpis nad stránkou (Cooper Light v HTML). */
+  title?: string;
+  lineThin?: string;
+  lineThick?: string;
+  bandFill?: string;
+  traceColor?: string;
+  /** Svislý proklad mezi řádky linkování (px). */
+  rowGapPx?: number;
+  /** Vodorovný „odsazení“ obsahu stránky písanky od okrajů (px); 0 = linky/pás až k okraji bloku. */
+  pageInsetPx?: number;
+}
+
+export type ParagraphMiniApp = CompareCountsMiniAppContent | PisankaMiniAppContent;
+
+/**
  * Obsah bloku s odstavcem
  */
 export interface ParagraphContent {
   /** HTML obsah odstavce (může obsahovat formátování) */
   html: string;
+  /** Volitelná miniaplikace (např. porovnávání počtů) — při nastavení upravuj html synchronně */
+  miniApp?: ParagraphMiniApp;
   /** URL obrázku (volitelný) */
   imageUrl?: string;
   /** Pozice obrázku vzhledem k textu */
@@ -162,6 +296,16 @@ export interface InfoboxContent {
   variant: InfoboxVariant;
 }
 
+export type LayoutSectionStyle = 'equal' | 'sidebar-left' | 'sidebar-right' | 'custom';
+
+export interface LayoutSectionContent {
+  columns: 2 | 3;
+  layoutStyle?: LayoutSectionStyle;
+  columnRatios?: number[];
+  columnGap?: number;
+  minHeight?: number;
+}
+
 /**
  * Možnost odpovědi v multiple-choice otázce
  */
@@ -170,6 +314,8 @@ export interface ChoiceOption {
   id: string;
   /** Text možnosti */
   text: string;
+  /** Rich HTML varianta textu možnosti */
+  textHtml?: string;
   /** URL obrázku (pro obrázkovou variantu) */
   imageUrl?: string;
 }
@@ -231,6 +377,8 @@ export interface PlayfulAnswerSettings {
 export interface MultipleChoiceContent {
   /** Text otázky */
   question: string;
+  /** Rich HTML reprezentace otázky */
+  questionHtml?: string;
   /** Seznam možností */
   options: ChoiceOption[];
   /** ID správných odpovědí */
@@ -239,6 +387,8 @@ export interface MultipleChoiceContent {
   allowMultiple: boolean;
   /** Vysvětlení správné odpovědi (zobrazí se po vyplnění) */
   explanation?: string;
+  /** Rich HTML reprezentace vysvětlení */
+  explanationHtml?: string;
   /** Varianta zobrazení (textová / obrázková) */
   variant?: 'text' | 'image';
   /** Počet sloupců pro obrázkovou variantu */
@@ -276,6 +426,8 @@ export interface FreeAnswerSubQuestion {
   id: string;
   /** Text pod-otázky */
   text: string;
+  /** Rich HTML reprezentace textu pod-otázky */
+  textHtml?: string;
   /** Počet řádků pro odpověď (1-5) */
   lines: number;
   /** Vzorová odpověď (volitelná) */
@@ -309,12 +461,18 @@ export type SubQuestionLabelStyle = 'text' | 'circle' | 'circle-outline';
 export interface FreeAnswerContent {
   /** Text otázky */
   question: string;
+  /** Rich HTML reprezentace otázky */
+  questionHtml?: string;
   /** Počet řádků pro odpověď */
   lines: number;
   /** Nápověda pro žáka (volitelná) */
   hint?: string;
+  /** Rich HTML reprezentace nápovědy */
+  hintHtml?: string;
   /** Vzorová odpověď pro učitele (volitelná) */
   sampleAnswer?: string;
+  /** Rich HTML reprezentace vzorové odpovědi */
+  sampleAnswerHtml?: string;
   
   // === POD-OTÁZKY (volitelné) ===
   /** Pole pod-otázek – pokud existuje, renderuje se grid místo jednoduchých řádků */
@@ -461,6 +619,10 @@ export interface TableContent {
   hasRoundedCorners: boolean;
   /** Barevný styl (volitelný) */
   colorStyle?: 'default' | 'blue' | 'green' | 'purple' | 'yellow' | 'red' | 'pink' | 'cyan';
+  /** Velikost textu v buňkách */
+  fontSize?: 'xs' | 'sm' | 'base' | 'lg';
+  /** Hustota — určuje padding buněk a layout tabulky */
+  density?: 'compact' | 'normal' | 'spacious';
 }
 
 // ============================================
@@ -837,6 +999,22 @@ export type CanvasObject =
   | CanvasGroup;
 
 /**
+ * Obsah bloku s grafem (chart)
+ */
+export interface ChartContent {
+  /** Typ grafu */
+  chartType: 'bar' | 'line' | 'area' | 'pie' | 'radar' | 'timeline';
+  /** Název grafu */
+  chartTitle?: string;
+  /** Hlavičky sloupců – první je popisek/osa X, ostatní jsou datové řady */
+  chartColumns: string[];
+  /** Řádky dat – odpovídají chartColumns */
+  chartRows: string[][];
+  /** Výška grafu v px (default 300) */
+  chartHeight?: number;
+}
+
+/**
  * Obsah bloku s volným plátnem
  */
 export interface FreeCanvasContent {
@@ -936,6 +1114,12 @@ interface BaseBlock {
   /** PRO: Na kterém sloupci gridu blok začíná (1-12) */
   gridStart?: number;
   
+  /**
+   * Když true, blok se zobrazí pouze v pracovním listu (tisk/PDF).
+   * Při konverzi na VividBoard board bude vynechán.
+   */
+  worksheetOnly?: boolean;
+
   // ========== FREEFORM CANVAS PROPERTIES ==========
   /** Freeform: X position on canvas in pixels */
   posX?: number;
@@ -962,6 +1146,65 @@ interface BaseBlock {
   image?: BlockImage;
   /** Vizuální styly bloku */
   visualStyles?: BlockVisualStyles;
+  /**
+   * PRO two-column layout: přiřazení bloku do sloupce A nebo B.
+   * Aktivní pouze když `worksheet.metadata.pageColumnLayout === 'two-columns'`.
+   * Bloky bez přiřazení jdou do sloupce A.
+   */
+  columnAssignment?: 'A' | 'B';
+
+  /** ID layout sekce, do které blok patří. */
+  layoutSectionId?: string;
+  /** ID sloupce uvnitř layout sekce. */
+  layoutColumnId?: string;
+  /** Pořadí uvnitř sloupce layout sekce. */
+  layoutOrder?: number;
+
+  /** Pokud nastaveno, blok se stane "kotevním" bočním sloupcem vedle následujících bloků */
+  floatSide?: 'left' | 'right';
+  /**
+   * Šířka bočního sloupce vyjádřená v počtu gridových sloupců (výchozí 4).
+   * Nahrazuje starší floatWidthPercent — šířka se počítá jako
+   * floatGridSpan * columnWidth + (floatGridSpan - 1) * gridGapPx.
+   */
+  floatGridSpan?: number;
+  /** @deprecated Použij floatGridSpan. Šířka bočního sloupce v procentech (výchozí 35) */
+  floatWidthPercent?: number;
+  /** Kolik následujících bloků bude vedle bočního sloupce (výchozí 3) */
+  floatSpanBlocks?: number;
+
+  /** Nastavení jak se blok zobrazí v propojeném boardu */
+  boardSettings?: {
+    /** Přeskočit blok — nevkládat do boardu (interní, nelze nastavit z UI) */
+    skip?: boolean;
+    /**
+     * Jak zobrazit podotázky (A, B, C…) v boardu:
+     *  'single' — všechny v jednom slidu
+     *  'each'   — každá podotázka jako samostatný slide
+     *  'html'   — zachytit jako HTML obrázek (složitý layout)
+     */
+    subQuestionsMode?: 'single' | 'each' | 'html';
+    /** Skrýt správnou odpověď v boardu */
+    hideAnswer?: boolean;
+    /** Zobrazit nápovědu v boardu (interní, nelze nastavit z UI) */
+    showHint?: boolean;
+    /**
+     * Seskupit tento blok s N následujícími bloky na jeden slide.
+     * 0 = žádné seskupení, 1 = tento + 1 další, 2 = tento + 2 další, atd.
+     */
+    mergeCount?: number;
+    /** @deprecated Použij mergeCount místo mergeWithNext */
+    mergeWithNext?: boolean;
+  };
+
+  /** Fixed visible frame height for linked text flow blocks (paragraph / infobox). */
+  textFlowFrameHeight?: number;
+  /** Shared chain identifier for linked text frames. */
+  textFlowChainId?: string;
+  /** Previous block in the linked text flow chain. */
+  textFlowPrevBlockId?: string;
+  /** Next block in the linked text flow chain. */
+  textFlowNextBlockId?: string;
 }
 
 /**
@@ -986,6 +1229,11 @@ export interface ParagraphBlock extends BaseBlock {
 export interface InfoboxBlock extends BaseBlock {
   type: 'infobox';
   content: InfoboxContent;
+}
+
+export interface LayoutSectionBlock extends BaseBlock {
+  type: 'layout-section';
+  content: LayoutSectionContent;
 }
 
 /**
@@ -1093,12 +1341,21 @@ export interface FreeCanvasBlock extends BaseBlock {
 }
 
 /**
+ * Blok s grafem (Recharts)
+ */
+export interface ChartBlock extends BaseBlock {
+  type: 'chart';
+  content: ChartContent;
+}
+
+/**
  * Union type pro všechny typy bloků
  */
 export type WorksheetBlock = 
   | HeadingBlock
   | ParagraphBlock
   | InfoboxBlock
+  | LayoutSectionBlock
   | MultipleChoiceBlock
   | FillBlankBlock
   | FreeAnswerBlock
@@ -1111,7 +1368,8 @@ export type WorksheetBlock =
   | VideoQuizBlock
   | QRCodeBlock
   | HeaderFooterBlock
-  | FreeCanvasBlock;
+  | FreeCanvasBlock
+  | ChartBlock;
 
 // ============================================
 // METADATA A PRACOVNÍ LIST
@@ -1129,6 +1387,7 @@ export type ColumnCount = 1 | 2;
  * Globální velikost písma
  */
 export type GlobalFontSize = 'small' | 'normal' | 'large';
+export type PageFormat = 'a4' | 'b5' | 'a5';
 
 export interface WorksheetMetadata {
   /** Předmět */
@@ -1145,6 +1404,8 @@ export interface WorksheetMetadata {
   columns?: ColumnCount;
   /** Globální velikost písma */
   globalFontSize?: GlobalFontSize;
+  /** Formát stránky */
+  pageFormat?: PageFormat;
   
   // === PRO GRID SYSTEM ===
   /** PRO: Počet sloupců gridu (default: 12) */
@@ -1155,7 +1416,32 @@ export interface WorksheetMetadata {
   // === PRO LAYOUT MODE ===
   /** PRO: Režim layoutu - grid (pro AI) nebo freeform (pro ruční úpravy) */
   layoutMode?: 'grid' | 'freeform';
-  
+
+  // === PRO TWO-COLUMN PAGE LAYOUT ===
+  /**
+   * Stránkové rozložení do dvou sloupců.
+   * 'single'      — normální grid (výchozí)
+   * 'two-columns' — stránka je rozdělena na sloupec A (vlevo) a B (vpravo);
+   *                 každý blok si zvolí A nebo B pomocí `columnAssignment`.
+   */
+  pageColumnLayout?: 'single' | 'two-columns';
+  /**
+   * Počet grid sloupců pro sloupec A (1 až gridColumns-1, výchozí gridColumns/2).
+   * Sloupec B dostane zbytek: `gridColumns - twoColumnASpan`.
+   * Nahrazuje původní `twoColumnRatio`.
+   */
+  twoColumnASpan?: number;
+  /** @deprecated Použij twoColumnASpan. Zachováno pro zpětnou kompatibilitu. */
+  twoColumnRatio?: number;
+  /**
+   * Per-stránkový override pro rozložení do dvou sloupců.
+   * Klíč = index stránky (0-based). Pokud stránka override nemá, dědí globální pageColumnLayout.
+   */
+  pageOverrides?: Record<number, {
+    pageColumnLayout?: 'single' | 'two-columns';
+    twoColumnASpan?: number;
+  }>;
+
   // === PRO PAGE STYLING ===
   /** PRO: Barva pozadí stránky (default: bílá) */
   pageBackgroundColor?: string;
@@ -1165,6 +1451,20 @@ export interface WorksheetMetadata {
   pageHeader?: PageHeaderConfig;
   /** PRO: Konfigurace patičky stránky */
   pageFooter?: PageFooterConfig;
+
+  // === DESIGN SYSTEM ===
+  /** ID aktivního design systému z tabulky design_systems */
+  designSystemId?: string;
+  /** Fonty z aktivního design systému (cached pro offline rendering) */
+  designFonts?: { heading: string; body: string };
+
+  // === PAGE COUNT ===
+  /**
+   * Počet stránek naposledy zjištěný při renderování/uložení.
+   * Aktualizuje se automaticky při každém save z ProEditorLayout.
+   * Slouží pro WorkbookProLayout k zobrazení správné délky kapitoly.
+   */
+  pageCount?: number;
 }
 
 // ============================================
@@ -1225,6 +1525,8 @@ export interface Worksheet {
   status: 'draft' | 'published';
   /** Náhledový obrázek (URL) */
   thumbnailUrl?: string;
+  /** ID propojeného boardu (quiz), pokud byl board vytvořen/synchronizován */
+  linkedBoardId?: string;
 }
 
 // ============================================
@@ -1243,6 +1545,7 @@ export type BlockContentByType = {
   'heading': HeadingContent;
   'paragraph': ParagraphContent;
   'infobox': InfoboxContent;
+  'layout-section': LayoutSectionContent;
   'multiple-choice': MultipleChoiceContent;
   'fill-blank': FillBlankContent;
   'free-answer': FreeAnswerContent;
@@ -1255,6 +1558,7 @@ export type BlockContentByType = {
   'video-quiz': VideoQuizContent;
   'qr-code': QRCodeContent;
   'free-canvas': FreeCanvasContent;
+  'chart': ChartContent;
 };
 
 // ============================================
@@ -1292,6 +1596,8 @@ export interface WorksheetData {
   previewUrl?: string;
   /** URL hlavního PDF pracovního listu */
   pdfUrl?: string;
+  /** URL nebo board:// odkaz na interaktivní verzi (VividBoard) */
+  interactiveUrl?: string;
   /** URL řešení (PDF) */
   solutionPdfUrl?: string;
   /** URL učebního textu */
@@ -1323,9 +1629,11 @@ export const DEFAULT_WORKSHEET_METADATA: WorksheetMetadata = {
   estimatedTime: 15,
   keywords: [],
   globalFontSize: 'small',
+  pageFormat: 'a4',
   // PRO defaults
   gridColumns: 12,
   gridGap: 'medium',
+  layoutMode: 'grid',
 };
 
 /**
@@ -1531,6 +1839,7 @@ export function createEmptyBlock(type: BlockType, order: number): WorksheetBlock
         width: 'full',
         content: {
           question: '',
+          questionHtml: '',
           options: [
             { id: 'opt-1', text: '' },
             { id: 'opt-2', text: '' },
@@ -1539,6 +1848,22 @@ export function createEmptyBlock(type: BlockType, order: number): WorksheetBlock
           allowMultiple: false,
           variant: 'text',
           gridColumns: 4,
+        },
+      };
+    case 'layout-section':
+      return {
+        id,
+        type: 'layout-section',
+        order,
+        width: 'full',
+        gridSpan: 12,
+        noActivityNumber: true,
+        content: {
+          columns: 2,
+          layoutStyle: 'equal',
+          columnRatios: [50, 50],
+          columnGap: 16,
+          minHeight: 180,
         },
       };
     case 'fill-blank':
@@ -1559,6 +1884,7 @@ export function createEmptyBlock(type: BlockType, order: number): WorksheetBlock
         width: 'full',
         content: {
           question: '',
+          questionHtml: '',
           lines: 3,
         },
       };
@@ -1708,6 +2034,26 @@ export function createEmptyBlock(type: BlockType, order: number): WorksheetBlock
           feedbackText: 'Tento pracovní list se mi vyplňoval:',
           showFooterInfo: true,
         },
+      };
+    case 'chart':
+      return {
+        id,
+        type: 'chart',
+        order,
+        width: 'full',
+        content: {
+          chartType: 'bar',
+          chartTitle: '',
+          chartColumns: ['Kategorie', 'Hodnota'],
+          chartRows: [
+            ['Leden', '42'],
+            ['Únor', '67'],
+            ['Březen', '53'],
+            ['Duben', '88'],
+            ['Květen', '74'],
+          ],
+          chartHeight: 320,
+        } satisfies ChartContent,
       };
     case 'free-canvas':
       return {

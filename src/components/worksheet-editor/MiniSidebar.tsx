@@ -23,6 +23,7 @@ interface MiniSidebarProps {
   hideAI?: boolean; // Hide AI button (for student mode when AI not allowed)
   onOpenHistory?: () => void; // Open version history modal
   hasUnsavedVersions?: boolean; // Show indicator for unsaved versions
+  onBack?: () => void;
 }
 
 // Reusable button component
@@ -177,12 +178,17 @@ export function MiniSidebar({
   hideAI = false,
   onOpenHistory,
   hasUnsavedVersions = false,
+  onBack,
 }: MiniSidebarProps) {
   const navigate = useNavigate();
 
   const handleBack = () => {
     if (saveStatus !== 'saving') {
-      navigate('/library/my-content');
+      if (onBack) {
+        onBack();
+      } else {
+        navigate('/library/my-content');
+      }
     }
   };
 

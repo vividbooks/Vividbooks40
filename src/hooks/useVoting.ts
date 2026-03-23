@@ -1,12 +1,12 @@
-/**
- * Hook for real-time voting synchronization via Firebase
- */
-
 import { useState, useEffect, useCallback } from 'react';
-import { ref, onValue, update, get } from 'firebase/database';
-import { database } from '../utils/firebase-config';
-
-const QUIZ_SESSIONS_PATH = 'quiz_sessions';
+import {
+  getPreferredSessionBackend,
+  listSessionVotes,
+  SessionBackend,
+  SessionKind,
+  upsertSessionVote,
+} from '../utils/live-session-repository';
+import { supabase } from '../utils/supabase/client';
 
 export interface VoteData {
   oderId: string;
@@ -20,6 +20,8 @@ interface UseVotingOptions {
   slideId: string;
   currentUserId?: string;
   currentUserName?: string;
+  sessionType?: SessionKind;
+  backend?: SessionBackend;
 }
 
 interface UseVotingReturn {
@@ -38,6 +40,8 @@ export function useVoting({
   slideId,
   currentUserId,
   currentUserName,
+  sessionType = 'live',
+  backend = getPreferredSessionBackend(),
 }: UseVotingOptions): UseVotingReturn {
   const [votes, setVotes] = useState<Record<string, VoteData>>({});
   const [isLoading, setIsLoading] = useState(true);
@@ -53,26 +57,33 @@ export function useVoting({
     setIsLoading(true);
     setError(null);
     
-    const votesRef = ref(database, `${QUIZ_SESSIONS_PATH}/${sessionId}/votes/${slideId}`);
-    
-    const unsubscribe = onValue(votesRef, (snapshot) => {
-      const data = snapshot.val();
-      if (data) {
-        setVotes(data);
-      } else {
-        setVotes({});
-      }
-      setIsLoading(false);
-    }, (err) => {
-      console.error('Error fetching votes:', err);
-      setError('Nepodařilo se načíst hlasování');
-      setIsLoading(false);
-    });
-    
+    const channel = supabase
+      .channel(`session-votes:${sessionId}:${slideId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'live_session_votes', filter: `session_public_id=eq.${sessionId}` }, async () => {
+        try {
+          const nextVotes = await listSessionVotes(backend, sessionId, sessionType, slideId);
+          setVotes(nextVotes);
+          setIsLoading(false);
+        } catch (err) {
+          console.error('Error refreshing Supabase votes:', err);
+          setError('Nepodařilo se načíst hlasování');
+          setIsLoading(false);
+        }
+      })
+      .subscribe();
+
+    listSessionVotes(backend, sessionId, sessionType, slideId)
+      .then((nextVotes) => setVotes(nextVotes))
+      .catch((err) => {
+        console.error('Error fetching Supabase votes:', err);
+        setError('Nepodařilo se načíst hlasování');
+      })
+      .finally(() => setIsLoading(false));
+
     return () => {
-      unsubscribe();
+      supabase.removeChannel(channel);
     };
-  }, [sessionId, slideId]);
+  }, [backend, sessionId, sessionType, slideId]);
   
   // Check if current user has voted
   const hasVoted = currentUserId ? !!votes[currentUserId] : false;
@@ -86,21 +97,12 @@ export function useVoting({
     }
     
     try {
-      const voteRef = ref(database, `${QUIZ_SESSIONS_PATH}/${sessionId}/votes/${slideId}/${currentUserId}`);
-      
-      const voteData: VoteData = {
-        oderId: currentUserId,
-        selectedOptions: optionIds,
-        votedAt: Date.now(),
-        voterName: currentUserName,
-      };
-      
-      await update(voteRef, voteData);
+      await upsertSessionVote(backend, sessionId, slideId, currentUserId, optionIds, currentUserName);
     } catch (err) {
       console.error('Error voting:', err);
       throw err;
     }
-  }, [sessionId, slideId, currentUserId, currentUserName]);
+  }, [backend, sessionId, slideId, currentUserId, currentUserName]);
   
   // Get vote counts per option
   const getVoteCounts = useCallback(() => {

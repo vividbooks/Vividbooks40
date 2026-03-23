@@ -337,7 +337,7 @@ export function MathKeyboard({
     }
 
     const before = value.slice(0, cursorPosition);
-    const after = value.slice(cursorPosition);
+      const after = value.slice(cursorPosition);
     const charBefore = before[before.length - 1];
 
     // Case 1: Cursor right after }, e.g. \sqrt{...}| or \frac{...}{...}|
@@ -545,7 +545,7 @@ export function MathKeyboard({
             className="bg-white rounded-xl flex items-center justify-center border-b-2 border-slate-300 overflow-hidden"
             style={compact ? { padding: '8px 12px', minHeight: 80 } : { padding: 24, minHeight: 160 }}
           >
-            {value ? (
+          {value ? (
               <div 
                 style={{ 
                   fontSize: compact 
@@ -627,17 +627,17 @@ export function MathKeyboard({
         <div className="flex gap-2">
           <button onClick={handleClear} className="flex-1 aspect-square rounded-full flex items-center justify-center transition-colors hover:opacity-90" style={{ backgroundColor: '#EF4444', maxHeight: compact ? 48 : 56 }} title="Smazat vše">
             <X className={compact ? 'w-5 h-5 text-white' : 'w-6 h-6 text-white'} strokeWidth={3} />
-          </button>
+        </button>
           <button onClick={handleBackspace} className="flex-1 aspect-square rounded-full flex items-center justify-center transition-colors hover:opacity-90" style={{ backgroundColor: '#F4A259', maxHeight: compact ? 48 : 56 }} title="Smazat">
             <Delete className={compact ? 'w-5 h-5 text-white' : 'w-6 h-6 text-white'} />
-          </button>
+        </button>
           {isSimple ? (
             <button onClick={() => handleKeyPress({ label: ck2.label, latex: ck2.latex })} className="flex-1 aspect-square rounded-full text-slate-600 font-semibold flex items-center justify-center transition-colors hover:opacity-80" style={{ backgroundColor: '#CBD5E1', fontSize: compact ? '1.15rem' : '1.25rem', maxHeight: compact ? 48 : 56 }}>{ck2.label}</button>
           ) : (
             <>
               <button onClick={() => handleKeyPress({ label: '½', latex: '\\frac{}{}', cursorOffset: 3 })} className="flex-1 aspect-square rounded-full flex items-center justify-center transition-colors text-slate-600 hover:opacity-80" style={{ backgroundColor: '#CBD5E1', maxHeight: compact ? 48 : 56, fontSize: '0.85rem' }} title="Zlomek">
                 <span style={{ lineHeight: 1 }}><InlineMath math="\frac{a}{b}" /></span>
-              </button>
+            </button>
               <button onClick={() => handleKeyPress({ label: '√', latex: '\\sqrt{}', cursorOffset: 1 })} className="flex-1 aspect-square rounded-full flex items-center justify-center transition-colors text-slate-600 hover:opacity-80" style={{ backgroundColor: '#CBD5E1', maxHeight: compact ? 48 : 56, fontSize: compact ? '1.15rem' : '1.25rem' }} title="Odmocnina">√</button>
             </>
           )}
@@ -653,10 +653,10 @@ export function MathKeyboard({
             <>
               <button onClick={() => handleKeyPress({ label: ':', latex: ':' })} className="flex-1 aspect-square rounded-full text-slate-600 font-semibold flex items-center justify-center transition-colors hover:opacity-80" style={{ backgroundColor: '#CBD5E1', fontSize: compact ? '1.15rem' : '1.25rem', maxHeight: compact ? 48 : 56 }}>:</button>
               {!compact && <button onClick={() => handleKeyPress({ label: '%', latex: '\\%' })} className="flex-1 aspect-square rounded-full text-slate-600 text-xl flex items-center justify-center transition-colors hover:opacity-80" style={{ backgroundColor: '#CBD5E1', maxHeight: 56 }}>%</button>}
-            </>
-          )}
-        </div>
-        
+          </>
+        )}
+      </div>
+      
         {/* Row 2: 4 5 6 */}
         <div className="flex gap-2">
           <button onClick={() => handleKeyPress({ label: '4', latex: '4' })} className="flex-1 aspect-square rounded-full text-white font-semibold flex items-center justify-center transition-colors hover:opacity-90" style={{ backgroundColor: '#5C6B7A', fontSize: compact ? '1.15rem' : '1.25rem', maxHeight: compact ? 48 : 56 }}>4</button>
@@ -695,7 +695,7 @@ export function MathKeyboard({
             </>
           )}
         </div>
-
+        
         {/* Extra row: custom additional buttons (simple mode only) */}
         {isSimple && extraKeys && extraKeys.some(k => k) && (
           <div className="flex gap-2">
@@ -705,7 +705,7 @@ export function MathKeyboard({
                 <button key={i} onClick={() => handleKeyPress({ label: ek.label, latex: ek.latex })} className="flex-1 aspect-square rounded-full text-slate-600 font-semibold flex items-center justify-center transition-colors hover:opacity-80" style={{ backgroundColor: '#CBD5E1', fontSize: compact ? (ek.label.length > 2 ? '0.85rem' : '1.15rem') : (ek.label.length > 2 ? '1rem' : '1.25rem'), maxHeight: compact ? 48 : 56 }}>{ek.label}</button>
               );
             })}
-          </div>
+        </div>
         )}
         
         {/* Row 5: advanced buttons (full mode only) */}
@@ -749,7 +749,7 @@ export function MathKeyboard({
             )}
           </div>
           {!compact && <div className="flex-1" style={{ maxHeight: 56 }} />}
-        </div>
+          </div>
         )}
       </div>
       

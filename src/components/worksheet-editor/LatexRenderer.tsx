@@ -8,12 +8,10 @@ import { preventOrphans } from '../math/MathText';
  */
 export function preventOrphansInHtml(html: string): string {
   if (!html) return html;
-  // Process each text node (content between > and <).
-  // preventOrphans handles both mid-string and start-of-string single-char words.
-  // Additionally catch single-char word at end of text node (before closing tag):
-  // e.g. "text k<" → "text k\u00A0<" — this is rare but covers edge cases.
+  // Process ALL text nodes: between tags (>TEXT<) AND at end of string (>TEXT with no closing <).
+  // Using />([^<]+)/g instead of />([^<]+)</g so the final text node is also processed.
   return html
-    .replace(/>([^<]+)</g, (_, text) => '>' + preventOrphans(text) + '<')
+    .replace(/>([^<]+)/g, (match, text) => '>' + preventOrphans(text))
     .replace(/(\s[aioukvszAIOUKVSZ])(<)/gi, (_, word, tag) => word.trimEnd() + '\u00A0' + tag);
 }
 
@@ -70,7 +68,7 @@ function renderInlineMarkdown(text: string, style?: React.CSSProperties, startKe
     } else if (markContent !== undefined) {
       // <mark style="...">highlight</mark>
       const inlineStyle = markStyle || '';
-      const bgMatch = inlineStyle.match(/background:\s*([^;]+)/);
+      const bgMatch = inlineStyle.match(/background(?:-color)?:\s*([^;]+)/);
       const bg = bgMatch ? bgMatch[1].trim() : '#fef08a';
       const [children, nextK] = renderInlineMarkdown(markContent, style, k);
       k = nextK;

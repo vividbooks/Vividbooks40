@@ -1,19 +1,23 @@
-/**
- * Hook for real-time board posts synchronization via Firebase
- */
-
 import { useState, useEffect, useCallback } from 'react';
-import { ref, onValue, push, update, remove, get } from 'firebase/database';
-import { database } from '../utils/firebase-config';
 import { BoardPost } from '../types/quiz';
-
-const QUIZ_SESSIONS_PATH = 'quiz_sessions';
+import {
+  addSessionPost,
+  deleteSessionPost,
+  getPreferredSessionBackend,
+  listSessionPosts,
+  SessionBackend,
+  SessionKind,
+  toggleSessionPostLike,
+} from '../utils/live-session-repository';
+import { supabase } from '../utils/supabase/client';
 
 interface UseBoardPostsOptions {
   sessionId: string | null;
   slideId: string;
   currentUserId?: string;
   currentUserName?: string;
+  sessionType?: SessionKind;
+  backend?: SessionBackend;
 }
 
 interface UseBoardPostsReturn {
@@ -30,6 +34,8 @@ export function useBoardPosts({
   slideId,
   currentUserId,
   currentUserName,
+  sessionType = 'live',
+  backend = getPreferredSessionBackend(),
 }: UseBoardPostsOptions): UseBoardPostsReturn {
   const [posts, setPosts] = useState<BoardPost[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -44,40 +50,45 @@ export function useBoardPosts({
     
     setIsLoading(true);
     setError(null);
-    
-    const postsRef = ref(database, `${QUIZ_SESSIONS_PATH}/${sessionId}/boardPosts/${slideId}`);
-    
-    const unsubscribe = onValue(postsRef, (snapshot) => {
-      const data = snapshot.val();
-      if (data) {
-        // Convert object to array
-        const postsArray: BoardPost[] = Object.entries(data).map(([id, post]: [string, any]) => ({
-          id,
-          text: post.text || '',
-          mediaUrl: post.mediaUrl,
-          mediaType: post.mediaType,
-          backgroundColor: post.backgroundColor,
-          column: post.column,
-          authorName: post.authorName || 'Anonym',
-          authorId: post.authorId || '',
-          likes: post.likes ? Object.keys(post.likes) : [],
-          createdAt: post.createdAt || Date.now(),
-        }));
-        setPosts(postsArray);
-      } else {
-        setPosts([]);
-      }
-      setIsLoading(false);
-    }, (err) => {
-      console.error('Error fetching board posts:', err);
-      setError('Nepodařilo se načíst příspěvky');
-      setIsLoading(false);
-    });
-    
+
+    const channel = supabase
+      .channel(`board-posts:${sessionId}:${slideId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'live_session_posts', filter: `session_public_id=eq.${sessionId}` }, async () => {
+        try {
+          const nextPosts = await listSessionPosts(backend, sessionId, sessionType, slideId);
+          setPosts(nextPosts);
+          setIsLoading(false);
+        } catch (err) {
+          console.error('Error refreshing Supabase board posts:', err);
+          setError('Nepodařilo se načíst příspěvky');
+          setIsLoading(false);
+        }
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'live_session_post_likes', filter: `session_public_id=eq.${sessionId}` }, async () => {
+        try {
+          const nextPosts = await listSessionPosts(backend, sessionId, sessionType, slideId);
+          setPosts(nextPosts);
+          setIsLoading(false);
+        } catch (err) {
+          console.error('Error refreshing Supabase board likes:', err);
+          setError('Nepodařilo se načíst příspěvky');
+          setIsLoading(false);
+        }
+      })
+      .subscribe();
+
+    listSessionPosts(backend, sessionId, sessionType, slideId)
+      .then((nextPosts) => setPosts(nextPosts))
+      .catch((err) => {
+        console.error('Error fetching Supabase board posts:', err);
+        setError('Nepodařilo se načíst příspěvky');
+      })
+      .finally(() => setIsLoading(false));
+
     return () => {
-      unsubscribe();
+      supabase.removeChannel(channel);
     };
-  }, [sessionId, slideId]);
+  }, [backend, sessionId, sessionType, slideId]);
   
   // Add a new post
   const addPost = useCallback(async (
@@ -93,38 +104,18 @@ export function useBoardPosts({
     }
     
     try {
-      const postsRef = ref(database, `${QUIZ_SESSIONS_PATH}/${sessionId}/boardPosts/${slideId}`);
-      const newPostRef = push(postsRef);
-      
-      // Build post object without undefined values (Firebase doesn't allow undefined)
-      const newPost: Record<string, any> = {
+      await addSessionPost(backend, sessionId, sessionType, slideId, currentUserId, currentUserName, {
         text,
-        authorName: currentUserName || 'Anonym',
-        authorId: currentUserId,
-        createdAt: Date.now(),
-        likes: {},
-      };
-      
-      // Only add media fields if they have values
-      if (mediaUrl) {
-        newPost.mediaUrl = mediaUrl;
-      }
-      if (mediaType) {
-        newPost.mediaType = mediaType;
-      }
-      if (backgroundColor) {
-        newPost.backgroundColor = backgroundColor;
-      }
-      if (column) {
-        newPost.column = column;
-      }
-      
-      await update(newPostRef, newPost);
+        mediaUrl,
+        mediaType,
+        backgroundColor,
+        column,
+      });
     } catch (err) {
       console.error('Error adding post:', err);
       throw err;
     }
-  }, [sessionId, slideId, currentUserId, currentUserName]);
+  }, [backend, sessionId, sessionType, slideId, currentUserId, currentUserName]);
   
   // Like/unlike a post
   const likePost = useCallback(async (postId: string) => {
@@ -134,27 +125,12 @@ export function useBoardPosts({
     }
     
     try {
-      const likeRef = ref(
-        database, 
-        `${QUIZ_SESSIONS_PATH}/${sessionId}/boardPosts/${slideId}/${postId}/likes/${currentUserId}`
-      );
-      
-      // Check if already liked
-      const snapshot = await get(likeRef);
-      if (snapshot.exists()) {
-        // Unlike
-        await remove(likeRef);
-      } else {
-        // Like
-        await update(ref(database, `${QUIZ_SESSIONS_PATH}/${sessionId}/boardPosts/${slideId}/${postId}/likes`), {
-          [currentUserId]: true
-        });
-      }
+      await toggleSessionPostLike(backend, sessionId, sessionType, slideId, postId, currentUserId);
     } catch (err) {
       console.error('Error toggling like:', err);
       throw err;
     }
-  }, [sessionId, slideId, currentUserId]);
+  }, [backend, sessionId, sessionType, slideId, currentUserId]);
   
   // Delete a post
   const deletePost = useCallback(async (postId: string) => {
@@ -164,16 +140,12 @@ export function useBoardPosts({
     }
     
     try {
-      const postRef = ref(
-        database, 
-        `${QUIZ_SESSIONS_PATH}/${sessionId}/boardPosts/${slideId}/${postId}`
-      );
-      await remove(postRef);
+      await deleteSessionPost(backend, sessionId, sessionType, slideId, postId);
     } catch (err) {
       console.error('Error deleting post:', err);
       throw err;
     }
-  }, [sessionId, slideId]);
+  }, [backend, sessionId, sessionType, slideId]);
   
   return {
     posts,

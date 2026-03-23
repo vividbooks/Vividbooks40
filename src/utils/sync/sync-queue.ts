@@ -10,6 +10,7 @@
 
 import { supabase } from '../supabase/client';
 import { recordTeacherTombstone, TeacherItemType } from './teacher-tombstones';
+import { stripBase64FromObject } from '../supabase/upload-image';
 
 // Supabase config
 const SUPABASE_URL = 'https://njbtqmsxbyvpwigfceke.supabase.co';
@@ -182,12 +183,12 @@ async function executeOperation(op: QueuedOperation, userId: string, token: stri
       return true; // Don't retry, it's a bug
     }
 
-    const recordData = {
+    const recordData = stripBase64FromObject({
       ...op.data,
       id: op.itemId,
       teacher_id: userId,
       updated_at: new Date().toISOString(),
-    };
+    }) as Record<string, unknown>;
 
     // Try UPDATE first
     const updateRes = await fetch(

@@ -3,6 +3,7 @@
  */
 
 import { WorksheetBlock, createEmptyBlock } from '../types/worksheet';
+import { legacyQuestionStringToHtml } from './worksheet-text';
 
 // API klíč z environment variables
 const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
@@ -239,6 +240,7 @@ function transformBlocks(rawBlocks: any[], startOrder: number = 0): WorksheetBlo
           
           worksheetBlock.content = {
             question: block.content.question || '',
+            questionHtml: legacyQuestionStringToHtml(block.content.question || ''),
             options,
             correctAnswers
           };
@@ -291,6 +293,7 @@ function transformBlocks(rawBlocks: any[], startOrder: number = 0): WorksheetBlo
           // short-answer/long-answer → free-answer
           worksheetBlock.content = { 
             question: block.content.question || '',
+            questionHtml: legacyQuestionStringToHtml(block.content.question || ''),
             lines: 3,
             hint: block.content.expectedAnswer || block.content.hints || ''
           };

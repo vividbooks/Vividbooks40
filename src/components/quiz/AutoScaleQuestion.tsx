@@ -5,7 +5,7 @@
  * On mobile: uses fixed responsive sizes
  */
 
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useState, useCallback, useLayoutEffect } from 'react';
 import { MathText } from '../math/MathText';
 
 interface AutoScaleQuestionProps {
@@ -30,26 +30,29 @@ export function AutoScaleQuestion({
   const textRef = useRef<HTMLDivElement>(null);
   const [fontSize, setFontSize] = useState(64);
   const [isMobile, setIsMobile] = useState(false);
+  const [isMeasured, setIsMeasured] = useState(false);
 
   useEffect(() => {
-    // Check if mobile
-    const checkMobile = () => {
-      setIsMobile(window.innerWidth < 768);
-    };
+    const checkMobile = () => setIsMobile(window.innerWidth < 768);
     checkMobile();
     window.addEventListener('resize', checkMobile);
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  useEffect(() => {
-    if (isMobile || !containerRef.current || !textRef.current || !children) {
+  const recalculate = useCallback(() => {
+    if (isMobile) {
+      setIsMeasured(true);
       return;
     }
+
+    if (!containerRef.current || !textRef.current || !children) return;
 
     const container = containerRef.current;
     const text = textRef.current;
 
-    // Binary search for optimal font size
+    // Skip if container has no size yet (not mounted in DOM)
+    if (container.clientWidth === 0 || container.clientHeight === 0) return;
+
     let low = minFontSize;
     let high = maxFontSize;
     let optimalSize = minFontSize;
@@ -57,7 +60,6 @@ export function AutoScaleQuestion({
     const containerWidth = container.clientWidth * targetFill;
     const containerHeight = container.clientHeight * targetFill;
 
-    // Allow word wrapping to multiple lines
     text.style.overflowWrap = 'break-word';
     text.style.wordBreak = 'normal';
     text.style.hyphens = 'none';
@@ -70,7 +72,6 @@ export function AutoScaleQuestion({
       const textWidth = text.scrollWidth;
       const textHeight = text.scrollHeight;
 
-      // Text can wrap, so we mainly check height fits
       if (textHeight <= containerHeight && textWidth <= container.clientWidth * 0.95) {
         optimalSize = mid;
         low = mid + 1;
@@ -79,11 +80,9 @@ export function AutoScaleQuestion({
       }
     }
 
-    // After finding the wrapping optimal, check if we can still fit on one line
-    // by slightly reducing font. If text is short enough, prefer single-line.
+    // For short texts: try single-line and use it if it fits well
     const plainLen = children.replace(/\$[^$]*\$/g, 'X').length;
     if (plainLen <= 30) {
-      // Try to find a size where it stays on one line
       text.style.whiteSpace = 'nowrap';
       let singleLow = minFontSize;
       let singleHigh = optimalSize;
@@ -103,14 +102,41 @@ export function AutoScaleQuestion({
 
       text.style.whiteSpace = 'normal';
 
-      // Use single-line if it's at least 70% of the wrapped size
       if (singleSize >= optimalSize * 0.7 && singleSize >= minFontSize) {
         optimalSize = singleSize;
       }
     }
 
     setFontSize(optimalSize);
+    setIsMeasured(true);
   }, [children, targetFill, minFontSize, maxFontSize, isMobile]);
+
+  // Recalculate before paint to avoid visible size jumping on slide open
+  useLayoutEffect(() => {
+    if (isMobile) {
+      setIsMeasured(true);
+      return;
+    }
+    setIsMeasured(false);
+    recalculate();
+  }, [recalculate, isMobile]);
+
+  // Recalculate again after fonts are fully ready
+  useEffect(() => {
+    if (isMobile) return;
+    setIsMeasured(false);
+    document.fonts.ready.then(() => {
+      recalculate();
+    });
+  }, [recalculate, isMobile]);
+
+  // Recalculate when container is resized (e.g. side panel opens/closes)
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const observer = new ResizeObserver(recalculate);
+    observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, [recalculate]);
 
   // On mobile, use large responsive text
   if (isMobile) {
@@ -136,7 +162,8 @@ export function AutoScaleQuestion({
           hyphens: 'none',
           whiteSpace: 'normal',
           maxWidth: '95%',
-          color: '#4E5871'
+          color: '#4E5871',
+          visibility: isMeasured ? 'visible' : 'hidden',
         }}
       >
         <MathText>{children || 'Otázka...'}</MathText>

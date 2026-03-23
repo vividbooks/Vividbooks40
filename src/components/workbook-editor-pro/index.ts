@@ -5,6 +5,7 @@
  */
 
 export { WorkbookProLayout } from './WorkbookProLayout';
+export { BookshelfPage } from './BookshelfPage';
 export { InfiniteCanvas } from './InfiniteCanvas';
 export { WorkbookSpread } from './WorkbookSpread';
 export { WorksheetThumbnail } from './WorksheetThumbnail';

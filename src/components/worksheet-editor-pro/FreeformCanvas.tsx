@@ -10,9 +10,12 @@
 
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { WorksheetBlock, BlockType, GlobalFontSize, PageHeaderConfig, PageFooterConfig } from '../../types/worksheet';
+import { isCompareCountsParagraphBlock } from '../../utils/mini-apps/compare-counts';
+import { isPisankaParagraphBlock } from '../../utils/mini-apps/pisanka';
 import { Plus, Sparkles, Type, ImageIcon, Info, CheckSquare, PenLine, MessageSquare, PlusCircle, QrCode, GripVertical, Palette, Figma } from 'lucide-react';
 import { EditableBlock } from '../worksheet-editor/EditableBlock';
 import { PageHeader, PageFooter, getHeaderHeight, getFooterHeight } from './PageHeaderFooter';
+import { PISANKA_PAGE_OUTER_INSET_PX } from '../../utils/page-layout';
 
 // Page dimensions at 96dpi
 const MM_TO_PX = 96 / 25.4;
@@ -278,7 +281,11 @@ export function FreeformCanvas({
     const numbers: Record<string, number> = {};
     let counter = 1;
     blocks.forEach((block) => {
-      if (['multiple-choice', 'fill-blank', 'free-answer', 'matching', 'ordering', 'free-canvas'].includes(block.type) && !block.noActivityNumber) {
+      if (
+        !block.noActivityNumber &&
+        (['multiple-choice', 'fill-blank', 'free-answer', 'matching', 'ordering', 'free-canvas'].includes(block.type) ||
+          isCompareCountsParagraphBlock(block) || isPisankaParagraphBlock(block))
+      ) {
         numbers[block.id] = counter++;
       }
     });
@@ -451,6 +458,7 @@ export function FreeformCanvas({
       {Array.from({ length: pageCount }).map((_, pageIndex) => (
         <React.Fragment key={pageIndex}>
         <div
+          data-page-index={pageIndex}
           className="relative shadow-xl rounded-sm print:shadow-none print:rounded-none worksheet-a4-page a4-page"
           style={{
             width: `${pageWidth}px`,
@@ -490,6 +498,10 @@ export function FreeformCanvas({
               right: 0,
               bottom: FOOTER_HEIGHT,
               overflow: 'visible', // Allow bobánky and action buttons to show outside
+              ...({
+                '--vb-pisanka-page-outer-inset': `${PISANKA_PAGE_OUTER_INSET_PX}px`,
+                '--vb-pisanka-page-inner-min-height': `${Math.max(0, contentHeight - 2 * PISANKA_PAGE_OUTER_INSET_PX)}px`,
+              } as React.CSSProperties),
             }}
           >
             {(blocksByPage[pageIndex] || []).map((block) => {

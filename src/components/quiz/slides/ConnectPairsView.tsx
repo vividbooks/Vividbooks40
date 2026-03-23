@@ -21,6 +21,7 @@ interface ConnectPairsViewProps {
   readOnly?: boolean;
   onSubmit?: (result: { correct: number; total: number; connections: Record<string, string> }) => void;
   showResults?: boolean;
+  deferEvaluation?: boolean;
 }
 
 // Shuffle array helper
@@ -50,6 +51,7 @@ function PairItemDisplay({
   disabled,
   itemRef,
   minHeight,
+  showResults = false,
 }: {
   item: ConnectPairItem;
   isSelected: boolean;
@@ -58,13 +60,15 @@ function PairItemDisplay({
   disabled: boolean;
   itemRef: (el: HTMLButtonElement | null) => void;
   minHeight?: number;
+  showResults?: boolean;
 }) {
   const isConnected = !!connection;
   const isLocked = connection?.isLocked || false;
+  const shouldRevealResult = showResults && isConnected;
   const isCorrect = connection?.isCorrect;
 
   const getBorderColor = () => {
-    if (isLocked) {
+    if (isLocked || shouldRevealResult) {
       return isCorrect ? '#22c55e' : '#ef4444';
     }
     if (isSelected) return '#7C3AED';
@@ -73,7 +77,7 @@ function PairItemDisplay({
   };
 
   const getBackgroundColor = () => {
-    if (isLocked) {
+    if (isLocked || shouldRevealResult) {
       return isCorrect ? '#dcfce7' : '#fee2e2';
     }
     if (isSelected) return '#f3e8ff';
@@ -112,7 +116,7 @@ function PairItemDisplay({
       )}
 
       {/* Result indicator - positioned at the top-left corner */}
-      {isLocked && (
+      {(isLocked || shouldRevealResult) && (
         <div 
           style={{
             position: 'absolute',
@@ -145,11 +149,14 @@ export function ConnectPairsView({
   isTeacher = false,
   readOnly = false,
   onSubmit,
+  showResults = false,
+  deferEvaluation = false,
 }: ConnectPairsViewProps) {
   // Connections with immediate evaluation
   const [connections, setConnections] = useState<Connection[]>([]);
   const [selectedLeft, setSelectedLeft] = useState<string | null>(null);
   const [selectedRight, setSelectedRight] = useState<string | null>(null);
+  const [isSubmitted, setIsSubmitted] = useState(false);
   
   // Refs for drawing lines
   const containerRef = useRef<HTMLDivElement>(null);
@@ -210,7 +217,7 @@ export function ConnectPairsView({
             x2: rightRect.left - containerRect.left,
             y2: rightRect.top + rightRect.height / 2 - containerRect.top,
             isCorrect: conn.isCorrect,
-            isLocked: conn.isLocked,
+            isLocked: conn.isLocked || showResults,
           });
         }
       });
@@ -221,7 +228,7 @@ export function ConnectPairsView({
     updateLines();
     window.addEventListener('resize', updateLines);
     return () => window.removeEventListener('resize', updateLines);
-  }, [connections]);
+  }, [connections, showResults]);
 
   // Get connection for an item
   const getConnectionForLeft = (leftId: string) => 
@@ -245,17 +252,17 @@ export function ConnectPairsView({
       leftId,
       rightId,
       isCorrect,
-      isLocked: true, // Immediately lock and evaluate
+      isLocked: !deferEvaluation,
     };
 
     setConnections(prev => [...prev, newConnection]);
     setSelectedLeft(null);
     setSelectedRight(null);
-  }, [correctMap]);
+  }, [correctMap, deferEvaluation]);
 
   // Handle item click
   const handleLeftClick = useCallback((itemId: string) => {
-    if (readOnly) return;
+    if (readOnly || isSubmitted) return;
 
     // If already connected, can't disconnect locked connections
     const existingConn = getConnectionForLeft(itemId);
@@ -269,10 +276,10 @@ export function ConnectPairsView({
       setSelectedLeft(itemId === selectedLeft ? null : itemId);
       setSelectedRight(null);
     }
-  }, [selectedRight, selectedLeft, readOnly, makeConnection, connections]);
+  }, [selectedRight, selectedLeft, readOnly, makeConnection, connections, isSubmitted]);
 
   const handleRightClick = useCallback((itemId: string) => {
-    if (readOnly) return;
+    if (readOnly || isSubmitted) return;
 
     // If already connected, can't disconnect locked connections
     const existingConn = getConnectionForRight(itemId);
@@ -286,7 +293,7 @@ export function ConnectPairsView({
       setSelectedRight(itemId === selectedRight ? null : itemId);
       setSelectedLeft(null);
     }
-  }, [selectedLeft, selectedRight, readOnly, makeConnection, connections]);
+  }, [selectedLeft, selectedRight, readOnly, makeConnection, connections, isSubmitted]);
 
   // Calculate score
   const score = useMemo(() => {
@@ -299,20 +306,22 @@ export function ConnectPairsView({
 
   // Submit when all connected
   useEffect(() => {
-    if (allConnected && onSubmit) {
+    if (allConnected && onSubmit && !isSubmitted) {
+      setIsSubmitted(true);
       const connectionsMap: Record<string, string> = {};
       connections.forEach(c => {
         connectionsMap[c.leftId] = c.rightId;
       });
       onSubmit({ correct: score.correct, total: score.total, connections: connectionsMap });
     }
-  }, [allConnected, connections, score, onSubmit]);
+  }, [allConnected, connections, score, onSubmit, isSubmitted]);
 
   // Reset
   const handleReset = () => {
     setConnections([]);
     setSelectedLeft(null);
     setSelectedRight(null);
+    setIsSubmitted(false);
   };
 
   // Generate curved path
@@ -339,7 +348,7 @@ export function ConnectPairsView({
             </span>
           </div>
           
-          {connections.length > 0 && (
+          {connections.length > 0 && (showResults || !deferEvaluation) && (
             <div className={`flex items-center gap-2 px-4 py-2 rounded-full shadow-sm ${
               score.correct === connections.length ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
             }`}>
@@ -398,9 +407,10 @@ export function ConnectPairsView({
                         isSelected={selectedLeft === item.id}
                         connection={conn}
                         onClick={() => handleLeftClick(item.id)}
-                        disabled={readOnly || isLeftConnected(item.id)}
+                        disabled={readOnly || isSubmitted || isLeftConnected(item.id)}
                         itemRef={(el) => { leftRefs.current[item.id] = el; }}
                         minHeight={baseHeight}
+                        showResults={showResults}
                       />
                     </div>
                   );
@@ -418,9 +428,10 @@ export function ConnectPairsView({
                         isSelected={selectedRight === item.id}
                         connection={conn}
                         onClick={() => handleRightClick(item.id)}
-                        disabled={readOnly || isRightConnected(item.id)}
+                        disabled={readOnly || isSubmitted || isRightConnected(item.id)}
                         itemRef={(el) => { rightRefs.current[item.id] = el; }}
                         minHeight={baseHeight}
+                        showResults={showResults}
                       />
                     </div>
                   );
@@ -434,7 +445,7 @@ export function ConnectPairsView({
       {/* Footer - Actions and results */}
       <div className="flex-shrink-0 px-6 pb-6">
         {/* Actions */}
-        {!readOnly && !isTeacher && (
+        {!readOnly && !isTeacher && !isSubmitted && (
           <div className="flex justify-center gap-4 mb-4">
             <button
               onClick={handleReset}
@@ -448,7 +459,7 @@ export function ConnectPairsView({
         )}
 
         {/* Final result */}
-        {allConnected && (
+        {allConnected && showResults && (
           <div className="text-center">
             <div className={`inline-flex items-center gap-2 px-6 py-3 rounded-xl ${
               score.correct === score.total ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'

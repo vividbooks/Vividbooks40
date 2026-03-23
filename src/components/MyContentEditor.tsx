@@ -17,6 +17,7 @@ import { Switch } from './ui/switch';
 import { RichTextEditor } from './RichTextEditor';
 import { SectionMediaItem } from '../types/section-media';
 import { SectionMediaManager } from './admin/SectionMediaManager';
+import { supabase } from '../utils/supabase/client';
 import { LottieSequencePlayer } from './media/LottieSequencePlayer';
 import { DOCUMENT_TYPES } from '../types/document-types';
 import { DocumentAIPanel } from './DocumentAIPanel';
@@ -96,7 +97,8 @@ export function MyContentEditor({ theme, toggleTheme }: MyContentEditorProps) {
   const [slug, setSlug] = useState('');
   const [featuredMedia, setFeaturedMedia] = useState('');
   const [sectionImages, setSectionImages] = useState<SectionMediaItem[]>([]);
-  
+  const [datasetImages, setDatasetImages] = useState<Array<{ url: string; title?: string; alt?: string }>>([]);
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [autoSaveStatus, setAutoSaveStatus] = useState<'saved' | 'saving' | 'unsaved'>('saved');
@@ -346,6 +348,28 @@ export function MyContentEditor({ theme, toggleTheme }: MyContentEditorProps) {
     },
   });
   
+  // Fetch dataset images when doc ID matches {datasetId}-text pattern
+  useEffect(() => {
+    const match = (id || '').match(/^(.+)-text$/);
+    if (!match) { setDatasetImages([]); return; }
+    const datasetId = match[1];
+    supabase
+      .from('topic_data_sets')
+      .select('media')
+      .eq('id', datasetId)
+      .single()
+      .then(({ data, error }) => {
+        if (error || !data?.media) return;
+        const media = data.media as any;
+        const imgs: Array<{ url: string; title?: string; alt?: string }> = [
+          ...(media.images ?? []).map((i: any) => ({ url: i.url, title: i.title || i.name })),
+          ...(media.generatedIllustrations ?? []).map((i: any) => ({ url: i.url, title: i.name })),
+          ...(media.generatedPhotos ?? []).map((i: any) => ({ url: i.url, title: i.name })),
+        ].filter((img: any) => !!img?.url);
+        setDatasetImages(imgs);
+      });
+  }, [id]);
+
   // Extract H2 headings from content for SectionMediaManager
   const availableHeadings = useMemo(() => {
     if (!content) return [];
@@ -1183,15 +1207,22 @@ export function MyContentEditor({ theme, toggleTheme }: MyContentEditorProps) {
                           
                           {/* Media preview */}
                           <div className="relative">
-                            {item.type === 'image' ? (
-                              <img 
-                                src={item.imageUrl} 
-                                alt={item.heading}
-                                className="w-full aspect-video object-cover"
-                                onError={(e) => {
-                                  (e.target as HTMLImageElement).src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect fill="%23f1f5f9" width="100" height="100"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="%2394a3b8" font-size="12">Obrázek</text></svg>';
-                                }}
-                              />
+                            {(item.type === 'image' || (!item.type && item.imageUrl)) ? (
+                              <div className="relative">
+                                <img 
+                                  src={item.imageSteps?.[0]?.url || item.imageUrl} 
+                                  alt={item.heading}
+                                  className="w-full aspect-video object-cover"
+                                  onError={(e) => {
+                                    (e.target as HTMLImageElement).src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect fill="%23f1f5f9" width="100" height="100"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="%2394a3b8" font-size="12">Obrázek</text></svg>';
+                                  }}
+                                />
+                                {(item.imageSteps?.filter(s => s.url).length ?? 0) > 1 && (
+                                  <span className="absolute bottom-2 right-2 bg-black/60 text-white text-xs px-1.5 py-0.5 rounded font-medium">
+                                    {item.imageSteps!.filter(s => s.url).length} obrázků
+                                  </span>
+                                )}
+                              </div>
                             ) : item.lottieConfig?.steps && item.lottieConfig.steps.length > 0 ? (
                               <div className="aspect-video bg-slate-100" onClick={(e) => e.stopPropagation()}>
                                 <LottieSequencePlayer
@@ -1229,6 +1260,7 @@ export function MyContentEditor({ theme, toggleTheme }: MyContentEditorProps) {
                     onUpdate={setSectionImages}
                     dialogOnly={true}
                     dialogRef={sectionMediaDialogRef}
+                    datasetImages={datasetImages.length > 0 ? datasetImages : undefined}
                   />
                 </div>
               </div>

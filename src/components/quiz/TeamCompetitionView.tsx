@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { ref, update } from 'firebase/database';
-import { database } from '../../utils/firebase-config';
 import { QRCodeSVG } from 'qrcode.react';
 import Lottie from 'lottie-react';
 import { Copy, CheckCircle, Users, Play, SkipForward, X, ArrowRight, ArrowLeft, Zap, ThumbsUp, ThumbsDown } from 'lucide-react';
 import { Quiz, LiveQuizSession, CompetitionPhase, QuizSlide } from '../../types/quiz';
+import { SessionBackend, updateLiveSessionRecord, updateLiveStudentRecord } from '../../utils/live-session-repository';
+import { evaluateABCAnswer } from '../../utils/abc-evaluation';
 
 // Pulsing gradient style for special rounds
 const SPECIAL_ROUND_STYLE = document.createElement('style');
@@ -87,7 +87,6 @@ const ASSETS = {
   resultsMusic: `${SB}/mp3/Vysledky_Vyhodnoceni_01.mp3`,
 };
 
-const QUIZ_SESSIONS_PATH = 'quiz_sessions';
 const DEFAULT_TIMER = 45;
 const TIP_TIMER = 10;
 
@@ -154,13 +153,14 @@ function shouldTriggerTip(questionsPlayed: number): boolean {
 interface TeamCompetitionViewProps {
   session: LiveQuizSession;
   sessionId: string;
+  sessionBackend: SessionBackend;
   quiz: Quiz;
   sessionCode: string;
   onEnd: () => void;
   renderSlide: (slide: QuizSlide) => React.ReactNode;
 }
 
-export default function TeamCompetitionView({ session, sessionId, quiz, sessionCode, onEnd, renderSlide }: TeamCompetitionViewProps) {
+export default function TeamCompetitionView({ session, sessionId, sessionBackend, quiz, sessionCode, onEnd, renderSlide }: TeamCompetitionViewProps) {
   const phase = (session.competitionPhase || 'lobby') as CompetitionPhase;
   const tData = session.teamCompetitionData;
   const students = session.students || {};
@@ -190,10 +190,9 @@ export default function TeamCompetitionView({ session, sessionId, quiz, sessionC
 
   const joinLink = `${window.location.origin}${import.meta.env.BASE_URL || '/'}go/${sessionCode}`;
 
-  // Firebase helpers
   const updateSession = useCallback((data: Record<string, any>) => {
-    update(ref(database, `${QUIZ_SESSIONS_PATH}/${sessionId}`), data);
-  }, [sessionId]);
+    return updateLiveSessionRecord(sessionBackend, sessionId, data as Partial<LiveQuizSession>);
+  }, [sessionBackend, sessionId]);
 
   // Assign student to team on join (round-robin)
   useEffect(() => {
@@ -399,7 +398,7 @@ export default function TeamCompetitionView({ session, sessionId, quiz, sessionC
           if (response) {
             const isCorrect = checkCorrect(currentSlide, response);
             const responses = student.responses.map((r: any) => r.slideId === slideId ? { ...r, isCorrect, points: isCorrect ? 1 : 0 } : r);
-            update(ref(database, `${QUIZ_SESSIONS_PATH}/${sessionId}/students/${studentId}`), { responses });
+            updateLiveStudentRecord(sessionBackend, sessionId, studentId, { responses });
             if (isCorrect) teamPoints++;
           }
         });
@@ -414,7 +413,7 @@ export default function TeamCompetitionView({ session, sessionId, quiz, sessionC
         if (response) {
           const isCorrect = checkCorrect(currentSlide, response);
           const responses = student.responses.map((r: any) => r.slideId === slideId ? { ...r, isCorrect, points: isCorrect ? multiplier : 0 } : r);
-          update(ref(database, `${QUIZ_SESSIONS_PATH}/${sessionId}/students/${studentId}`), { responses });
+          updateLiveStudentRecord(sessionBackend, sessionId, studentId, { responses });
           if (isCorrect) {
             updatedTeams[teamId] = { ...updatedTeams[teamId], score: (updatedTeams[teamId].score || 0) + multiplier };
           }
@@ -452,8 +451,7 @@ export default function TeamCompetitionView({ session, sessionId, quiz, sessionC
   const checkCorrect = (slide: QuizSlide, response: any): boolean => {
     const act = slide as any;
     if (act.activityType === 'abc') {
-      const correctOpt = act.options?.find((o: any) => o.isCorrect);
-      return response.answer === correctOpt?.id;
+      return evaluateABCAnswer(act, response.answer);
     } else if (act.activityType === 'open') {
       return (act.correctAnswers || []).some((a: string) => a.trim().toLowerCase() === String(response.answer).trim().toLowerCase());
     } else if (act.activityType === 'example') {

@@ -865,7 +865,10 @@ export function NavigationMenu({
        if (hasBoardUrl) {
          boardId = item.externalUrl!.replace('board://', '');
        } else if (item.slug) {
-         boardId = `board_${item.slug}`;
+         // Teacher-generated boards use the quiz ID directly as slug (e.g. "quiz-1234567890")
+         // Legacy CMS boards use "board_<slug>" convention
+         const looksLikeDirectId = /^(quiz|board)-\d+/.test(item.slug) || item.id === item.slug;
+         boardId = looksLikeDirectId ? item.slug : `board_${item.slug}`;
        }
        
        // Extract topic from parent path (first folder name after subject)

@@ -23,10 +23,14 @@ import {
   VideoQuizContent,
   SubQuestionLabelType,
   SubQuestionLabelStyle,
+  CompareCountsMiniAppContent,
 } from '../../types/worksheet';
 import { PageHeader, PageFooter, DEFAULT_HEADER, DEFAULT_FOOTER } from '../worksheet-editor-pro/PageHeaderFooter';
 import { preventOrphans } from '../math/MathText';
 import { preventOrphansInHtml } from './LatexRenderer';
+import { getOptionTextHtml, getQuestionHtml, getSubQuestionTextHtml, legacyQuestionStringToHtml } from '../../utils/worksheet-text';
+import { isCompareCountsParagraphBlock } from '../../utils/mini-apps/compare-counts';
+import { buildPisankaHtml, mergePisankaMiniApp } from '../../utils/mini-apps/pisanka';
 
 // Print-safe SVG pattern (same as EditableBlock)
 function PrintSafePattern({ variant, lineSpacing = 40 }: { variant: 'dotted' | 'lined'; lineSpacing?: number }) {
@@ -126,11 +130,13 @@ export const PrintableWorksheet = forwardRef<HTMLDivElement, PrintableWorksheetP
     const columns = worksheet.metadata?.columns || 1;
 
     // Calculate activity numbers for activity blocks
-    const activityTypes = ['multiple-choice', 'fill-blank', 'free-answer'];
     const activityNumbers: Record<string, number> = {};
     let activityCounter = 1;
     sortedBlocks.forEach((block) => {
-      if (activityTypes.includes(block.type)) {
+      if (
+        ['multiple-choice', 'fill-blank', 'free-answer'].includes(block.type) ||
+        isCompareCountsParagraphBlock(block)
+      ) {
         activityNumbers[block.id] = activityCounter;
         activityCounter++;
       }
@@ -279,9 +285,11 @@ function PrintableBlock({ block, activityNumber }: BlockProps) {
       case 'heading':
         return <PrintableHeading block={block} style={{}} />;
       case 'paragraph':
-        return <PrintableParagraph block={block} style={{}} />;
+        return <PrintableParagraph block={block} style={{}} activityNumber={activityNumber} />;
       case 'infobox':
         return <PrintableInfobox block={block} style={{}} />;
+      case 'layout-section':
+        return null;
       case 'multiple-choice':
         return <PrintableMultipleChoice block={block} style={{}} activityNumber={activityNumber} />;
       case 'fill-blank':
@@ -357,9 +365,11 @@ function PrintableBlock({ block, activityNumber }: BlockProps) {
     case 'heading':
       return <PrintableHeading block={block} style={baseStyle} />;
     case 'paragraph':
-      return <PrintableParagraph block={block} style={baseStyle} />;
+      return <PrintableParagraph block={block} style={baseStyle} activityNumber={activityNumber} />;
     case 'infobox':
       return <PrintableInfobox block={block} style={baseStyle} />;
+    case 'layout-section':
+      return null;
     case 'multiple-choice':
       return <PrintableMultipleChoice block={block} style={baseStyle} activityNumber={activityNumber} />;
     case 'fill-blank':
@@ -474,14 +484,81 @@ function PrintableHeading({ block, style }: BlockWithStyleProps) {
 /**
  * Paragraph block
  */
-function PrintableParagraph({ block, style }: BlockWithStyleProps) {
+function PrintableParagraph({ block, style, activityNumber }: BlockWithStyleProps) {
   const content = block.content as ParagraphContent;
   const columns = content.columns || 1;
+  const mini = content.miniApp as CompareCountsMiniAppContent | undefined;
+
+  if ((content.miniApp as { type?: string } | undefined)?.type === 'pisanka') {
+    const pisankaMini = mergePisankaMiniApp(undefined, (content.miniApp as any) ?? {});
+    const pisankaHtml = buildPisankaHtml(pisankaMini);
+    return (
+      <div style={{ ...style, margin: 0 }} className="no-break">
+        <div className="worksheet-rich-html-content vb-pisanka-print" {...htmlProps(pisankaHtml)} />
+      </div>
+    );
+  }
+
+  if (mini?.type === 'compare-counts') {
+    const circleSize = mini.circleSize ?? 21;
+    const circleColor = mini.circleColor ?? '#1e293b';
+    const qStyles: React.CSSProperties = {
+      fontFamily: mini.qFontFamily || "'Fenomen Sans', sans-serif",
+      fontSize: mini.qFontSize ? `${mini.qFontSize}pt` : '12pt',
+      fontWeight:
+        mini.qFontWeight === 'bold' || mini.qIsBold ? 'bold' : (mini.qFontWeight || '500'),
+      color: mini.qTextColor || '#1e293b',
+      lineHeight: mini.qLineHeight || 1.2,
+      letterSpacing:
+        mini.qLetterSpacing != null ? `${mini.qLetterSpacing / 100}em` : undefined,
+      textAlign: mini.qAlign || 'left',
+      fontStyle: mini.qIsItalic ? 'italic' : 'normal',
+      textDecoration: mini.qIsUnderline ? 'underline' : 'none',
+      flex: 1,
+      minHeight: '1.2em',
+    };
+    const qHtml = getQuestionHtml({ question: mini.question, questionHtml: mini.questionHtml });
+    return (
+      <div style={{ ...style, margin: 0 }} className="no-break">
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', marginBottom: '8px' }}>
+          {activityNumber != null && activityNumber > 0 && (
+            <span
+              style={{
+                width: `${circleSize}px`,
+                height: `${circleSize}px`,
+                minWidth: `${circleSize}px`,
+                minHeight: `${circleSize}px`,
+                borderRadius: '50%',
+                backgroundColor: circleColor,
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: `${Math.max(8, Math.round(circleSize * 0.57))}pt`,
+                fontWeight: 700,
+                color: 'white',
+                flexShrink: 0,
+              }}
+            >
+              {activityNumber}
+            </span>
+          )}
+          <div style={qStyles} className="worksheet-rich-html-content">
+            {qHtml ? (
+              <span {...htmlProps(qHtml)} />
+            ) : (
+              <span style={{ color: '#94a3b8' }}>Zadejte zadání úlohy…</span>
+            )}
+          </div>
+        </div>
+        <div {...htmlProps(content.html)} />
+      </div>
+    );
+  }
 
   return (
     <div
       style={{ ...style, margin: 0, columnCount: columns > 1 ? columns : undefined }}
-      {...htmlProps(content.html || content.text)}
+      {...htmlProps(content.html || (content as { text?: string }).text)}
     />
   );
 }
@@ -551,7 +628,7 @@ function PrintableMultipleChoice({ block, style, activityNumber }: BlockWithStyl
           </span>
         )}
         <span style={{ fontWeight: '500' }}
-          {...htmlProps(content.question)}
+          {...htmlProps(getQuestionHtml(content))}
         />
       </div>
       <div style={{ paddingLeft: activityNumber ? '34px' : '8px' }}>
@@ -580,7 +657,7 @@ function PrintableMultipleChoice({ block, style, activityNumber }: BlockWithStyl
             }}>
               {letters[i]}
             </span>
-            <span {...htmlProps(option.text)} />
+            <span {...htmlProps(getOptionTextHtml(option))} />
           </div>
         ))}
       </div>
@@ -718,7 +795,7 @@ function PrintableFreeAnswer({ block, style, activityNumber }: BlockWithStylePro
           </span>
         )}
         <span style={{ ...questionFontStyle }}
-          {...htmlProps(content.question)}
+          {...htmlProps(getQuestionHtml(content))}
         />
       </div>
       {content.hint && (
@@ -730,7 +807,7 @@ function PrintableFreeAnswer({ block, style, activityNumber }: BlockWithStylePro
           paddingLeft: activityNumber ? '34px' : 0,
           fontFamily: questionFontStyle.fontFamily,
         }}>
-          Nápověda: {content.hint}
+          <span {...htmlProps(legacyQuestionStringToHtml(content.hint))} />
         </div>
       )}
 
@@ -814,7 +891,7 @@ function PrintableFreeAnswer({ block, style, activityNumber }: BlockWithStylePro
                       </span>
                     )}
                     <span style={{ ...subFontStyle, whiteSpace: answerStyle === 'inline-line' ? 'nowrap' : undefined, flexShrink: answerStyle === 'inline-line' ? 0 : undefined }}
-                      {...htmlProps(sq.text)}
+                      {...htmlProps(getSubQuestionTextHtml(sq))}
                     />
                     {/* Inline line next to text */}
                     {answerStyle === 'inline-line' && (
@@ -960,7 +1037,7 @@ function PrintableImage({ block, style }: BlockWithStyleProps) {
  */
 function PrintableTable({ block, style }: BlockWithStyleProps) {
   const content = block.content as TableContent;
-  const { html, hasBorder, hasRoundedCorners, colorStyle } = content;
+  const { html, hasBorder, hasRoundedCorners, colorStyle, fontSize, density } = content;
 
   if (!html) return null;
 
@@ -980,17 +1057,37 @@ function PrintableTable({ block, style }: BlockWithStyleProps) {
     cyan: { header: '#cffafe', border: '#06b6d4' },
   };
 
-  const colorVars: Record<string, string> = {};
+  const DENSITY_VARS: Record<string, { paddingV: string; paddingH: string; minWidth: string }> = {
+    compact:  { paddingV: '3px',  paddingH: '6px',  minWidth: '0px'  },
+    normal:   { paddingV: '10px', paddingH: '14px', minWidth: '60px' },
+    spacious: { paddingV: '18px', paddingH: '20px', minWidth: '80px' },
+  };
+  const FONT_SIZE_MAP: Record<string, string> = {
+    xs: '10px', sm: '12px', base: '13px', lg: '15px',
+  };
+
+  const cssVars: Record<string, string> = {};
   if (colorStyle && colorStyle !== 'default' && colorMap[colorStyle]) {
-    colorVars['--table-header-bg'] = colorMap[colorStyle].header;
-    colorVars['--table-border-color'] = colorMap[colorStyle].border;
+    cssVars['--table-header-bg'] = colorMap[colorStyle].header;
+    cssVars['--table-border-color'] = colorMap[colorStyle].border;
   }
+  const dv = DENSITY_VARS[density || 'normal'] || DENSITY_VARS.normal;
+  cssVars['--table-cell-padding-v'] = dv.paddingV;
+  cssVars['--table-cell-padding-h'] = dv.paddingH;
+  cssVars['--table-cell-min-width'] = dv.minWidth;
+  cssVars['--table-font-size'] = FONT_SIZE_MAP[fontSize || 'base'] || FONT_SIZE_MAP.base;
+
+  // For compact density, inject a class onto the rendered table element via a wrapper trick
+  const compactClass = density === 'compact' ? ' table-density-compact' : '';
+  const htmlWithDensity = density === 'compact'
+    ? html.replace(/<table(\s|>)/, '<table class="table-density-compact"$1')
+    : html;
 
   return (
     <div
-      style={{ ...style, ...colorVars } as React.CSSProperties}
-      className={tableClasses}
-      dangerouslySetInnerHTML={{ __html: html }}
+      style={{ ...style, ...cssVars } as React.CSSProperties}
+      className={tableClasses + compactClass}
+      dangerouslySetInnerHTML={{ __html: htmlWithDensity }}
     />
   );
 }

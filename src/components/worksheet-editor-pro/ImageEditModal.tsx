@@ -17,14 +17,31 @@ const ILLUSTRATION_STYLE = `Create a vibrant educational illustration in Ligne C
 LINE ART: Clean, consistent ink outlines. Every object clearly defined with bold contours.
 COLORS: Vivid, saturated colors — rich blues, warm oranges, bright greens, deep reds. High contrast. NOT pastel, NOT muted. Think vivid comic-book colors, fully saturated fills.
 BACKGROUND: Pure white or very light neutral. No gradients.
-COMPOSITION: No text in image. Educational, professional look, suitable for school materials.`;
+TEXT: NO text, labels, numbers or annotations in the image whatsoever.
+COMPOSITION: Educational, professional look, suitable for school materials.`;
+
+const ILLUSTRATION_TEXT_STYLE = `Create a vibrant educational illustration in Ligne Claire style (like Tintin comics):
+LINE ART: Clean, consistent ink outlines. Every object clearly defined with bold contours.
+COLORS: Vivid, saturated colors — rich blues, warm oranges, bright greens, deep reds. High contrast. NOT pastel, NOT muted. Think vivid comic-book colors, fully saturated fills.
+BACKGROUND: Pure white or very light neutral. No gradients.
+TEXT: Include all text labels, numbers, annotations and captions from the subject or description. Render every text element in a simple geometric grotesque sans-serif typeface (like Futura or Avenir) — clean, minimal, clearly legible. NO decorative or serif fonts.
+COMPOSITION: Educational, professional look, suitable for school materials.`;
 
 const SCHEMA_STYLE = `Create a clean BLACK AND WHITE educational diagram/schema:
 LINE ART: Precise technical drawing style. Clear outlines, varying line weights for hierarchy.
 COLORS: ONLY black, white and shades of gray. NO color whatsoever.
-STYLE: Scientific textbook diagram style. Can include arrows, labels, cross-sections, anatomical drawings.
+STYLE: Scientific textbook diagram style. Can include arrows, cross-sections, anatomical drawings.
 BACKGROUND: Pure white background.
-COMPOSITION: No text labels in image (labels will be added separately). Clean, precise, educational.`;
+TEXT: NO text labels or annotations in the image. Clean diagram only.
+COMPOSITION: Clean, precise, educational.`;
+
+const SCHEMA_TEXT_STYLE = `Create a clean BLACK AND WHITE educational diagram/schema:
+LINE ART: Precise technical drawing style. Clear outlines, varying line weights for hierarchy.
+COLORS: ONLY black, white and shades of gray. NO color whatsoever.
+STYLE: Scientific textbook diagram style. Can include arrows, cross-sections, anatomical drawings, numbered steps.
+BACKGROUND: Pure white background.
+TEXT: Include all text labels, numbers, annotations and captions from the subject or description. Render every text element in a simple geometric grotesque sans-serif typeface (like Futura or Helvetica Neue) — minimal, precise, clearly legible. NO decorative or serif fonts.
+COMPOSITION: Clean, precise, educational.`;
 
 const CUTOUT_STYLE = `Create a clean product-style CUTOUT image on a pure white background:
 BACKGROUND: Pure white (#FFFFFF). No shadows, no gradients, no textures, absolutely nothing except the subject.
@@ -303,7 +320,7 @@ function CropTab({ imageUrl, onApply, onClose }: { imageUrl: string; onApply: (u
 
 function RegenTab({ imageUrl, altText, onApply, onClose }: { imageUrl: string; altText?: string; onApply: (u: string) => void; onClose: () => void }) {
   const [description, setDescription] = useState(altText || '');
-  const [style, setStyle] = useState<'photo' | 'illustration' | 'schema' | 'cutout' | 'cutout-new'>('photo');
+  const [style, setStyle] = useState<'photo' | 'illustration' | 'illustration-text' | 'schema' | 'schema-text' | 'cutout' | 'cutout-new'>('photo');
   const [isGenerating, setIsGenerating] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [lastPrompt, setLastPrompt] = useState<string | null>(null);
@@ -314,7 +331,7 @@ function RegenTab({ imageUrl, altText, onApply, onClose }: { imageUrl: string; a
   const handleGenerate = async () => {
     setIsGenerating(true); setError(null); setPreviewUrl(null);
     try {
-      const stylePrompt = style === 'photo' ? PHOTO_STYLE : style === 'schema' ? SCHEMA_STYLE : style === 'cutout' ? CUTOUT_STYLE : style === 'cutout-new' ? CUTOUT_NEW_STYLE : ILLUSTRATION_STYLE;
+      const stylePrompt = style === 'photo' ? PHOTO_STYLE : style === 'schema' ? SCHEMA_STYLE : style === 'schema-text' ? SCHEMA_TEXT_STYLE : style === 'cutout' ? CUTOUT_STYLE : style === 'cutout-new' ? CUTOUT_NEW_STYLE : style === 'illustration-text' ? ILLUSTRATION_TEXT_STYLE : ILLUSTRATION_STYLE;
       const fullPrompt = description.trim()
         ? `${stylePrompt}\n\nSUBJECT: ${description.trim()}\n\nUse the reference image as visual context — keep the same subject/composition but apply the requested style.`
         : `${stylePrompt}\n\nRegenerate the reference image in this style. Keep the same subject and composition exactly, only change the visual style.`;
@@ -327,6 +344,7 @@ function RegenTab({ imageUrl, altText, onApply, onClose }: { imageUrl: string; a
       const result = await generateImageWithImagen(fullPrompt, {
         aspectRatio: '1:1',
         numberOfImages: 1,
+        model: 'flash',
         ...(imageUrl?.startsWith('http') ? { referenceImageUrl: imageUrl } : {}),
       });
       if (!result.success) { setError(result.error || 'Generování selhalo.'); return; }
@@ -402,34 +420,45 @@ function RegenTab({ imageUrl, altText, onApply, onClose }: { imageUrl: string; a
         <label style={{ fontSize: 10, color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: 6 }}>
           Styl
         </label>
+        {/* Row 1: photo + cutouts */}
+        <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
+          {([
+            { id: 'photo', emoji: '📷', label: 'Fotka', desc: 'Realistická fotografie' },
+            { id: 'cutout', emoji: '✂️', label: 'Výřez', desc: 'Motiv na bílém pozadí' },
+            { id: 'cutout-new', emoji: '✨', label: 'Výřez nový', desc: 'Nová generace na bílé' },
+          ] as const).map(({ id, emoji, label, desc }) => (
+            <button key={id} onClick={() => setStyle(id)}
+              style={{ flex: 1, padding: '8px 6px', borderRadius: 8, border: style === id ? '2px solid #5C5CFF' : '2px solid #334155', backgroundColor: style === id ? 'rgba(92,92,255,0.15)' : '#0f172a', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+              <span style={{ fontSize: 15 }}>{emoji}</span>
+              <span style={{ fontSize: 10, color: style === id ? '#a5b4fc' : '#94a3b8', fontWeight: 600 }}>{label}</span>
+              <span style={{ fontSize: 9, color: '#64748b' }}>{desc}</span>
+            </button>
+          ))}
+        </div>
+        {/* Row 2: illustration variants */}
+        <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
+          {([
+            { id: 'illustration', emoji: '🎨', label: 'Ilustrace', desc: 'Bez textu' },
+            { id: 'illustration-text', emoji: '🎨', label: 'Ilustrace + text', desc: 'Se štítky' },
+          ] as const).map(({ id, emoji, label, desc }) => (
+            <button key={id} onClick={() => setStyle(id)}
+              style={{ flex: 1, padding: '8px 6px', borderRadius: 8, border: style === id ? '2px solid #22c55e' : '2px solid #334155', backgroundColor: style === id ? 'rgba(34,197,94,0.12)' : '#0f172a', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+              <span style={{ fontSize: 15 }}>{emoji}</span>
+              <span style={{ fontSize: 10, color: style === id ? '#86efac' : '#94a3b8', fontWeight: 600 }}>{label}</span>
+              <span style={{ fontSize: 9, color: '#64748b' }}>{desc}</span>
+            </button>
+          ))}
+        </div>
+        {/* Row 3: schema variants */}
         <div style={{ display: 'flex', gap: 6 }}>
           {([
-            { id: 'photo', label: '📷 Fotka', desc: 'Realistická fotografie' },
-            { id: 'illustration', label: '🎨 Ilustrace', desc: 'Živé barevné kresby' },
-            { id: 'schema', label: '⬛ Schéma', desc: 'Černobílý diagram' },
-            { id: 'cutout', label: '✂️ Výřez', desc: 'Motiv na bílém pozadí' },
-            { id: 'cutout-new', label: '✨ Výřez nový', desc: 'Nová generace na bílé' },
-          ] as const).map(({ id, label, desc }) => (
-            <button
-              key={id}
-              onClick={() => setStyle(id)}
-              style={{
-                flex: 1,
-                padding: '10px 8px',
-                borderRadius: 8,
-                border: style === id ? '2px solid #5C5CFF' : '2px solid #334155',
-                backgroundColor: style === id ? 'rgba(92,92,255,0.15)' : '#0f172a',
-                cursor: 'pointer',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                gap: 3,
-              }}
-            >
-              <span style={{ fontSize: 16 }}>{label.split(' ')[0]}</span>
-              <span style={{ fontSize: 10, color: style === id ? '#a5b4fc' : '#94a3b8', fontWeight: 600 }}>
-                {label.split(' ')[1]}
-              </span>
+            { id: 'schema', emoji: '⬛', label: 'Schéma', desc: 'Bez textu' },
+            { id: 'schema-text', emoji: '⬛', label: 'Schéma + text', desc: 'Se štítky' },
+          ] as const).map(({ id, emoji, label, desc }) => (
+            <button key={id} onClick={() => setStyle(id)}
+              style={{ flex: 1, padding: '8px 6px', borderRadius: 8, border: style === id ? '2px solid #f59e0b' : '2px solid #334155', backgroundColor: style === id ? 'rgba(245,158,11,0.12)' : '#0f172a', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+              <span style={{ fontSize: 15 }}>{emoji}</span>
+              <span style={{ fontSize: 10, color: style === id ? '#fcd34d' : '#94a3b8', fontWeight: 600 }}>{label}</span>
               <span style={{ fontSize: 9, color: '#64748b' }}>{desc}</span>
             </button>
           ))}

@@ -62,7 +62,11 @@ const SUBJECTS = [
   { id: 'chemie', label: 'Chemie' },
   { id: 'prirodopis', label: 'Přírodopis' },
   { id: 'matematika', label: 'Matematika' },
-  { id: 'dejepis', label: 'Dějepis' }
+  { id: 'dejepis', label: 'Dějepis' },
+  { id: 'zemepis', label: 'Zeměpis' },
+  { id: 'cestina', label: 'Čeština' },
+  { id: 'anglictina', label: 'Angličtina' },
+  { id: 'obcanska', label: 'Občanská výchova' },
 ];
 
 const OTHER_CATEGORIES = [

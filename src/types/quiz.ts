@@ -23,7 +23,8 @@ export type ActivityType =
   | 'image-hotspots'   // Poznávačka - identify points on an image
   | 'connect-pairs'    // Spojovačka - connect matching pairs
   | 'video-quiz'       // Otázky ve videu - questions at specific video timestamps
-  | 'form';            // Formulář - custom form with various field types
+  | 'form'             // Formulář - custom form with various field types
+  | 'flashcard';       // Kartička - flip card for vocabulary study (non-graded)
 
 // =============================================
 // BOARD (NÁSTĚNKA) TYPES
@@ -85,7 +86,7 @@ export interface BaseSlide {
 /**
  * Block content types
  */
-export type SlideBlockType = 'text' | 'image' | 'link' | 'lottie';
+export type SlideBlockType = 'text' | 'image' | 'link' | 'lottie' | 'table' | 'chart' | 'map';
 
 /**
  * Background settings for blocks and slides
@@ -96,6 +97,8 @@ export interface BackgroundSettings {
   imageUrl?: string;
   opacity?: number; // 0-100
   blur?: number; // 0-20
+  strokeColor?: string;
+  strokeWidth?: number;
 }
 
 /**
@@ -110,7 +113,7 @@ export interface SlideBlock {
   textAlign?: 'left' | 'center' | 'right';
   verticalAlign?: 'top' | 'middle' | 'bottom';
   fontSize?: 'xsmall' | 'small' | 'medium' | 'large' | 'xlarge' | 'xxlarge';
-  fontFamily?: 'fenomen' | 'cooper' | 'space' | 'sora' | 'playfair' | 'itim' | 'sacramento' | 'lora' | 'oswald';
+  fontFamily?: 'fenomen' | 'cooper' | 'space' | 'sora' | 'playfair' | 'itim' | 'sacramento' | 'lora' | 'oswald' | 'visby' | 'vividscript';
   fontWeight?: 'normal' | 'bold';
   fontStyle?: 'normal' | 'italic';
   textDecoration?: 'none' | 'underline';
@@ -119,6 +122,8 @@ export interface SlideBlock {
   listType?: 'none' | 'bullet' | 'numbered' | 'checklist'; // List formatting
   // Text overflow settings
   textOverflow?: 'scroll' | 'fit'; // scroll = scrollable block, fit = auto-size text to fit 90% of block height
+  /** When 'html', block.content is rendered as HTML (supports bold, marks, etc.) instead of plain text. */
+  contentFormat?: 'plain' | 'html';
   // Image settings
   imageFit?: 'contain' | 'cover'; // contain = show slider, cover = fill block
   imageScale?: number; // 10-300, percentage of image size
@@ -130,21 +135,63 @@ export interface SlideBlock {
   gallery?: string[]; // Array of image URLs for gallery mode
   galleryIndex?: number; // Current gallery index
   galleryNavType?: 'dots-bottom' | 'dots-side' | 'arrows' | 'solution'; // Navigation type
+  /** 'carousel' = one image at a time with navigation, 'grid' = all images in a grid */
+  galleryDisplayMode?: 'carousel' | 'grid';
+  // Worksheet-origin gallery styling (transferred during worksheet→board conversion)
+  galleryItemShape?: 'rectangle' | 'circle' | 'triangle' | 'star' | 'heart' | 'speech-bubble';
+  galleryBorderRadius?: number;
+  galleryStrokeColor?: string;
+  galleryStrokeWidth?: number;
+  galleryRotate?: boolean;
+  galleryRotateMax?: number;
+  galleryLabelType?: 'none' | 'letters' | 'numbers' | 'roman';
+  galleryLabelColor?: string;
+  galleryGridColumns?: number;
+  galleryContainerHeight?: number;
+  galleryCaptions?: string[]; // Per-image captions (parallel to gallery[])
   // Lottie animation settings
   lottieUrl?: string; // URL to Lottie JSON file
   lottieAutoplay?: boolean; // Auto-play animation
   lottieLoop?: boolean; // Loop animation
   lottieStepIndex?: number; // Current step index for multi-step animations
   // Link settings
-  linkMode?: 'button' | 'embed' | 'video' | 'qr' | 'preview';
+  /** 'html' mode stores raw HTML in content (used for 1:1 worksheet captures and table embeds) */
+  linkMode?: 'button' | 'embed' | 'video' | 'qr' | 'preview' | 'html' | 'svg';
   linkTitle?: string; // For buttons or cards
   linkDescription?: string; // For cards
   linkThumbnail?: string; // For cards
+  // Table settings (for type='table') — stores TipTap HTML + style flags
+  tableData?: {
+    html: string;
+    hasBorder?: boolean;
+    hasRoundedCorners?: boolean;
+    colorStyle?: string;
+  };
   // Text padding (inner margins)
   textPadding?: number; // 0-48 - padding in pixels
   // Typography settings
   lineHeight?: number; // 1.0, 1.2, 1.4, 1.6, 1.8, 2.0 - line height multiplier
   letterSpacing?: number; // -2, -1, 0, 1, 2, 3, 4 - letter spacing in pixels
+  // Per-block container overrides (used when transferring worksheet heading/infobox styles)
+  blockBorderRadius?: number; // Override slide-level border radius for this block
+  blockBorderLeft?: string;   // CSS border-left shorthand (e.g. "6px solid #3b82f6")
+  // Heading visual style (pill / underline / left-border / plain)
+  headingStyle?: 'plain' | 'pill' | 'underline' | 'left-border';
+  headingStyleColor?: string; // Color used for the style (pill bg, underline/border color)
+  // Chart settings (type='chart')
+  chartType?: 'bar' | 'line' | 'area' | 'pie' | 'radar' | 'timeline';
+  chartTitle?: string;
+  chartColumns?: string[]; // Column headers – first is label/X, rest are data series
+  chartRows?: string[][];  // Rows of data matching chartColumns
+  // Map settings (type='map')
+  mapData?: import('./topic-dataset').SavedMap;
+  // TTS (Text-to-Speech) settings
+  ttsEnabled?: boolean;
+  /** Custom text to speak — falls back to block.content when empty */
+  ttsText?: string;
+  ttsLang?: 'cs-CZ' | 'en-US' | 'en-GB' | 'de-DE' | 'sk-SK';
+  /** Automatically speak when the slide becomes active in present mode */
+  ttsAutoplay?: boolean;
 }
 
 /**
@@ -332,6 +379,7 @@ export interface ABCActivitySlide extends BaseSlide {
   question: string; // Can include LaTeX math
   options: ABCOption[];
   allowMultipleCorrect?: boolean; // If true, multiple options can be marked as correct and student can select multiple
+  multipleCorrectRequirement?: 'all' | 'any'; // How multiple correct answers are evaluated
   explanation?: string; // Shown after answering
   points: number;
   timeLimit?: number; // seconds, optional
@@ -721,6 +769,27 @@ export interface FormActivitySlide extends BaseSlide {
 }
 
 /**
+ * Flashcard Activity (Kartička)
+ * Flip card for vocabulary study — non-graded, always 0 points.
+ * Front: English word/phrase. Back: translation + image + example.
+ */
+export interface FlashcardActivitySlide extends BaseSlide {
+  type: 'activity';
+  activityType: 'flashcard';
+  mode?: 'language' | 'general';  // language = AJ/NJ/FJ with phonetics; general = any subject
+  word: string;                   // Front: term / English word / concept
+  translation: string;            // Back: Czech translation / answer / description
+  phonetic?: string;              // IPA: /pɔːʃ.ən/ — language mode only
+  exampleSentence?: string;       // Example sentence — language mode only
+  exampleTranslation?: string;    // Czech translation of the example — language mode only
+  image?: string;                 // Image shown on the FRONT of the card
+  frontImageOnly?: boolean;       // When true: front shows only image (no text), back shows word + translation
+  audioLang?: 'en-US' | 'en-GB'; // Accent for future TTS support — language mode only
+  cardColor?: string;             // Custom front card color (default: #6366f1)
+  points: 0;                      // Always 0 — non-graded
+}
+
+/**
  * Union type for all slide types
  */
 export type QuizSlide = 
@@ -736,6 +805,7 @@ export type QuizSlide =
   | ConnectPairsActivitySlide
   | VideoQuizActivitySlide
   | FormActivitySlide
+  | FlashcardActivitySlide
   | ToolsSlide;
 
 /**
@@ -752,11 +822,46 @@ export type ActivitySlide =
   | ImageHotspotsActivitySlide
   | ConnectPairsActivitySlide
   | VideoQuizActivitySlide
-  | FormActivitySlide;
+  | FormActivitySlide
+  | FlashcardActivitySlide;
 
 /**
  * Quiz/Test definition
  */
+// =============================================
+// WORKSHEET MAP (Osnova) TYPES
+// =============================================
+
+/** A single clickable region on a worksheet page thumbnail */
+export interface WorksheetMapRegion {
+  /** 0-based index into quiz.slides */
+  slideIndex: number;
+  /** Original chapter number from the old format (1-based) — used for the badge label */
+  chapterIndex?: number;
+  /** x position as % of page width (0-100) */
+  xPct: number;
+  /** y position as % of page height (0-100) */
+  yPct: number;
+  /** width as % of page width (0-100) */
+  wPct: number;
+  /** height as % of page height (0-100) */
+  hPct: number;
+  /** Highlight colour e.g. '#FF3366' */
+  color: string;
+}
+
+/** One page of the source worksheet with its thumbnail and clickable regions */
+export interface WorksheetMapPage {
+  thumbnailUrl: string;
+  pageNumber: string;
+  regions: WorksheetMapRegion[];
+}
+
+/** Worksheet map stored on the quiz – drives the Osnova panel */
+export interface WorksheetMap {
+  pages: WorksheetMapPage[];
+}
+
 export interface Quiz {
   id: string;
   title: string;
@@ -768,6 +873,12 @@ export interface Quiz {
   createdAt: string;
   updatedAt: string;
   createdBy?: string;
+  /** Worksheet map for the Osnova panel (optional, set during import) */
+  worksheetMap?: WorksheetMap;
+  /** ID propojeného pracovního listu (pokud byl board vytvořen ze synchronizace) */
+  linkedWorksheetId?: string;
+  /** ID datasetu z curriculum factory (pro AssetPicker tab "Z datasetu") */
+  sourceDatasetId?: string;
 }
 
 /**
@@ -805,7 +916,7 @@ export interface QuizSettings {
 export interface SlideResponse {
   slideId: string;
   activityType: ActivityType;
-  answer: string | string[]; // Selected option ID(s) or text answer
+  answer: string | string[] | Record<string, string>; // Selected option ID(s), text answer, or structured activity answers
   isCorrect?: boolean;
   points?: number;
   answeredAt: string;
@@ -1317,6 +1428,25 @@ export function createConnectPairsSlide(order: number): ConnectPairsActivitySlid
 }
 
 /**
+ * Create Flashcard slide (Kartička)
+ */
+export function createFlashcardSlide(order: number): FlashcardActivitySlide {
+  return {
+    id: `slide-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    type: 'activity',
+    activityType: 'flashcard',
+    order,
+    word: '',
+    translation: '',
+    phonetic: '',
+    exampleSentence: '',
+    exampleTranslation: '',
+    audioLang: 'en-US',
+    points: 0,
+  };
+}
+
+/**
  * Create Video Quiz slide (Otázky ve videu)
  */
 export function createVideoQuizSlide(order: number): VideoQuizActivitySlide {
@@ -1358,7 +1488,7 @@ function createBlockId(): string {
  * Create a new block with defaults
  */
 export function createSlideBlock(type: SlideBlockType = 'text'): SlideBlock {
-  return {
+  const base: SlideBlock = {
     id: createBlockId(),
     type,
     content: '',
@@ -1366,6 +1496,20 @@ export function createSlideBlock(type: SlideBlockType = 'text'): SlideBlock {
     fontSize: 'medium',
     fontWeight: 'normal',
   };
+  if (type === 'map') {
+    base.mapData = {
+      id: base.id,
+      title: 'Nová mapa',
+      region: 'europe',
+      style: 'political',
+      exerciseType: 'info',
+      markers: [],
+      highlights: [],
+      routes: [],
+      createdAt: new Date().toISOString(),
+    };
+  }
+  return base;
 }
 
 /**

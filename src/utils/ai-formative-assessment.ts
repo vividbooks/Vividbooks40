@@ -60,6 +60,9 @@ PRINCIPY FORMATIVNÍHO HODNOCENÍ:
 - Formuluj cíle pro další učení
 - Používej povzbudivý, ale upřímný tón
 - Piš přímo studentovi (oslovuj ho/ji)
+- Pokud učitel přidá vlastní poznámku, MUSÍŠ ji výslovně zapracovat do výsledného textu.
+- Poznámku učitele ber jako důležitý kontext, ne jako nepovinný doplněk.
+- Když poznámka učitele popisuje chování nebo přístup žáka, konkrétně ji zmiň ve zpětné vazbě nebo doporučení.
 
 STRUKTURA HODNOCENÍ:
 1. Co se povedlo (konkrétní pochvala za správné odpovědi nebo přístup)
@@ -86,10 +89,11 @@ VÝSLEDEK: ${studentPerformance.totalCorrect}/${studentPerformance.totalQuestion
 ODPOVĚDI:
 ${questionsSummary}
 
-${teacherNotes ? `POZNÁMKA UČITELE (vezmi v potaz):
+${teacherNotes ? `POZNÁMKA UČITELE (POVINNĚ zapracuj do výsledného hodnocení):
 ${teacherNotes}` : ''}
 
-Napiš hodnocení přímo pro studenta ${studentPerformance.studentName}.`;
+Napiš hodnocení přímo pro studenta ${studentPerformance.studentName}.
+${teacherNotes ? 'Poznámka učitele musí být v textu jasně rozpoznatelná.' : ''}`;
 
   try {
     const response = await chatWithAIProxy(

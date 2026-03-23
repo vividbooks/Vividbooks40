@@ -20,6 +20,7 @@ import {
   GripVertical,
   Palette,
   Figma,
+  LayoutGrid,
 } from 'lucide-react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -28,6 +29,13 @@ import {
   BlockType,
   WorksheetBlock,
 } from '../../types/worksheet';
+import {
+  SIDEBAR_COLORS,
+  sidebarHeaderStyle,
+  sidebarContentStyle,
+  sectionTitleStyle,
+  buttonStyle,
+} from './block-settings/shared';
 
 interface ProStructurePanelProps {
   worksheet: Worksheet;
@@ -41,6 +49,7 @@ const BLOCK_ICONS: Record<BlockType, typeof Type> = {
   'heading': Type,
   'paragraph': AlignLeft,
   'infobox': Info,
+  'layout-section': LayoutGrid,
   'multiple-choice': ListChecks,
   'fill-blank': TextCursorInput,
   'free-answer': MessageSquare,
@@ -60,6 +69,7 @@ const BLOCK_LABELS: Record<BlockType, string> = {
   'heading': 'Nadpis',
   'paragraph': 'Odstavec',
   'infobox': 'Infobox',
+  'layout-section': 'Layout',
   'multiple-choice': 'Výběr',
   'fill-blank': 'Doplnění',
   'free-answer': 'Volná',
@@ -139,34 +149,18 @@ export function ProStructurePanel({
       display: 'flex', 
       flexDirection: 'column', 
       height: '100%', 
-      backgroundColor: '#1e293b',
+      backgroundColor: SIDEBAR_COLORS.panelBg,
     }}>
       {/* Header */}
-      <div style={{ 
-        padding: '12px', 
-        borderBottom: '1px solid #334155',
-        flexShrink: 0,
-      }}>
-        <h2 style={{ 
-          fontSize: '11px', 
-          fontWeight: 600, 
-          color: '#808080', 
-          textTransform: 'uppercase', 
-          letterSpacing: '0.5px',
-        }}>
-          Struktura
-        </h2>
+      <div style={sidebarHeaderStyle}>
+        <h2 style={sectionTitleStyle}>Struktura</h2>
         <p style={{ fontSize: '10px', color: '#606060', marginTop: '4px' }}>
           {worksheet.blocks.length} bloků
         </p>
       </div>
 
       {/* Block list */}
-      <div style={{ 
-        flex: 1, 
-        overflowY: 'auto', 
-        padding: '8px',
-      }}>
+      <div style={{ ...sidebarContentStyle, padding: '10px' }}>
         <SortableContext items={worksheet.blocks.map(b => b.id)} strategy={verticalListSortingStrategy}>
           {worksheet.blocks.map((block) => (
             <SortableBlockItem
@@ -194,29 +188,19 @@ export function ProStructurePanel({
       {/* Add button */}
       <div style={{ 
         padding: '12px', 
-        borderTop: '1px solid #334155',
+        borderTop: `1px solid ${SIDEBAR_COLORS.panelBorder}`,
         flexShrink: 0,
       }}>
         <button
           onClick={() => onAddBlock('paragraph')}
           style={{
+            ...buttonStyle,
             width: '100%',
-            display: 'flex',
-            alignItems: 'center',
             justifyContent: 'center',
             gap: '6px',
             padding: '10px',
-            backgroundColor: '#334155',
-            border: 'none',
-            borderRadius: '6px',
-            cursor: 'pointer',
-            color: '#94a3b8',
             fontSize: '12px',
-            fontWeight: 500,
-            transition: 'all 0.1s ease',
           }}
-          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#475569'}
-          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#334155'}
         >
           <Plus size={16} />
           Přidat blok

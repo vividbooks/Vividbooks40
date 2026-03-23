@@ -1,8 +1,14 @@
 /**
  * AI Chat Edge Function
- * 
+ *
  * Bezpečné proxy pro OpenAI a Gemini API.
  * API klíče jsou uloženy jako Supabase secrets.
+ *
+ * Podporované Gemini modely:
+ *   gemini-3.1-pro   → gemini-3.1-pro-preview   (text, reasoning, učebnice)
+ *   gemini-3-flash   → gemini-3-flash-preview    (chat, překlady, fallback)
+ *   gemini-image-flash → gemini-3.1-flash-image-preview  (generování obrázků)
+ *   gemini-image-pro   → gemini-3-pro-image-preview      (HQ ilustrace)
  */
 
 const corsHeaders = {
@@ -34,6 +40,12 @@ interface ChatRequest {
   max_tokens?: number;
   thinking_level?: 'minimal' | 'low' | 'medium' | 'high';
 }
+
+// Modely které vrací obrázky (inlineData) místo textu
+const IMAGE_GENERATION_MODELS = [
+  'gemini-3.1-flash-image-preview',
+  'gemini-3-pro-image-preview',
+];
 
 Deno.serve(async (req) => {
   // Handle CORS preflight
@@ -101,20 +113,29 @@ Deno.serve(async (req) => {
       // Add system instruction if present
       const systemMessage = messages.find(m => m.role === 'system')
       
-      // Model mapping – ONLY Gemini 3 Pro and Gemini 3 Flash are used
-      // Official model IDs (Gemini API / Vertex AI):
-      //   gemini-3-pro-preview  → Gemini 3 Pro (best reasoning, complex tasks)
-      //   gemini-3-flash-preview → Gemini 3 Flash (fast, cost-efficient)
+      // Model mapping – Gemini 3 a 3.1 modely
+      // gemini-3.1-pro       → gemini-3.1-pro-preview   (hlavní text model)
+      // gemini-3-flash        → gemini-3-flash-preview   (rychlý fallback)
+      // gemini-image-flash    → gemini-3.1-flash-image-preview (generování obrázků)
+      // gemini-image-pro      → gemini-3-pro-image-preview    (HQ ilustrace)
       let geminiModel: string
-      
-      if (model.includes('3-pro') || model.includes('3 pro') || model.includes('pro')) {
-        geminiModel = 'gemini-3-pro-preview'
+
+      if (model.includes('image-flash') || model === 'gemini-image-flash') {
+        geminiModel = 'gemini-3.1-flash-image-preview'
+      } else if (model.includes('image-pro') || model === 'gemini-image-pro') {
+        geminiModel = 'gemini-3-pro-image-preview'
+      } else if (model.includes('3.1-pro') || model.includes('3.1 pro')) {
+        geminiModel = 'gemini-3.1-pro-preview'
+      } else if (model.includes('3-pro') || model.includes('3 pro') || model.includes('pro')) {
+        // Backward compat: starý 'pro' přesměruj na 3.1
+        geminiModel = 'gemini-3.1-pro-preview'
       } else {
-        // Default: Gemini 3 Flash for everything else (fast, cheap, capable)
+        // Default: Gemini 3 Flash pro vše ostatní (rychlý, levný)
         geminiModel = 'gemini-3-flash-preview'
       }
-      
-      const isGemini3 = true // Always Gemini 3
+
+      const isImageModel = IMAGE_GENERATION_MODELS.includes(geminiModel)
+      const isGemini3 = true // Always Gemini 3+
       
       const geminiBody: any = {
         contents: geminiContents,
@@ -124,14 +145,16 @@ Deno.serve(async (req) => {
         }
       }
 
-      // Add thinking_level for Gemini 3 models
-      // Supported levels: minimal, low, medium, high
-      // Gemini 3 Pro always thinks; Flash defaults to low
-      // REST API uses snake_case: thinking_level (NOT thinkingLevel)
-      if (isGemini3) {
+      // Image generation modely nepodporují thinkingConfig
+      if (isGemini3 && !isImageModel) {
         geminiBody.generationConfig.thinkingConfig = {
           thinking_level: thinking_level || 'low'
         }
+      }
+
+      // Image modely potřebují responseModalities aby vrátily obrázek
+      if (isImageModel) {
+        geminiBody.generationConfig.responseModalities = ['Text', 'Image']
       }
 
       if (systemMessage) {
@@ -161,28 +184,54 @@ Deno.serve(async (req) => {
       }
 
       const data = await response.json()
-      
-      // Gemini 3 thinking models return parts with thought:true (internal reasoning)
-      // and parts without thought flag (the actual answer).
-      // We only want the non-thought parts as the response.
+
       const allParts: any[] = data.candidates?.[0]?.content?.parts || []
+
+      // Image generation modely vrací inlineData (base64 PNG)
+      if (isImageModel) {
+        const imageParts = allParts.filter((p: any) => p.inlineData?.data)
+        const textParts = allParts.filter((p: any) => p.text && !p.thought)
+
+        if (imageParts.length === 0) {
+          const finishReason = data.candidates?.[0]?.finishReason
+          const blockReason = data.promptFeedback?.blockReason
+          console.error(`No image in response from ${geminiModel}. finishReason=${finishReason}, blockReason=${blockReason}`)
+          const reason = blockReason ? `BLOCKED:${blockReason}` : finishReason ? `FINISH:${finishReason}` : 'NO_IMAGE'
+          throw new Error(`Gemini image generation selhalo [${geminiModel}] – důvod: ${reason}`)
+        }
+
+        // Vrátíme JSON s obrázky a volitelným textem
+        return new Response(
+          JSON.stringify({
+            success: true,
+            model: geminiModel,
+            images: imageParts.map((p: any) => ({
+              data: p.inlineData.data,          // base64 PNG bez data: prefixu
+              mimeType: p.inlineData.mimeType || 'image/png',
+            })),
+            content: textParts.map((p: any) => p.text).join('') || null,
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+
+      // --- Text modely (původní logika) ---
+      // Gemini 3 thinking models return parts with thought:true (internal reasoning).
+      // We only want the non-thought parts as the response.
       const answerParts = allParts.filter((p: any) => p.text && !p.thought)
-      
+
       if (answerParts.length > 0) {
         responseText = answerParts.map((p: any) => p.text).join('')
       } else {
-        // Fallback: if no non-thought parts found, include everything (older models)
         responseText = allParts.filter((p: any) => p.text).map((p: any) => p.text).join('')
       }
-      
-      // Log details when response is empty for debugging
+
       if (!responseText) {
         const finishReason = data.candidates?.[0]?.finishReason
         const blockReason = data.promptFeedback?.blockReason
         console.error(`Empty response from ${geminiModel}. finishReason=${finishReason}, blockReason=${blockReason}`)
         console.error(`Parts count: ${allParts.length}, answer parts: ${answerParts.length}`)
         console.error('Full response:', JSON.stringify(data).slice(0, 800))
-        // Return structured error so frontend can show specific reason
         const reason = blockReason ? `BLOCKED:${blockReason}` : finishReason ? `FINISH:${finishReason}` : 'EMPTY'
         throw new Error(`Gemini prázdná odpověď [${geminiModel}] – důvod: ${reason}`)
       }

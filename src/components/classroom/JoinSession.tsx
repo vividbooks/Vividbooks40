@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Loader2, CheckCircle, XCircle, Monitor } from 'lucide-react';
 import { useViewMode } from '../../contexts/ViewModeContext';
+import { StudentAccessShell } from '../shared/StudentAccessShell';
 
 export function JoinSession() {
   const { sessionId } = useParams<{ sessionId: string }>();
@@ -38,19 +39,22 @@ export function JoinSession() {
   }, [sessionId, navigate, setViewMode]);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full text-center">
-        {/* Logo */}
-        <div className="mb-6">
-          <div className="w-16 h-16 mx-auto bg-gradient-to-br from-emerald-400 to-emerald-600 rounded-xl flex items-center justify-center">
-            <Monitor className="w-8 h-8 text-white" />
-          </div>
-        </div>
-
-        {/* Status */}
-        <div className="mb-6">
+    <StudentAccessShell
+      icon={<Monitor className="w-8 h-8" />}
+      title={
+        status === 'loading'
+          ? 'Připojování k hodině'
+          : status === 'success'
+            ? 'Úspěšně připojeno!'
+            : 'Chyba připojení'
+      }
+      subtitle={message}
+      maxWidthClassName="max-w-lg"
+    >
+      <div className="text-center">
+        <div className="mb-8">
           {status === 'loading' && (
-            <Loader2 className="w-12 h-12 mx-auto text-emerald-500 animate-spin" />
+            <Loader2 className="w-12 h-12 mx-auto text-indigo-500 animate-spin" />
           )}
           {status === 'success' && (
             <CheckCircle className="w-12 h-12 mx-auto text-emerald-500" />
@@ -60,33 +64,25 @@ export function JoinSession() {
           )}
         </div>
 
-        {/* Message */}
-        <h1 className="text-2xl font-bold text-slate-800 mb-2">
-          {status === 'loading' && 'Připojování k hodině'}
-          {status === 'success' && 'Úspěšně připojeno!'}
-          {status === 'error' && 'Chyba připojení'}
-        </h1>
-        <p className="text-slate-600">{message}</p>
-
-        {/* Session ID */}
         {sessionId && status !== 'error' && (
-          <div className="mt-6 p-3 bg-slate-100 rounded-lg">
-            <p className="text-xs text-slate-500 mb-1">Session ID</p>
-            <p className="text-sm font-mono text-slate-700 truncate">{sessionId}</p>
+          <div className="mt-6 rounded-[22px] border border-slate-200 bg-slate-50 px-5 py-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400 mb-2">
+              Session ID
+            </p>
+            <p className="text-sm font-mono text-slate-700 break-all">{sessionId}</p>
           </div>
         )}
 
-        {/* Error retry */}
         {status === 'error' && (
           <button
             onClick={() => navigate('/')}
-            className="mt-6 px-6 py-3 bg-slate-800 text-white rounded-xl hover:bg-slate-700 transition-colors"
+            className="mt-8 inline-flex items-center justify-center rounded-[20px] bg-slate-900 px-6 py-3 font-semibold text-white transition-colors hover:bg-slate-800"
           >
             Zpět na hlavní stránku
           </button>
         )}
       </div>
-    </div>
+    </StudentAccessShell>
   );
 }
 

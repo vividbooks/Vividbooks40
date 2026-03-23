@@ -1,15 +1,9 @@
 /**
  * Session History Utilities
  * 
- * Fetches historical quiz sessions from Firebase for teacher dashboard
+ * Fetches historical quiz sessions from Supabase for teacher dashboard
  */
-
-import { ref, get, onValue, off } from 'firebase/database';
-import { database } from './firebase-config';
-
-// Firebase paths
-const QUIZ_SESSIONS_PATH = 'quiz_sessions';
-const QUIZ_SHARES_PATH = 'quiz_shares';
+import { supabase } from './supabase/client';
 
 // =============================================
 // TYPES
@@ -58,6 +52,56 @@ export interface SessionStudent {
   totalTimeMs?: number;
 }
 
+function getStudentMap(data: any, type: 'live' | 'shared'): Record<string, any> {
+  if (type === 'shared') {
+    return data.responses || data.students || {};
+  }
+  return data.students || {};
+}
+
+function normalizeResponses(responses: any): any[] {
+  if (!responses) return [];
+  return Array.isArray(responses) ? responses : Object.values(responses);
+}
+
+function buildHistoricalSession(id: string, type: 'live' | 'shared', data: any): HistoricalSession {
+  const studentMap = getStudentMap(data, type);
+  const students = Object.keys(studentMap).length;
+  const studentResults = Object.values(studentMap) as any[];
+
+  let totalScore = 0;
+  let completedStudents = 0;
+
+  studentResults.forEach((student: any) => {
+    if (student.responses) {
+      const responses = normalizeResponses(student.responses);
+      const correct = responses.filter((r: any) => r.isCorrect === true).length;
+      const total = responses.length;
+      if (total > 0) {
+        totalScore += (correct / total) * 100;
+        completedStudents++;
+      }
+    }
+  });
+
+  const avgScore = completedStudents > 0 ? Math.round(totalScore / completedStudents) : 0;
+  return {
+    id,
+    type,
+    quizId: data.quizId || data.quizData?.id || data.source_board_id || '',
+    quizTitle: data.quizTitle || data.quizData?.title || data.sessionName || data.title || 'Bez názvu',
+    subject: data.subject || data.quizData?.subject || '',
+    sessionCode: data.sessionCode || data.code || data.join_code || undefined,
+    isActive: data.isActive === true || data.status === 'active' || data.status === 'paused',
+    createdAt: data.createdAt || data.created_at || new Date().toISOString(),
+    endedAt: data.endedAt || data.ended_at || undefined,
+    studentsCount: students,
+    averageScore: avgScore,
+    completedCount: completedStudents,
+    className: data.className || data.class_name || '',
+  };
+}
+
 // =============================================
 // FETCH FUNCTIONS
 // =============================================
@@ -66,104 +110,50 @@ export interface SessionStudent {
  * Get all historical sessions (both live and shared)
  */
 export async function getAllSessions(): Promise<HistoricalSession[]> {
-  if (!database) {
-    console.warn('Firebase not available');
-    return [];
-  }
-  
   const sessions: HistoricalSession[] = [];
   
   try {
-    // Fetch live sessions
-    const liveRef = ref(database, QUIZ_SESSIONS_PATH);
-    const liveSnapshot = await get(liveRef);
-    
-    if (liveSnapshot.exists()) {
-      const liveData = liveSnapshot.val();
-      Object.entries(liveData).forEach(([id, data]: [string, any]) => {
-        const students = data.students ? Object.keys(data.students).length : 0;
-        const studentResults = data.students ? Object.values(data.students) as any[] : [];
-        
-        // Calculate average score
-        let totalScore = 0;
-        let completedStudents = 0;
-        
-        studentResults.forEach((student: any) => {
-          if (student.responses) {
-            const responses = Object.values(student.responses) as any[];
-            const correct = responses.filter((r: any) => r.isCorrect === true).length;
-            const total = responses.length;
-            if (total > 0) {
-              totalScore += (correct / total) * 100;
-              completedStudents++;
-            }
-          }
-        });
-        
-        const avgScore = completedStudents > 0 ? Math.round(totalScore / completedStudents) : 0;
-        
-        sessions.push({
-          id,
-          type: 'live',
-          quizId: data.quizId || data.quizData?.id || '',
-          quizTitle: data.quizTitle || data.quizData?.title || 'Bez názvu',
-          subject: data.subject || data.quizData?.subject || '',
-          sessionCode: data.sessionCode,
-          isActive: data.isActive === true,
-          createdAt: data.createdAt || new Date().toISOString(),
-          endedAt: data.endedAt,
-          studentsCount: students,
-          averageScore: avgScore,
-          completedCount: completedStudents,
-          className: data.className,
-        });
-      });
-    }
-    
-    // Fetch shared sessions
-    const sharedRef = ref(database, QUIZ_SHARES_PATH);
-    const sharedSnapshot = await get(sharedRef);
-    
-    if (sharedSnapshot.exists()) {
-      const sharedData = sharedSnapshot.val();
-      Object.entries(sharedData).forEach(([id, data]: [string, any]) => {
-        const students = data.students ? Object.keys(data.students).length : 0;
-        const studentResults = data.students ? Object.values(data.students) as any[] : [];
-        
-        // Calculate average score
-        let totalScore = 0;
-        let completedStudents = 0;
-        
-        studentResults.forEach((student: any) => {
-          if (student.responses) {
-            const responses = Object.values(student.responses) as any[];
-            const correct = responses.filter((r: any) => r.isCorrect === true).length;
-            const total = responses.length;
-            if (total > 0) {
-              totalScore += (correct / total) * 100;
-              completedStudents++;
-            }
-          }
-        });
-        
-        const avgScore = completedStudents > 0 ? Math.round(totalScore / completedStudents) : 0;
-        
-        sessions.push({
-          id,
-          type: 'shared',
-          quizId: data.quizId || '',
-          quizTitle: data.quizTitle || 'Bez názvu',
-          subject: data.subject || '',
-          className: data.className || '',
-          isActive: data.isActive === true,
-          createdAt: data.createdAt || new Date().toISOString(),
-          endedAt: data.endedAt,
-          studentsCount: students,
-          averageScore: avgScore,
-          completedCount: completedStudents,
-        });
-      });
-    }
+    const [{ data: supabaseSessions }, { data: supabaseParticipants }] = await Promise.all([
+      supabase.from('live_sessions').select('public_id, kind, source_board_id, title, join_code, status, created_at, ended_at'),
+      supabase.from('live_session_participants').select('session_public_id, client_identity_id, display_name, responses, completed_at, total_time_ms'),
+    ]);
+
+    const participantsBySession = (supabaseParticipants || []).reduce<Record<string, any[]>>((acc, participant: any) => {
+      if (!acc[participant.session_public_id]) acc[participant.session_public_id] = [];
+      acc[participant.session_public_id].push(participant);
+      return acc;
+    }, {});
+
+    (supabaseSessions || []).forEach((session: any) => {
+      const participants = participantsBySession[session.public_id] || [];
+      const type = session.kind === 'share' ? 'shared' : 'live';
+      const data = {
+        ...session,
+        responses: type === 'shared'
+          ? participants.reduce((acc: Record<string, any>, participant: any) => {
+              acc[participant.client_identity_id] = {
+                studentName: participant.display_name,
+                responses: participant.responses || {},
+                completedAt: participant.completed_at || undefined,
+                totalTimeMs: participant.total_time_ms || 0,
+              };
+              return acc;
+            }, {})
+          : undefined,
+        students: type === 'live'
+          ? participants.reduce((acc: Record<string, any>, participant: any) => {
+              acc[participant.client_identity_id] = {
+                name: participant.display_name,
+                responses: participant.responses || [],
+                completedAt: participant.completed_at || undefined,
+                totalTimeMs: participant.total_time_ms || 0,
+              };
+              return acc;
+            }, {})
+          : undefined,
+      };
+      sessions.push(buildHistoricalSession(session.public_id, type, data));
+    });
     
     // Sort by date (newest first)
     sessions.sort((a, b) => {
@@ -185,118 +175,27 @@ export async function getAllSessions(): Promise<HistoricalSession[]> {
 export function subscribeToSessions(
   callback: (sessions: HistoricalSession[]) => void
 ): () => void {
-  if (!database) {
+  getAllSessions().then(callback).catch((error) => {
+    console.error('Error loading sessions:', error);
     callback([]);
-    return () => {};
-  }
-  
-  const liveRef = ref(database, QUIZ_SESSIONS_PATH);
-  const sharedRef = ref(database, QUIZ_SHARES_PATH);
-  
-  let liveSessions: HistoricalSession[] = [];
-  let sharedSessions: HistoricalSession[] = [];
-  
-  const updateCallback = () => {
-    const allSessions = [...liveSessions, ...sharedSessions].sort((a, b) => {
-      const dateA = new Date(a.createdAt).getTime();
-      const dateB = new Date(b.createdAt).getTime();
-      return dateB - dateA;
-    });
-    callback(allSessions);
-  };
-  
-  const liveUnsubscribe = onValue(liveRef, (snapshot) => {
-    liveSessions = [];
-    if (snapshot.exists()) {
-      const data = snapshot.val();
-      Object.entries(data).forEach(([id, sessionData]: [string, any]) => {
-        const students = sessionData.students ? Object.keys(sessionData.students).length : 0;
-        const studentResults = sessionData.students ? Object.values(sessionData.students) as any[] : [];
-        
-        let totalScore = 0;
-        let completedStudents = 0;
-        
-        studentResults.forEach((student: any) => {
-          if (student.responses) {
-            const responses = Object.values(student.responses) as any[];
-            const correct = responses.filter((r: any) => r.isCorrect === true).length;
-            const total = responses.length;
-            if (total > 0) {
-              totalScore += (correct / total) * 100;
-              completedStudents++;
-            }
-          }
-        });
-        
-        const avgScore = completedStudents > 0 ? Math.round(totalScore / completedStudents) : 0;
-        
-        liveSessions.push({
-          id,
-          type: 'live',
-          quizId: sessionData.quizId || sessionData.quizData?.id || '',
-          quizTitle: sessionData.quizTitle || sessionData.quizData?.title || 'Bez názvu',
-          subject: sessionData.subject || sessionData.quizData?.subject || '',
-          sessionCode: sessionData.sessionCode,
-          isActive: sessionData.isActive === true,
-          createdAt: sessionData.createdAt || new Date().toISOString(),
-          endedAt: sessionData.endedAt,
-          studentsCount: students,
-          averageScore: avgScore,
-          completedCount: completedStudents,
-          className: sessionData.className,
-        });
-      });
-    }
-    updateCallback();
   });
-  
-  const sharedUnsubscribe = onValue(sharedRef, (snapshot) => {
-    sharedSessions = [];
-    if (snapshot.exists()) {
-      const data = snapshot.val();
-      Object.entries(data).forEach(([id, sessionData]: [string, any]) => {
-        const students = sessionData.students ? Object.keys(sessionData.students).length : 0;
-        const studentResults = sessionData.students ? Object.values(sessionData.students) as any[] : [];
-        
-        let totalScore = 0;
-        let completedStudents = 0;
-        
-        studentResults.forEach((student: any) => {
-          if (student.responses) {
-            const responses = Object.values(student.responses) as any[];
-            const correct = responses.filter((r: any) => r.isCorrect === true).length;
-            const total = responses.length;
-            if (total > 0) {
-              totalScore += (correct / total) * 100;
-              completedStudents++;
-            }
-          }
-        });
-        
-        const avgScore = completedStudents > 0 ? Math.round(totalScore / completedStudents) : 0;
-        
-        sharedSessions.push({
-          id,
-          type: 'shared',
-          quizId: sessionData.quizId || '',
-          quizTitle: sessionData.quizTitle || 'Bez názvu',
-          subject: sessionData.subject || '',
-          className: sessionData.className || '',
-          isActive: sessionData.isActive === true,
-          createdAt: sessionData.createdAt || new Date().toISOString(),
-          endedAt: sessionData.endedAt,
-          studentsCount: students,
-          averageScore: avgScore,
-          completedCount: completedStudents,
-        });
+
+  const channel = supabase
+    .channel('session-history')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'live_sessions' }, () => {
+      getAllSessions().then(callback).catch((error) => {
+        console.error('Error refreshing sessions:', error);
       });
-    }
-    updateCallback();
-  });
-  
+    })
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'live_session_participants' }, () => {
+      getAllSessions().then(callback).catch((error) => {
+        console.error('Error refreshing sessions:', error);
+      });
+    })
+    .subscribe();
+
   return () => {
-    off(liveRef);
-    off(sharedRef);
+    supabase.removeChannel(channel);
   };
 }
 
@@ -307,59 +206,74 @@ export async function getSessionDetails(
   sessionId: string, 
   type: 'live' | 'shared'
 ): Promise<{ session: HistoricalSession; students: SessionStudent[] } | null> {
-  if (!database) return null;
-  
-  const path = type === 'live' ? QUIZ_SESSIONS_PATH : QUIZ_SHARES_PATH;
-  
   try {
-    const sessionRef = ref(database, `${path}/${sessionId}`);
-    const snapshot = await get(sessionRef);
-    
-    if (!snapshot.exists()) return null;
-    
-    const data = snapshot.val();
-    const studentResults: SessionStudent[] = [];
-    
-    if (data.students) {
-      Object.entries(data.students).forEach(([id, student]: [string, any]) => {
-        const responses = student.responses || {};
-        let totalScore = 0;
-        let maxScore = 0;
-        
-        Object.values(responses).forEach((r: any) => {
-          maxScore++;
-          if (r.isCorrect) totalScore++;
-        });
-        
-        studentResults.push({
-          id,
-          name: student.name || 'Anonym',
-          responses,
-          totalScore,
-          maxScore,
-          completedAt: student.lastSeen,
-          totalTimeMs: student.totalTimeMs,
-        });
-      });
-    }
-    
-    const session: HistoricalSession = {
-      id: sessionId,
-      type,
-      quizId: data.quizId || data.quizData?.id || '',
-      quizTitle: data.quizTitle || data.quizData?.title || 'Bez názvu',
-      sessionCode: data.sessionCode,
-      isActive: data.isActive === true,
-      createdAt: data.createdAt || new Date().toISOString(),
-      endedAt: data.endedAt,
-      studentsCount: studentResults.length,
-      averageScore: studentResults.length > 0 
-        ? Math.round(studentResults.reduce((sum, s) => sum + (s.maxScore > 0 ? (s.totalScore / s.maxScore) * 100 : 0), 0) / studentResults.length)
-        : 0,
-      completedCount: studentResults.filter(s => s.maxScore > 0).length,
+    const [{ data: sessionRow }, { data: participantRows }] = await Promise.all([
+      supabase.from('live_sessions').select('*').eq('public_id', sessionId).maybeSingle(),
+      supabase.from('live_session_participants').select('*').eq('session_public_id', sessionId),
+    ]);
+
+    if (!sessionRow) return null;
+
+    const data = {
+      ...sessionRow,
+      students: type === 'live'
+        ? (participantRows || []).reduce((acc: Record<string, any>, participant: any) => {
+            acc[participant.client_identity_id] = {
+              name: participant.display_name,
+              responses: participant.responses || [],
+              lastSeen: participant.last_seen_at,
+              totalTimeMs: participant.total_time_ms || 0,
+            };
+            return acc;
+          }, {})
+        : undefined,
+      responses: type === 'shared'
+        ? (participantRows || []).reduce((acc: Record<string, any>, participant: any) => {
+            acc[participant.client_identity_id] = {
+              studentName: participant.display_name,
+              responses: participant.responses || {},
+              completedAt: participant.completed_at,
+              totalTimeMs: participant.total_time_ms || 0,
+            };
+            return acc;
+          }, {})
+        : undefined,
     };
-    
-    return { session, students: studentResults };
+
+    const studentResults: SessionStudent[] = [];
+    const studentMap = getStudentMap(data, type);
+    Object.entries(studentMap).forEach(([id, student]: [string, any]) => {
+      const responses = student.responses || {};
+      let totalScore = 0;
+      let maxScore = 0;
+
+      Object.values(responses).forEach((r: any) => {
+        maxScore++;
+        if (r.isCorrect) totalScore++;
+      });
+
+      studentResults.push({
+        id,
+        name: student.name || student.studentName || 'Anonym',
+        responses,
+        totalScore,
+        maxScore,
+        completedAt: student.completedAt || student.lastSeen,
+        totalTimeMs: student.totalTimeMs,
+      });
+    });
+
+    return {
+      session: {
+        ...buildHistoricalSession(sessionId, type, data),
+        studentsCount: studentResults.length,
+        averageScore: studentResults.length > 0 
+          ? Math.round(studentResults.reduce((sum, s) => sum + (s.maxScore > 0 ? (s.totalScore / s.maxScore) * 100 : 0), 0) / studentResults.length)
+          : 0,
+        completedCount: studentResults.filter(s => s.maxScore > 0).length,
+      },
+      students: studentResults,
+    };
   } catch (error) {
     console.error('Error fetching session details:', error);
     return null;

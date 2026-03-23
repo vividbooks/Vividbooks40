@@ -53,6 +53,11 @@ export interface AIGenerateResponse {
   blocks?: WorksheetBlock[];
   /** Navržené akce */
   suggestedActions?: AIAction[];
+  /** Navržená metadata stránky (např. pageColumnLayout) */
+  suggestedMetadata?: {
+    pageColumnLayout?: 'single' | 'two-columns';
+    twoColumnRatio?: number;
+  };
   /** Chybová zpráva */
   error?: string;
 }
@@ -1125,6 +1130,7 @@ function getBlockTypeLabel(type: BlockType): string {
     'heading': 'Nadpis',
     'paragraph': 'Odstavec',
     'infobox': 'Informační box',
+    'layout-section': 'Layout sekce',
     'multiple-choice': 'Výběr odpovědí',
     'fill-blank': 'Doplňování',
     'free-answer': 'Volná odpověď',

@@ -44,11 +44,13 @@ import {
   Book,
   LogOut,
   Upload,
-  Layout
+  Layout,
+  Globe
 } from 'lucide-react';
 import { AIContentAgent } from './AIContentAgent';
 import { projectId } from '../../utils/supabase/info';
 import { supabase } from '../../utils/supabase/client';
+import { toast } from 'sonner';
 import { extractTextFromPDF, syncPdfTranscriptToRAG } from '../../utils/gemini-rag';
 import { DOCUMENT_TYPES } from '../../types/document-types';
 import { saveWorksheet } from '../../utils/worksheet-storage';
@@ -711,6 +713,7 @@ export function AdminColumnBrowser({ activeCategory, onSelectDocument, onCreateD
   const [selectedItem, setSelectedItem] = useState<MenuItem | null>(null);
   const [selectedPageDetails, setSelectedPageDetails] = useState<any>(null);
   const [loadingDetails, setLoadingDetails] = useState(false);
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   
   // AI Agent panel
   const [showAIAgent, setShowAIAgent] = useState(false);
@@ -2075,6 +2078,18 @@ export function AdminColumnBrowser({ activeCategory, onSelectDocument, onCreateD
               <Upload className="h-4 w-4 mr-2" />
               RAG - Nahrát PDF do AI
             </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => navigate('/admin/rag-worksheets')} className="text-violet-600">
+              <Database className="h-4 w-4 mr-2" />
+              RAG Knihovna listů
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => navigate('/admin/atlas')} className="text-blue-600">
+              <Globe className="h-4 w-4 mr-2" />
+              Atlas Explorer
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => navigate('/admin/viz')} className="text-indigo-600">
+              <BarChart3 className="h-4 w-4 mr-2" />
+              Vizualizér
+            </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem 
               onClick={() => window.open(import.meta.env.BASE_URL + 'admin/workbook-pro/1770063965010?offline=1', '_blank')} 
@@ -2678,7 +2693,7 @@ export function AdminColumnBrowser({ activeCategory, onSelectDocument, onCreateD
                     placeholder="URL PDF souboru..."
                     className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   />
-                  <div className="flex gap-2">
+                  <div className="flex gap-2 flex-wrap">
                     {selectedItem.url && (
                       <a href={selectedItem.url} target="_blank" rel="noopener noreferrer"
                         className="inline-flex items-center gap-1 text-xs text-indigo-600 hover:underline">
@@ -2708,6 +2723,112 @@ export function AdminColumnBrowser({ activeCategory, onSelectDocument, onCreateD
                         }}
                       />
                     </label>
+                    <button
+                      disabled={isGeneratingPdf}
+                      onClick={async () => {
+                        const worksheetId = selectedItem.id;
+                        if (!worksheetId) return;
+                        setIsGeneratingPdf(true);
+                        const toastId = toast.loading('Generuji PDF… (může trvat 30–60 s)', { duration: 120000 });
+                        try {
+                          const { data: { session } } = await supabase.auth.getSession();
+                          // Load worksheet content from teacher_worksheets
+                          console.log('[PDF gen] Loading worksheet:', worksheetId);
+                          const { data: wsRow, error: wsErr } = await supabase
+                            .from('teacher_worksheets')
+                            .select('id, name, content')
+                            .eq('id', worksheetId)
+                            .single();
+                          if (wsErr) console.warn('[PDF gen] Worksheet not in teacher_worksheets:', wsErr.message);
+                          else console.log('[PDF gen] Worksheet loaded, content size:', JSON.stringify(wsRow?.content ?? {}).length);
+
+                          const pdfFilename = `${worksheetId}-pracovni-list.pdf`;
+                          console.log('[PDF gen] Calling pdf-export edge function...');
+                          const resp = await fetch(
+                            'https://njbtqmsxbyvpwigfceke.supabase.co/functions/v1/pdf-export',
+                            {
+                              method: 'POST',
+                              headers: {
+                                'Content-Type': 'application/json',
+                                'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5qYnRxbXN4Ynl2cHdpZ2ZjZWtlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI4MzczODksImV4cCI6MjA3ODQxMzM4OX0.nY0THq2YU9wrjYsPoxYwXRXczE3Vh7cB1opzAV8c50g',
+                                ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+                              },
+                              body: JSON.stringify({
+                                worksheetId,
+                                worksheetData: wsRow?.content ?? undefined,
+                                filename: pdfFilename,
+                                saveToStorage: true,
+                              }),
+                            },
+                          );
+                          console.log('[PDF gen] Response status:', resp.status, 'Content-Type:', resp.headers.get('content-type'));
+                          if (!resp.ok) {
+                            const err = await resp.json().catch(() => ({ error: `HTTP ${resp.status}` }));
+                            console.error('[PDF gen] Error:', err);
+                            toast.error(`PDF selhalo: ${err.error || resp.status}${err.detail ? ' — ' + err.detail : ''}`, { id: toastId, duration: 10000 });
+                            return;
+                          }
+
+                          // Edge function may return raw PDF bytes OR JSON { pdfUrl } depending on deployed version.
+                          // Handle both cases.
+                          let pdfUrl: string;
+                          const contentType = resp.headers.get('content-type') || '';
+                          if (contentType.includes('application/pdf')) {
+                            // Old deployed version: raw PDF bytes → upload to storage from client
+                            toast.loading('PDF vygenerováno, nahrávám do storage…', { id: toastId });
+                            const pdfBlob = await resp.blob();
+                            console.log('[PDF gen] Got PDF blob, size:', pdfBlob.size);
+                            const storageFileName = `pdfs/${pdfFilename}`;
+                            const { error: uploadErr } = await supabase.storage
+                              .from('teacher-files')
+                              .upload(storageFileName, pdfBlob, { contentType: 'application/pdf', upsert: true });
+                            if (uploadErr) {
+                              toast.error(`Storage upload selhal: ${uploadErr.message}`, { id: toastId, duration: 8000 });
+                              return;
+                            }
+                            const { data: urlData } = supabase.storage.from('teacher-files').getPublicUrl(storageFileName);
+                            pdfUrl = urlData.publicUrl;
+                          } else {
+                            // New deployed version: JSON { pdfUrl }
+                            const result = await resp.json();
+                            console.log('[PDF gen] Result:', result);
+                            if (!result.pdfUrl) {
+                              toast.error('PDF URL nebylo vráceno. Zkontroluj Supabase Storage.', { id: toastId, duration: 8000 });
+                              return;
+                            }
+                            pdfUrl = result.pdfUrl;
+                          }
+                          console.log('[PDF gen] pdfUrl:', pdfUrl);
+                          const result = { pdfUrl };
+                          // Update item url and menuStructure
+                          setSelectedItem(prev => ({ ...prev, url: result.pdfUrl }));
+                          const applyUrl = (items: MenuItem[]): MenuItem[] => items.map(item =>
+                            item.id === selectedItem.id ? { ...item, url: result.pdfUrl } :
+                            item.children ? { ...item, children: applyUrl(item.children) } : item
+                          );
+                          setMenuStructure(applyUrl(menuStructure));
+                          // Persist pdfUrl into worksheet content
+                          if (wsRow?.content) {
+                            await supabase
+                              .from('teacher_worksheets')
+                              .update({ content: { ...(wsRow.content as object), pdfUrl: result.pdfUrl }, updated_at: new Date().toISOString() })
+                              .eq('id', worksheetId);
+                          }
+                          toast.success('PDF vygenerováno! URL vyplněno — klikni Uložit změny.', { id: toastId, duration: 6000 });
+                        } catch (err) {
+                          console.error('[PDF gen] Exception:', err);
+                          toast.error('Chyba: ' + String(err), { id: toastId, duration: 8000 });
+                        } finally {
+                          setIsGeneratingPdf(false);
+                        }
+                      }}
+                      className="inline-flex items-center gap-1 text-xs text-purple-600 hover:underline cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {isGeneratingPdf
+                        ? <><Loader2 className="w-3 h-3 animate-spin" /> Generuji...</>
+                        : <><RefreshCw className="w-3 h-3" /> Vygenerovat PDF</>
+                      }
+                    </button>
                   </div>
                   
                   {/* PDF Transcript Section */}

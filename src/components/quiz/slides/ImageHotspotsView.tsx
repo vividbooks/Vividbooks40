@@ -22,6 +22,7 @@ interface ImageHotspotsViewProps {
   readOnly?: boolean;
   onSubmit?: (result: { correct: number; total: number; answers: Record<string, string> }) => void;
   showResults?: boolean;
+  deferEvaluation?: boolean;
 }
 
 // Shuffle array helper
@@ -512,11 +513,13 @@ export function ImageHotspotsView({
   readOnly = false,
   onSubmit,
   showResults = false,
+  deferEvaluation = false,
 }: ImageHotspotsViewProps) {
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [openHotspotId, setOpenHotspotId] = useState<string | null>(null);
   const [showResult, setShowResult] = useState(false);
   const [currentHotspotIndex, setCurrentHotspotIndex] = useState(0);
+  const [isSubmitted, setIsSubmitted] = useState(false);
 
   // Determine if we're in sequential mode
   const showAllHotspots = slide.showAllHotspots !== false; // default to true
@@ -594,7 +597,7 @@ export function ImageHotspotsView({
 
   // Handle hotspot click
   const handleHotspotClick = (hotspotId: string) => {
-    if (readOnly || showResult || showResults) return;
+    if (readOnly || showResult || showResults || isSubmitted) return;
     // In sequential mode, only allow clicking the current hotspot
     if (!showAllHotspots && hotspotId !== currentHotspot?.id) return;
     setOpenHotspotId(openHotspotId === hotspotId ? null : hotspotId);
@@ -602,7 +605,7 @@ export function ImageHotspotsView({
 
   // Handle option select (ABC mode)
   const handleOptionSelect = (hotspotId: string, optionId: string) => {
-    if (readOnly || showResult || showResults) return;
+    if (readOnly || showResult || showResults || isSubmitted) return;
     
     setAnswers(prev => ({
       ...prev,
@@ -616,7 +619,7 @@ export function ImageHotspotsView({
 
   // Handle numeric select
   const handleNumericSelect = (hotspotId: string, value: string) => {
-    if (readOnly || showResult || showResults) return;
+    if (readOnly || showResult || showResults || isSubmitted) return;
     
     const hotspot = orderedHotspots.find(h => h.id === hotspotId);
     const isCorrect = hotspot?.label === value;
@@ -633,7 +636,7 @@ export function ImageHotspotsView({
 
   // Handle text input submit
   const handleTextSubmit = (hotspotId: string, isCorrect: boolean, userAnswer: string) => {
-    if (readOnly || showResult || showResults) return;
+    if (readOnly || showResult || showResults || isSubmitted) return;
     
     setAnswers(prev => ({
       ...prev,
@@ -661,7 +664,8 @@ export function ImageHotspotsView({
 
   // Submit results
   const handleSubmit = () => {
-    setShowResult(true);
+    setIsSubmitted(true);
+    setShowResult(!deferEvaluation);
     onSubmit?.({
       correct: score.correct,
       total: score.total,
@@ -675,6 +679,7 @@ export function ImageHotspotsView({
     setOpenHotspotId(null);
     setShowResult(false);
     setCurrentHotspotIndex(0);
+    setIsSubmitted(false);
     optionsMapRef.current = {};
   };
 
@@ -719,7 +724,7 @@ export function ImageHotspotsView({
 
         {/* Right: Buttons */}
         <div className="flex items-center gap-3">
-          {!showResultsNow && !isTeacher && (
+          {!showResultsNow && !isTeacher && !isSubmitted && (
             <>
               <button
                 onClick={handleReset}
@@ -739,7 +744,7 @@ export function ImageHotspotsView({
                     : '#94a3b8',
                 }}
               >
-                Vyhodnotit
+                {deferEvaluation ? 'Odevzdat' : 'Vyhodnotit'}
               </button>
             </>
           )}

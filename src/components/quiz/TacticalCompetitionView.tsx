@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { ref, update } from 'firebase/database';
-import { database } from '../../utils/firebase-config';
 import { QRCodeSVG } from 'qrcode.react';
 import Lottie from 'lottie-react';
 import { Copy, CheckCircle, Users, Play, SkipForward, X, ArrowRight, ArrowLeft } from 'lucide-react';
 import { Quiz, LiveQuizSession, CompetitionPhase, QuizSlide, TreasureType } from '../../types/quiz';
+import { SessionBackend, updateLiveSessionRecord, updateLiveStudentRecord } from '../../utils/live-session-repository';
+import { evaluateABCAnswer } from '../../utils/abc-evaluation';
 
 // Supabase storage — competition_files bucket (same as CompetitionView)
 const SB = 'https://njbtqmsxbyvpwigfceke.supabase.co/storage/v1/object/public/competition_files';
@@ -23,7 +23,6 @@ const ASSETS = {
   resultsMusic: `${SB}/mp3/Vysledky_Vyhodnoceni_01.mp3`,
 };
 
-const QUIZ_SESSIONS_PATH = 'quiz_sessions';
 const DEFAULT_TIMER = 45;
 
 // Scorable activity types — same as CompetitionView
@@ -83,13 +82,14 @@ function useAudio() {
 interface TacticalCompetitionViewProps {
   session: LiveQuizSession;
   sessionId: string;
+  sessionBackend: SessionBackend;
   quiz: Quiz;
   sessionCode: string;
   onEnd: () => void;
   renderSlide: (slide: QuizSlide) => React.ReactNode;
 }
 
-export default function TacticalCompetitionView({ session, sessionId, quiz, sessionCode, onEnd, renderSlide }: TacticalCompetitionViewProps) {
+export default function TacticalCompetitionView({ session, sessionId, sessionBackend, quiz, sessionCode, onEnd, renderSlide }: TacticalCompetitionViewProps) {
   const phase = (session.competitionPhase || 'lobby') as CompetitionPhase;
   const tData = session.tacticalCompetitionData;
   const students = session.students || {};
@@ -138,10 +138,9 @@ export default function TacticalCompetitionView({ session, sessionId, quiz, sess
     return Object.values(tData.choices).filter(c => c === 'pending').length;
   }, [tData?.choices]);
 
-  // Firebase helpers
   const updateSession = useCallback((data: Record<string, any>) => {
-    update(ref(database, `${QUIZ_SESSIONS_PATH}/${sessionId}`), data);
-  }, [sessionId]);
+    return updateLiveSessionRecord(sessionBackend, sessionId, data as Partial<LiveQuizSession>);
+  }, [sessionBackend, sessionId]);
 
   const shouldBePowerRound = (questionIndex: number): boolean => {
     return questionIndex > 0 && questionIndex % 3 === 0;
@@ -279,8 +278,7 @@ export default function TacticalCompetitionView({ session, sessionId, quiz, sess
         let isCorrect = false;
         const act = currentSlide as any;
         if (act.activityType === 'abc') {
-          const correctOpt = act.options?.find((o: any) => o.isCorrect);
-          isCorrect = response.answer === correctOpt?.id;
+          isCorrect = evaluateABCAnswer(act, response.answer);
         } else if (act.activityType === 'open') {
           isCorrect = (act.correctAnswers || []).some((a: string) => a.trim().toLowerCase() === String(response.answer).trim().toLowerCase());
         } else if (act.activityType === 'example') {
@@ -290,7 +288,7 @@ export default function TacticalCompetitionView({ session, sessionId, quiz, sess
           isCorrect = response.answer === String(act.correctAnswer);
         }
         const responses = student.responses.map((r: any) => r.slideId === slideId ? { ...r, isCorrect, points: isCorrect ? basePoints : 0 } : r);
-        update(ref(database, `${QUIZ_SESSIONS_PATH}/${sessionId}/students/${id}`), { responses });
+        updateLiveStudentRecord(sessionBackend, sessionId, id, { responses });
 
         if (isCorrect) {
           newStreaks[id] = (newStreaks[id] || 0) + 1;

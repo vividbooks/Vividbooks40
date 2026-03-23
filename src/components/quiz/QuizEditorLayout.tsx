@@ -7,9 +7,24 @@
  * 3. Main editing area
  */
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams, type NavigateFunction } from 'react-router-dom';
+import { NoteIcon, ColorIcon } from './editor/NoteIcon';
+import { SidebarButton, AddContentButton } from './editor/SidebarButton';
+import { InlineColorPicker } from './editor/InlineColorPicker';
+import { SlidePreviewThumbnail } from './editor/SlidePreviewThumbnail';
+import { SortableSlideItem } from './editor/SortableSlideItem';
+import { renderSlideEditor, getSlideTitle } from './editor/renderSlideEditor';
+import { SessionsList } from './editor/SessionsList';
+import { useUndoRedo } from '../../hooks/useUndoRedo';
+import { useMarqueeSelection } from '../../hooks/useMarqueeSelection';
+import { useEditorModals } from '../../hooks/quiz/useEditorModals';
+import { useImportState } from '../../hooks/quiz/useImportState';
+import { useContentPanel, type ActivePanel } from '../../hooks/quiz/useContentPanel';
+import { useBlockSelection } from '../../hooks/quiz/useBlockSelection';
+import { usePageSettingsPanel } from '../../hooks/quiz/usePageSettingsPanel';
+import { useSessionsData, type SessionData } from '../../hooks/quiz/useSessionsData';
 import {
   DndContext, 
   closestCenter,
@@ -24,9 +39,7 @@ import {
   SortableContext,
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
-  useSortable
 } from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
 import {
   Plus,
   Save,
@@ -40,7 +53,6 @@ import {
   Undo2,
   Redo2,
   Copy,
-  GripVertical,
   FileText,
   HelpCircle,
   MessageSquare,
@@ -53,13 +65,12 @@ import {
   Share2,
   Download,
   ListOrdered,
+  Menu,
   Lightbulb,
   BarChart2,
   Users,
-  Radio,
   Link2,
   BookOpen,
-  Bookmark,
   Sparkles,
   SlidersHorizontal,
   ArrowLeft,
@@ -87,36 +98,15 @@ import {
   X,
   Upload,
   Grid2X2,
+  Map,
 } from 'lucide-react';
 
-const NoteIcon = ({ size = 20, className = "" }: { size?: number, className?: string }) => (
-  <svg 
-    width={size} 
-    height={size * (13/6)} 
-    viewBox="0 0 6 13" 
-    fill="none" 
-    xmlns="http://www.w3.org/2000/svg"
-    className={className}
-    style={{ height: size }}
-  >
-    <g clipPath="url(#clip0_note_icon_preview)">
-      <path d="M1.91903 5.57928C1.91903 5.19451 1.80615 5.06625 1.5965 5.05021C1.43524 5.05021 1.27398 5.08228 1.11272 5.21054C0.886947 5.40293 0.677305 5.70754 0.661179 5.89993C0.645052 6.09232 0.661179 6.34884 0.596673 6.50916C0.532168 6.62139 0.43541 6.63742 0.354779 6.63742C0.12901 6.62139 0 6.46107 0 6.18852C0 5.06625 0.935326 4.29669 1.8384 3.96001C2.25768 3.79969 2.69309 3.71952 2.96724 3.71952C3.41878 3.71952 3.77356 4.18446 3.77356 4.66544C3.77356 5.17847 3.6768 5.46706 3.30589 7.87192C3.14463 8.898 2.93499 10.0042 2.93499 10.5814C2.93499 10.9501 3.08012 11.1746 3.48328 11.1746C4.01545 11.1746 4.40248 10.3409 4.43473 9.9882C4.46699 9.73168 4.56374 9.58739 4.74113 9.58739C4.93465 9.58739 5.14429 9.76375 5.14429 10.0042C5.14429 10.405 4.88627 11.2227 4.07996 11.848C3.69292 12.1526 3.17688 12.4251 2.54796 12.4251C1.64488 12.4251 1.08046 11.8159 1.08046 11.0143C1.08046 10.2768 1.19335 9.57136 1.532 8.00018C1.79002 6.84585 1.9029 6.02819 1.9029 5.61135L1.91903 5.57928ZM3.30589 0C3.91869 0 4.30572 0.368746 4.30572 0.945913C4.30572 1.65134 3.61229 2.18041 2.88661 2.18041C2.24156 2.18041 1.85453 1.79563 1.85453 1.25053C1.85453 0.480973 2.61246 0 3.28977 0L3.30589 0Z" fill="currentColor"/>
-    </g>
-    <defs>
-      <clipPath id="clip0_note_icon_preview">
-        <rect width="5.12817" height="12.3931" fill="white"/>
-      </clipPath>
-    </defs>
-  </svg>
-);
 import { boardToWorksheet } from '../../utils/content-converter';
 import { saveWorksheet } from '../../utils/worksheet-storage';
 import { useVersionHistory } from '../../hooks/useVersionHistory';
 import { useFileStorage } from '../../hooks/useFileStorage';
 import { getMediaFolderId, ensureMediaFolderExists, createMediaSubfolder } from '../../utils/folder-storage';
 import { VersionHistoryPanel } from '../shared/VersionHistoryPanel';
-import { database } from '../../utils/firebase-config';
-import { ref, onValue, off } from 'firebase/database';
 import { supabase } from '../../utils/supabase/client';
 import { projectId } from '../../utils/supabase/info';
 import { 
@@ -124,7 +114,6 @@ import {
   QuizSlide, 
   InfoSlide, 
   ActivityType, 
-  createEmptyQuiz, 
   createABCSlide, 
   createOpenSlide, 
   createExampleSlide, 
@@ -136,15 +125,17 @@ import {
   createConnectPairsSlide, 
   createVideoQuizSlide,
   createFormSlide,
+  createFlashcardSlide,
   createCertificateSlide,
   FillBlanksActivitySlide, 
   ImageHotspotsActivitySlide, 
   ConnectPairsActivitySlide, 
   VideoQuizActivitySlide,
+  FlashcardActivitySlide,
   OpenActivitySlide,
   ExampleActivitySlide,
+  SlideBlock,
   ToolsSlide,
-  getTemplateById,
   QuizSettings,
 } from '../../types/quiz';
 import { getContrastColor } from '../../utils/color-utils';
@@ -155,12 +146,6 @@ import * as pdfjsLib from 'pdfjs-dist';
 // Set worker path for PDF.js - Using a consistent and reliable CDN URL
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.4.168/build/pdf.worker.min.mjs';
 
-import { ABCSlideEditor } from './slides/ABCSlideEditor';
-import { OpenSlideEditor } from './slides/OpenSlideEditor';
-import { ExampleSlideEditor } from './slides/ExampleSlideEditor';
-import { InfoSlideEditor } from './slides/InfoSlideEditor';
-import { BoardSlideEditor } from './slides/BoardSlideEditor';
-import { VotingSlideEditor } from './slides/VotingSlideEditor';
 import { ConnectPairsEditor } from './slides/ConnectPairsEditor';
 import { FillBlanksEditor } from './slides/FillBlanksEditor';
 import { ImageHotspotsEditor } from './slides/ImageHotspotsEditor';
@@ -177,6 +162,32 @@ import { getBoardComments, BoardComment, getCommentsGroupedBySlide, addBoardComm
 import { SlideCommentsPreview } from './slides/SlideCommentsPreview';
 import { TeacherSession } from './QuizLiveSession';
 import { AIBoardPanel } from './AIBoardPanel';
+import { OsnovaPanel } from './OsnovaPanel';
+import { boardRoutes } from '../../features/board-v2';
+import type { BoardEditorEntryFlags } from '../../features/board-v2/components/views/board-editor';
+import {
+  clearBoardBlockSelection,
+  buildBoardReturnUrl,
+  closeBoardLiveSession,
+  closeBoardPreview,
+  getBoardPreviewSlideIndex,
+  handleBoardBlockSelectionChange,
+  openBoardResultsPage,
+  openBoardBlockSettings,
+  openBoardResultsTab,
+  openBoardPreview,
+  openBoardShareEditDialog,
+  openBoardVersionHistory,
+  openBoardViewFromEditor,
+  openWorksheetEditorFromBoard,
+  persistBoardDraft,
+  resetBoardCanvasInteraction,
+  resetBoardEditorSelection,
+  updateBoardEditorQuizSettings,
+  updateSelectedInfoBlock,
+  uploadImageToSelectedInfoBlock,
+} from '../../features/board-v2/components/views/board-editor';
+import { loadOrCreateBoardEditorQuiz } from '../../features/board-v2/components/views/board-editor/boardEditorBootstrap';
 import * as storage from '../../utils/profile-storage';
 import * as quizStorage from '../../utils/quiz-storage';
 
@@ -194,865 +205,17 @@ const SLIDE_COLORS = [
 // UI COMPONENTS (SIDEBAR)
 // ============================================
 
-type ActivePanel = 'board' | 'content' | 'ai' | 'settings';
-
-function SidebarButton({ 
-  onClick, 
-  isActive = false, 
-  icon: Icon, 
-  label,
-  variant = 'default',
-  disabled = false,
-  isLoading = false,
-}: { 
-  onClick: () => void;
-  isActive?: boolean;
-  icon: any;
-  label: string;
-  variant?: 'default' | 'orange' | 'green';
-  disabled?: boolean;
-  isLoading?: boolean;
-}) {
-  let bgColor = isActive ? '#4E5871' : 'white';
-  let iconColor = isActive ? 'white' : '#4E5871';
-  let labelColor = '#4E5871';
-
-  if (variant === 'orange') {
-    bgColor = isLoading ? '#F5A574' : '#E8956D';
-    iconColor = 'white';
-    labelColor = '#E8956D';
-  } else if (variant === 'green') {
-    bgColor = '#4eebc0';
-    iconColor = '#4E5871';
-    labelColor = '#4E5871';
-  }
-  
-  return (
-    <button
-      type="button"
-      onClick={(e) => {
-        e.preventDefault();
-        if (!disabled && !isLoading) {
-          onClick();
-        }
-      }}
-      disabled={disabled || isLoading}
-      style={{ 
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        cursor: disabled ? 'not-allowed' : 'pointer',
-        background: 'none',
-        border: 'none',
-        padding: 0,
-        marginBottom: '8px',
-      }}
-    >
-      <div 
-        style={{ 
-          width: '70px', 
-          height: '70px',
-          backgroundColor: bgColor,
-          borderRadius: '12px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          transition: 'all 0.2s',
-        }}
-      >
-        {isLoading ? (
-          <Loader2 size={28} className="animate-spin" style={{ color: iconColor }} strokeWidth={1.5} />
-        ) : (
-          <Icon size={28} strokeWidth={1.5} style={{ color: iconColor }} />
-        )}
-      </div>
-      <span 
-        style={{ 
-          fontSize: '12px',
-          fontWeight: 500,
-          marginTop: '8px',
-          color: labelColor,
-          textAlign: 'center',
-        }}
-      >
-        {isLoading ? 'Načítám...' : label}
-      </span>
-    </button>
-  );
-}
-
-function AddContentButton({ 
-  onClick, 
-  isActive,
-}: { 
-  onClick: () => void;
-  isActive: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      style={{ 
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        cursor: 'pointer',
-        background: 'none',
-        border: 'none',
-        padding: 0,
-        marginBottom: '8px',
-      }}
-    >
-      <div 
-        style={{ 
-          width: '70px', 
-          height: '70px',
-          backgroundColor: isActive ? '#4E5871' : 'white',
-          borderRadius: '12px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-      >
-        <div 
-          style={{
-            width: '36px',
-            height: '36px',
-            borderRadius: '50%',
-            backgroundColor: isActive ? 'rgba(255,255,255,0.2)' : '#4E5871',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-        >
-          <Plus size={22} strokeWidth={2} style={{ color: 'white' }} />
-        </div>
-      </div>
-      <span 
-        style={{ 
-          fontSize: '12px',
-          fontWeight: 500,
-          marginTop: '8px',
-          color: '#4E5871',
-          textAlign: 'center',
-        }}
-      >
-        Přidat obsah
-      </span>
-    </button>
-  );
-}
-
-// ============================================
-// INLINE COLOR PICKER (for page settings panel)
-// ============================================
-
-const COLOR_GRID = {
-  grays: ['transparent', '#ffffff', '#f8fafc', '#f1f5f9', '#e2e8f0', '#cbd5e1', '#94a3b8', '#64748b', '#1e293b', '#0f172a'],
-  colors: [
-    '#7f1d1d', '#b91c1c', '#166534', '#0f766e', '#0369a1', '#1d4ed8', '#6d28d9', '#a21caf',
-    '#dc2626', '#ef4444', '#22c55e', '#14b8a6', '#0ea5e9', '#3b82f6', '#8b5cf6', '#d946ef',
-    '#fca5a5', '#fecaca', '#86efac', '#5eead4', '#7dd3fc', '#93c5fd', '#c4b5fd', '#f0abfc',
-    '#fee2e2', '#fef2f2', '#dcfce7', '#ccfbf1', '#e0f2fe', '#dbeafe', '#ede9fe', '#fae8ff',
-  ],
-};
-
-function InlineColorPicker({ value, onChange }: { value?: string; onChange: (color: string) => void }) {
-  const selectedColor = value || '#ffffff';
-  
-  return (
-    <div className="space-y-3">
-      {/* Grays row */}
-      <div className="flex gap-1.5 flex-wrap">
-        {COLOR_GRID.grays.map((color, idx) => (
-          <button
-            key={`gray-${idx}`}
-            onClick={() => onChange(color === 'transparent' ? '#ffffff' : color)}
-            className={`w-7 h-7 rounded-full border-2 transition-all hover:scale-110 ${
-              selectedColor === color ? 'border-indigo-500 ring-2 ring-indigo-200' : 'border-slate-200'
-            }`}
-            style={{ backgroundColor: color === 'transparent' ? '#fff' : color }}
-          >
-            {color === 'transparent' && (
-              <div className="w-full h-full rounded-full relative overflow-hidden">
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="w-5 h-0.5 bg-red-400 rotate-45" />
-                </div>
-              </div>
-            )}
-          </button>
-        ))}
-      </div>
-      
-      {/* Color grid */}
-      <div className="grid grid-cols-8 gap-1.5">
-        {COLOR_GRID.colors.map((color, idx) => (
-          <button
-            key={`color-${idx}`}
-            onClick={() => onChange(color)}
-            className={`w-7 h-7 rounded-full border-2 transition-all hover:scale-110 ${
-              selectedColor === color ? 'border-indigo-500 ring-2 ring-indigo-200' : 'border-transparent'
-            }`}
-            style={{ backgroundColor: color }}
-          />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// ============================================
-// SLIDE TYPE DEFINITIONS
-// ============================================
-
-interface SlideTypeOption {
-  id: string;
-  type: 'info' | 'activity' | 'tools';
-  activityType?: ActivityType;
-  label: string;
-  icon: React.ReactNode;
-  color: string;
-  description: string;
-}
-
-// Helper to render a single block in thumbnail
-function renderBlockThumbnail(block: any, isFirst: boolean = false, compact: boolean = false, fullHeight: boolean = false, templateColor?: string) {
-  const fontSize = compact ? '8px' : (isFirst ? '12px' : '9px');
-  // Use block background first, then template color as fallback
-  const blockBgColor = block.background?.color;
-  const bgColor = (blockBgColor && blockBgColor !== 'transparent' && blockBgColor !== '') 
-    ? blockBgColor 
-    : (templateColor || 'transparent');
-  const hasBackground = bgColor !== 'transparent' && bgColor !== '';
-  
-  // Wrapper style for background color - always fill height when fullHeight is true
-  const wrapperStyle: React.CSSProperties = {
-    backgroundColor: bgColor,
-    height: fullHeight ? '100%' : 'auto',
-    minHeight: fullHeight ? '100%' : undefined,
-    padding: hasBackground ? '4px' : '2px',
-    borderRadius: '2px',
-    display: 'flex',
-    flexDirection: 'column',
-    justifyContent: block.verticalAlign === 'bottom' ? 'flex-end' : 
-                    block.verticalAlign === 'middle' ? 'center' : 'flex-start',
-    overflow: 'hidden',
-  };
-  
-  // Text block with content
-  if (block.type === 'text' && block.content) {
-    // Calculate max lines based on context - show as much text as possible
-    const maxLines = compact ? 10 : (fullHeight ? 20 : 15);
-    
-    return (
-      <div style={wrapperStyle}>
-        <p 
-          className="leading-tight overflow-hidden"
-          style={{ 
-            fontSize,
-            fontWeight: block.fontWeight === 'bold' || isFirst ? 600 : 400,
-            fontFamily: block.fontFamily === 'cooper' ? '"Cooper Light", serif' :
-                        block.fontFamily === 'space' ? '"Space Grotesk", sans-serif' :
-                        block.fontFamily === 'sora' ? '"Sora", sans-serif' :
-                        block.fontFamily === 'playfair' ? '"Playfair Display", serif' :
-                        block.fontFamily === 'itim' ? '"Itim", cursive' :
-                        block.fontFamily === 'sacramento' ? '"Sacramento", cursive' :
-                        block.fontFamily === 'lora' ? '"Lora", serif' :
-                        block.fontFamily === 'oswald' ? '"Oswald", sans-serif' :
-                        '"Fenomen Sans", sans-serif',
-            textAlign: block.textAlign || 'left',
-            color: block.textColor || '#1e293b',
-            display: '-webkit-box',
-            WebkitLineClamp: maxLines,
-            WebkitBoxOrient: 'vertical' as const,
-            overflow: 'hidden',
-            whiteSpace: 'pre-wrap',
-            wordBreak: 'break-word',
-          }}
-        >
-          {block.content}
-        </p>
-      </div>
-    );
-  }
-  
-  // Image block with content
-  if (block.type === 'image' && block.content) {
-    return (
-      <div style={{ ...wrapperStyle, height: '100%', overflow: 'hidden' }}>
-        <img 
-          src={block.content} 
-          alt="" 
-          className="w-full h-full object-cover rounded"
-          style={{ 
-            objectPosition: block.imagePosition || 'center',
-          }}
-        />
-      </div>
-    );
-  }
-  
-  // Any block with background (even without content) - show the colored area
-  if (hasBackground) {
-    return <div style={wrapperStyle} />;
-  }
-  
-  // Empty block without background - still render placeholder to maintain layout
-  if (fullHeight) {
-    return <div style={{ ...wrapperStyle, backgroundColor: 'rgba(0,0,0,0.02)' }} />;
-  }
-  
-  return null;
-}
-
-// Slide thumbnail - renders visual representation of the slide
-function SlidePreviewThumbnail({ slide }: { slide: QuizSlide }) {
-  // Info slide
-  if (slide.type === 'info') {
-    const infoSlide = slide as InfoSlide;
-    const bgColor = infoSlide.slideBackground?.color || '#ffffff';
-    
-    // Get template colors if template is set
-    const template = infoSlide.templateId ? getTemplateById(infoSlide.templateId) : undefined;
-    const getBlockTemplateColor = (blockIndex: number): string | undefined => {
-      if (!template?.blockColors) return undefined;
-      return template.blockColors[blockIndex % template.blockColors.length];
-    };
-    
-    // Check for layout blocks
-    if (infoSlide.layout?.blocks?.length) {
-      const layoutType = infoSlide.layout.type;
-      const blocks = infoSlide.layout.blocks;
-      
-      // Single block layout (full page)
-      if (layoutType === 'single') {
-        return (
-          <div className="w-full h-full p-1 flex items-stretch" style={{ backgroundColor: bgColor }}>
-            <div className="flex-1">{blocks[0] && renderBlockThumbnail(blocks[0], true, false, true, getBlockTemplateColor(0))}</div>
-          </div>
-        );
-      }
-      
-      // Title + content layout
-      if (layoutType === 'title-content') {
-        return (
-          <div className="w-full h-full p-1 flex flex-col gap-0.5" style={{ backgroundColor: bgColor }}>
-            <div className="flex-shrink-0">{blocks[0] && renderBlockThumbnail(blocks[0], true, false, false, getBlockTemplateColor(0))}</div>
-            <div className="flex-1 min-h-0">{blocks[1] && renderBlockThumbnail(blocks[1], false, false, true, getBlockTemplateColor(1))}</div>
-          </div>
-        );
-      }
-      
-      // 2 columns layout
-      if (layoutType === '2cols') {
-        return (
-          <div className="w-full h-full p-1 flex gap-0.5" style={{ backgroundColor: bgColor }}>
-            <div className="flex-1 min-w-0">{blocks[0] && renderBlockThumbnail(blocks[0], false, true, true, getBlockTemplateColor(0))}</div>
-            <div className="flex-1 min-w-0">{blocks[1] && renderBlockThumbnail(blocks[1], false, true, true, getBlockTemplateColor(1))}</div>
-          </div>
-        );
-      }
-      
-      // Title + 2 columns layout
-      if (layoutType === 'title-2cols') {
-        return (
-          <div className="w-full h-full p-1 flex flex-col gap-0.5" style={{ backgroundColor: bgColor }}>
-            <div className="flex-shrink-0">{blocks[0] && renderBlockThumbnail(blocks[0], true, false, false, getBlockTemplateColor(0))}</div>
-            <div className="flex-1 flex gap-0.5 min-h-0">
-              <div className="flex-1 min-w-0">{blocks[1] && renderBlockThumbnail(blocks[1], false, true, true, getBlockTemplateColor(1))}</div>
-              <div className="flex-1 min-w-0">{blocks[2] && renderBlockThumbnail(blocks[2], false, true, true, getBlockTemplateColor(2))}</div>
-            </div>
-          </div>
-        );
-      }
-      
-      // 3 columns layout
-      if (layoutType === '3cols') {
-        return (
-          <div className="w-full h-full p-1 flex gap-0.5" style={{ backgroundColor: bgColor }}>
-            <div className="flex-1 min-w-0">{blocks[0] && renderBlockThumbnail(blocks[0], false, true, true, getBlockTemplateColor(0))}</div>
-            <div className="flex-1 min-w-0">{blocks[1] && renderBlockThumbnail(blocks[1], false, true, true, getBlockTemplateColor(1))}</div>
-            <div className="flex-1 min-w-0">{blocks[2] && renderBlockThumbnail(blocks[2], false, true, true, getBlockTemplateColor(2))}</div>
-          </div>
-        );
-      }
-      
-      // Title + 3 columns layout
-      if (layoutType === 'title-3cols') {
-        return (
-          <div className="w-full h-full p-1 flex flex-col gap-0.5" style={{ backgroundColor: bgColor }}>
-            <div className="flex-shrink-0">{blocks[0] && renderBlockThumbnail(blocks[0], true, false, false, getBlockTemplateColor(0))}</div>
-            <div className="flex-1 flex gap-0.5 min-h-0">
-              <div className="flex-1 min-w-0">{blocks[1] && renderBlockThumbnail(blocks[1], false, true, true, getBlockTemplateColor(1))}</div>
-              <div className="flex-1 min-w-0">{blocks[2] && renderBlockThumbnail(blocks[2], false, true, true, getBlockTemplateColor(2))}</div>
-              <div className="flex-1 min-w-0">{blocks[3] && renderBlockThumbnail(blocks[3], false, true, true, getBlockTemplateColor(3))}</div>
-            </div>
-          </div>
-        );
-      }
-      
-      // Left large + right split layout
-      if (layoutType === 'left-large-right-split') {
-        return (
-          <div className="w-full h-full p-1 flex gap-0.5" style={{ backgroundColor: bgColor }}>
-            <div className="flex-[2] min-w-0">{blocks[0] && renderBlockThumbnail(blocks[0], true, false, true, getBlockTemplateColor(0))}</div>
-            <div className="flex-1 flex flex-col gap-0.5 min-w-0">
-              <div className="flex-1 min-h-0">{blocks[1] && renderBlockThumbnail(blocks[1], false, true, true, getBlockTemplateColor(1))}</div>
-              <div className="flex-1 min-h-0">{blocks[2] && renderBlockThumbnail(blocks[2], false, true, true, getBlockTemplateColor(2))}</div>
-            </div>
-          </div>
-        );
-      }
-      
-      // Right large + left split layout
-      if (layoutType === 'right-large-left-split') {
-        return (
-          <div className="w-full h-full p-1 flex gap-0.5" style={{ backgroundColor: bgColor }}>
-            <div className="flex-1 flex flex-col gap-0.5 min-w-0">
-              <div className="flex-1 min-h-0">{blocks[0] && renderBlockThumbnail(blocks[0], false, true, true, getBlockTemplateColor(0))}</div>
-              <div className="flex-1 min-h-0">{blocks[1] && renderBlockThumbnail(blocks[1], false, true, true, getBlockTemplateColor(1))}</div>
-            </div>
-            <div className="flex-[2] min-w-0">{blocks[2] && renderBlockThumbnail(blocks[2], true, false, true, getBlockTemplateColor(2))}</div>
-          </div>
-        );
-      }
-      
-      // Grid 2x2 layout
-      if (layoutType === 'grid-2x2') {
-        return (
-          <div className="w-full h-full p-1 grid grid-cols-2 grid-rows-2 gap-0.5" style={{ backgroundColor: bgColor }}>
-            <div className="min-w-0 min-h-0">{blocks[0] && renderBlockThumbnail(blocks[0], false, true, true, getBlockTemplateColor(0))}</div>
-            <div className="min-w-0 min-h-0">{blocks[1] && renderBlockThumbnail(blocks[1], false, true, true, getBlockTemplateColor(1))}</div>
-            <div className="min-w-0 min-h-0">{blocks[2] && renderBlockThumbnail(blocks[2], false, true, true, getBlockTemplateColor(2))}</div>
-            <div className="min-w-0 min-h-0">{blocks[3] && renderBlockThumbnail(blocks[3], false, true, true, getBlockTemplateColor(3))}</div>
-          </div>
-        );
-      }
-      
-      // Default fallback - vertical stack
-      return (
-        <div 
-          className="w-full h-full p-2 flex flex-col gap-1"
-          style={{ backgroundColor: bgColor }}
-        >
-          {blocks.slice(0, 3).map((block, i) => (
-            <div key={i} className="overflow-hidden">
-              {renderBlockThumbnail(block, i === 0, false, false, getBlockTemplateColor(i))}
-            </div>
-          ))}
-        </div>
-      );
-    }
-    
-    // Legacy
-    return (
-      <div className="w-full h-full p-3 flex flex-col justify-center" style={{ backgroundColor: bgColor }}>
-        {infoSlide.title && (
-          <p className="text-sm font-bold text-slate-800 text-center mb-2">{infoSlide.title}</p>
-        )}
-        {infoSlide.media?.url && (
-          <img src={infoSlide.media.url} alt="" className="w-full h-16 object-cover rounded" />
-        )}
-      </div>
-    );
-  }
-  
-  // Activity slides
-  const activitySlide = slide as any;
-  const question = activitySlide.question || activitySlide.instruction || '';
-  
-  switch (activitySlide.activityType) {
-    case 'abc':
-    case 'true-false':
-      return (
-        <div className="w-full h-full p-3 bg-white flex flex-col">
-          <p className="text-xs font-bold text-slate-800 text-center mb-2 line-clamp-2">{question || 'Otázka'}</p>
-          <div className="flex-1 flex flex-col gap-1 justify-center">
-            {(activitySlide.options || []).slice(0, 4).map((opt: any, i: number) => (
-              <div 
-                key={i} 
-                className="flex items-center gap-1 px-2 py-1 rounded text-[10px]"
-                style={{ backgroundColor: opt.isCorrect ? '#dcfce7' : '#f1f5f9' }}
-              >
-                <span className="font-bold text-slate-500">{String.fromCharCode(65 + i)}</span>
-                <span className="text-slate-700 truncate">{opt.text?.slice(0, 25) || ''}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      );
-    
-    case 'open':
-      return (
-        <div className="w-full h-full p-3 bg-white flex flex-col">
-          <p className="text-xs font-bold text-slate-800 text-center mb-3 line-clamp-2">{question || 'Otázka'}</p>
-          <div className="flex-1 border-2 border-dashed border-slate-300 rounded bg-slate-50" />
-        </div>
-      );
-    
-    case 'example':
-      return (
-        <div className="w-full h-full p-3 bg-white flex flex-col justify-center items-center gap-1.5">
-          {activitySlide.problem ? (
-            <p className="text-[11px] font-bold text-slate-800 text-center line-clamp-2">{activitySlide.problem}</p>
-          ) : (
-            <p className="text-[10px] text-slate-400 text-center">Příklad</p>
-          )}
-          {activitySlide.finalAnswer && (
-            <div className="px-2 py-0.5 rounded bg-emerald-100 text-[10px] font-semibold text-emerald-700 text-center truncate max-w-full">
-              = {activitySlide.finalAnswer}
-            </div>
-          )}
-          {(activitySlide.alternativeAnswers || []).filter(Boolean).length > 0 && (
-            <p className="text-[8px] text-slate-400">+{(activitySlide.alternativeAnswers || []).filter(Boolean).length} alt.</p>
-          )}
-        </div>
-      );
-    
-    case 'fill-blanks':
-      return (
-        <div className="w-full h-full p-3 bg-white flex items-center justify-center">
-          <div className="text-[10px] text-slate-700 text-center flex flex-wrap justify-center gap-1">
-            <span>Text</span>
-            <span className="bg-purple-200 px-2 rounded">____</span>
-            <span>slovo</span>
-            <span className="bg-purple-200 px-2 rounded">____</span>
-          </div>
-        </div>
-      );
-    
-    case 'connect-pairs':
-      return (
-        <div className="w-full h-full p-2 bg-white flex items-center justify-between gap-2">
-          <div className="flex flex-col gap-1 flex-1">
-            {(activitySlide.pairs || []).slice(0, 4).map((_: any, i: number) => (
-              <div key={i} className="h-4 bg-orange-100 rounded text-[8px] flex items-center justify-center text-orange-700">
-                {i + 1}
-              </div>
-            ))}
-          </div>
-          <div className="text-orange-400 text-lg">↔</div>
-          <div className="flex flex-col gap-1 flex-1">
-            {(activitySlide.pairs || []).slice(0, 4).map((_: any, i: number) => (
-              <div key={i} className="h-4 bg-orange-100 rounded text-[8px] flex items-center justify-center text-orange-700">
-                {String.fromCharCode(65 + i)}
-              </div>
-            ))}
-          </div>
-        </div>
-      );
-    
-    case 'image-hotspots':
-      return (
-        <div className="w-full h-full relative bg-slate-100">
-          {activitySlide.imageUrl ? (
-            <>
-              <img src={activitySlide.imageUrl} alt="" className="w-full h-full object-cover" />
-              {(activitySlide.hotspots || []).slice(0, 5).map((h: any, i: number) => (
-                <div 
-                  key={i}
-                  className="absolute w-3 h-3 bg-pink-500 rounded-full border border-white"
-                  style={{ left: `${h.x}%`, top: `${h.y}%`, transform: 'translate(-50%, -50%)' }}
-                />
-              ))}
-            </>
-          ) : (
-            <div className="w-full h-full flex items-center justify-center">
-              <span className="text-[10px] text-slate-400">Obrázek</span>
-            </div>
-          )}
-        </div>
-      );
-    
-    case 'video-quiz':
-      return (
-        <div className="w-full h-full bg-slate-800 flex flex-col items-center justify-center">
-          <div className="w-12 h-8 bg-black rounded flex items-center justify-center mb-1">
-            <div className="w-0 h-0 border-l-[8px] border-l-white border-y-[5px] border-y-transparent" />
-          </div>
-          <span className="text-[9px] text-white/70">{activitySlide.questions?.length || 0} otázek</span>
-        </div>
-      );
-    
-    case 'voting':
-      return (
-        <div className="w-full h-full p-3 bg-white flex flex-col">
-          <p className="text-[10px] font-bold text-slate-800 text-center mb-2 truncate">{question || 'Hlasování'}</p>
-          <div className="flex-1 flex items-end justify-center gap-1">
-            {[40, 70, 30, 55].map((h, i) => (
-              <div key={i} className="w-4 bg-indigo-400 rounded-t" style={{ height: `${h}%` }} />
-            ))}
-          </div>
-        </div>
-      );
-    
-    case 'board':
-      return (
-        <div className="w-full h-full p-2 bg-white flex flex-col">
-          <p className="text-[10px] font-bold text-slate-800 text-center mb-2 truncate">{question || 'Nástěnka'}</p>
-          <div className="flex-1 grid grid-cols-3 gap-1">
-            {[1, 2, 3, 4, 5, 6].map(i => (
-              <div key={i} className="bg-amber-100 rounded" />
-            ))}
-          </div>
-        </div>
-      );
-    
-    default:
-      return (
-        <div className="w-full h-full bg-slate-100 flex items-center justify-center">
-          <span className="text-xs text-slate-400">Náhled</span>
-        </div>
-      );
-  }
-}
-
-// ============================================
-// SORTABLE ITEM COMPONENT
-// ============================================
-
-function SortableSlideItem({ 
-  slide, 
-  index, 
-  selectedSlideId, 
-  setSelectedSlideId, 
-  multiSelectedIds,
-  setMultiSelectedIds,
-  typeInfo, 
-  chapterName, 
-  chapterCount, 
-  showSlidePreviews,
-  duplicateSlide,
-  deleteSlide,
-  getSlideTitle
-}: any) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging
-  } = useSortable({ id: slide.id });
-
-  const isActive = selectedSlideId === slide.id;
-  const isMultiSelected = multiSelectedIds.includes(slide.id);
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-    zIndex: isDragging ? 1000 : (isActive ? 10 : (isMultiSelected ? 5 : 0)),
-    position: 'relative' as const,
-  };
-
-  const handleItemClick = (e: React.MouseEvent) => {
-    if (e.shiftKey || e.metaKey || e.ctrlKey) {
-      if (isMultiSelected) {
-        setMultiSelectedIds(multiSelectedIds.filter((id: string) => id !== slide.id));
-      } else {
-        setMultiSelectedIds([...multiSelectedIds, slide.id]);
-      }
-    } else {
-      setSelectedSlideId(slide.id);
-      setMultiSelectedIds([]);
-    }
-  };
-
-  return (
-    <div 
-      ref={setNodeRef} 
-      style={style} 
-      {...attributes}
-      {...listeners}
-      data-slide-id={slide.id}
-      className="outline-none"
-    >
-      {/* Compact view (no visual preview) */}
-      {!showSlidePreviews ? (
-        <div
-          onClick={handleItemClick}
-          className={`
-            group relative flex flex-col rounded-xl cursor-pointer transition-all border-2
-            ${isActive
-              ? 'border-indigo-600 ring-1 ring-indigo-600 shadow-xl z-[10] bg-white' 
-              : isMultiSelected
-                ? 'border-blue-400 border-dashed shadow-md z-[5] bg-white'
-                : 'border-slate-200 hover:border-indigo-200 hover:shadow-sm z-0 bg-white'
-            }
-          `}
-        >
-          {chapterName && (
-            <div className="px-3 py-2 flex items-center gap-2.5 bg-transparent border-b border-slate-50">
-              <div className="w-5 h-5 rounded-full bg-indigo-500 text-white flex items-center justify-center text-[10px] font-bold shrink-0">
-                {chapterCount}
-              </div>
-              <span className="text-[11px] font-bold truncate text-indigo-700">{chapterName}</span>
-            </div>
-          )}
-          
-          <div className="flex items-center gap-2.5 py-2 px-3">
-            <div className="flex items-center gap-1.5">
-              <span className={`text-[10px] font-bold w-4 text-center ${isActive ? 'text-indigo-600' : 'text-slate-400'}`}>{index + 1}</span>
-              <div 
-                className={`rounded p-1 ${isActive ? 'text-indigo-400 hover:bg-indigo-50' : 'text-slate-300 hover:bg-slate-50'}`}
-              >
-                <GripVertical className="w-3 h-3" />
-              </div>
-            </div>
-            
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2">
-                <div 
-                  className="w-6 h-6 rounded flex items-center justify-center shrink-0"
-                  style={{ color: isActive ? '#4f46e5' : typeInfo.color }}
-                >
-                  {React.cloneElement(typeInfo.icon as React.ReactElement, { className: 'w-[18px] h-[18px]' })}
-                </div>
-                <p className={`text-[13px] font-semibold truncate leading-snug ${isActive ? 'text-indigo-900' : 'text-slate-700'}`}>
-                  {getSlideTitle(slide) || <span className="text-slate-400 italic font-normal">Bez názvu</span>}
-                </p>
-              </div>
-            </div>
-            
-            {/* Actions overlay */}
-            <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 transition-opacity">
-              <button
-                onClick={(e) => { e.stopPropagation(); duplicateSlide(slide.id); }}
-                className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-indigo-600"
-                title="Duplikovat"
-              >
-                <Copy className="w-3.5 h-3.5" />
-              </button>
-              <button
-                onClick={(e) => { e.stopPropagation(); deleteSlide(slide.id); }}
-                className="p-1 rounded hover:bg-red-50 text-slate-400 hover:text-red-500"
-                title="Smazat"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : (
-        /* Preview view with visual thumbnail */
-        <div
-          onClick={handleItemClick}
-          className={`
-            group relative rounded-xl cursor-pointer transition-all border-2 overflow-hidden
-            ${isActive
-              ? 'border-indigo-600 ring-1 ring-indigo-600 shadow-2xl z-[10] bg-white' 
-              : isMultiSelected
-                ? 'border-blue-400 border-dashed shadow-lg z-[5] bg-white'
-                : 'border-slate-200 hover:border-indigo-300 hover:shadow-md z-0 bg-white'
-            }
-          `}
-        >
-          {chapterName && (
-            <div className="px-2.5 py-1.5 flex items-center gap-2 border-b border-slate-50 bg-transparent">
-              <div className="w-5 h-5 rounded-full bg-indigo-500 text-white flex items-center justify-center text-[10px] font-bold shrink-0">
-                {chapterCount}
-              </div>
-              <span className="text-[10px] font-bold truncate text-indigo-700">{chapterName}</span>
-            </div>
-          )}
-
-          {/* Header bar */}
-          <div className={`flex items-center gap-2 px-2 py-1.5 border-b ${isActive ? 'bg-indigo-50/30 border-indigo-100' : 'bg-slate-50 border-slate-200'}`}>
-            <div 
-              className={`rounded p-0.5 ${isActive ? 'text-indigo-400 hover:bg-indigo-50' : 'text-slate-300 hover:bg-slate-200'}`}
-            >
-              <GripVertical className="w-3 h-3" />
-            </div>
-            <span className={`text-xs font-bold ${isActive ? 'text-indigo-600' : 'text-slate-400'}`}>{index + 1}</span>
-            <div 
-              className="w-5 h-5 rounded flex items-center justify-center shrink-0"
-              style={{ color: isActive ? '#4f46e5' : typeInfo.color }}
-            >
-              {React.cloneElement(typeInfo.icon as React.ReactElement, { className: 'w-3.5 h-3.5' })}
-            </div>
-            <span className={`text-[11px] font-bold flex-1 truncate ${isActive ? 'text-indigo-900' : 'text-slate-700'}`}>
-                {getSlideTitle(slide) || <span className="text-slate-400 italic font-normal">Bez názvu</span>}
-            </span>
-            
-            {/* Actions */}
-            <div className="opacity-0 group-hover:opacity-100 flex gap-0.5 transition-opacity">
-              <button
-                onClick={(e) => { e.stopPropagation(); duplicateSlide(slide.id); }}
-                className="p-1 rounded hover:bg-slate-200 text-slate-400 hover:text-indigo-600"
-                title="Duplikovat"
-              >
-                <Copy className="w-3.5 h-3.5" />
-              </button>
-              <button
-                onClick={(e) => { e.stopPropagation(); deleteSlide(slide.id); }}
-                className="p-1 rounded hover:bg-red-100 text-slate-400 hover:text-red-500"
-                title="Smazat"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          </div>
-          
-          {/* Visual preview - slide thumbnail with 16:9 aspect ratio */}
-          <div className="overflow-hidden rounded" style={{ aspectRatio: '16/9', width: '100%' }}>
-            <SlidePreviewThumbnail slide={slide} />
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
 
 // ============================================
 // STORAGE (using centralized quiz-storage)
 // ============================================
 
-const { saveQuiz, getQuiz: loadQuizLocal, getQuizAsync: loadQuizAsync } = quizStorage;
+const {
+  saveQuiz: defaultSaveQuiz,
+  getQuiz: defaultLoadQuizLocal,
+  getQuizAsync: defaultLoadQuizAsync,
+} = quizStorage;
 
-// ============================================
-// SESSION TYPES
-// ============================================
-
-interface StudentResponse {
-  slideId: string;
-  answer: string | string[];
-  isCorrect?: boolean;
-  answeredAt: string;
-}
-
-interface SessionStudent {
-  studentName: string;
-  responses: Record<string, StudentResponse>;
-  completedAt?: string;
-  joinedAt?: string;
-  isOnline?: boolean;
-}
-
-interface SessionData {
-  id: string;
-  type: 'live' | 'shared';
-  sessionName?: string;
-  quizId: string;
-  createdAt: string;
-  endedAt?: string;
-  students: Record<string, SessionStudent>;
-  settings?: {
-    anonymousAccess?: boolean;
-    showSolutionHints?: boolean;
-    showActivityResults?: boolean;
-  };
-}
-
-const ColorIcon = ({ className = "w-4 h-4" }: { className?: string }) => (
-  <svg width="21" height="19" viewBox="0 0 21 19" fill="none" xmlns="http://www.w3.org/2000/svg" className={className}>
-    <g>
-      <path d="M4.15823 17.3472H0.835443C0.379747 17.3472 0 17.7186 0 18.1644C0 18.6101 0.379747 18.9816 0.835443 18.9816H4.13924C4.59494 18.9816 4.97468 18.6101 4.97468 18.1644C4.97468 17.7186 4.59494 17.3472 4.13924 17.3472H4.15823Z" fill="currentColor"/>
-      <path d="M16.6899 0L14.1076 5.99902C14.1076 5.99902 14.1646 5.99902 14.2025 5.99902C15.8734 5.99902 17.3544 6.70479 18.3987 7.80059L20.981 1.78299L16.6709 0.0185728L16.6899 0Z" fill="currentColor"/>
-      <path d="M14.2025 7.52197C11.8861 7.52197 10.0063 9.36068 10.0063 11.6266C10.0063 14.3939 9.91138 17.4027 6.70252 17.4213C6.2848 17.4213 5.94302 17.7556 5.94302 18.1828C5.94302 18.6099 6.2848 18.9257 6.70252 18.9443C15.8544 18.9443 18.3987 13.911 18.3987 11.6451C18.3987 9.37925 16.519 7.54055 14.2025 7.54055V7.52197Z" fill="currentColor"/>
-    </g>
-  </svg>
-);
 
 // ============================================
 // MAIN COMPONENT
@@ -1060,15 +223,58 @@ const ColorIcon = ({ className = "w-4 h-4" }: { className?: string }) => (
 
 interface QuizEditorLayoutProps {
   theme?: 'light' | 'dark';
+  boardId?: string;
+  queryParams?: URLSearchParams;
+  navigateOverride?: NavigateFunction;
+  entryFlags?: BoardEditorEntryFlags;
+  persistence?: {
+    loadQuizLocal: (boardId: string) => Quiz | null;
+    loadQuizAsync: (boardId: string) => Promise<Quiz | null>;
+    saveQuiz: (quiz: Quiz) => void;
+  };
+  routes?: Pick<typeof boardRoutes, 'results' | 'view'>;
 }
 
-export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
-  const { id } = useParams<{ id: string }>();
-  const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+export function QuizEditorLayout({
+  theme = 'light',
+  boardId,
+  queryParams,
+  navigateOverride,
+  entryFlags,
+  persistence,
+  routes = boardRoutes,
+}: QuizEditorLayoutProps) {
+  const { id: routedId } = useParams<{ id: string }>();
+  const navigateFromRouter = useNavigate();
+  const [searchParamsFromRouter] = useSearchParams();
+  const id = boardId ?? routedId;
+  const navigate = navigateOverride ?? navigateFromRouter;
+  const searchParams = queryParams ?? searchParamsFromRouter;
+  const {
+    saveQuiz,
+    loadQuizLocal,
+    loadQuizAsync,
+  } = persistence ?? {
+    saveQuiz: defaultSaveQuiz,
+    loadQuizLocal: defaultLoadQuizLocal,
+    loadQuizAsync: defaultLoadQuizAsync,
+  };
+  const resolvedEntryFlags = useMemo(
+    () => entryFlags ?? {
+      returnUrl: searchParams.get('returnUrl'),
+      initialTab: (searchParams.get('tab') as 'editor' | 'results') || 'editor',
+      fromPdf: searchParams.get('fromPdf') === 'true',
+      fromWorksheet: searchParams.get('fromWorksheet') === 'true',
+      openAI: searchParams.get('openAI') === 'true',
+      sourceId: searchParams.get('sourceId'),
+      sourceSlug: searchParams.get('sourceSlug'),
+      sourceCategory: searchParams.get('sourceCategory'),
+    },
+    [entryFlags, searchParams],
+  );
   
   // Get returnUrl from search params (for admin navigation)
-  const returnUrl = searchParams.get('returnUrl');
+  const returnUrl = resolvedEntryFlags.returnUrl;
     
   // Track window width for responsive toolbar labels
   const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1200);
@@ -1093,11 +299,36 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
   const [selectedSlideId, setSelectedSlideId] = useState<string | null>(null);
   const [isDirty, setIsDirty] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+
+  // Dataset images — obrázky z linked datasetu (pro AssetPicker tab "Z datasetu")
+  const [datasetImages, setDatasetImages] = useState<Array<{ url: string; title?: string; alt?: string }>>([]);
   
   // Keep ref in sync with state
   useEffect(() => {
     quizRef.current = quiz;
   }, [quiz]);
+
+  // Fetch dataset images when quiz has sourceDatasetId
+  useEffect(() => {
+    const sourceDatasetId = quiz?.sourceDatasetId;
+    if (!sourceDatasetId) return;
+
+    supabase
+      .from('topic_data_sets')
+      .select('media')
+      .eq('id', sourceDatasetId)
+      .single()
+      .then(({ data, error }) => {
+        if (error || !data?.media) return;
+        const media = data.media as any;
+        const imgs: Array<{ url: string; title?: string; alt?: string }> = [
+          ...(media.images ?? []),
+          ...(media.generatedIllustrations ?? []),
+          ...(media.generatedPhotos ?? []),
+        ].filter((img: any) => !!img?.url);
+        setDatasetImages(imgs);
+      });
+  }, [quiz?.sourceDatasetId]);
   
   // Warn user before closing page with unsaved changes
   useEffect(() => {
@@ -1113,10 +344,25 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [isDirty, isSaving]);
   
-  const [showPreview, setShowPreview] = useState(false);
   const [isImportingPdf, setIsImportingPdf] = useState(false);
-  const [showNewSlideDropdown, setShowNewSlideDropdown] = useState(false);
-  const [showShareEditDialog, setShowShareEditDialog] = useState(false);
+
+  const {
+    showPreview, setShowPreview,
+    showNewSlideDropdown, setShowNewSlideDropdown,
+    showShareEditDialog, setShowShareEditDialog,
+    showVersionHistory, setShowVersionHistory,
+    showLiveSession, setShowLiveSession,
+    showColorPicker, setShowColorPicker,
+    showSettings, setShowSettings,
+    showSlidePreviews, setShowSlidePreviews,
+  } = useEditorModals();
+
+  const {
+    showImportInput, setShowImportInput,
+    importInputValue, setImportInputValue,
+    jsonPreviewText, setJsonPreviewText,
+    jsonPreviewLoading, setJsonPreviewLoading,
+  } = useImportState();
   const [boardComments, setBoardComments] = useState<BoardComment[]>([]);
   const pdfInputRef = useRef<HTMLInputElement>(null);
   
@@ -1217,260 +463,55 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
   
-  // Undo/Redo state
-  const [undoStack, setUndoStack] = useState<Quiz[]>([]);
-  const [redoStack, setRedoStack] = useState<Quiz[]>([]);
-  const maxUndoSteps = 50;
-
-  // Update quiz with undo support
-  const updateQuizWithUndo = useCallback((newQuiz: Quiz) => {
-    if (quiz) {
-      setUndoStack(prev => {
-        const newStack = [...prev, quiz];
-        return newStack.slice(-maxUndoSteps);
-      });
-      setRedoStack([]); // Clear redo on new action
-    }
-    setQuiz(newQuiz);
-    setIsDirty(true);
-  }, [quiz]);
-
-  // Undo action
-  const undo = useCallback(() => {
-    if (undoStack.length > 0) {
-      const previousState = undoStack[undoStack.length - 1];
-      setUndoStack(prev => prev.slice(0, -1));
-      if (quiz) {
-        setRedoStack(prev => [...prev, quiz]);
-      }
-      setQuiz(previousState);
-      setIsDirty(true);
-    }
-  }, [undoStack, quiz]);
-
-  // Redo action
-  const redo = useCallback(() => {
-    if (redoStack.length > 0) {
-      const nextState = redoStack[redoStack.length - 1];
-      setRedoStack(prev => prev.slice(0, -1));
-      if (quiz) {
-        setUndoStack(prev => [...prev, quiz]);
-      }
-      setQuiz(nextState);
-      setIsDirty(true);
-    }
-  }, [redoStack, quiz]);
-
-  // Keyboard shortcuts for undo/redo
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Undo/Redo shortcuts
-      if ((e.metaKey || e.ctrlKey) && e.key === 'z') {
-        e.preventDefault();
-        if (e.shiftKey) {
-          redo();
-        } else {
-          undo();
-        }
-      }
-      if ((e.metaKey || e.ctrlKey) && e.key === 'y') {
-        e.preventDefault();
-        redo();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [undo, redo]);
+  // Undo/Redo via custom hook (handles keyboard shortcuts internally)
+  const { updateQuizWithUndo, undo, redo, canUndo, canRedo } = useUndoRedo(quiz, setQuiz, setIsDirty);
   
   // UI state
   const [isResizing, setIsResizing] = useState(false);
-  const [showLiveSession, setShowLiveSession] = useState(false);
   const [viewMode, setViewMode] = useState<'editor' | 'results'>(
-    (searchParams.get('tab') as 'editor' | 'results') || 'editor'
+    resolvedEntryFlags.initialTab
   );
+
   // Open AI panel automatically if coming from PDF or Worksheet
-  const fromPdfParam = searchParams.get('fromPdf') === 'true';
-  const fromWorksheetParam = searchParams.get('fromWorksheet') === 'true';
-  const openAIParam = searchParams.get('openAI') === 'true';
-  const [activePanel, setActivePanel] = useState<ActivePanel>((fromPdfParam || fromWorksheetParam || openAIParam) ? 'ai' : 'board');
-  const [contentPanelMode, setContentPanelMode] = useState<'add' | 'change'>('add');
-  const [showSettings, setShowSettings] = useState(false);
-  const [showColorPicker, setShowColorPicker] = useState(false);
-  const [showImportInput, setShowImportInput] = useState(false);
-  const [importInputValue, setImportInputValue] = useState('');
-  const [showVersionHistory, setShowVersionHistory] = useState(false);
-  const [showActivitiesSubmenu, setShowActivitiesSubmenu] = useState(false);
-  const [showSlidePreviews, setShowSlidePreviews] = useState(false);
-  const [showPageSettings, setShowPageSettings] = useState(false);
-  const [pageSettingsSection, setPageSettingsSection] = useState<'type' | 'template' | 'layout' | 'background' | 'chapter' | 'note' | 'comments' | undefined>(undefined);
-  const [pageSettingsInitialShowActivities, setPageSettingsInitialShowActivities] = useState(false);
-  const [selectedBlockIndex, setSelectedBlockIndex] = useState<number | null>(null);
-  const [showBlockSettings, setShowBlockSettings] = useState(false); // Panel se otevírá jen explicitně
-  const [blockSettingsSection, setBlockSettingsSection] = useState<string | null>(null);
-  const [showBlockColorPicker, setShowBlockColorPicker] = useState(false);
+  const fromPdfParam = resolvedEntryFlags.fromPdf;
+  const fromWorksheetParam = resolvedEntryFlags.fromWorksheet;
+  const openAIParam = resolvedEntryFlags.openAI;
 
-  // Multi-selection and Marquee
-  const [multiSelectedIds, setMultiSelectedIds] = useState<string[]>([]);
-  const [selectionRect, setSelectionRect] = useState<{ x: number, y: number, w: number, h: number } | null>(null);
-  const [isMarqueeSelecting, setIsMarqueeSelecting] = useState(false);
-  const marqueeStartPos = useRef<{ x: number, y: number } | null>(null);
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const {
+    activePanel, setActivePanel,
+    contentPanelMode, setContentPanelMode,
+    showActivitiesSubmenu, setShowActivitiesSubmenu,
+    showToolsSubmenu, setShowToolsSubmenu,
+  } = useContentPanel((fromPdfParam || fromWorksheetParam || openAIParam) ? 'ai' : 'board');
 
-  const handleMarqueeMouseDown = (e: React.MouseEvent) => {
-    // Only if clicking on the background of the list container (or the container itself)
-    // We check if the click target is the container or a spacer, not a slide card
-    const target = e.target as HTMLElement;
-    if (target.closest('[data-slide-id]')) return;
+  const {
+    selectedBlockIndex, setSelectedBlockIndex,
+    showBlockSettings, setShowBlockSettings,
+    blockSettingsSection, setBlockSettingsSection,
+    showBlockColorPicker, setShowBlockColorPicker,
+    editingTextBlockIndex, setEditingTextBlockIndex,
+    clearBlockSelection,
+  } = useBlockSelection();
 
-    setIsMarqueeSelecting(true);
-    
-    // Get coordinates relative to the scroll container
-    const rect = scrollContainerRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    
-    const startX = e.clientX;
-    const startY = e.clientY;
-    
-    marqueeStartPos.current = { x: startX, y: startY };
-    setSelectionRect({ x: startX, y: startY, w: 0, h: 0 });
-    
-    // Clear selection if not holding shift
-    if (!e.shiftKey) {
-      setMultiSelectedIds([]);
-    }
-  };
+  const {
+    showPageSettings, setShowPageSettings,
+    pageSettingsSection, setPageSettingsSection,
+    pageSettingsInitialShowActivities, setPageSettingsInitialShowActivities,
+    openPageSettings,
+    togglePageSettings,
+  } = usePageSettingsPanel(clearBlockSelection);
 
-  const handleMarqueeMouseMove = (e: React.MouseEvent) => {
-    if (!isMarqueeSelecting || !marqueeStartPos.current) return;
+  // Multi-selection and Marquee via custom hook
+  const {
+    multiSelectedIds,
+    setMultiSelectedIds,
+    selectionRect,
+    scrollContainerRef,
+    handleMarqueeMouseDown,
+  } = useMarqueeSelection(!!quiz?.slides.length);
 
-    const x = Math.min(e.clientX, marqueeStartPos.current.x);
-    const y = Math.min(e.clientY, marqueeStartPos.current.y);
-    const w = Math.abs(e.clientX - marqueeStartPos.current.x);
-    const h = Math.abs(e.clientY - marqueeStartPos.current.y);
-
-    // Require minimum 8px drag before starting actual selection
-    if (w < 8 && h < 8) return;
-
-    setSelectionRect({ x, y, w, h });
-    
-    // Find items within rect
-    if (quiz && scrollContainerRef.current) {
-      const items = scrollContainerRef.current.querySelectorAll('[data-slide-id]');
-      const newSelectedIds: string[] = e.shiftKey ? [...multiSelectedIds] : [];
-      
-      items.forEach((item) => {
-        const rect = item.getBoundingClientRect();
-        const slideId = item.getAttribute('data-slide-id');
-        if (!slideId) return;
-
-        const isInside = 
-          rect.left < x + w &&
-          rect.right > x &&
-          rect.top < y + h &&
-          rect.bottom > y;
-
-        if (isInside) {
-          if (!newSelectedIds.includes(slideId)) {
-            newSelectedIds.push(slideId);
-          }
-        } else if (!e.shiftKey) {
-          const idx = newSelectedIds.indexOf(slideId);
-          if (idx > -1) newSelectedIds.splice(idx, 1);
-        }
-      });
-      
-      setMultiSelectedIds(newSelectedIds);
-    }
-  };
-
-  const handleMarqueeMouseUp = () => {
-    // If the selection rect was never shown (drag too small), clear any accidental selection
-    if (!selectionRect || (selectionRect.w < 8 && selectionRect.h < 8)) {
-      setMultiSelectedIds([]);
-    }
-    setIsMarqueeSelecting(false);
-    setSelectionRect(null);
-    marqueeStartPos.current = null;
-  };
-
-  useEffect(() => {
-    if (isMarqueeSelecting) {
-      const handleGlobalMouseMove = (e: MouseEvent) => handleMarqueeMouseMove(e as any);
-      const handleGlobalMouseUp = () => handleMarqueeMouseUp();
-      
-      window.addEventListener('mousemove', handleGlobalMouseMove);
-      window.addEventListener('mouseup', handleGlobalMouseUp);
-      return () => {
-        window.removeEventListener('mousemove', handleGlobalMouseMove);
-        window.removeEventListener('mouseup', handleGlobalMouseUp);
-      };
-    }
-  }, [isMarqueeSelecting, multiSelectedIds]);
-
-  // Helper to open page settings and close block settings
-  const openPageSettings = (section?: typeof pageSettingsSection, showActivities = false) => {
-    setSelectedBlockIndex(null);
-    setPageSettingsSection(section);
-    setPageSettingsInitialShowActivities(showActivities);
-    setShowPageSettings(true);
-  };
-  
-  // Toggle page settings - close if open, open if closed
-  const togglePageSettings = () => {
-    if (showPageSettings) {
-      setShowPageSettings(false);
-      setPageSettingsSection(undefined);
-      setPageSettingsInitialShowActivities(false);
-    } else {
-      setSelectedBlockIndex(null);
-      setPageSettingsSection(undefined);
-      setShowPageSettings(true);
-    }
-  };
-  const [editingTextBlockIndex, setEditingTextBlockIndex] = useState<number | null>(null);
-
-  // Global click handler to deselect block when clicking outside block & settings panel
-  useEffect(() => {
-    function handleGlobalMouseDown(e: MouseEvent) {
-      const target = e.target as HTMLElement;
-      if (!target) return;
-      
-      // Don't deselect if clicking inside BlockSettingsPanel or PageSettingsPanel (fixed panels)
-      const panel = target.closest('[data-settings-panel]');
-      if (panel) return;
-
-      // Don't deselect if clicking inside AssetPicker or any portal modal
-      const modal = target.closest('[class*="fixed inset-0"]') || target.closest('[role="dialog"]');
-      if (modal) return;
-
-      // Don't deselect if clicking on block toolbar buttons (they have their own handlers)
-      const toolbarBtn = target.closest('[data-block-toolbar]');
-      if (toolbarBtn) return;
-
-      // Don't deselect if clicking inside the selected block itself
-      const blockEl = target.closest('[data-slide-block]');
-      if (blockEl) return;
-
-      // Don't deselect if clicking inside the slide block settings toolbar row
-      const settingsRow = target.closest('[data-block-settings-row]');
-      if (settingsRow) return;
-
-      // If we have a selected block, deselect it
-      if (selectedBlockIndex !== null || showBlockSettings) {
-        setSelectedBlockIndex(null);
-        setShowBlockSettings(false);
-        setBlockSettingsSection(null);
-        setEditingTextBlockIndex(null);
-      }
-    }
-
-    document.addEventListener('mousedown', handleGlobalMouseDown);
-    return () => document.removeEventListener('mousedown', handleGlobalMouseDown);
-  }, [selectedBlockIndex, showBlockSettings]);
-  
-  // Results state
-  const [sessions, setSessions] = useState<SessionData[]>([]);
-  const [loadingSessions, setLoadingSessions] = useState(false);
+  // Results sessions data
+  const { sessions, loadingSessions } = useSessionsData(id, viewMode);
   
   // Get current user
   const profile = storage.getCurrentUserProfile();
@@ -1497,101 +538,6 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
     }, []),
   });
   
-  // Load sessions when Results tab is active
-  useEffect(() => {
-    if (viewMode !== 'results' || !id) return;
-    
-    setLoadingSessions(true);
-    
-    // Load live sessions
-    const liveSessionsRef = ref(database, 'quiz_sessions');
-    const sharedSessionsRef = ref(database, 'quiz_shares');
-    
-    // Combined loading
-    let liveLoaded = false;
-    let sharedLoaded = false;
-    let liveData: SessionData[] = [];
-    let sharedData: SessionData[] = [];
-    
-    const combineAndSetSessions = () => {
-      if (liveLoaded && sharedLoaded) {
-        const allSessions = [...liveData, ...sharedData];
-        // Filter out sessions with 0 participants
-        const activeSessions = allSessions.filter(session => {
-          const studentCount = Object.keys(session.students || {}).length;
-          return studentCount > 0;
-        });
-        
-        activeSessions.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-        setSessions(activeSessions);
-        setLoadingSessions(false);
-      }
-    };
-    
-    // Listener for live sessions
-    onValue(liveSessionsRef, (snapshot) => {
-      const data = snapshot.val();
-      liveData = [];
-      if (data) {
-        Object.entries(data).forEach(([sessionId, sessionData]: [string, any]) => {
-          if (sessionData.quizId === id) {
-            liveData.push({
-              id: sessionId,
-              type: 'live',
-              sessionName: sessionData.teacherName ? `Živé promítání - ${sessionData.teacherName}` : 'Živé promítání',
-              quizId: sessionData.quizId,
-              createdAt: sessionData.createdAt,
-              endedAt: sessionData.endedAt,
-              students: sessionData.students || {},
-            });
-          }
-        });
-      }
-      liveLoaded = true;
-      combineAndSetSessions();
-    });
-    
-    // Listener for shared sessions
-    onValue(sharedSessionsRef, (snapshot) => {
-      const data = snapshot.val();
-      sharedData = [];
-      if (data) {
-        Object.entries(data).forEach(([sessionId, sessionData]: [string, any]) => {
-          if (sessionData.quizId === id) {
-            // Convert responses format to students format for consistency
-            const students: Record<string, SessionStudent> = {};
-            if (sessionData.responses) {
-              Object.entries(sessionData.responses).forEach(([studentId, studentData]: [string, any]) => {
-                students[studentId] = {
-                  studentName: studentData.studentName || 'Anonymní',
-                  responses: studentData.responses || {},
-                  completedAt: studentData.completedAt,
-                };
-              });
-            }
-            
-            sharedData.push({
-              id: sessionId,
-              type: 'shared',
-              sessionName: sessionData.sessionName || 'Sdílený úkol',
-              quizId: sessionData.quizId,
-              createdAt: sessionData.createdAt,
-              students: students,
-              settings: sessionData.settings,
-            });
-          }
-        });
-      }
-      sharedLoaded = true;
-      combineAndSetSessions();
-    });
-    
-    return () => {
-      off(liveSessionsRef);
-      off(sharedSessionsRef);
-    };
-  }, [viewMode, id]);
-  
   // Loading state for async quiz fetch
   const [isLoadingQuiz, setIsLoadingQuiz] = useState(true);
   
@@ -1601,93 +547,36 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
     
     const loadQuizData = async () => {
       setIsLoadingQuiz(true);
-      
-      // First try localStorage (fast)
-      let existingQuiz = loadQuizLocal(id);
-      
-      // If not in localStorage, try Supabase (for cross-browser support)
-      if (!existingQuiz) {
-        console.log('[QuizEditor] Quiz not in localStorage, trying Supabase...');
-        existingQuiz = await loadQuizAsync(id);
+
+      try {
+        const bootstrapResult = await loadOrCreateBoardEditorQuiz({
+          boardId: id,
+          entryFlags: resolvedEntryFlags,
+          persistence: {
+            loadQuizLocal,
+            loadQuizAsync,
+          },
+          storage: typeof window !== 'undefined' ? window.sessionStorage : undefined,
+        });
+
+        setQuiz(bootstrapResult.quiz);
+        setSelectedSlideId(bootstrapResult.selectedSlideId);
+
+        if (bootstrapResult.created) {
+          // Save immediately to localStorage to prevent race conditions with sync.
+          // This ensures the quiz exists before any Supabase sync can overwrite.
+          saveQuiz(bootstrapResult.quiz);
+          console.log('[QuizEditor] Saved new quiz to localStorage:', bootstrapResult.quiz.id);
+        }
+      } catch (error) {
+        console.error('[QuizEditor] Failed to bootstrap board editor:', error);
+      } finally {
+        setIsLoadingQuiz(false);
       }
-      
-      if (existingQuiz) {
-        console.log('[QuizEditor] Loaded existing quiz:', existingQuiz.id, existingQuiz.title);
-        setQuiz(existingQuiz);
-        if (existingQuiz.slides.length > 0) {
-          setSelectedSlideId(existingQuiz.slides[0].id);
-        }
-      } else {
-        console.log('[QuizEditor] Creating new quiz:', id);
-        const newQuiz = createEmptyQuiz(id);
-        
-        // Check if coming from PDF or Worksheet with context
-        const fromPdf = searchParams.get('fromPdf') === 'true';
-        const fromWorksheet = searchParams.get('fromWorksheet') === 'true';
-        console.log('[QuizEditor] fromPdf:', fromPdf, 'fromWorksheet:', fromWorksheet);
-        if (fromPdf || fromWorksheet) {
-          const pdfDataStr = sessionStorage.getItem('vividboard_from_pdf');
-          console.log('[QuizEditor] sessionStorage data exists:', !!pdfDataStr);
-          if (pdfDataStr) {
-            try {
-              const pdfData = JSON.parse(pdfDataStr);
-              console.log('[QuizEditor] Parsed PDF data:', {
-                title: pdfData.title,
-                transcriptLength: pdfData.transcript?.length || 0,
-                sourceId: pdfData.sourceId,
-                preview: pdfData.transcript?.substring(0, 100)
-              });
-              newQuiz.title = pdfData.title || pdfData.sourceTitle || 'Nový Vividboard';
-              // Store transcript for AI panel to use (persisted in quiz)
-              newQuiz.pdfTranscript = pdfData.transcript;
-              // Store source worksheet info for linking back
-              if (pdfData.linkBackToWorksheet && pdfData.sourceId) {
-                newQuiz.sourceWorksheet = {
-                  id: pdfData.sourceId,
-                  slug: pdfData.sourceSlug,
-                  category: pdfData.sourceCategory
-                };
-              }
-              // Clear sessionStorage
-              sessionStorage.removeItem('vividboard_from_pdf');
-            } catch (e) {
-              console.error('[QuizEditor] Failed to parse PDF data:', e);
-            }
-          } else {
-            console.log('[QuizEditor] No PDF data in sessionStorage, checking URL params');
-            // Fallback: read source info from URL params
-            const sourceId = searchParams.get('sourceId');
-            const sourceSlug = searchParams.get('sourceSlug');
-            const sourceCategory = searchParams.get('sourceCategory');
-            if (sourceId && sourceCategory) {
-              console.log('[QuizEditor] Found source info in URL:', { sourceId, sourceSlug, sourceCategory });
-              newQuiz.sourceWorksheet = {
-                id: sourceId,
-                slug: sourceSlug || sourceId,
-                category: sourceCategory
-              };
-            }
-          }
-        }
-        
-        console.log('[QuizEditor] Setting quiz with sourceWorksheet:', newQuiz.sourceWorksheet);
-        setQuiz(newQuiz);
-        if (newQuiz.slides.length > 0) {
-          setSelectedSlideId(newQuiz.slides[0].id);
-        }
-        
-        // Save immediately to localStorage to prevent race conditions with sync
-        // This ensures the quiz exists before any Supabase sync can overwrite
-        // Filter in getQuizList() will hide empty quizzes from the library
-        saveQuiz(newQuiz);
-        console.log('[QuizEditor] Saved new quiz to localStorage:', newQuiz.id);
-      }
-      
-      setIsLoadingQuiz(false);
     };
     
     loadQuizData();
-  }, [id, searchParams]);
+  }, [id, resolvedEntryFlags, loadQuizAsync, loadQuizLocal, saveQuiz]);
   
   // Auto-save (local + server)
   useEffect(() => {
@@ -1696,43 +585,16 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
         setIsSaving(true);
         console.log('[AutoSave] Starting save...');
         
-        // Save to localStorage
-        saveQuiz(quiz);
-        setIsDirty(false);
-        
-        // Also save to Supabase pages API (server) for cross-browser access
         try {
-          let accessToken: string | undefined;
-          try {
-            const storageKey = `sb-njbtqmsxbyvpwigfceke-auth-token`;
-            const stored = localStorage.getItem(storageKey);
-            if (stored) {
-              const parsed = JSON.parse(stored);
-              accessToken = parsed?.access_token;
-            }
-          } catch (e) {}
-          
-          if (accessToken) {
-            const boardSlug = `board-${quiz.id}`;
-            await fetch(
-              `https://${projectId}.supabase.co/functions/v1/make-server-46c8107b/pages`,
-              {
-                method: 'POST',
-                headers: {
-                  'Authorization': `Bearer ${accessToken}`,
-                  'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                  slug: boardSlug,
-                  title: quiz.title || 'Board',
-                  category: 'knihovna-vividbooks',
-                  type: 'board',
-                  worksheetData: quiz,
-                })
-              }
-            );
-            console.log('[AutoSave] Board saved to server');
-          }
+          const persistPromise = persistBoardDraft({
+            quiz,
+            persistence: { saveQuiz },
+            projectId,
+            storage: typeof window !== 'undefined' ? window.localStorage : undefined,
+          });
+          setIsDirty(false);
+          await persistPromise;
+          console.log('[AutoSave] Board saved');
         } catch (err) {
           console.warn('[AutoSave] Server save failed:', err);
         } finally {
@@ -1838,6 +700,9 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
       case 'form':
         newSlide = createFormSlide(order);
         break;
+      case 'flashcard':
+        newSlide = createFlashcardSlide(order);
+        break;
       case 'certificate':
         newSlide = createCertificateSlide(order);
         break;
@@ -1880,6 +745,7 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
       case 'image-hotspots': template = createImageHotspotsSlide(currentSlide.order); break;
       case 'video-quiz': template = createVideoQuizSlide(currentSlide.order); break;
       case 'form': template = createFormSlide(currentSlide.order); break;
+      case 'flashcard': template = createFlashcardSlide(currentSlide.order); break;
       case 'certificate': template = createCertificateSlide(currentSlide.order); break;
       case 'info':
       default: template = createInfoSlide(currentSlide.order); break;
@@ -2011,27 +877,27 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
     }
 
     let data;
-    let url = input.trim();
-    
-    // If it's just a UUID, prepend the API URL
-    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(url)) {
-      // Use ?all=true to get the full content/pages structure
-      url = `https://api.vividboard.cz/boards/${url}?all=true`;
-    } else if (url.includes('api.vividboard.cz/boards/') && !url.includes('all=true')) {
-      // Ensure ?all=true is present for the API URL to get content
-      url += url.includes('?') ? '&all=true' : '?all=true';
-    }
+    const trimmed = input.trim();
+
+    // Extract UUID from raw UUID or any URL containing one
+    const uuidMatch = trimmed.match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
 
     try {
-      if (url.startsWith('http')) {
-        const response = await fetch(url);
-        if (!response.ok) throw new Error(`Nepodařilo se načíst data z API (${response.status})`);
+      if (uuidMatch) {
+        // Use Supabase proxy to avoid CORS issues with the old vividboard API
+        const boardId = uuidMatch[1];
+        const proxyUrl = `https://${projectId}.supabase.co/functions/v1/make-server-46c8107b/vividboard-proxy/${boardId}`;
+        const response = await fetch(proxyUrl);
+        if (!response.ok) throw new Error(`Proxy vrátila chybu ${response.status}`);
         data = await response.json();
+      } else if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+        // Raw JSON pasted directly
+        data = JSON.parse(trimmed);
       } else {
-        data = JSON.parse(input);
+        throw new Error('Vložte UUID boardu, odkaz obsahující UUID, nebo přímo JSON.');
       }
     } catch (e) {
-      alert('Chyba při parsování dat: ' + e);
+      alert('Chyba při načítání dat: ' + e);
       return;
     }
 
@@ -2076,9 +942,16 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
           const activityKey = activity.key;
           const activityData = activity.data?.[activityKey];
 
+          // Chapter name / note are in legacy.data.notes for all activity types
+          const actNotes = legacy.data?.notes || {};
+          const actChapterName: string = stripHtml(actNotes.chapter || actNotes.name || '');
+          const actNote: string = stripHtml(actNotes.text || '');
+
           if (activityKey === 'abc' && activityData) {
             const abcSlide = createABCSlide(slideOrder++);
             abcSlide.id = id;
+            if (actChapterName) abcSlide.chapterName = actChapterName;
+            if (actNote) abcSlide.note = actNote;
             
             // Extract question — check both "text" and "textvisual" tabs
             const activeTab = activityData.selector?.activeTab;
@@ -2117,6 +990,8 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
           if (activityKey === 'open' && activityData) {
             const openSlide = createOpenSlide(slideOrder++);
             openSlide.id = id;
+            if (actChapterName) openSlide.chapterName = actChapterName;
+            if (actNote) openSlide.note = actNote;
 
             // Check both "text" and "textvisual" tabs
             const openActiveTab = activityData.selector?.activeTab;
@@ -2149,6 +1024,8 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
           if (activityKey === 'input' && activityData) {
             const exampleSlide = createExampleSlide(slideOrder++);
             exampleSlide.id = id;
+            if (actChapterName) exampleSlide.chapterName = actChapterName;
+            if (actNote) exampleSlide.note = actNote;
             
             // Check both "text" and "textvisual" tabs
             const inputActiveTab = activityData.selector?.activeTab;
@@ -2165,27 +1042,53 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
             }
 
             exampleSlide.problem = stripHtml(inputQuestionHtml);
-            exampleSlide.title = ''; // No title for imported examples
+            exampleSlide.title = '';
             if (inputImageUrl) {
               exampleSlide.media = { type: 'image', url: inputImageUrl };
             }
             
-            // Answer is directly in activityData.answer
             const answerHtml = activityData.answer || '';
             if (answerHtml) {
               exampleSlide.finalAnswer = stripHtml(answerHtml);
             }
             
-            // Import suffix/unit — old format stores it as "pripona" (HTML)
             const suffixHtml = activityData.pripona || '';
             if (suffixHtml) {
               exampleSlide.answerSuffix = stripHtml(suffixHtml);
             }
             
-            // No steps for simple examples
             exampleSlide.steps = [];
-            
             slides.push(exampleSlide);
+            return;
+          }
+
+          // "question" = open question with hiddenAnswer (old format activity key)
+          if ((activityKey === 'question' || activityKey === 'open_question') && activityData) {
+            const qSlide = createOpenSlide(slideOrder++);
+            qSlide.id = id;
+            if (actChapterName) qSlide.chapterName = actChapterName;
+            if (actNote) qSlide.note = actNote;
+
+            const qActiveTab = activityData.selector?.activeTab;
+            let qHtml = '';
+            let qImageUrl = '';
+            if (qActiveTab === 'textvisual' && activityData.selector?.tabs?.textvisual) {
+              const tv = activityData.selector.tabs.textvisual;
+              qHtml = tv.text || '';
+              qImageUrl = tv.visual?.data || '';
+            } else {
+              qHtml = activityData.selector?.tabs?.text?.data || activityData.selector?.tabs?.textvisual?.text || '';
+              qImageUrl = activityData.selector?.tabs?.image?.images?.[0]?.data || '';
+            }
+
+            qSlide.question = stripHtml(qHtml);
+            if (qImageUrl) (qSlide as any).media = { type: 'image', url: qImageUrl };
+
+            // Hidden answer (revealed on demand)
+            const hiddenAnswerHtml = activityData.hiddenAnswer || activityData.selectorAnswers?.tabs?.text?.data || '';
+            if (hiddenAnswerHtml) qSlide.correctAnswers = [stripHtml(hiddenAnswerHtml)];
+
+            slides.push(qSlide);
             return;
           }
         }
@@ -2327,10 +1230,13 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
           }
           slides.push(exampleSlide);
         } else if (legacy.type !== 'config' && legacy.type !== 'add') {
-          // General fallback
+          // General fallback — also handles selector pages with unrecognised activity keys
+          const fallbackNotes = legacy.data?.notes || {};
+          const fallbackChapterName = stripHtml(fallbackNotes.chapter || fallbackNotes.name || '');
           const fallback = createInfoSlide(slideOrder++);
           fallback.id = id;
-          fallback.title = stripHtml(legacy.title || legacy.name || legacy.type || 'Importovaný slide');
+          if (fallbackChapterName) fallback.chapterName = fallbackChapterName;
+          fallback.title = fallbackChapterName || stripHtml(legacy.title || legacy.name || legacy.type || 'Importovaný slide');
           if (fallback.layout) {
             fallback.layout.blocks[1].content = typeof legacy === 'string' ? legacy : JSON.stringify(legacy);
           }
@@ -2356,6 +1262,57 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
       return;
     }
 
+    // ── Build worksheetMap from pageEdit (Osnova) ─────────────────────────
+    // chapterIndex in the old system's selections = 1-based page array position.
+    // (pages[0] is always config and is skipped; pages[1] gets chapterIndex=1, etc.)
+    // The correct mapping is therefore: chapterIndex → pageIndexToSlideIndex[chapterIndex].
+    // NOTE: We do NOT use a sequential named-chapter count because that diverges from
+    // chapterIndex whenever unnamed pages appear before the target position.
+    const pageIndexToSlideIndex: Record<number, number> = {};
+    {
+      let si = 1;
+      legacySlides.forEach((page: any, pageIndex: number) => {
+        if (page.type !== 'config' && page.type !== 'add') {
+          pageIndexToSlideIndex[pageIndex] = si;
+          si++;
+        }
+      });
+    }
+
+    const pageEdit = data.content?.pageEdit;
+    let worksheetMap: import('../../types/quiz').WorksheetMap | undefined;
+    if (pageEdit?.pageBlocks && Array.isArray(pageEdit.pageBlocks)) {
+
+      // Resolve old chapterIndex → new slideIndex.
+      // chapterIndex is the 0-based array position in legacySlides (pages[N] → chapterIndex=N).
+      const resolveSlideIndex = (chapterIndex: number): number => {
+        const v = pageIndexToSlideIndex[chapterIndex];
+        if (v !== undefined) return v;
+        // Last resort: shift by same offset (si starts at 1)
+        return chapterIndex;
+      };
+
+      worksheetMap = {
+        pages: pageEdit.pageBlocks.map((pb: any) => ({
+          thumbnailUrl: pb.thumbnailUrl || '',
+          pageNumber: pb.pageNumber || '',
+          regions: (pb.selections || []).map((sel: any) => {
+            const slideIndex = resolveSlideIndex(sel.chapterIndex);
+            return {
+              slideIndex,
+              chapterIndex: sel.chapterIndex,  // keep original for badge label
+              xPct: sel.xPct,
+              yPct: sel.yPct,
+              wPct: sel.wPct,
+              hPct: sel.hPct,
+              color: sel.color || '#4f46e5',
+            };
+          }).filter((r: any) => r.slideIndex >= 0 && r.slideIndex < importedSlides.length),
+        })),
+      };
+    }
+    // ─────────────────────────────────────────────────────────────────────
+
     const newQuiz: Quiz = {
       ...quiz!,
       title: data.name || data.title || quiz!.title,
@@ -2363,6 +1320,7 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
       boardType: data.type || 'practice',
       slides: importedSlides,
       updatedAt: new Date().toISOString(),
+      ...(worksheetMap ? { worksheetMap } : {}),
     };
 
     setQuiz(newQuiz);
@@ -2630,80 +1588,147 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
   
   // Navigate to full results page
   const openSessionResults = (session: SessionData) => {
-    // For both live and shared sessions, navigate to the results page
-    // The results page needs to know the session type to load from the correct Firebase path
-    navigate(`/quiz/results/${session.id}?type=${session.type}`);
+    openBoardResultsPage({
+      session,
+      navigate,
+      routes,
+    });
   };
-  
-  // ============================================
-  // RENDER HELPERS
-  // ============================================
-  
-  const renderSessionsList = () => (
-    <div className="h-full flex flex-col">
-      {/* Header */}
-      <div className="p-4 border-b border-slate-200 bg-white">
-        <h2 className="text-xl font-bold text-slate-800">Výsledky</h2>
-        <p className="text-sm text-slate-500 mt-1">Přehled všech sessions pro tento board</p>
-      </div>
-      
-      {/* Sessions list */}
-      <div className="flex-1 overflow-auto p-4">
-        {loadingSessions ? (
-          <div className="flex items-center justify-center py-12">
-            <div className="animate-spin rounded-full h-8 w-8 border-2 border-indigo-600 border-t-transparent" />
-          </div>
-        ) : sessions.length === 0 ? (
-          <div className="text-center py-12 text-slate-400">
-            <BarChart2 className="w-16 h-16 mx-auto mb-4 opacity-30" />
-            <p className="text-lg font-medium">Žádné aktivní sessions</p>
-            <p className="text-sm mt-1">Spusťte kvíz nebo sdílejte ho se studenty</p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {sessions.map((session) => {
-              const studentCount = Object.keys(session.students || {}).length;
-              
-              return (
-                <button
-                  key={session.id}
-                  onClick={() => openSessionResults(session)}
-                  className="w-full bg-white rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow text-left"
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                      <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
-                        session.type === 'live' ? 'bg-amber-100' : 'bg-blue-100'
-                      }`}>
-                        {session.type === 'live' ? (
-                          <Radio className="w-6 h-6 text-amber-600" />
-                        ) : (
-                          <Link2 className="w-6 h-6 text-blue-600" />
-                        )}
-                      </div>
-                      <div>
-                        <p className="font-semibold text-slate-800">{session.sessionName}</p>
-                        <p className="text-sm text-slate-500">
-                          {session.type === 'live' ? 'Živé promítání' : 'Sdílený úkol'} • {new Date(session.createdAt).toLocaleDateString('cs-CZ')}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-4">
-                      <div className="text-right">
-                        <p className="text-2xl font-bold text-indigo-600">{studentCount}</p>
-                        <p className="text-xs text-slate-400">účastníků</p>
-                      </div>
-                      <ChevronRight className="w-5 h-5 text-slate-400" />
-                    </div>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        )}
-      </div>
-    </div>
-  );
+
+  const openPreview = useCallback(() => {
+    openBoardPreview(setShowPreview);
+  }, [setShowPreview]);
+
+  const closePreview = useCallback(() => {
+    closeBoardPreview(setShowPreview);
+  }, [setShowPreview]);
+
+  const closeLiveSession = useCallback(() => {
+    closeBoardLiveSession(setShowLiveSession);
+  }, [setShowLiveSession]);
+
+  const openVersionHistory = useCallback(() => {
+    openBoardVersionHistory(setShowVersionHistory);
+  }, [setShowVersionHistory]);
+
+  const openShareEdit = useCallback(() => {
+    openBoardShareEditDialog(setShowShareEditDialog);
+  }, [setShowShareEditDialog]);
+
+  const openResultsTab = useCallback(() => {
+    openBoardResultsTab(setViewMode);
+  }, [setViewMode]);
+
+  const resetCanvasInteraction = useCallback(() => {
+    resetBoardCanvasInteraction({
+      setSelectedBlockIndex,
+      setShowBlockSettings,
+      setActivePanel,
+      setEditingTextBlockIndex,
+      setShowPageSettings,
+    });
+  }, [
+    setActivePanel,
+    setEditingTextBlockIndex,
+    setSelectedBlockIndex,
+    setShowBlockSettings,
+    setShowPageSettings,
+  ]);
+
+  const clearCanvasBlockSelection = useCallback(() => {
+    clearBoardBlockSelection({
+      setSelectedBlockIndex,
+      setShowBlockSettings,
+    });
+  }, [setSelectedBlockIndex, setShowBlockSettings]);
+
+  const clearSlideEditorSelection = useCallback(() => {
+    clearBoardBlockSelection({
+      setSelectedBlockIndex,
+      setShowBlockSettings,
+      setBlockSettingsSection,
+      setEditingTextBlockIndex,
+    });
+  }, [
+    setBlockSettingsSection,
+    setEditingTextBlockIndex,
+    setSelectedBlockIndex,
+    setShowBlockSettings,
+  ]);
+
+  const resetEditorSelection = useCallback(() => {
+    resetBoardEditorSelection({
+      setSelectedBlockIndex,
+      setActivePanel,
+      setShowPageSettings,
+      setEditingTextBlockIndex,
+    });
+  }, [
+    setActivePanel,
+    setEditingTextBlockIndex,
+    setSelectedBlockIndex,
+    setShowPageSettings,
+  ]);
+
+  const handleBlockSelectionChange = useCallback((blockIndex: number | null) => {
+    handleBoardBlockSelectionChange({
+      blockIndex,
+      setSelectedBlockIndex,
+      setShowPageSettings,
+      setActivePanel,
+      setShowBlockSettings,
+    });
+  }, [
+    setActivePanel,
+    setSelectedBlockIndex,
+    setShowBlockSettings,
+    setShowPageSettings,
+  ]);
+
+  const handleOpenBlockSettings = useCallback((blockIndex: number, initialSection?: string) => {
+    setSelectedBlockIndex(blockIndex);
+    openBoardBlockSettings({
+      setShowBlockSettings,
+      setBlockSettingsSection,
+      initialSection: initialSection ?? null,
+    });
+  }, [setBlockSettingsSection, setSelectedBlockIndex, setShowBlockSettings]);
+
+  const handleQuizSettingsUpdate = useCallback((settingsUpdate: Partial<QuizSettings>) => {
+    updateBoardEditorQuizSettings({
+      quiz,
+      settingsUpdate,
+      setQuiz,
+      setIsDirty,
+    });
+  }, [quiz, setIsDirty, setQuiz]);
+
+  const handleBlockSettingsUpdate = useCallback((updates: Partial<SlideBlock>) => {
+    if (selectedBlockIndex === null || selectedSlide?.type !== 'info' || !selectedSlide.layout) {
+      return;
+    }
+
+    updateSelectedInfoBlock({
+      selectedSlide,
+      selectedBlockIndex,
+      updates,
+      updateSlide,
+    });
+  }, [selectedBlockIndex, selectedSlide, updateSlide]);
+
+  const handleBlockImageUpload = useCallback(async (file: File) => {
+    if (selectedBlockIndex === null || selectedSlide?.type !== 'info' || !selectedSlide.layout) {
+      return;
+    }
+
+    await uploadImageToSelectedInfoBlock({
+      file,
+      uploadFile,
+      selectedSlide,
+      selectedBlockIndex,
+      updateSlide,
+    });
+  }, [selectedBlockIndex, selectedSlide, updateSlide, uploadFile]);
 
   // ============================================
   // RENDER
@@ -2718,16 +1743,16 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
   }
   
   if (showPreview) {
-    // Calculate the current slide index from selectedSlideId
-    const previewSlideIndex = selectedSlideId 
-      ? quiz.slides.findIndex(s => s.id === selectedSlideId)
-      : 0;
+    const previewSlideIndex = getBoardPreviewSlideIndex(
+      selectedSlideId,
+      quiz.slides.map((slide) => slide.id),
+    );
     
     return (
       <QuizPreview 
         quiz={quiz} 
-        onClose={() => setShowPreview(false)} 
-        initialSlideIndex={previewSlideIndex >= 0 ? previewSlideIndex : 0}
+        onClose={closePreview}
+        initialSlideIndex={previewSlideIndex}
       />
     );
   }
@@ -2738,7 +1763,7 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
         quiz={quiz}
         teacherId={profile?.userId || 'anonymous'}
         teacherName={profile?.firstName || 'Učitel'}
-        onClose={() => setShowLiveSession(false)}
+        onClose={closeLiveSession}
       />
     );
   }
@@ -2793,42 +1818,15 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
               console.log('[QuizEditor] Saving before navigation...');
               
               try {
-                // Save to localStorage
-                saveQuiz(quiz);
+                const persistPromise = persistBoardDraft({
+                  quiz,
+                  persistence: { saveQuiz },
+                  projectId,
+                  storage: typeof window !== 'undefined' ? window.localStorage : undefined,
+                });
                 setIsDirty(false);
-                
-                // Also save to Supabase
-                let accessToken: string | undefined;
-                try {
-                  const storageKey = `sb-njbtqmsxbyvpwigfceke-auth-token`;
-                  const stored = localStorage.getItem(storageKey);
-                  if (stored) {
-                    const parsed = JSON.parse(stored);
-                    accessToken = parsed?.access_token;
-                  }
-                } catch (e) {}
-                
-                if (accessToken) {
-                  const boardSlug = `board-${quiz.id}`;
-                  await fetch(
-                    `https://${projectId}.supabase.co/functions/v1/make-server-46c8107b/pages`,
-                    {
-                      method: 'POST',
-                      headers: {
-                        'Authorization': `Bearer ${accessToken}`,
-                        'Content-Type': 'application/json'
-                      },
-                      body: JSON.stringify({
-                        slug: boardSlug,
-                        title: quiz.title || 'Board',
-                        category: 'knihovna-vividbooks',
-                        type: 'board',
-                        worksheetData: quiz,
-                      })
-                    }
-                  );
-                  console.log('[QuizEditor] Saved before navigation');
-                }
+                await persistPromise;
+                console.log('[QuizEditor] Saved before navigation');
               } catch (err) {
                 console.warn('[QuizEditor] Save before navigation failed:', err);
               } finally {
@@ -2837,16 +1835,10 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
             }
             
             // Navigate after save
-            const sourceWorksheet = quiz?.sourceWorksheet;
-            let targetUrl = returnUrl || '/library/my-content';
-            
-            if (sourceWorksheet && quiz) {
-              // Add linkBoard parameter to return URL
-              const separator = targetUrl.includes('?') ? '&' : '?';
-              targetUrl = `${targetUrl}${separator}linkBoard=${quiz.id}&linkToItem=${sourceWorksheet.id}`;
+            const targetUrl = buildBoardReturnUrl({ quiz, returnUrl });
+            if (quiz?.sourceWorksheet) {
               console.log('[QuizEditor] Navigating back with board link:', targetUrl);
             }
-            
             navigate(targetUrl);
           }}
           style={{
@@ -2900,6 +1892,19 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
           icon={Layers}
           label="Struktura"
         />
+
+        {/* Osnova Tab (Worksheet map) — only shown when worksheetMap exists */}
+        {quiz?.worksheetMap && (
+          <SidebarButton
+            onClick={() => {
+              setActivePanel('osnova');
+              setViewMode('editor');
+            }}
+            isActive={activePanel === 'osnova' && viewMode === 'editor'}
+            icon={Map}
+            label="Osnova"
+          />
+        )}
         
         {/* Add Content Tab */}
         <SidebarButton
@@ -2923,7 +1928,7 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
           icon={Sparkles}
           label="AI"
         />
-        
+
         {/* Spacer */}
         <div style={{ flex: 1 }} />
       </div>
@@ -3049,6 +2054,7 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
                           setContentPanelMode('add');
                           setActivePanel('content');
                           setShowActivitiesSubmenu(true);
+                          setShowToolsSubmenu(false);
                           setShowNewSlideDropdown(false);
                         }}
                         className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 text-left transition-colors"
@@ -3068,8 +2074,10 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
                       {/* Nástroje */}
                       <button
                         onClick={() => {
-                          const type = SLIDE_TYPES.find(t => t.id === 'tools');
-                          if (type) addSlide(type);
+                          setContentPanelMode('add');
+                          setActivePanel('content');
+                          setShowActivitiesSubmenu(false);
+                          setShowToolsSubmenu(true);
                           setShowNewSlideDropdown(false);
                         }}
                         className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 text-left transition-colors"
@@ -3220,7 +2228,7 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
               </div>
               
               <div className="p-5 overflow-y-auto flex-1">
-                {!showActivitiesSubmenu ? (
+                {!showActivitiesSubmenu && !showToolsSubmenu ? (
                   <>
                     {/* Main options */}
                     <div className="mb-6">
@@ -3281,11 +2289,8 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
                         {/* Nástroje */}
                         <button
                           onClick={() => {
-                            const toolType = SLIDE_TYPES.find(t => t.type === 'tools');
-                            if (toolType) {
-                              if (contentPanelMode === 'add') addSlide(toolType);
-                              else changeSlideType(toolType);
-                            }
+                            setShowActivitiesSubmenu(false);
+                            setShowToolsSubmenu(true);
                           }}
                           className="w-full flex items-center gap-4 p-4 rounded-xl border border-slate-200 hover:border-orange-400 hover:shadow-md transition-all text-left group"
                         >
@@ -3347,7 +2352,7 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
                       </div>
                     )}
                   </>
-                ) : (
+                ) : showActivitiesSubmenu ? (
                   /* Activities submenu */
                   <>
                     <button
@@ -3373,6 +2378,7 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
                                 if (contentPanelMode === 'add') addSlide(type);
                                 else changeSlideType(type);
                                 setShowActivitiesSubmenu(false);
+                                setShowToolsSubmenu(false);
                               }}
                               className="w-full flex items-center gap-4 p-3 rounded-xl border border-slate-200 hover:border-emerald-400 hover:shadow-md transition-all text-left group"
                             >
@@ -3403,6 +2409,7 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
                                 if (contentPanelMode === 'add') addSlide(type);
                                 else changeSlideType(type);
                                 setShowActivitiesSubmenu(false);
+                                setShowToolsSubmenu(false);
                               }}
                               className="w-full flex items-center gap-4 p-3 rounded-xl border border-slate-200 hover:border-violet-400 hover:shadow-md transition-all text-left group"
                             >
@@ -3433,6 +2440,7 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
                                 if (contentPanelMode === 'add') addSlide(type);
                                 else changeSlideType(type);
                                 setShowActivitiesSubmenu(false);
+                                setShowToolsSubmenu(false);
                               }}
                               className="w-full flex items-center gap-4 p-3 rounded-xl border border-slate-200 hover:border-red-400 hover:shadow-md transition-all text-left group"
                             >
@@ -3451,6 +2459,46 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
                           ))}
                         </div>
                       </div>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      onClick={() => setShowToolsSubmenu(false)}
+                      className="flex items-center gap-2 text-slate-500 hover:text-slate-700 mb-4"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                      <span className="text-sm font-medium">Zpět</span>
+                    </button>
+
+                    <h3 className="text-sm font-semibold text-slate-500 mb-3">
+                      {contentPanelMode === 'add' ? 'Vyberte nástroj:' : 'Změnit na nástroj:'}
+                    </h3>
+                    <div className="space-y-2">
+                      {SLIDE_TYPES.filter(t => t.type === 'tools').map((type) => (
+                        <button
+                          key={type.id}
+                          onClick={() => {
+                            if (contentPanelMode === 'add') addSlide(type);
+                            else changeSlideType(type);
+                            setShowActivitiesSubmenu(false);
+                            setShowToolsSubmenu(false);
+                          }}
+                          className="w-full flex items-center gap-4 p-3 rounded-xl border border-slate-200 hover:border-orange-400 hover:shadow-md transition-all text-left group"
+                        >
+                          <div
+                            className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
+                            style={{ backgroundColor: `${type.color}15`, color: type.color }}
+                          >
+                            {React.cloneElement(type.icon as React.ReactElement, { className: 'w-5 h-5' })}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <span className="block font-semibold text-slate-700 group-hover:text-orange-700 text-sm leading-tight">{type.label}</span>
+                            <p className="text-[11px] text-slate-400 truncate mt-0.5">{type.description}</p>
+                          </div>
+                          <Plus className="w-4 h-4 text-slate-300 ml-auto group-hover:text-orange-500" />
+                        </button>
+                      ))}
                     </div>
                   </>
                 )}
@@ -3489,6 +2537,16 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
             </div>
           )}
           
+          {/* OSNOVA PANEL */}
+          {activePanel === 'osnova' && quiz?.worksheetMap && (
+            <OsnovaPanel
+              worksheetMap={quiz.worksheetMap}
+              slides={quiz.slides}
+              selectedSlideId={selectedSlideId}
+              onSlideSelect={(id) => setSelectedSlideId(id)}
+            />
+          )}
+
           {/* SETTINGS PANEL */}
           {activePanel === 'settings' && (
             <div className="flex flex-col h-full border-0" style={{ backgroundColor: '#F2F5F9' }}>
@@ -3552,7 +2610,7 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
                 <div className="mt-8 space-y-2">
                   {/* Version History Button */}
                   <button
-                    onClick={() => setShowVersionHistory(true)}
+                    onClick={openVersionHistory}
                     className="w-full flex items-center gap-4 px-2 py-2.5 rounded-lg hover:bg-slate-200 transition-colors text-slate-600"
                   >
                     <History className="w-5 h-5" />
@@ -3561,7 +2619,7 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
                   
                   {/* Share Edit Link Button */}
                   <button
-                    onClick={() => setShowShareEditDialog(true)}
+                    onClick={openShareEdit}
                     className="w-full flex items-center gap-4 px-2 py-2.5 rounded-lg hover:bg-slate-200 transition-colors text-slate-600"
                   >
                     <Share2 className="w-5 h-5" />
@@ -3570,7 +2628,7 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
                   
                   {/* Results Button */}
                   <button
-                    onClick={() => setViewMode('results')}
+                    onClick={openResultsTab}
                     className="w-full flex items-center gap-4 px-2 py-2.5 rounded-lg hover:bg-slate-200 transition-colors text-slate-600"
                   >
                     <BarChart2 className="w-5 h-5" />
@@ -3580,11 +2638,16 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
                   {/* Print Button */}
                   <button
                     onClick={() => {
-                      saveQuiz(quiz);
+                      const currentQuiz = quizRef.current;
+                      if (!currentQuiz) return;
+                      openWorksheetEditorFromBoard({
+                        quiz: currentQuiz,
+                        persistence: { saveQuiz },
+                        navigate,
+                        saveWorksheet,
+                        createWorksheetFromBoard: boardToWorksheet,
+                      });
                       setIsDirty(false);
-                      const worksheet = boardToWorksheet(quiz);
-                      saveWorksheet(worksheet);
-                      navigate(`/worksheet/edit/${worksheet.id}`);
                     }}
                     className="w-full flex items-center gap-4 px-2 py-2.5 rounded-lg hover:bg-slate-200 transition-colors text-slate-600"
                   >
@@ -3638,6 +2701,50 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
                             Importovat
                           </button>
                           <button
+                            disabled={jsonPreviewLoading}
+                            onClick={async () => {
+                              const input = importInputValue.trim();
+                              if (!input) { alert('Vložte ID, odkaz nebo JSON.'); return; }
+                              // Raw JSON — show immediately
+                              if (input.startsWith('{') || input.startsWith('[')) {
+                                try {
+                                  const parsed = JSON.parse(input);
+                                  setJsonPreviewText(JSON.stringify(parsed, null, 2));
+                                } catch {
+                                  setJsonPreviewText(input);
+                                }
+                                return;
+                              }
+                              // Extract UUID and go via proxy
+                              const uuidM = input.match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
+                              if (!uuidM) {
+                                alert('Nepodařilo se najít UUID v zadaném textu.');
+                                return;
+                              }
+                              const boardId = uuidM[1];
+                              const proxyUrl = `https://${projectId}.supabase.co/functions/v1/make-server-46c8107b/vividboard-proxy/${boardId}`;
+                              setJsonPreviewLoading(true);
+                              try {
+                                const res = await fetch(proxyUrl);
+                                const text = await res.text();
+                                try {
+                                  const json = JSON.parse(text);
+                                  setJsonPreviewText(JSON.stringify(json, null, 2));
+                                } catch {
+                                  setJsonPreviewText(text || '(prázdná odpověď)');
+                                }
+                              } catch(e) {
+                                setJsonPreviewText(`CHYBA: ${e}\n\nProxy URL: ${proxyUrl}`);
+                              } finally {
+                                setJsonPreviewLoading(false);
+                              }
+                            }}
+                            className="px-2 py-1.5 bg-amber-100 text-amber-700 text-[10px] font-bold rounded hover:bg-amber-200 transition-colors disabled:opacity-50"
+                            title="Zobrazit surová data JSON (nebo vložte JSON přímo)"
+                          >
+                            {jsonPreviewLoading ? '...' : 'JSON'}
+                          </button>
+                          <button
                             onClick={() => {
                               setShowImportInput(false);
                               setImportInputValue('');
@@ -3645,7 +2752,7 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
                             className="px-2 py-1.5 bg-slate-200 text-slate-600 text-[10px] font-bold rounded hover:bg-slate-300 transition-colors"
                           >
                             Zrušit
-                  </button>
+                          </button>
                         </div>
                       </div>
                     )}
@@ -3819,7 +2926,7 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
                 {/* Undo/Redo buttons - square icons */}
                       <button
                   onClick={undo}
-                  disabled={undoStack.length === 0}
+                  disabled={!canUndo}
                   className="w-10 h-10 rounded-lg bg-slate-200 text-slate-600 hover:bg-slate-300 disabled:opacity-30 disabled:hover:bg-slate-200 transition-colors flex items-center justify-center"
                   title="Zpět (Ctrl+Z)"
                 >
@@ -3827,7 +2934,7 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
                       </button>
                       <button
                   onClick={redo}
-                  disabled={redoStack.length === 0}
+                  disabled={!canRedo}
                   className="w-10 h-10 rounded-lg bg-slate-200 text-slate-600 hover:bg-slate-300 disabled:opacity-30 disabled:hover:bg-slate-200 transition-colors flex items-center justify-center"
                   title="Vpřed (Ctrl+Shift+Z)"
                 >
@@ -3836,7 +2943,7 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
 
                 {/* Preview - square icon */}
                       <button
-                  onClick={() => setShowPreview(true)}
+                  onClick={openPreview}
                   className="w-10 h-10 rounded-lg bg-slate-200 text-slate-600 hover:bg-slate-300 transition-colors flex items-center justify-center"
                   title="Náhled"
                 >
@@ -3846,13 +2953,16 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
                 {/* Print / Worksheet - square icon */}
                                 <button
                                   onClick={() => {
-                    // Auto-save first
-                    saveQuiz(quiz);
+                    const currentQuiz = quizRef.current;
+                    if (!currentQuiz) return;
+                    openWorksheetEditorFromBoard({
+                      quiz: currentQuiz,
+                      persistence: { saveQuiz },
+                      navigate,
+                      saveWorksheet,
+                      createWorksheetFromBoard: boardToWorksheet,
+                    });
                     setIsDirty(false);
-                    // Convert to worksheet and open
-                    const worksheet = boardToWorksheet(quiz);
-                    saveWorksheet(worksheet);
-                    navigate(`/worksheet/edit/${worksheet.id}`);
                   }}
                   className="w-10 h-10 rounded-lg text-white flex items-center justify-center transition-colors"
                   style={{ backgroundColor: '#f97316' }}
@@ -3880,17 +2990,14 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
                       hasSettings: !!currentQuiz.settings,
                     });
                     
-                    // Save SYNCHRONOUSLY before navigation
-                    saveQuiz(currentQuiz);
+                    openBoardViewFromEditor({
+                      quiz: currentQuiz,
+                      persistence: { saveQuiz },
+                      navigate,
+                      routes,
+                      storage: typeof window !== 'undefined' ? window.localStorage : undefined,
+                    });
                     setIsDirty(false);
-                    
-                    // Debug: verify save worked
-                    const storageKey = `vividbooks_quiz_${currentQuiz.id}`;
-                    const saved = localStorage.getItem(storageKey);
-                    console.log('[QuizEditor] Verify save:', saved ? 'SUCCESS' : 'FAILED', saved ? JSON.parse(saved).slides?.length + ' slides' : '');
-                    
-                    // Navigate to quiz view page
-                    navigate(`/quiz/view/${currentQuiz.id}`);
                   }}
                   disabled={quiz.slides.length === 0}
                   className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold transition-all hover:scale-105 disabled:opacity-50 disabled:transform-none"
@@ -3907,14 +3014,7 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
             <div 
               className="flex-1 overflow-auto p-4 flex justify-center bg-slate-100 relative cursor-default"
               style={{ paddingLeft: showNavArrows ? '80px' : '16px', paddingRight: showNavArrows ? '80px' : '16px' }}
-              onClick={() => {
-                // Close block selection when clicking anywhere on canvas
-                setSelectedBlockIndex(null);
-                setShowBlockSettings(false);
-                setActivePanel('board');
-                setEditingTextBlockIndex(null);
-                setShowPageSettings(false);
-              }}
+              onClick={resetCanvasInteraction}
             >
               {selectedSlide ? (
                 <div 
@@ -3925,11 +3025,7 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
                       ? 'min(calc((100vh - 220px) * 4 / 3 * 0.97), calc(100% - 40px))' 
                       : 'min(calc((100vh - 220px) * 4 / 3 * 0.88), calc(100% - 40px))',
                   }}
-                  onClick={() => {
-                    // Clicking on empty space around slide deselects block
-                    setSelectedBlockIndex(null);
-                    setShowBlockSettings(false);
-                  }}
+                  onClick={clearCanvasBlockSelection}
                 >
                   {/* Settings and Slide Type Info - aligned left */}
                   <div className="flex items-center justify-start gap-2 mb-3 relative z-[100] min-h-[40px] ml-2.5" data-block-settings-row>
@@ -3953,12 +3049,18 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
                         <button 
                           onClick={(e) => { 
                             e.stopPropagation(); 
+                            const selectedBlock = selectedSlide.layout.blocks[selectedBlockIndex];
+                            const defaultSection = selectedBlock?.type === 'image' || selectedBlock?.type === 'lottie'
+                              ? 'image'
+                              : selectedBlock?.type === 'link'
+                                ? 'link'
+                                : null;
                             if (showBlockSettings) {
                               setShowBlockSettings(false);
                               setBlockSettingsSection(null);
                             } else {
                               setShowBlockSettings(true);
-                              setBlockSettingsSection(null);
+                              setBlockSettingsSection(defaultSection);
                             }
                           }}
                           className="flex items-center gap-2 px-3 py-2 rounded-2xl transition-all group active:scale-95 h-10"
@@ -3985,7 +3087,17 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
                           className="flex items-center justify-center px-4 h-10 rounded-2xl transition-all group active:scale-95 border border-slate-200 hover:border-slate-400"
                           style={{ 
                             backgroundColor: selectedSlide.layout.blocks[selectedBlockIndex]?.background?.color || '#ffffff',
-                            color: getContrastColor(selectedSlide.layout.blocks[selectedBlockIndex]?.background?.color || '#ffffff'),
+                            color: getContrastColor(
+                              (selectedSlide.layout.blocks[selectedBlockIndex]?.background?.color === 'transparent'
+                                ? (selectedSlide.layout.blocks[selectedBlockIndex]?.background?.strokeColor || '#f8fafc')
+                                : selectedSlide.layout.blocks[selectedBlockIndex]?.background?.color) || '#ffffff'
+                            ),
+                            ...(selectedSlide.layout.blocks[selectedBlockIndex]?.background?.strokeColor &&
+                            (selectedSlide.layout.blocks[selectedBlockIndex]?.background?.strokeWidth ?? 0) > 0
+                              ? {
+                                  border: `${selectedSlide.layout.blocks[selectedBlockIndex]?.background?.strokeWidth}px solid ${selectedSlide.layout.blocks[selectedBlockIndex]?.background?.strokeColor}`,
+                                }
+                              : {}),
                           }}
                           title="Barva pozadí bloku"
                         >
@@ -4112,7 +3224,7 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setShowBlockSettings(true);
-                                setBlockSettingsSection(null);
+                                setBlockSettingsSection('image');
                               }}
                               className="flex items-center gap-2 px-3 rounded-2xl h-10 hover:opacity-90 transition-opacity"
                               style={{ backgroundColor: '#6366f1' }}
@@ -4337,10 +3449,10 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
                     {selectedSlide.type === 'info' && (
                         <button 
                         onClick={(e) => { e.stopPropagation(); openPageSettings('layout'); }}
-                        className="flex items-center gap-2.5 bg-white border border-slate-200 hover:border-slate-400 px-4 py-2 rounded-2xl transition-all group active:scale-95 h-10"
+                        className="flex items-center gap-2.5 bg-white border border-slate-200 hover:border-slate-400 px-4 py-2 rounded-2xl transition-all group active:scale-95 h-10 shrink-0"
                           title="Změnit rozložení"
                         >
-                            {windowWidth > 1140 && (
+                            {windowWidth > 1260 && (
                         <span className="text-[13px] font-medium text-[#4E5871] whitespace-nowrap">
                           Rozvržení
                         </span>
@@ -4352,13 +3464,20 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
                         {/* Background Color Button - just icon - for all slides including activities */}
                     <button 
                       onClick={(e) => { e.stopPropagation(); openPageSettings('background'); }}
-                          className="flex items-center justify-center w-10 h-10 rounded-2xl transition-all group active:scale-95 border border-slate-200 hover:border-slate-400"
+                          className="flex items-center justify-center w-10 h-10 rounded-2xl transition-all group active:scale-95 border border-slate-200 hover:border-slate-400 shrink-0"
                       style={{ 
                         backgroundColor: (() => {
                           const bg = (selectedSlide as any).slideBackground;
                           if (bg?.type === 'color') return bg.color;
                           if (typeof bg === 'string') return bg;
                           return '#ffffff';
+                        })(),
+                        ...(() => {
+                          const bg = (selectedSlide as any).slideBackground;
+                          if (bg?.strokeColor && (bg?.strokeWidth ?? 0) > 0) {
+                            return { border: `${bg.strokeWidth}px solid ${bg.strokeColor}` };
+                          }
+                          return {};
                         })(),
                         color: (() => {
                           const bgColor = (() => {
@@ -4367,7 +3486,11 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
                             if (typeof bg === 'string') return bg;
                             return '#ffffff';
                           })();
-                          return getContrastColor(bgColor === 'transparent' ? '#f8fafc' : bgColor);
+                          const strokeColor = (() => {
+                            const bg = (selectedSlide as any).slideBackground;
+                            return bg?.strokeColor;
+                          })();
+                          return getContrastColor(bgColor === 'transparent' ? (strokeColor || '#f8fafc') : bgColor);
                         })()
                       }}
                       title="Změnit barvu pozadí"
@@ -4466,38 +3589,15 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
                       style={{ 
                         backgroundColor: (selectedSlide as any).slideBackground?.color || '#ffffff'
                       }}
-                      onClick={() => {
-                        setSelectedBlockIndex(null);
-                        setShowBlockSettings(false);
-                        setBlockSettingsSection(null);
-                        setEditingTextBlockIndex(null);
-                      }}
+                      onClick={clearSlideEditorSelection}
                     >
                       {renderSlideEditor(
                         selectedSlide, 
                         updateSlide, 
-                        () => {
-                          setSelectedBlockIndex(null);
-                          setActivePanel('board');
-                          setShowPageSettings(false);
-                          setEditingTextBlockIndex(null);
-                        },
+                        resetEditorSelection,
                         selectedBlockIndex,
-                        (blockIndex) => {
-                          setSelectedBlockIndex(blockIndex);
-                          if (blockIndex !== null) {
-                            setShowPageSettings(false); // Close page settings when block is selected
-                            // Don't auto-open block settings - user must click on settings button
-                          } else {
-                            setActivePanel('board');
-                            setShowBlockSettings(false);
-                          }
-                        },
-                        (blockIndex) => {
-                          // Open block settings when clicking on settings button
-                          setShowBlockSettings(true);
-                          setBlockSettingsSection(null);
-                        },
+                        handleBlockSelectionChange,
+                        handleOpenBlockSettings,
                         (blockIndex) => {
                           setEditingTextBlockIndex(blockIndex);
                         },
@@ -4505,16 +3605,8 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
                           setEditingTextBlockIndex(null);
                         },
                         quiz,
-                        (settingsUpdate) => {
-                          if (!quiz) return;
-                          const updatedQuiz = {
-                            ...quiz,
-                            settings: { ...quiz.settings, ...settingsUpdate },
-                            updatedAt: new Date().toISOString(),
-                          };
-                          setQuiz(updatedQuiz);
-                          setIsDirty(true);
-                        }
+                        handleQuizSettingsUpdate,
+                        datasetImages.length > 0 ? datasetImages : undefined
                       )}
                     </div>
                     
@@ -4563,7 +3655,7 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
                         onClick={(e) => { e.stopPropagation(); openPageSettings('chapter'); }}
                         className="flex items-center gap-2 px-3 py-2 text-sm text-slate-600 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
                       >
-                        <ListOrdered className="w-4 h-4" />
+                        <Menu className="w-4 h-4" />
                         <span>
                           {(selectedSlide as any).chapterName || 'Nová kapitola'}
                         </span>
@@ -4575,7 +3667,7 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
                       onClick={(e) => { e.stopPropagation(); openPageSettings('note'); }}
                       className="flex items-center gap-2 px-3 py-2 text-sm text-slate-600 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
                     >
-                      <MessageSquare className="w-4 h-4" />
+                      <NoteIcon size={16} />
                       <span className="truncate max-w-[200px]">
                         {(selectedSlide as any).note 
                           ? ((selectedSlide as any).note.length > 30 
@@ -4606,7 +3698,11 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
         ) : (
           /* Results View */
           <div className="flex-1 bg-slate-50 overflow-hidden">
-            {renderSessionsList()}
+            <SessionsList
+              sessions={sessions}
+              loadingSessions={loadingSessions}
+              onOpenSession={openSessionResults}
+            />
           </div>
         )}
       </div>
@@ -4658,35 +3754,57 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
           block={selectedSlide.layout.blocks[selectedBlockIndex]}
           blockIndex={selectedBlockIndex}
           initialSection={blockSettingsSection || undefined}
-          onUpdate={(updates) => {
-            const newBlocks = [...selectedSlide.layout!.blocks];
-            newBlocks[selectedBlockIndex] = { ...newBlocks[selectedBlockIndex], ...updates };
-            updateSlide(selectedSlide.id, { layout: { ...selectedSlide.layout!, blocks: newBlocks } });
-          }}
-          onClose={() => { setShowBlockSettings(false); setSelectedBlockIndex(null); setBlockSettingsSection(null); }}
-          onImageUpload={async (file) => {
-            const toastId = toast.loading('Nahrávám obrázek...');
-            try {
-              const result = await uploadFile(file);
-              if (result.success && result.file) {
-                const newBlocks = [...selectedSlide.layout!.blocks];
-                newBlocks[selectedBlockIndex] = { ...newBlocks[selectedBlockIndex], content: result.file.filePath };
-                updateSlide(selectedSlide.id, { layout: { ...selectedSlide.layout!, blocks: newBlocks } });
-                toast.success('Obrázek nahrán', { id: toastId });
-              } else {
-                toast.error(result.error || 'Chyba při nahrávání', { id: toastId });
-              }
-            } catch (err) {
-              console.error('Upload error:', err);
-              toast.error('Neočekávaná chyba při nahrávání', { id: toastId });
-            }
-          }}
+          onUpdate={handleBlockSettingsUpdate}
+          onClose={clearSlideEditorSelection}
+          onImageUpload={handleBlockImageUpload}
+          datasetImages={datasetImages.length > 0 ? datasetImages : undefined}
         />,
         document.body
       )}
       
       {/* No backdrop - allow interaction with slide while panel is open */}
-      
+
+      {/* JSON Preview Modal */}
+      {jsonPreviewText && createPortal(
+        <div
+          className="fixed inset-0 flex items-center justify-center z-[99999]"
+          style={{ backgroundColor: 'rgba(0,0,0,0.7)' }}
+          onClick={() => setJsonPreviewText(null)}
+        >
+          <div
+            className="flex flex-col rounded-xl shadow-2xl overflow-hidden"
+            style={{ width: '80vw', maxWidth: 900, height: '80vh', background: '#1e1e1e' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
+              <span className="text-sm font-mono text-slate-300">JSON — starý formát</span>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => { navigator.clipboard.writeText(jsonPreviewText); }}
+                  className="px-3 py-1 text-xs rounded bg-amber-500 text-white hover:bg-amber-600 transition-colors font-medium"
+                >
+                  Kopírovat vše
+                </button>
+                <button
+                  onClick={() => setJsonPreviewText(null)}
+                  className="px-3 py-1 text-xs rounded bg-slate-600 text-white hover:bg-slate-500 transition-colors"
+                >
+                  Zavřít
+                </button>
+              </div>
+            </div>
+            <textarea
+              readOnly
+              value={jsonPreviewText}
+              className="flex-1 resize-none outline-none p-4 font-mono text-xs leading-relaxed"
+              style={{ background: '#1e1e1e', color: '#d4d4d4' }}
+              onClick={e => (e.target as HTMLTextAreaElement).select()}
+            />
+          </div>
+        </div>,
+        document.body
+      )}
+
       {/* Share Edit Dialog */}
       {quiz && (
         <ShareEditDialog
@@ -4700,134 +3818,5 @@ export function QuizEditorLayout({ theme = 'light' }: QuizEditorLayoutProps) {
   );
 }
 
-// ============================================
-// HELPER FUNCTIONS
-// ============================================
-
-function getSlideTitle(slide: QuizSlide): string {
-  if (slide.type === 'info') {
-    const infoSlide = slide as InfoSlide;
-    const noteText = infoSlide.note ? infoSlide.note.replace(/<[^>]*>/g, '').substring(0, 50).trim() : '';
-
-    if (infoSlide.layout?.blocks) {
-      // 1. Try to find a heading/title block (bold or xlarge)
-      const headingBlock = infoSlide.layout.blocks.find(b => 
-        (b.type === 'text' && (b.fontSize === 'xlarge' || b.fontWeight === 'bold'))
-      );
-      if (headingBlock && headingBlock.content) {
-        return headingBlock.content.replace(/<[^>]*>/g, '').substring(0, 60).trim();
-      }
-
-      // 2. Try to find any text content
-      const textBlock = infoSlide.layout.blocks.find(b => b.type === 'text' && b.content);
-      if (textBlock && textBlock.content) {
-        return textBlock.content.replace(/<[^>]*>/g, '').substring(0, 60).trim();
-      }
-
-      // 3. Try to find a video title or link title
-      const linkBlock = infoSlide.layout.blocks.find(b => b.type === 'link' && (b.linkTitle || b.content));
-      if (linkBlock) {
-        return linkBlock.linkTitle || linkBlock.content.replace(/<[^>]*>/g, '').substring(0, 60).trim();
-      }
-
-      // 4. Try image caption or note for media
-      const mediaBlock = infoSlide.layout.blocks.find(b => (b.type === 'image' || b.type === 'lottie'));
-      if (mediaBlock) {
-        const label = mediaBlock.type === 'image' ? 'Obrázek' : 'Animace';
-        const detail = mediaBlock.imageCaption || noteText;
-        return detail ? `${label}: ${detail}` : label;
-      }
-    }
-
-    if (noteText) return noteText;
-    return slide.title || '';
-  }
-  
-  if (slide.type === 'activity') {
-    const activity = slide as any;
-    
-    // Example slides: show problem (e.g. "3 + 8 = ?")
-    if (activity.activityType === 'example' && activity.problem) {
-      const problemText = activity.problem.replace(/<[^>]*>/g, '').substring(0, 50).trim();
-      if (activity.finalAnswer) {
-        return `${problemText}  →  ${activity.finalAnswer}`;
-      }
-      return problemText;
-    }
-    
-    if (activity.question) {
-      return activity.question.replace(/<[^>]*>/g, '').substring(0, 60).trim();
-    }
-    if (activity.title) return activity.title;
-    
-    // Activity type fallback labels
-    const typeLabel = SLIDE_TYPES.find(t => t.activityType === activity.activityType)?.label;
-    if (typeLabel) return typeLabel;
-  }
-  
-  return '';
-}
-
-function renderSlideEditor(
-  slide: QuizSlide, 
-  onUpdate: (id: string, updates: Partial<QuizSlide>) => void,
-  onSlideClick?: () => void,
-  selectedBlockIndex: number | null,
-  onBlockSelect: (index: number | null) => void,
-  onOpenBlockSettings?: (blockIndex: number) => void,
-  onTextEditStart?: (blockIndex: number) => void,
-  onTextEditEnd?: () => void,
-  quiz?: Quiz | null,
-  onQuizSettingsUpdate?: (settings: Partial<QuizSettings>) => void
-) {
-  if (slide.type === 'info') {
-    return (
-      <InfoSlideEditor 
-        slide={slide as InfoSlide} 
-        onUpdate={onUpdate}
-        selectedBlockIndex={selectedBlockIndex}
-        onBlockSelect={onBlockSelect}
-        onOpenBlockSettings={onOpenBlockSettings}
-        onTextEditStart={onTextEditStart}
-        onTextEditEnd={onTextEditEnd}
-      />
-    );
-  }
-  
-  if (slide.type === 'activity') {
-    const activity = slide as any;
-    switch (activity.activityType) {
-      case 'abc':
-        return <ABCSlideEditor slide={activity} onUpdate={onUpdate} />;
-      case 'open':
-        return <OpenSlideEditor slide={activity} onUpdate={onUpdate} />;
-      case 'example':
-        return <ExampleSlideEditor 
-          slide={activity} 
-          onUpdate={onUpdate}
-          customKeys={quiz?.settings?.customKeys}
-          onCustomKeysChange={onQuizSettingsUpdate ? (keys) => {
-            onQuizSettingsUpdate({ customKeys: keys });
-          } : undefined}
-          extraKeys={quiz?.settings?.extraKeys}
-          onExtraKeysChange={onQuizSettingsUpdate ? (keys) => {
-            onQuizSettingsUpdate({ extraKeys: keys });
-          } : undefined}
-        />;
-      case 'board':
-        return <BoardSlideEditor slide={activity} onUpdate={onUpdate} />;
-      case 'voting':
-        return <VotingSlideEditor slide={activity} onUpdate={onUpdate} />;
-      default:
-        return (
-          <div className="p-8 text-center text-slate-500">
-            Editor pro tento typ aktivity ({activity.activityType}) zatím není k dispozici.
-          </div>
-        );
-    }
-  }
-
-  return null;
-}
 
 export default QuizEditorLayout;

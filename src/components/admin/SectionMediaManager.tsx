@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
-import { Plus, Trash2, Image as ImageIcon, Film, GripVertical, MoreVertical, Sparkles, Loader2 } from 'lucide-react';
+import { Plus, Trash2, Image as ImageIcon, Film, Sparkles, Loader2 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
@@ -16,10 +16,11 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from '../ui/dialog';
-import { SectionMediaItem, LottieStep } from '../../types/section-media';
+import { SectionMediaItem, LottieStep, ImageStep } from '../../types/section-media';
 import { generateLottieDescription, generateImageDescription } from '../../utils/lottie-description';
+import { AssetPicker } from '../shared/AssetPicker';
+import type { AssetPickerResult } from '../../types/assets';
 
 interface SectionMediaManagerProps {
   mediaItems: SectionMediaItem[];
@@ -29,17 +30,20 @@ interface SectionMediaManagerProps {
   dialogOnly?: boolean;
   /** Ref to expose openAddDialog and openEditDialog functions */
   dialogRef?: React.MutableRefObject<{ openAdd: () => void; openEdit: (index: number) => void } | null>;
+  /** Images from the linked dataset (shown as extra tab in AssetPicker) */
+  datasetImages?: Array<{ url: string; title?: string; alt?: string }>;
 }
 
-export function SectionMediaManager({ mediaItems, availableHeadings, onUpdate, dialogOnly, dialogRef }: SectionMediaManagerProps) {
+export function SectionMediaManager({ mediaItems, availableHeadings, onUpdate, dialogOnly, dialogRef, datasetImages }: SectionMediaManagerProps) {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   
   // Form State
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [selectedHeading, setSelectedHeading] = useState<string>('');
   const [mediaType, setMediaType] = useState<'image' | 'lottie'>('image');
-  const [imageUrl, setImageUrl] = useState('');
-  const [imageDescription, setImageDescription] = useState('');
+
+  // Image Form State (multi-step, same UX as Lottie)
+  const [imageSteps, setImageSteps] = useState<ImageStep[]>([{ id: crypto.randomUUID(), url: '' }]);
   
   // Lottie Form State
   const [introUrl, setIntroUrl] = useState('');
@@ -50,14 +54,17 @@ export function SectionMediaManager({ mediaItems, availableHeadings, onUpdate, d
   // AI Generation State
   const [generatingIndex, setGeneratingIndex] = useState<number | null>(null);
   const [generatingIntro, setGeneratingIntro] = useState(false);
-  const [generatingImage, setGeneratingImage] = useState(false);
+  const [generatingImageIndex, setGeneratingImageIndex] = useState<number | null>(null);
+
+  // Asset Picker State
+  const [assetPickerOpen, setAssetPickerOpen] = useState(false);
+  const [assetPickerTargetIndex, setAssetPickerTargetIndex] = useState<number>(0);
 
   const resetForm = () => {
     setEditingIndex(null);
     setSelectedHeading(availableHeadings[0] || '');
     setMediaType('image');
-    setImageUrl('');
-    setImageDescription('');
+    setImageSteps([{ id: crypto.randomUUID(), url: '' }]);
     setIntroUrl('');
     setIntroDescription('');
     setLottieSteps([{ id: crypto.randomUUID(), url: '' }]);
@@ -75,8 +82,12 @@ export function SectionMediaManager({ mediaItems, availableHeadings, onUpdate, d
     setMediaType(item.type);
     
     if (item.type === 'image') {
-      setImageUrl(item.imageUrl || '');
-      setImageDescription(item.imageDescription || '');
+      // Support both new imageSteps and legacy single imageUrl
+      if (item.imageSteps && item.imageSteps.length > 0) {
+        setImageSteps(JSON.parse(JSON.stringify(item.imageSteps)));
+      } else {
+        setImageSteps([{ id: crypto.randomUUID(), url: item.imageUrl || '', description: item.imageDescription }]);
+      }
     } else {
       setIntroUrl(item.lottieConfig?.introUrl || '');
       setIntroDescription(item.lottieConfig?.introDescription || '');
@@ -110,11 +121,17 @@ export function SectionMediaManager({ mediaItems, availableHeadings, onUpdate, d
     if (!selectedHeading) return;
 
     // Always generate a new ID to ensure uniqueness and fix any legacy duplicate ID issues
+    const validImageSteps = imageSteps.filter(s => s.url.trim() !== '');
     const newItem: SectionMediaItem = {
       id: crypto.randomUUID(),
       heading: selectedHeading,
       type: mediaType,
-      ...(mediaType === 'image' ? { imageUrl, imageDescription: imageDescription || undefined } : {}),
+      ...(mediaType === 'image' ? {
+        // Keep legacy fields for backward compat with older renderers
+        imageUrl: validImageSteps[0]?.url || '',
+        imageDescription: validImageSteps[0]?.description || undefined,
+        imageSteps: validImageSteps,
+      } : {}),
       ...(mediaType === 'lottie' ? {
         lottieConfig: {
           introUrl: introUrl || undefined,
@@ -154,6 +171,57 @@ export function SectionMediaManager({ mediaItems, availableHeadings, onUpdate, d
   const handleDelete = (index: number) => {
     // Filter by index to ensure we only delete the specific item
     onUpdate(mediaItems.filter((_, i) => i !== index));
+  };
+
+  // Image step helpers
+  const addImageStep = () => {
+    setImageSteps([...imageSteps, { id: crypto.randomUUID(), url: '' }]);
+  };
+
+  const updateImageStep = (index: number, url: string) => {
+    const next = [...imageSteps];
+    next[index] = { ...next[index], url };
+    setImageSteps(next);
+  };
+
+  const updateImageStepDescription = (index: number, description: string) => {
+    const next = [...imageSteps];
+    next[index] = { ...next[index], description };
+    setImageSteps(next);
+  };
+
+  const removeImageStep = (index: number) => {
+    if (imageSteps.length > 1) {
+      setImageSteps(imageSteps.filter((_, i) => i !== index));
+    }
+  };
+
+  const handleGenerateImageStepDescription = async (index: number) => {
+    const step = imageSteps[index];
+    if (!step.url) return;
+    setGeneratingImageIndex(index);
+    try {
+      const result = await generateImageDescription(step.url, selectedHeading, step.description);
+      const next = [...imageSteps];
+      next[index] = { ...next[index], description: result.shortDescription };
+      setImageSteps(next);
+      toast.success('Popis obrázku byl vygenerován.');
+    } catch (error) {
+      console.error('Failed to generate image description:', error);
+      alert('Nepodařilo se vygenerovat popis.');
+    } finally {
+      setGeneratingImageIndex(null);
+    }
+  };
+
+  const openImagePicker = (index: number) => {
+    setAssetPickerTargetIndex(index);
+    setAssetPickerOpen(true);
+  };
+
+  const handleAssetSelect = (result: AssetPickerResult) => {
+    updateImageStep(assetPickerTargetIndex, result.url);
+    setAssetPickerOpen(false);
   };
 
   const addLottieStep = () => {
@@ -227,27 +295,16 @@ export function SectionMediaManager({ mediaItems, availableHeadings, onUpdate, d
     }
   };
 
-  const handleGenerateImageDescription = async () => {
-    if (!imageUrl) return;
-    
-    setGeneratingImage(true);
-    try {
-      const result = await generateImageDescription(imageUrl, selectedHeading, imageDescription);
-      setImageDescription(result.shortDescription);
-      toast.success('Popis obrázku byl vygenerován.');
-    } catch (error) {
-      console.error('Failed to generate image description:', error);
-      alert('Nepodařilo se vygenerovat popis. Zkuste to znovu.');
-    } finally {
-      setGeneratingImage(false);
-    }
-  };
 
   // If dialogOnly, just render the dialog
   if (dialogOnly) {
     return (
-      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <>
+      <Dialog open={isDialogOpen} onOpenChange={(open) => { if (!assetPickerOpen) setIsDialogOpen(open); }} modal={!assetPickerOpen}>
+          <DialogContent
+            className="max-w-2xl max-h-[90vh] overflow-y-auto"
+            onInteractOutside={(e) => e.preventDefault()}
+          >
             <DialogHeader>
               <DialogTitle>{editingIndex !== null ? 'Upravit médium' : 'Přidat médium k sekci'}</DialogTitle>
               <DialogDescription>
@@ -283,50 +340,94 @@ export function SectionMediaManager({ mediaItems, availableHeadings, onUpdate, d
                 </TabsList>
                 
                 {/* Image Form */}
-                <TabsContent value="image" className="space-y-4 pt-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="image-url">URL obrázku</Label>
-                    <Input 
-                      id="image-url" 
-                      placeholder="https://..." 
-                      value={imageUrl} 
-                      onChange={(e) => setImageUrl(e.target.value)} 
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      Vložte přímý odkaz na obrázek (JPG, PNG, WebP).
-                    </p>
+                <TabsContent value="image" className="space-y-3 pt-4">
+                  <div className="flex items-center justify-between">
+                    <Label>Obrázky</Label>
+                    <span className="text-xs text-muted-foreground">Pokud jich přidáte více, zobrazí se navigační tečky.</span>
                   </div>
-                  
-                  {/* Image Description Section */}
-                  {imageUrl && (
-                    <div className="space-y-2 border p-4 rounded-lg bg-muted/10">
-                      <div className="flex items-center justify-between">
-                        <Label className="text-sm">Popis obrázku (pro AI učitele)</Label>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={handleGenerateImageDescription}
-                          disabled={generatingImage || !imageUrl}
-                          className="h-7 text-xs gap-1"
-                        >
-                          {generatingImage ? (
-                            <><Loader2 className="w-3 h-3 animate-spin" /> Generuji...</>
+
+                  {imageSteps.map((step, index) => (
+                    <div key={step.id} className="border rounded-lg p-3 space-y-3 bg-background">
+                      <div className="flex gap-2 items-start">
+                        <div className="bg-muted w-8 h-10 flex items-center justify-center rounded text-xs font-medium shrink-0 mt-0.5 text-muted-foreground">
+                          {index + 1}
+                        </div>
+                        <div className="flex-1">
+                          {step.url ? (
+                            <div
+                              className="relative group cursor-pointer rounded border overflow-hidden"
+                              onClick={() => openImagePicker(index)}
+                            >
+                              <img
+                                src={step.url}
+                                alt=""
+                                className="w-full max-h-40 object-cover"
+                                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                              />
+                              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                <span className="text-white text-sm font-medium">Změnit obrázek</span>
+                              </div>
+                            </div>
                           ) : (
-                            <><Sparkles className="w-3 h-3" /> Generovat AI</>
+                            <button
+                              type="button"
+                              onClick={() => openImagePicker(index)}
+                              className="w-full h-24 border-2 border-dashed border-muted-foreground/30 rounded-lg flex flex-col items-center justify-center gap-1 hover:border-primary/50 hover:bg-muted/30 transition-colors"
+                            >
+                              <ImageIcon className="w-5 h-5 text-muted-foreground" />
+                              <span className="text-xs text-muted-foreground">Vybrat obrázek</span>
+                            </button>
                           )}
-                        </Button>
+                        </div>
+                        {imageSteps.length > 1 && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => removeImageStep(index)}
+                            className="text-muted-foreground hover:text-destructive shrink-0 mt-0.5"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        )}
                       </div>
-                      <Textarea
-                        placeholder="Co je na obrázku? AI učitel může na tuto informaci odkazovat..."
-                        value={imageDescription}
-                        onChange={(e) => setImageDescription(e.target.value)}
-                        className="min-h-[80px] text-sm"
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        Tip: Napište krátký popis a klikněte na "Generovat AI" pro rozšíření.
-                      </p>
+
+                      {step.url && (
+                        <div className="ml-10 space-y-2">
+                          <div className="flex items-center justify-between">
+                            <Label className="text-xs text-muted-foreground">Popis obrázku (pro AI učitele)</Label>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleGenerateImageStepDescription(index)}
+                              disabled={generatingImageIndex === index || !step.url}
+                              className="h-7 text-xs gap-1"
+                            >
+                              {generatingImageIndex === index ? (
+                                <><Loader2 className="w-3 h-3 animate-spin" /> Generuji...</>
+                              ) : (
+                                <><Sparkles className="w-3 h-3" /> Generovat AI</>
+                              )}
+                            </Button>
+                          </div>
+                          <Textarea
+                            placeholder="Co je na obrázku? AI učitel může na tuto informaci odkazovat..."
+                            value={step.description || ''}
+                            onChange={(e) => updateImageStepDescription(index, e.target.value)}
+                            className="min-h-[60px] text-sm"
+                          />
+                        </div>
+                      )}
                     </div>
-                  )}
+                  ))}
+
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={addImageStep}
+                    className="w-full border-dashed gap-1 text-muted-foreground hover:text-primary"
+                  >
+                    <Plus className="w-4 h-4" /> Přidat další obrázek
+                  </Button>
                 </TabsContent>
 
                 {/* Lottie Form */}
@@ -424,7 +525,7 @@ export function SectionMediaManager({ mediaItems, availableHeadings, onUpdate, d
                               </Button>
                             </div>
                             <Textarea
-                              placeholder="Co se v animaci děje? AI učitel může na tuto animaci odkazovat..."
+                              placeholder="Co se v animaci děje? AI učitel může na tuto informaci odkazovat..."
                               value={step.description || ''}
                               onChange={(e) => updateStepDescription(index, e.target.value)}
                               className="min-h-[60px] text-sm"
@@ -470,17 +571,30 @@ export function SectionMediaManager({ mediaItems, availableHeadings, onUpdate, d
               </Tabs>
             </div>
 
+            <AssetPicker
+              isOpen={assetPickerOpen}
+              onClose={() => setAssetPickerOpen(false)}
+              onSelect={handleAssetSelect}
+              showUpload={true}
+              showLibrary={true}
+              showGiphy={false}
+              showGoogle={true}
+              showVividbooks={false}
+              datasetImages={datasetImages}
+            />
             <DialogFooter>
               <Button variant="outline" onClick={() => setIsDialogOpen(false)}>Zrušit</Button>
               <Button onClick={handleSave}>Uložit</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
+    </>
     );
   }
 
   // Default full UI with Card and list
   return (
+    <>
     <Card className="w-full border-dashed border-2 shadow-none">
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
@@ -511,7 +625,11 @@ export function SectionMediaManager({ mediaItems, availableHeadings, onUpdate, d
                     {item.type === 'image' ? (
                       <>
                         <ImageIcon className="w-3 h-3" />
-                        <span className="truncate">{item.imageUrl}</span>
+                        <span className="truncate">
+                          {item.imageSteps && item.imageSteps.length > 1
+                            ? `${item.imageSteps.length} obrázků`
+                            : (item.imageSteps?.[0]?.url || item.imageUrl || '')}
+                        </span>
                       </>
                     ) : (
                       <>
@@ -537,8 +655,11 @@ export function SectionMediaManager({ mediaItems, availableHeadings, onUpdate, d
           </div>
         )}
 
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <Dialog open={isDialogOpen} onOpenChange={(open) => { if (!assetPickerOpen) setIsDialogOpen(open); }} modal={!assetPickerOpen}>
+          <DialogContent
+            className="max-w-2xl max-h-[90vh] overflow-y-auto"
+            onInteractOutside={(e) => e.preventDefault()}
+          >
             <DialogHeader>
               <DialogTitle>{editingIndex !== null ? 'Upravit médium' : 'Přidat médium k sekci'}</DialogTitle>
               <DialogDescription>
@@ -574,50 +695,94 @@ export function SectionMediaManager({ mediaItems, availableHeadings, onUpdate, d
                 </TabsList>
                 
                 {/* Image Form */}
-                <TabsContent value="image" className="space-y-4 pt-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="image-url">URL obrázku</Label>
-                    <Input 
-                      id="image-url" 
-                      placeholder="https://..." 
-                      value={imageUrl} 
-                      onChange={(e) => setImageUrl(e.target.value)} 
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      Vložte přímý odkaz na obrázek (JPG, PNG, WebP).
-                    </p>
+                <TabsContent value="image" className="space-y-3 pt-4">
+                  <div className="flex items-center justify-between">
+                    <Label>Obrázky</Label>
+                    <span className="text-xs text-muted-foreground">Pokud jich přidáte více, zobrazí se navigační tečky.</span>
                   </div>
-                  
-                  {/* Image Description Section */}
-                  {imageUrl && (
-                    <div className="space-y-2 border p-4 rounded-lg bg-muted/10">
-                      <div className="flex items-center justify-between">
-                        <Label className="text-sm">Popis obrázku (pro AI učitele)</Label>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={handleGenerateImageDescription}
-                          disabled={generatingImage || !imageUrl}
-                          className="h-7 text-xs gap-1"
-                        >
-                          {generatingImage ? (
-                            <><Loader2 className="w-3 h-3 animate-spin" /> Generuji...</>
+
+                  {imageSteps.map((step, index) => (
+                    <div key={step.id} className="border rounded-lg p-3 space-y-3 bg-background">
+                      <div className="flex gap-2 items-start">
+                        <div className="bg-muted w-8 h-10 flex items-center justify-center rounded text-xs font-medium shrink-0 mt-0.5 text-muted-foreground">
+                          {index + 1}
+                        </div>
+                        <div className="flex-1">
+                          {step.url ? (
+                            <div
+                              className="relative group cursor-pointer rounded border overflow-hidden"
+                              onClick={() => openImagePicker(index)}
+                            >
+                              <img
+                                src={step.url}
+                                alt=""
+                                className="w-full max-h-40 object-cover"
+                                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                              />
+                              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                <span className="text-white text-sm font-medium">Změnit obrázek</span>
+                              </div>
+                            </div>
                           ) : (
-                            <><Sparkles className="w-3 h-3" /> Generovat AI</>
+                            <button
+                              type="button"
+                              onClick={() => openImagePicker(index)}
+                              className="w-full h-24 border-2 border-dashed border-muted-foreground/30 rounded-lg flex flex-col items-center justify-center gap-1 hover:border-primary/50 hover:bg-muted/30 transition-colors"
+                            >
+                              <ImageIcon className="w-5 h-5 text-muted-foreground" />
+                              <span className="text-xs text-muted-foreground">Vybrat obrázek</span>
+                            </button>
                           )}
-                        </Button>
+                        </div>
+                        {imageSteps.length > 1 && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => removeImageStep(index)}
+                            className="text-muted-foreground hover:text-destructive shrink-0 mt-0.5"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        )}
                       </div>
-                      <Textarea
-                        placeholder="Co je na obrázku? AI učitel může na tuto informaci odkazovat..."
-                        value={imageDescription}
-                        onChange={(e) => setImageDescription(e.target.value)}
-                        className="min-h-[80px] text-sm"
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        Tip: Napište krátký popis a klikněte na "Generovat AI" pro rozšíření.
-                      </p>
+
+                      {step.url && (
+                        <div className="ml-10 space-y-2">
+                          <div className="flex items-center justify-between">
+                            <Label className="text-xs text-muted-foreground">Popis obrázku (pro AI učitele)</Label>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleGenerateImageStepDescription(index)}
+                              disabled={generatingImageIndex === index || !step.url}
+                              className="h-7 text-xs gap-1"
+                            >
+                              {generatingImageIndex === index ? (
+                                <><Loader2 className="w-3 h-3 animate-spin" /> Generuji...</>
+                              ) : (
+                                <><Sparkles className="w-3 h-3" /> Generovat AI</>
+                              )}
+                            </Button>
+                          </div>
+                          <Textarea
+                            placeholder="Co je na obrázku? AI učitel může na tuto informaci odkazovat..."
+                            value={step.description || ''}
+                            onChange={(e) => updateImageStepDescription(index, e.target.value)}
+                            className="min-h-[60px] text-sm"
+                          />
+                        </div>
+                      )}
                     </div>
-                  )}
+                  ))}
+
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={addImageStep}
+                    className="w-full border-dashed gap-1 text-muted-foreground hover:text-primary"
+                  >
+                    <Plus className="w-4 h-4" /> Přidat další obrázek
+                  </Button>
                 </TabsContent>
 
                 {/* Lottie Form */}
@@ -761,6 +926,17 @@ export function SectionMediaManager({ mediaItems, availableHeadings, onUpdate, d
               </Tabs>
             </div>
 
+            <AssetPicker
+              isOpen={assetPickerOpen}
+              onClose={() => setAssetPickerOpen(false)}
+              onSelect={handleAssetSelect}
+              showUpload={true}
+              showLibrary={true}
+              showGiphy={false}
+              showGoogle={true}
+              showVividbooks={false}
+              datasetImages={datasetImages}
+            />
             <DialogFooter>
               <Button variant="outline" onClick={() => setIsDialogOpen(false)}>Zrušit</Button>
               <Button onClick={handleSave}>Uložit</Button>
@@ -769,5 +945,6 @@ export function SectionMediaManager({ mediaItems, availableHeadings, onUpdate, d
         </Dialog>
       </CardContent>
     </Card>
+  </>
   );
 }

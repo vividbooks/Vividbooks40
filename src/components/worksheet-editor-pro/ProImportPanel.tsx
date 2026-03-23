@@ -16,6 +16,7 @@ import { WorksheetBlock, generateBlockId } from '../../types/worksheet';
 import { supabase } from '../../utils/supabase/client';
 import { projectId, publicAnonKey } from '../../utils/supabase/info';
 import { uploadBase64ToStorage } from '../../utils/supabase/upload-image';
+import { convertLegacyLayoutsToLayoutSections } from '../../utils/layout-sections';
 
 // ============================================
 // DEFAULT SYSTEM PROMPT
@@ -244,7 +245,7 @@ function autoFixBlockContent(block: any): any {
   const topLevel: Record<string, any> = {};
 
   for (const [key, val] of Object.entries(block)) {
-    if (key === 'type' || key === 'id' || key === 'order' || key === 'width' || key === 'gridSpan' || key === 'content' || key === 'marginBottom') continue;
+    if (key === 'type' || key === 'id' || key === 'order' || key === 'content') continue;
     if (fields.includes(key)) {
       content[key] = val;
     } else {
@@ -469,7 +470,9 @@ async function extractAndUploadImages(
       onProgress?.(`Extrahování obrázku ${imageCount}...`);
       try {
         const cropped = await cropImageFromScreenshot(screenshotDataUrl, content._cropBox);
+        console.log(`[ImageExtract] Cropped img ${imageCount}, size=${cropped.length}, cropBox=`, content._cropBox);
         const url = await uploadBase64ToStorage(cropped, `imported-img-${imageCount}`, 'imported-images');
+        console.log(`[ImageExtract] Upload result img ${imageCount}:`, url);
         if (url) {
           const gallery = [url];
           result.push({
@@ -478,8 +481,10 @@ async function extractAndUploadImages(
           });
           continue;
         }
+        onProgress?.(`⚠️ Obrázek ${imageCount}: upload selhal (zkontroluj konzoli)`);
       } catch (err) {
         console.error('[ImageExtract] Failed to crop/upload image block:', err);
+        onProgress?.(`⚠️ Obrázek ${imageCount}: chyba – ${(err as Error).message || err}`);
       }
       // If failed, keep block but without URL
       result.push({ ...block, content: { ...content, _cropBox: undefined } });
@@ -492,7 +497,9 @@ async function extractAndUploadImages(
       onProgress?.(`Extrahování obrázku ${imageCount} (příloha bloku)...`);
       try {
         const cropped = await cropImageFromScreenshot(screenshotDataUrl, content._blockImage.cropBox);
+        console.log(`[ImageExtract] Cropped blockImg ${imageCount}, size=${cropped.length}, cropBox=`, content._blockImage.cropBox);
         const url = await uploadBase64ToStorage(cropped, `imported-blockimg-${imageCount}`, 'imported-images');
+        console.log(`[ImageExtract] Upload result blockImg ${imageCount}:`, url);
         if (url) {
           const { _blockImage, ...cleanContent } = content;
           // Map both old format (size) and new format (widthPercent)
@@ -512,8 +519,10 @@ async function extractAndUploadImages(
           } as any);
           continue;
         }
+        onProgress?.(`⚠️ Příloha bloku ${imageCount}: upload selhal`);
       } catch (err) {
         console.error('[ImageExtract] Failed to crop/upload block image:', err);
+        onProgress?.(`⚠️ Příloha bloku ${imageCount}: chyba – ${(err as Error).message || err}`);
       }
     }
 
@@ -620,21 +629,38 @@ async function callImportAgent(
 const VISUAL_ANALYST_PROMPT = `Jsi vizuální analytik pracovních listů. Tvůj úkol je POUZE POPSAT co vidíš na screenshotu – NEVYTVÁŘEJ JSON ani instrukce.
 
 POPIŠ DETAILNĚ (pro každou sekci od shora dolů):
-1. ROZLOŽENÍ: Které bloky jsou vedle sebe? Odhadni šířky v % (např. "levý 60%, pravý 40%").
-2. TYP PRVKU: Nadpis / text odstavce / zvýrazněný box (barva) / tabulka / číslovaná otázka / obrázek / prázdný prostor pro odpověď
+
+1. ROZLOŽENÍ STRÁNKY – NEJDŮLEŽITĚJŠÍ:
+   Jako první popiš CELKOVÉ rozložení stránky. Hledej tyto vzory:
+   a) BOČNÍ SLOUPEC: Vidím VELKÝ obrázek/galerii po straně (vlevo nebo vpravo) který výškou překrývá 2 nebo více textových bloků napravo/nalevo?
+      → Popiš: "BOČNÍ SLOUPEC [vlevo/vpravo]: obrázek/galerie, odhadovaná šířka XX%, překrývá N bloků textu"
+   b) DVA SLOUPCE VEDLE SEBE: Obrázek a text jsou na jednom řádku (přibližně stejná výška)?
+      → Popiš: "DVA SLOUPCE: [levý popis] [šířka%] + [pravý popis] [šířka%]"
+   c) TEXT VE VÍCE SLOUPCÍCH: Textový odstavec rozdělený do 2 nebo 3 sloupců?
+      → Popiš: "TEXT VE 2 SLOUPCÍCH" nebo "TEXT VE 3 SLOUPCÍCH"
+   d) PLNÁ ŠÍŘKA + BOX VEDLE: Odstavec zabírá 2/3 šířky a vedle něj infobox 1/3?
+      → Popiš: "2/3 text + 1/3 box vedle sebe"
+   e) CELÁ ŠÍŘKA: Blok přes celou šířku stránky.
+
+2. TYP PRVKU (pro každý blok): Nadpis / text odstavce / zvýrazněný box (barva) / tabulka / číslovaná otázka / obrázek / prázdný prostor pro odpověď
+
 3. TEXTY: Přepiš PŘESNĚ celý text každého prvku – žádné zkratky, žádné "...". Doslova, celé věty, celé odstavce.
+
 4. OBRÁZKY: Popiš co je na obrázku. Je obrázek VEDLE textu (sdílí řádek) nebo sám na řádku? 
    ⚠️ DŮLEŽITÉ: Jsou v jedné oblasti/sloupci 2 nebo více obrázků pod sebou? Pokud ANO, popiš je jako "2 obrázky pod sebou ve stejném sloupci" – to je galerie!
    Pokud je pod obrázkem text (popisek), popiš ho. Obrázek + popisek = jeden "image" prvek, NENÍ to odstavec.
    Odhadni kde každý obrázek na screenshotu leží (x, y, šířka, výška jako podíl 0.0–1.0).
+
 5. PRÁZDNÉ PROSTORY: Pokud vidíš prázdné řádky nebo obdélníky pro odpověď, odhadni jejich výšku (malé ≈ 1 řádek, střední ≈ 3, velké ≈ 6+ řádků).
    ⚠️ Pokud vidíš podotázky (A), B), C) nebo 1., 2., 3.) – spočítej řádky ZA KAŽDOU podotázkou zvlášť (např. "A) má 2 řádky, B) má 3 řádky, C) má 0 řádků").
    ⚠️ ROZLIŠ: jsou to tečky (. . . . . .) nebo plné linky/čáry (_____)? Uveď přesně!
    ⚠️ Podotázky – jsou odsazeny od levého okraje (odsazení)? Nebo začínají přímo na levém okraji bez odsazení?
+
 6. BARVY: Box – žlutý/modrý/zelený/fialový/oranžový rámeček? Tabulka – jaká barva záhlaví?
+
 7. TUČNÉ/KURZÍVA: Popiš formátování textu.
 
-FORMÁT: Čistý popis, sekce shora dolů. Žádné instrukce, žádné návrhy bloků.`;
+FORMÁT: Začni sekcí "CELKOVÉ ROZLOŽENÍ:", pak popiš každý blok shora dolů. Žádné instrukce, žádné návrhy bloků.`;
 
 // ============================================
 // FEATURE CARDS – samostatné dokumentační kartičky
@@ -920,6 +946,70 @@ Každý blok může mít visualStyles (na úrovni bloku, ne uvnitř content):
 - color: barva textu v bloku
 Příklad: { backgroundColor: "#EFF6FF", borderColor: "#3B82F6", borderRadius: 8 }`,
 
+  'float-layout': `### KARTA: LAYOUTY A PLOVOUCÍ SLOUPCE
+
+Editor používá 12-sloupcový grid. Bloky s gridSpan < 12 se řadí vedle sebe (zleva doprava).
+
+## POJMENOVANÉ LAYOUTY – kdy co použít
+
+### LAYOUT A – Text vlevo + Obrázek vpravo (50/50)
+Vizuální vzor: nadpis přes celou šířku, pod ním odstavec vlevo a obrázek vpravo vedle sebe.
+JSON: heading (gridSpan:12) → paragraph (gridSpan:6) → image (gridSpan:6)
+
+### LAYOUT A2 – Obrázek vlevo + Text vpravo (50/50)
+JSON: heading (gridSpan:12) → image (gridSpan:6) → paragraph (gridSpan:6)
+
+### LAYOUT B – Boční obrázek vlevo, text vpravo (plovoucí panel)
+Vizuální vzor: VELKÝ obrázek stojí vlevo a překrývá výšku DVOU nebo VÍCE bloků textu napravo.
+Kotva (obrázek): { "gridSpan": 5, "floatSide": "left", "floatSpanBlocks": 2, "floatGridSpan": 5 }
+Bloky vpravo (heading + paragraph): gridSpan: 7 každý, BEZ floatSide
+
+### LAYOUT B2 – Boční obrázek vpravo, text vlevo (plovoucí panel)
+Kotva (obrázek): { "gridSpan": 5, "floatSide": "right", "floatSpanBlocks": 2, "floatGridSpan": 5 }
+Bloky vlevo: gridSpan: 7 každý, BEZ floatSide
+
+### LAYOUT C – 2 sloupce textu přes celou šířku
+heading (gridSpan:12) → paragraph (gridSpan:12, columns:2)
+
+### LAYOUT C+I – 2/3 text + 1/3 infobox vedle sebe
+heading (gridSpan:12) → paragraph (gridSpan:8) → infobox (gridSpan:4)
+
+### LAYOUT D+I – Galerie 2/3 + infobox 1/3
+heading (gridSpan:12) → image galerie (gridSpan:8, gridColumns:2) → infobox (gridSpan:4)
+
+### LAYOUT B+G+I – Galerie vlevo + text + box vpravo (plovoucí galerie)
+Vizuální vzor: 2 obrázky pod sebou vlevo, vedle nich nadpis + odstavec + infobox.
+Kotva (galerie): { "gridSpan": 5, "floatSide": "left", "floatSpanBlocks": 3, "floatGridSpan": 5 }
+Bloky vpravo: heading (gridSpan:7) + paragraph (gridSpan:7) + infobox (gridSpan:7)
+
+### LAYOUT B2+G+I – Text + box vlevo, galerie vpravo (plovoucí galerie)
+Kotva (galerie): { "gridSpan": 5, "floatSide": "right", "floatSpanBlocks": 3, "floatGridSpan": 5 }
+
+## PLOVOUCÍ SLOUPCE (floatSide) – vlastní layout
+
+Použij když vidíš: sloupec s obrázkem/galerií po straně, který výškou překrývá 2+ textových bloků napravo/nalevo.
+
+Kotva (obrázek nebo galerie) – PRVNÍ blok skupiny:
+- "floatSide": "left" nebo "right" (na které straně stojí)
+- "floatSpanBlocks": počet bloků textu vedle kterých kotva stojí (typicky 2–4)
+- "floatGridSpan": šířka kotvy ve sloupcích (typicky 4–6)
+- "gridSpan": stejná hodnota jako floatGridSpan
+
+Hlavní bloky (text vedle kotvy) – BEZPROSTŘEDNĚ NÁSLEDUJÍ po kotvě:
+- gridSpan = 12 minus floatGridSpan (např. 12 - 5 = 7)
+- Normální bloky heading/paragraph/infobox BEZ floatSide
+
+⚠️ Pokud je obrázek jen vedle JEDNOHO textového bloku → použij gridSpan 6+6, NEpoužívej floatSide!
+⚠️ floatSide použij jen tehdy, pokud obrázek opravdu překrývá výšku 2+ bloků vedle sebe!
+
+## DETEKCE – jak poznat layout ze screenshotu
+- Vidím BOČNÍ SLOUPEC s obrázkem co sahá přes 2+ řádků textu → LAYOUT B nebo B2 (floatSide)
+- Vidím obrázek a text vedle sebe na jednom řádku → LAYOUT A nebo A2 (gridSpan 6+6)
+- Vidím text ve 2 sloupcích → LAYOUT C (columns:2 uvnitř paragraph)
+- Vidím text vlevo + rámečkový box vpravo → LAYOUT C+I (gridSpan 8+4)
+- Vidím galerie 4 obrázků v řadě → LAYOUT D (gridColumns:4)
+- Vidím galerii vlevo + text + box vpravo → LAYOUT B+G+I (floatSide + galerie)`,
+
 };
 
 // ============================================
@@ -990,6 +1080,11 @@ function selectFeatureCards(agent1Output: string): string {
     selected.push('visualStyles');
   }
 
+  // Float layouts / side columns
+  if (/boční sloupec|plovoucí|float|dva sloupce|vedle sebe|text ve 2|text ve 3|2\/3|1\/3|překrývá.*blok|sloupec.*obrázek|obrázek.*sloupec|galerie.*vlevo|galerie.*vpravo|obrázek.*vlevo|obrázek.*vpravo|boční panel|postranní/.test(text)) {
+    selected.push('float-layout');
+  }
+
   // Deduplicate and build the documentation block
   const uniqueCards = [...new Set(selected)];
   const cardDocs = uniqueCards
@@ -1014,14 +1109,30 @@ Na základě popisu jsem pro tebe vybral DOKUMENTACI relevantních nástrojů (n
 - Pro podotázky: spočítej řádky teček ZA KAŽDOU podotázkou individuálně (každá má vlastní "lines")
 - Pro podotázky: detekuj odsazení – subIndent: true pokud jsou odsazeny, false pokud od levého okraje
 
+## PRAVIDLA PRO LAYOUTY – KRITICKÉ!
+
+JAKO PRVNÍ KROK: Identifikuj layout každé sekce podle popisu od Agent 1 (sekce "CELKOVÉ ROZLOŽENÍ:").
+
+Pro každou sekci zvol SPRÁVNÝ typ layoutu:
+1. Boční sloupec (obrázek překrývá výšku 2+ bloků textu) → POUŽIJ floatSide na kotvu
+2. Dva sloupce vedle sebe (jedna výška) → gridSpan 6+6 nebo jiný poměr
+3. Text ve 2 sloupcích → paragraph s columns:2
+4. 2/3 text + 1/3 box → gridSpan 8 + gridSpan 4
+5. Plovoucí galerie vedle textu → floatSide na image blok
+
+V plánu EXPLICITNĚ uveď pro každý blok:
+- gridSpan hodnotu
+- pokud je kotva plovoucího sloupce: floatSide, floatSpanBlocks, floatGridSpan
+
 ## DOKUMENTACE NÁSTROJŮ PRO TENTO LIST
 
 {{FEATURE_CARDS}}
 
 ## TVŮJ VÝSTUP
 
-Napiš přesný plán rekonstrukce – pro každou sekci/blok napiš:
-BLOK [číslo]: [TYP] | gridSpan: [číslo]
+Napiš přesný plán rekonstrukce. Začni sekcí "## LAYOUTOVÁ ANALÝZA" kde shrň jaké layouty jsi detekoval.
+Pak pro každou sekci/blok napiš:
+BLOK [číslo]: [TYP] | gridSpan: [číslo] [případně floatSide:"left/right" floatSpanBlocks:N floatGridSpan:N]
   → parametry: [přesné hodnoty všech relevantních parametrů]
   → text/html: "[přesný obsah doslova]"
   → obrázek: [pokud _blockImage nebo _cropBox: souřadnice {x,y,w,h}]
@@ -1039,7 +1150,14 @@ VÝSTUPNÍ FORMÁT (vrať POUZE JSON, žádný markdown, žádné komentáře):
 STRUKTURA KAŽDÉHO BLOKU:
 { "type": "TYP", "gridSpan": ČÍSLO, "content": { ...pole bloku... } }
 
-POVINNÉ PRAVIDLO: Data VŽDY uvnitř "content". Nikdy ne přímo na úrovni bloku!
+PLOVOUCÍ SLOUPCE – pokud blok je kotva bočního sloupce, přidej na úrovni bloku (vedle "content"):
+{ "type": "image", "gridSpan": 5, "floatSide": "left"|"right", "floatSpanBlocks": 2, "floatGridSpan": 5, "content": {...} }
+- floatSide: "left" = kotva vlevo, "right" = kotva vpravo
+- floatSpanBlocks: počet bloků textu vedle kterých kotva stojí (obvykle 2–3)
+- floatGridSpan: šířka kotvy ve sloupcích (stejné jako gridSpan)
+Bloky textu vedle kotvy mají gridSpan = 12 - floatGridSpan (BEZ floatSide!).
+
+POVINNÉ PRAVIDLO: Data VŽDY uvnitř "content". Nikdy ne přímo na úrovni bloku! (výjimka: floatSide, floatSpanBlocks, floatGridSpan, visualStyles, marginBottom)
 
 TYPY A content POLE:
 1. heading → content: { text, level: "h1"|"h2"|"h3", align?: "left"|"center"|"right", textColor?: "#hex" }
@@ -1103,6 +1221,93 @@ KRITICKÁ PRAVIDLA PRO TEXT:
 
 gridSpan je POVINNÝ v každém bloku.
 Vrať POUZE JSON. Žádný text před ani za.`;
+
+// ============================================
+// SCAN OVERLAY ANIMATION
+// ============================================
+
+const SCAN_COLS = 14;
+const SCAN_ROWS = 10;
+
+function ScanOverlay({ agentStep }: { agentStep: string }) {
+  const dots = Array.from({ length: SCAN_COLS * SCAN_ROWS }, (_, i) => i);
+  const phaseColor =
+    agentStep === 'analyzing' ? '#6366f1' :
+    agentStep === 'strategizing' ? '#f59e0b' :
+    agentStep === 'building' ? '#10b981' :
+    '#a78bfa';
+
+  return (
+    <div style={{
+      position: 'absolute', inset: 0, borderRadius: 6, overflow: 'hidden',
+      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+      pointerEvents: 'none',
+    }}>
+      {/* Dot grid */}
+      <div style={{
+        position: 'absolute', inset: 0,
+        display: 'grid',
+        gridTemplateColumns: `repeat(${SCAN_COLS}, 1fr)`,
+        gridTemplateRows: `repeat(${SCAN_ROWS}, 1fr)`,
+        padding: '6px',
+        gap: 2,
+      }}>
+        {dots.map((i) => {
+          const col = i % SCAN_COLS;
+          const row = Math.floor(i / SCAN_COLS);
+          const cx = SCAN_COLS / 2;
+          const cy = SCAN_ROWS / 2;
+          const dist = Math.sqrt((col - cx) ** 2 + (row - cy) ** 2);
+          const delay = (dist * 0.12).toFixed(2);
+          return (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <div style={{
+                width: 3, height: 3,
+                borderRadius: '50%',
+                background: phaseColor,
+                opacity: 0,
+                flexShrink: 0,
+                animation: `scanDotPulse 1.8s ease-in-out ${delay}s infinite`,
+              }} />
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Center label */}
+      <div style={{
+        position: 'relative', zIndex: 2,
+        background: 'rgba(2,6,23,0.82)',
+        border: `1px solid ${phaseColor}66`,
+        borderRadius: 20,
+        padding: '6px 18px',
+        fontSize: 15,
+        fontWeight: 700,
+        color: phaseColor,
+        letterSpacing: '0.06em',
+        backdropFilter: 'blur(4px)',
+        animation: 'scanLabelPulse 1.4s ease-in-out infinite',
+      }}>
+        {agentStep === 'analyzing' && '● ANALYZUJI'}
+        {agentStep === 'strategizing' && '● PLÁNUJI'}
+        {agentStep === 'building' && '● GENERUJI'}
+        {agentStep === 'images' && '● EXTRAHUJI'}
+        {(agentStep === 'idle' || agentStep === 'done') && '● SPOUŠTÍM'}
+      </div>
+
+      <style>{`
+        @keyframes scanDotPulse {
+          0%, 100% { opacity: 0; transform: scale(0.4); }
+          50% { opacity: 0.85; transform: scale(1); }
+        }
+        @keyframes scanLabelPulse {
+          0%, 100% { opacity: 0.7; }
+          50% { opacity: 1; }
+        }
+      `}</style>
+    </div>
+  );
+}
 
 // ============================================
 // COMPONENT
@@ -1199,7 +1404,7 @@ export function ProImportPanel({ onAddBlocks, onReplaceBlocks, onClose }: ProImp
           }]);
           blocks = await extractAndUploadImages(blocks, uploadedImage);
         }
-        blocks = mergeConsecutiveImageBlocks(blocks);
+        blocks = convertLegacyLayoutsToLayoutSections(mergeConsecutiveImageBlocks(blocks));
         setGeneratedBlocks(blocks);
         setGeneratedTitle(parsed.title);
         setChatMessages(prev => [...prev, {
@@ -1293,7 +1498,18 @@ export function ProImportPanel({ onAddBlocks, onReplaceBlocks, onClose }: ProImp
         blocks = await extractAndUploadImages(blocks, uploadedImage, (msg) => addMsg(msg));
       }
 
-      blocks = mergeConsecutiveImageBlocks(blocks);
+      blocks = convertLegacyLayoutsToLayoutSections(mergeConsecutiveImageBlocks(blocks));
+
+      // Debug: log image blocks to verify URLs
+      const imgBlocks = blocks.filter(b => b.type === 'image');
+      console.log('[ImportAgent] Final image blocks:', imgBlocks.map(b => ({
+        id: b.id,
+        gridSpan: b.gridSpan,
+        url: (b.content as any).url,
+        gallery: (b.content as any).gallery,
+        floatSide: (b as any).floatSide,
+      })));
+
       setGeneratedBlocks(blocks);
       setGeneratedTitle(parsed.title);
       setAgentStep('done');
@@ -1339,7 +1555,7 @@ export function ProImportPanel({ onAddBlocks, onReplaceBlocks, onClose }: ProImp
         if (hasImages && uploadedImage) {
           blocks = await extractAndUploadImages(blocks, uploadedImage);
         }
-        blocks = mergeConsecutiveImageBlocks(blocks);
+        blocks = convertLegacyLayoutsToLayoutSections(mergeConsecutiveImageBlocks(blocks));
         setGeneratedBlocks(blocks);
         setGeneratedTitle(parsed.title);
         setChatMessages(prev => [...prev, {
@@ -1361,6 +1577,13 @@ export function ProImportPanel({ onAddBlocks, onReplaceBlocks, onClose }: ProImp
 
   const handleInsertBlocks = () => {
     if (generatedBlocks.length === 0) return;
+    console.log('[ImportAgent] Inserting blocks:', generatedBlocks.map(b => ({
+      type: b.type,
+      gridSpan: b.gridSpan,
+      floatSide: (b as any).floatSide,
+      url: (b.content as any)?.url,
+      gallery: (b.content as any)?.gallery,
+    })));
     onAddBlocks(generatedBlocks);
     setChatMessages(prev => [...prev, {
       id: `msg-${Date.now()}-ok`, role: 'assistant',
@@ -1496,9 +1719,18 @@ export function ProImportPanel({ onAddBlocks, onReplaceBlocks, onClose }: ProImp
               </div>
             </div>
             {showImage && (
-              <img src={uploadedImage} alt="Screenshot"
-                style={{ width: '100%', maxHeight: 140, objectFit: 'contain', borderRadius: 6, backgroundColor: '#020617', marginBottom: 6 }}
-              />
+              <div style={{ position: 'relative', width: '100%', marginBottom: 6 }}>
+                <img src={uploadedImage} alt="Screenshot"
+                  style={{
+                    width: '100%', objectFit: 'contain', borderRadius: 6,
+                    backgroundColor: '#020617',
+                    filter: isLoading ? 'blur(5px)' : 'none',
+                    transition: 'filter 0.4s ease',
+                    display: 'block',
+                  }}
+                />
+                {isLoading && <ScanOverlay agentStep={agentStep} />}
+              </div>
             )}
             <button
               onClick={() => { setChatMessages([]); setGeneratedBlocks([]); setAgent1Output(null); setAgent2Output(null); setShowAgent1Output(false); setShowAgent2Output(false); setAgentStep('idle'); setTimeout(() => handleAnalyzePipeline(), 50); }}

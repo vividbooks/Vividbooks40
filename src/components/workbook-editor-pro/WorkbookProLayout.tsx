@@ -7,13 +7,14 @@
 
 import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { LAIOUT_BOOKSHELF_PATH } from '../../utils/laiout-routes';
+import { supabase } from '../../utils/supabase/client';
 import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
 import {
   BookOpen,
   Plus,
   Settings,
-  ArrowLeft,
   Loader2,
   Check,
   ChevronRight,
@@ -21,14 +22,20 @@ import {
   MousePointer2,
   PanelLeftClose,
   PanelLeft,
-  Image,
-  LayoutGrid,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { InfiniteCanvas } from './InfiniteCanvas';
 import { WorkbookSpread } from './WorkbookSpread';
 import { ChapterItem, ITEM_TYPES } from './ChapterItem';
+import { WorkbookLivePagePreview } from './WorkbookLivePagePreview';
+import { VirtualizedWorkbookRow } from './VirtualizedWorkbookRow';
+import { ProMiniSidebar } from '../worksheet-editor-pro/ProMiniSidebar';
+import { WorkbookInlineLibraryPanel } from './WorkbookInlineLibraryPanel';
+import { DesignSystemPanel } from '../worksheet-editor-pro/DesignSystemPanel';
+import { DatasetPanel } from '../worksheet-editor-pro/DatasetPanel';
+import type { DesignSystem } from '../../types/design-system';
+import { getDesignSystems } from '../../utils/supabase/design-system-storage';
 import {
   Workbook,
   WorkbookPage,
@@ -41,14 +48,59 @@ import {
   getChapterStartingAtPage,
 } from '../../types/workbook';
 import { Worksheet, createEmptyWorksheet } from '../../types/worksheet';
+import {
+  getWorksheet as getWorksheetLocal,
+  loadWorksheetFromSupabase,
+} from '../../utils/worksheet-storage';
 
 interface WorkbookProLayoutProps {
   theme: 'light' | 'dark';
   toggleTheme: () => void;
 }
 
-type ViewMode = 'canvas' | 'covers' | 'settings';
+type ViewMode = 'canvas' | 'covers' | 'settings' | 'design' | 'dataset';
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
+
+/** Výchozí plánovaný počet stránek knihy (sjednoceno s Bookshelf / DB default) */
+const DEFAULT_BOOK_PAGE_LIMIT = 96;
+
+/** Sloučení total_pages z DB (0 není „nenastaveno“ přes ||) a lokálního stavu */
+function resolvePageLimitFromDbAndPrev(
+  totalPagesFromDb: number | null | undefined,
+  prevLimit: number | undefined | null
+): number {
+  const db =
+    totalPagesFromDb != null && Number.isFinite(Number(totalPagesFromDb)) && Number(totalPagesFromDb) > 0
+      ? Math.round(Number(totalPagesFromDb))
+      : undefined;
+  if (db != null) return db;
+  if (prevLimit != null && prevLimit >= 1) return prevLimit;
+  return DEFAULT_BOOK_PAGE_LIMIT;
+}
+
+function hasLoadedWorksheetContent(worksheet: Worksheet | undefined): worksheet is Worksheet {
+  return Boolean(worksheet && Array.isArray(worksheet.blocks));
+}
+
+function preferFreshWorksheet(a?: Worksheet, b?: Worksheet): Worksheet | undefined {
+  const aLoaded = hasLoadedWorksheetContent(a);
+  const bLoaded = hasLoadedWorksheetContent(b);
+
+  if (aLoaded && !bLoaded) return a;
+  if (bLoaded && !aLoaded) return b;
+  if (!a && b) return b;
+  if (!b && a) return a;
+  if (!a && !b) return undefined;
+
+  const aUpdatedAt = a?.updatedAt ?? '';
+  const bUpdatedAt = b?.updatedAt ?? '';
+
+  if (aUpdatedAt === bUpdatedAt) {
+    return b ?? a;
+  }
+
+  return aUpdatedAt > bUpdatedAt ? a : (b ?? a);
+}
 
 /**
  * Generuje demo data pro testování
@@ -152,13 +204,32 @@ function generateDemoWorkbook(id: string): Workbook {
 export function WorkbookProLayout({ theme, toggleTheme }: WorkbookProLayoutProps) {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const debugWorkbookLayout = (...args: unknown[]) => {
+    if (import.meta.env.DEV) {
+      console.log('[WorkbookLayout]', ...args);
+    }
+  };
   
   // State
-  const [workbook, setWorkbook] = useState<Workbook>(() => 
-    generateDemoWorkbook(id || 'demo-workbook')
-  );
+  const [workbook, setWorkbook] = useState<Workbook>(() => ({
+    id: id || 'new-book',
+    title: 'Načítám…',
+    pages: [],
+    chapters: [],
+    worksheets: {},
+    settings: {
+      pageFormat: 'a4',
+      orientation: 'portrait',
+      showPageNumbers: true,
+      pageLimit: DEFAULT_BOOK_PAGE_LIMIT,
+    },
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  }));
+  const [loadingReal, setLoadingReal] = useState(true);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
   const [viewMode, setViewMode] = useState<ViewMode>('canvas');
+  const [showLibraryPanel, setShowLibraryPanel] = useState(false);
   const [selectedPageId, setSelectedPageId] = useState<string | null>(null);
   const [hoveredChapterId, setHoveredChapterId] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -184,6 +255,37 @@ export function WorkbookProLayout({ theme, toggleTheme }: WorkbookProLayoutProps
   const [lassoEnd, setLassoEnd] = useState<{ x: number; y: number } | null>(null);
   const [isSpacePressed, setIsSpacePressed] = useState(false);
   const canvasContainerRef = useRef<HTMLDivElement>(null);
+  const workbookRef = useRef(workbook);
+  const [bookDesignSystem, setBookDesignSystem] = useState<DesignSystem | null>(null);
+  const persistPageLimitTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    workbookRef.current = workbook;
+  }, [workbook]);
+
+  useEffect(
+    () => () => {
+      if (persistPageLimitTimeoutRef.current) {
+        clearTimeout(persistPageLimitTimeoutRef.current);
+        persistPageLimitTimeoutRef.current = null;
+      }
+    },
+    [],
+  );
+
+  const schedulePersistBookPageLimit = useCallback(
+    (nextLimit: number) => {
+      if (!id) return;
+      const v = Math.max(1, Math.min(500, Math.round(nextLimit)));
+      if (persistPageLimitTimeoutRef.current) clearTimeout(persistPageLimitTimeoutRef.current);
+      persistPageLimitTimeoutRef.current = setTimeout(async () => {
+        persistPageLimitTimeoutRef.current = null;
+        const { error } = await supabase.from('teacher_books').update({ total_pages: v }).eq('id', id);
+        if (error) console.error('[WorkbookPro] total_pages persist', error);
+      }, 500);
+    },
+    [id],
+  );
   
   // Track Space key for lasso vs pan conflict resolution
   useEffect(() => {
@@ -201,6 +303,397 @@ export function WorkbookProLayout({ theme, toggleTheme }: WorkbookProLayoutProps
     };
   }, []);
   
+  // ── Cache helpers ─────────────────────────────────────────────────────────
+  /**
+   * Per-workbook cache stored in sessionStorage.
+   * Full content (ws object) is NOT cached — only the lightweight data needed
+   * to rebuild the book structure quickly before full worksheets arrive.
+   */
+  type WsMetaCache = {
+    updatedAt: Record<string, string>;
+    meta: Record<string, { name: string; title: string; pageCount: number }>;
+  };
+  const cacheKey = `wb-meta-${id}`;
+  const fullWorksheetCacheKey = `wb-full-${id}`;
+
+  const readCache = (): WsMetaCache | null => {
+    try {
+      const raw = sessionStorage.getItem(cacheKey);
+      return raw ? JSON.parse(raw) : null;
+    } catch { return null; }
+  };
+  const writeCache = (c: WsMetaCache) => {
+    try { sessionStorage.setItem(cacheKey, JSON.stringify(c)); } catch { /* quota exceeded — ignore */ }
+  };
+
+  type WsFullCache = Record<string, Worksheet>;
+  const readFullWorksheetCache = (): WsFullCache => {
+    try {
+      const raw = sessionStorage.getItem(fullWorksheetCacheKey);
+      return raw ? JSON.parse(raw) : {};
+    } catch {
+      return {};
+    }
+  };
+  const writeFullWorksheetCache = (cache: WsFullCache) => {
+    try { sessionStorage.setItem(fullWorksheetCacheKey, JSON.stringify(cache)); } catch { /* ignore */ }
+  };
+
+  // ── Shared function: load worksheets and build workbook structure ─────────
+  const loadWorksheets = useCallback(async (showSpinner = false) => {
+    if (!id) return;
+    debugWorkbookLayout('load-start', { workbookId: id, showSpinner });
+
+    // 1. Serve from cache immediately so the UI appears instantly (only for background refreshes)
+    const cache = readCache();
+    const fullCache = readFullWorksheetCache();
+    if (cache && Object.keys(cache.meta).length > 0) {
+      debugWorkbookLayout('apply-cache', {
+        workbookId: id,
+        worksheetCount: Object.keys(cache.meta).length,
+        fullWorksheetCount: Object.keys(fullCache).length,
+      });
+      applyMeta(
+        cache.meta,
+        undefined,
+        workbookRef.current.pages.length === 0 ? fullCache : undefined,
+      );
+      setLoadingReal(false);
+    } else if (showSpinner) {
+      setLoadingReal(true);
+    }
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      // 2a. Load book metadata from teacher_books (title + total_pages)
+      const { data: bookRow } = await supabase
+        .from('teacher_books')
+        .select('title, color, total_pages')
+        .eq('id', id)
+        .single();
+      if (bookRow) {
+        setWorkbook(prev => ({
+          ...prev,
+          title: bookRow.title || prev.title,
+          settings: {
+            ...prev.settings,
+            pageLimit: resolvePageLimitFromDbAndPrev(bookRow.total_pages, prev.settings.pageLimit),
+          },
+        }));
+      }
+
+      // 2b. Lightweight query — only id, name, updated_at (no content blob!)
+      // Support both new book_id and legacy folder_id
+      const { data: lightByBook } = await supabase
+        .from('teacher_worksheets')
+        .select('id, name, updated_at')
+        .eq('teacher_id', user.id)
+        .eq('book_id', id)
+        .order('created_at', { ascending: true });
+
+      const { data: lightByFolder } = await supabase
+        .from('teacher_worksheets')
+        .select('id, name, updated_at')
+        .eq('teacher_id', user.id)
+        .eq('folder_id', id)
+        .order('created_at', { ascending: true });
+
+      // Merge, prefer book_id rows, deduplicate
+      const seenIds = new Set<string>();
+      const lightRows: typeof lightByBook = [];
+      for (const row of [...(lightByBook ?? []), ...(lightByFolder ?? [])]) {
+        if (!seenIds.has(row.id)) { seenIds.add(row.id); lightRows.push(row); }
+      }
+
+      // Empty book — clear demo data and show empty canvas with correct pageLimit
+      if (lightRows.length === 0) {
+        setWorkbook(prev => ({
+          ...prev,
+          id: id!,
+          title: bookRow?.title || (prev.title === 'Načítám…' ? 'Pracovní sešit' : prev.title),
+          pages: [],
+          chapters: [],
+          worksheets: {},
+          settings: {
+            ...prev.settings,
+            pageLimit: resolvePageLimitFromDbAndPrev(bookRow?.total_pages, prev.settings.pageLimit),
+          },
+        }));
+        return;
+      }
+
+      // 3. Detect which worksheets changed since last cache
+      const cachedUpdatedAt = cache?.updatedAt ?? {};
+      const changedIds = lightRows
+        .filter(r => cachedUpdatedAt[r.id] !== r.updated_at)
+        .map(r => r.id);
+      debugWorkbookLayout('fetched-light-rows', {
+        workbookId: id,
+        lightRowCount: lightRows.length,
+        changedIds,
+      });
+
+      // 4. Build lightweight meta. Full worksheet content is loaded lazily
+      // when a preview becomes visible, so opening a large book stays fast.
+      const newMeta: WsMetaCache['meta'] = { ...(cache?.meta ?? {}) };
+      const mergedFullWorksheetData: Record<string, Worksheet> = { ...fullCache };
+      const changedWorksheetData: Record<string, Worksheet> = {};
+      const currentWorksheets = workbookRef.current.worksheets;
+
+      for (const light of lightRows) {
+        if (changedIds.includes(light.id)) {
+          // 1. Check localStorage first — always in sync because save is synchronous there
+          const localWs = getWorksheetLocal(light.id);
+          const localPageCount = localWs?.metadata?.pageCount ?? 0;
+          const cachedPageCount = newMeta[light.id]?.pageCount ?? 0;
+          const wsPageCount = localPageCount || cachedPageCount || 1;
+
+          newMeta[light.id] = {
+            name: light.name,
+            title: localWs?.title || newMeta[light.id]?.title || light.name || '',
+            pageCount: wsPageCount,
+          };
+          if (localWs && Array.isArray(localWs.blocks)) {
+            mergedFullWorksheetData[light.id] = localWs;
+            if (currentWorksheets[light.id] !== localWs) {
+              changedWorksheetData[light.id] = localWs;
+            }
+          }
+        } else {
+          // Worksheet not changed according to Supabase — but Supabase save may still be in-flight.
+          // Cross-check localStorage to catch pending saves.
+          const localWs = getWorksheetLocal(light.id);
+          const localPageCount = localWs?.metadata?.pageCount ?? 0;
+          const cachedPageCount = newMeta[light.id]?.pageCount ?? 0;
+          const localUpdatedAt = localWs?.updatedAt ?? '';
+          const cachedUpdatedAt2 = cache?.updatedAt?.[light.id] ?? '';
+          // If localStorage is newer than what we last synced, prefer it immediately
+          // even when pageCount stays the same. Otherwise the book view can show stale
+          // page content right after returning from the editor.
+          if (localWs && localUpdatedAt > cachedUpdatedAt2) {
+            newMeta[light.id] = {
+              ...(newMeta[light.id] ?? { name: light.name, title: light.name }),
+              title: localWs?.title || newMeta[light.id]?.title || light.name,
+              pageCount: localPageCount || cachedPageCount || newMeta[light.id]?.pageCount || 1,
+            };
+            if (Array.isArray(localWs.blocks)) {
+              mergedFullWorksheetData[light.id] = localWs;
+              const currentUpdatedAt = currentWorksheets[light.id]?.updatedAt ?? '';
+              if (currentUpdatedAt !== localUpdatedAt) {
+                changedWorksheetData[light.id] = localWs;
+              }
+            }
+          } else if (localWs && Array.isArray(localWs.blocks)) {
+            mergedFullWorksheetData[light.id] = localWs;
+            if (!currentWorksheets[light.id] || !Array.isArray(currentWorksheets[light.id].blocks)) {
+              changedWorksheetData[light.id] = localWs;
+            }
+          } else if (fullCache[light.id] && Array.isArray(fullCache[light.id].blocks)) {
+            mergedFullWorksheetData[light.id] = fullCache[light.id];
+            if (!currentWorksheets[light.id] || !Array.isArray(currentWorksheets[light.id].blocks)) {
+              changedWorksheetData[light.id] = fullCache[light.id];
+            }
+          }
+        }
+      }
+
+      // Remove worksheets that were deleted
+      for (const cachedId of Object.keys(newMeta)) {
+        if (!lightRows.find(r => r.id === cachedId)) {
+          delete newMeta[cachedId];
+          delete mergedFullWorksheetData[cachedId];
+          delete changedWorksheetData[cachedId];
+        }
+      }
+
+      // 6. Update cache
+      const newUpdatedAt: Record<string, string> = {};
+      for (const r of lightRows) newUpdatedAt[r.id] = r.updated_at;
+      writeCache({ updatedAt: newUpdatedAt, meta: newMeta });
+      writeFullWorksheetCache(mergedFullWorksheetData);
+
+      // 7. Apply to state — preserving order from lightRows
+      debugWorkbookLayout('apply-fresh', {
+        workbookId: id,
+        orderedIds: lightRows.map(r => r.id),
+        changedIds,
+      });
+      applyMeta(newMeta, lightRows.map(r => r.id), changedWorksheetData);
+    } catch (e) {
+      console.error('[WorkbookPro] load error', e);
+    } finally {
+      setLoadingReal(false);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
+
+  /** Rebuild workbook pages/chapters/worksheets from lightweight meta */
+  function applyMeta(
+    meta: Record<string, { name: string; title: string; pageCount: number }>,
+    orderedIds?: string[],
+    worksheetData?: Record<string, Worksheet>,
+  ) {
+    const ids = orderedIds ?? Object.keys(meta);
+    const pages: WorkbookPage[] = [];
+    const chapters: WorkbookChapter[] = [];
+    let pageNum = 1;
+
+    ids.forEach((wsId, i) => {
+      const m = meta[wsId];
+      if (!m) return;
+
+      const chapter: WorkbookChapter = {
+        id: `chapter-${wsId}`,
+        title: m.title || m.name || `Kapitola ${i + 1}`,
+        color: CHAPTER_COLORS[i % CHAPTER_COLORS.length],
+        order: i + 1,
+      };
+      chapters.push(chapter);
+
+      const count = m.pageCount || 1;
+      for (let p = 0; p < count; p++) {
+        pages.push({
+          id: `page-${wsId}-${p}`,
+          pageNumber: pageNum++,
+          worksheetId: wsId,
+          worksheetPageIndex: p,
+          startsChapterId: p === 0 ? chapter.id : undefined,
+        });
+      }
+    });
+
+    setWorkbook(prev => {
+      const wsMap: Record<string, Worksheet> = {};
+      ids.forEach((wsId) => {
+        const m = meta[wsId];
+        if (!m) return;
+        const fullWs = preferFreshWorksheet(prev.worksheets[wsId], worksheetData?.[wsId]);
+        wsMap[wsId] = fullWs && Array.isArray(fullWs.blocks)
+          ? fullWs
+          : ({ ...(fullWs ?? {}), title: m.title || fullWs?.title || m.name } as Worksheet);
+      });
+
+      const contentPages = pages.length;
+      const prevLimit = prev.settings.pageLimit;
+      const intended =
+        prevLimit != null && prevLimit >= 1 ? prevLimit : DEFAULT_BOOK_PAGE_LIMIT;
+      // Limit stránek knihy ≠ počet vyplněných stran — nesmíme ho shodit na pages.length při jedné kapitole
+      const pageLimit = Math.max(intended, contentPages, 1);
+
+      return {
+        ...prev,
+        id: id!,
+        title: (prev.title === 'Nový pracovní sešit' || prev.title === 'Načítám…') ? 'Pracovní sešit' : prev.title,
+        pages,
+        chapters,
+        settings: {
+          ...prev.settings,
+          pageLimit,
+        },
+        worksheets: wsMap,
+      };
+    });
+  }
+
+  const ensureWorksheetLoaded = useCallback(async (worksheetId: string) => {
+    const existing = workbook.worksheets[worksheetId];
+    if (existing && Array.isArray(existing.blocks)) return;
+
+    try {
+      const localWs = getWorksheetLocal(worksheetId);
+      let resolved = localWs && Array.isArray(localWs.blocks) ? localWs : null;
+
+      if (!resolved) {
+        const { data: row } = await supabase
+          .from('teacher_worksheets')
+          .select('id, content')
+          .eq('id', worksheetId)
+          .maybeSingle();
+
+        const dbWs = row?.content as Worksheet | undefined;
+        if (dbWs && Array.isArray(dbWs.blocks)) {
+          resolved = dbWs;
+        }
+      }
+
+      if (!resolved) return;
+
+      const mergedFullCache = {
+        ...readFullWorksheetCache(),
+        [worksheetId]: resolved!,
+      };
+      writeFullWorksheetCache(mergedFullCache);
+
+      setWorkbook((prev) => {
+        const current = prev.worksheets[worksheetId];
+        if (current && Array.isArray(current.blocks)) return prev;
+        return {
+          ...prev,
+          worksheets: {
+            ...prev.worksheets,
+            [worksheetId]: resolved!,
+          },
+        };
+      });
+    } catch (e) {
+      console.warn('[WorkbookPro] ensureWorksheetLoaded failed', worksheetId, e);
+    }
+  }, [workbook.worksheets]);
+
+  useEffect(() => {
+    if (viewMode !== 'canvas') return;
+    const preloadIds = Array.from(new Set(
+      workbook.pages
+        .slice(0, 6)
+        .map((page) => page.worksheetId)
+        .filter(Boolean)
+    )) as string[];
+    if (preloadIds.length === 0) return;
+
+    let cancelled = false;
+    const run = async () => {
+      for (const wsId of preloadIds) {
+        if (cancelled) return;
+        await ensureWorksheetLoaded(wsId);
+      }
+    };
+
+    const idle = (window as Window & { requestIdleCallback?: (cb: () => void) => number }).requestIdleCallback;
+    let timeoutId: number | null = null;
+    if (idle) {
+      idle(() => { void run(); });
+    } else {
+      timeoutId = window.setTimeout(() => { void run(); }, 300);
+    }
+
+    return () => {
+      cancelled = true;
+      if (timeoutId !== null) window.clearTimeout(timeoutId);
+    };
+  }, [ensureWorksheetLoaded, viewMode, workbook.pages]);
+
+  // Initial load
+  useEffect(() => {
+    if (!id) { setLoadingReal(false); return; }
+    loadWorksheets(true);
+  }, [id, loadWorksheets]);
+
+  // Re-load when user returns to this tab — clear cache first so page counts are always fresh
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        debugWorkbookLayout('visibility-visible-reload', { workbookId: id });
+        loadWorksheets(false);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [loadWorksheets, cacheKey]);
+
   // Vytvoř spreads z pages
   const spreads = useMemo(
     () => createSpreadsFromPages(workbook.pages),
@@ -253,9 +746,28 @@ export function WorkbookProLayout({ theme, toggleTheme }: WorkbookProLayoutProps
       toast.warning('Počkejte, probíhá ukládání...');
       return;
     }
-    navigate(-1);
+    navigate(LAIOUT_BOOKSHELF_PATH);
   }, [navigate, saveStatus]);
-  
+
+  const closeLibraryPanel = useCallback(() => setShowLibraryPanel(false), []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const list = await getDesignSystems();
+        if (!cancelled && list.length > 0) {
+          setBookDesignSystem((prev) => prev ?? list[0]);
+        }
+      } catch {
+        /* ignore */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // Blokovat beforeunload během ukládání
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
@@ -270,9 +782,10 @@ export function WorkbookProLayout({ theme, toggleTheme }: WorkbookProLayoutProps
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [saveStatus]);
   
-  const handleEditPage = useCallback((pageId: string, worksheetId: string) => {
-    // Otevři worksheet editor pro daný list s formátem z workbooku a ID workbooku pro navigaci zpět
-    navigate(`/admin/worksheet-pro/${worksheetId}?offline=1&pageFormat=${workbook.settings.pageFormat}&workbookId=${workbook.id}`);
+  const handleEditPage = useCallback((pageId: string, worksheetId: string, worksheetPageIndex = 0) => {
+    navigate(
+      `/admin/worksheet-pro/${worksheetId}?offline=1&page=${worksheetPageIndex + 1}&pageFormat=${workbook.settings.pageFormat}&workbookId=${workbook.id}&bookId=${workbook.id}`
+    );
   }, [navigate, workbook.settings.pageFormat, workbook.id]);
   
   const handleRemovePage = useCallback((pageId: string) => {
@@ -305,27 +818,70 @@ export function WorkbookProLayout({ theme, toggleTheme }: WorkbookProLayoutProps
   }, [workbook.pages]);
   
   const handleAddPage = useCallback(() => {
-    // Vytvořit nový worksheet a přidat jako stránku
-    const newWsId = `ws-new-${Date.now()}`;
+    handleAddChapterAtPage(workbook.pages.length + 1);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workbook.pages.length]);
+
+  /**
+   * Create a new chapter (worksheet) starting at a specific page number,
+   * save it to Supabase with book_id, then open the Pro editor.
+   */
+  const handleAddChapterAtPage = useCallback(async (startPageNum: number) => {
+    const newWsId = `ws-${Date.now()}`;
     const newWorksheet = createEmptyWorksheet(newWsId);
-    
+
+    // Optimistically add the page to local state
+    const chapterId = `chapter-${newWsId}`;
     const newPage: WorkbookPage = {
-      id: `page-${Date.now()}`,
-      pageNumber: workbook.pages.length + 1,
+      id: `page-${newWsId}-0`,
+      pageNumber: startPageNum,
       worksheetId: newWsId,
       worksheetPageIndex: 0,
+      startsChapterId: chapterId,
     };
-    
+
     setWorkbook(prev => ({
       ...prev,
-      pages: [...prev.pages, newPage],
+      pages: [
+        ...prev.pages.filter(p => p.pageNumber !== startPageNum),
+        newPage,
+      ].sort((a, b) => a.pageNumber - b.pageNumber),
+      chapters: [
+        ...prev.chapters,
+        {
+          id: chapterId,
+          title: 'Nová kapitola',
+          color: CHAPTER_COLORS[prev.chapters.length % CHAPTER_COLORS.length],
+          order: prev.chapters.length + 1,
+        },
+      ],
       worksheets: { ...prev.worksheets, [newWsId]: newWorksheet },
       updatedAt: new Date().toISOString(),
     }));
-    
-    // Rovnou otevři editor s formátem z workbooku a ID workbooku pro navigaci zpět
-    navigate(`/admin/worksheet-pro/${newWsId}?offline=1&pageFormat=${workbook.settings.pageFormat}&workbookId=${workbook.id}`);
-  }, [workbook.pages, navigate, workbook.settings.pageFormat]);
+
+    // Save worksheet to Supabase immediately with book_id
+    try {
+      const { supabase: sb } = await import('../../utils/supabase/client');
+      const { data: { user } } = await sb.auth.getUser();
+      if (user) {
+        await sb.from('teacher_worksheets').upsert({
+          id: newWsId,
+          teacher_id: user.id,
+          book_id: workbook.id,
+          name: 'Nová kapitola',
+          content: newWorksheet,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'id' });
+      }
+    } catch (e) {
+      console.error('[WorkbookPro] Failed to save new chapter to Supabase:', e);
+    }
+
+    navigate(
+      `/admin/worksheet-pro/${newWsId}?offline=1&pageFormat=${workbook.settings.pageFormat}&workbookId=${workbook.id}&bookId=${workbook.id}`
+    );
+  }, [workbook.id, workbook.pages, workbook.chapters, workbook.settings.pageFormat, navigate]);
   
   const handleEditCover = useCallback(() => {
     toast.info('Editor obálky - TODO');
@@ -767,35 +1323,35 @@ export function WorkbookProLayout({ theme, toggleTheme }: WorkbookProLayoutProps
   
   return (
     <div className="h-screen flex bg-slate-900 text-white overflow-hidden">
+      {/* Narrow mini sidebar — always visible */}
+      <ProMiniSidebar
+        activePanel="add"
+        onPanelChange={() => {}}
+        saveStatus={saveStatus === 'saving' ? 'saving' : saveStatus === 'saved' ? 'saved' : 'idle'}
+        hideAI
+        appMode="book"
+        bookViewMode={viewMode}
+        onBookViewChange={(m) => { setViewMode(m); closeLibraryPanel(); }}
+        onLogoClick={() => setShowLibraryPanel((o) => !o)}
+      />
+
+      {/* Knihovna místo přepínače módu — po kliknutí na logo */}
+      <WorkbookInlineLibraryPanel
+        isOpen={showLibraryPanel}
+        onClose={closeLibraryPanel}
+        currentBookId={id}
+      />
+
       {/* Figma-style left sidebar */}
       {sidebarOpen && (
         <aside 
           className="flex-shrink-0 flex flex-col overflow-hidden"
           style={{ backgroundColor: '#1e293b', width: '320px', borderRight: '1px solid #334155' }}
         >
-          {/* Back button + Title + Toggle */}
+          {/* Title + Toggle */}
           <div style={{ padding: '12px 16px', borderBottom: '1px solid #334155' }}>
             <div className="flex items-center justify-between mb-3">
-              <button
-                onClick={handleBack}
-                disabled={saveStatus === 'saving'}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  padding: '4px 10px',
-                  borderRadius: '6px',
-                  backgroundColor: 'transparent',
-                  border: 'none',
-                  color: '#94a3b8',
-                  fontSize: '13px',
-                  cursor: saveStatus === 'saving' ? 'not-allowed' : 'pointer',
-                  opacity: saveStatus === 'saving' ? 0.5 : 1,
-                }}
-              >
-                <ArrowLeft size={14} />
-                <span>Zpět</span>
-              </button>
+              <div />
               
               <button
                 onClick={() => setSidebarOpen(false)}
@@ -821,7 +1377,8 @@ export function WorkbookProLayout({ theme, toggleTheme }: WorkbookProLayoutProps
                 </h1>
                 <div className="flex items-center gap-2">
                   <span style={{ fontSize: '11px', color: '#64748b' }}>
-                    {workbook.pages.length} stran · {workbook.chapters.length} kapitol
+                    {workbook.settings.pageLimit ?? DEFAULT_BOOK_PAGE_LIMIT} stran v knize ·{' '}
+                    {workbook.chapters.length} kapitol
                   </span>
                   {saveStatus === 'saving' && (
                     <span style={{ fontSize: '11px', color: '#f59e0b', display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -840,77 +1397,20 @@ export function WorkbookProLayout({ theme, toggleTheme }: WorkbookProLayoutProps
             </div>
           </div>
           
-          {/* Navigation tabs - Obsah, Obálka, Nastavení */}
-          <div style={{ padding: '8px 12px', borderBottom: '1px solid #334155' }}>
-            <div className="flex flex-col gap-1">
-              <button
-                onClick={() => setViewMode('canvas')}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '10px',
-                  padding: '8px 10px',
-                  borderRadius: '6px',
-                  border: 'none',
-                  cursor: 'pointer',
-                  backgroundColor: viewMode === 'canvas' ? '#334155' : 'transparent',
-                  color: viewMode === 'canvas' ? '#fff' : '#94a3b8',
-                  fontSize: '13px',
-                  fontWeight: 500,
-                  width: '100%',
-                  textAlign: 'left',
-                }}
-              >
-                <LayoutGrid size={16} />
-                Obsah
-              </button>
-              
-              <button
-                onClick={() => setViewMode('covers')}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '10px',
-                  padding: '8px 10px',
-                  borderRadius: '6px',
-                  border: 'none',
-                  cursor: 'pointer',
-                  backgroundColor: viewMode === 'covers' ? '#334155' : 'transparent',
-                  color: viewMode === 'covers' ? '#fff' : '#94a3b8',
-                  fontSize: '13px',
-                  fontWeight: 500,
-                  width: '100%',
-                  textAlign: 'left',
-                }}
-              >
-                <Image size={16} />
-                Obálka
-              </button>
-              
-              <button
-                onClick={() => setViewMode('settings')}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '10px',
-                  padding: '8px 10px',
-                  borderRadius: '6px',
-                  border: 'none',
-                  cursor: 'pointer',
-                  backgroundColor: viewMode === 'settings' ? '#334155' : 'transparent',
-                  color: viewMode === 'settings' ? '#fff' : '#94a3b8',
-                  fontSize: '13px',
-                  fontWeight: 500,
-                  width: '100%',
-                  textAlign: 'left',
-                }}
-              >
-                <Settings size={16} />
-                Nastavení
-              </button>
-            </div>
-          </div>
           
+          {(viewMode === 'design' || viewMode === 'dataset') && (
+            <div className="flex-1 overflow-y-auto p-4">
+              <h2 className="font-semibold text-sm text-slate-300 mb-2">
+                {viewMode === 'design' ? 'Design system' : 'Data set'}
+              </h2>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                {viewMode === 'design'
+                  ? 'Upravte barvy, typografii a výchozí layout. Hlavní editor je uprostřed obrazovky.'
+                  : 'Soubory a texty pro AI jsou uložené v rámci této knihy (scope).'}
+              </p>
+            </div>
+          )}
+
           {/* Chapters list - when canvas viewMode */}
           {viewMode === 'canvas' && (
             <div className="flex-1 overflow-y-auto">
@@ -1087,12 +1587,27 @@ export function WorkbookProLayout({ theme, toggleTheme }: WorkbookProLayoutProps
       {/* Canvas area */}
         <main 
           ref={canvasContainerRef}
-          className="flex-1 relative"
+          className={
+            viewMode === 'design' || viewMode === 'dataset'
+              ? 'flex-1 relative flex flex-col min-h-0 overflow-hidden'
+              : 'flex-1 relative'
+          }
           onMouseDown={viewMode === 'canvas' ? handleLassoStart : undefined}
           onMouseMove={viewMode === 'canvas' ? handleLassoMove : undefined}
           onMouseUp={viewMode === 'canvas' ? handleLassoEnd : undefined}
           onMouseLeave={viewMode === 'canvas' ? handleLassoEnd : undefined}
         >
+        {/* Loading overlay while fetching real worksheets */}
+        {loadingReal && (
+          <div style={{
+            position: 'absolute', inset: 0, zIndex: 50,
+            backgroundColor: 'rgba(15,23,42,0.8)',
+            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '12px',
+          }}>
+            <Loader2 size={32} className="animate-spin" style={{ color: '#3B82F6' }} />
+            <span style={{ fontSize: '14px', color: '#94a3b8' }}>Načítám kapitoly…</span>
+          </div>
+        )}
           {/* Lasso selection overlay */}
           {lassoRect && (
             <div
@@ -1123,7 +1638,12 @@ export function WorkbookProLayout({ theme, toggleTheme }: WorkbookProLayoutProps
                 {/* Page spreads grid - 3 items per row with chapter breaks */}
                 {/* Layout: Page 1 (single), then spreads 2-3, 4-5, 6-7, etc., ending with single page if even total */}
                 {(() => {
-                  const totalPages = workbook.settings.pageLimit;
+                  // Use pageLimit from book settings, but always show at least the pages we have content for
+                  const totalPages = Math.max(
+                    workbook.settings.pageLimit ?? DEFAULT_BOOK_PAGE_LIMIT,
+                    workbook.pages.length,
+                    1,
+                  );
                   
                   // Build items: first page single, then spreads, last page single if even
                   type SpreadItem = { 
@@ -1274,23 +1794,27 @@ export function WorkbookProLayout({ theme, toggleTheme }: WorkbookProLayoutProps
                         // Check if first item in this row starts a new chapter
                         const rowStartsNewChapter = rowItems[0]?.startsNewChapter;
                         const chapterInfo = rowItems[0]?.chapterInfo || rowGroup.chapterInfo;
+                        const estimatedHeight = rowStartsNewChapter && rowIndex > 0 ? 322 : 262;
                         
                         return (
-                          <div 
+                          <VirtualizedWorkbookRow
                             key={rowIndex}
-                            style={{ 
-                              display: 'flex', 
-                              flexDirection: 'column',
-                              alignItems: 'center',
-                              marginTop: rowStartsNewChapter && rowIndex > 0 ? '60px' : '0',
-                            }}
+                            estimatedHeight={estimatedHeight}
                           >
-                            <div style={{ 
-                              display: 'flex', 
-                              gap: '24px',
-                              justifyContent: 'flex-start',
-                            }}>
-                            {rowItems.map((item, idx) => {
+                            <div 
+                              style={{ 
+                                display: 'flex', 
+                                flexDirection: 'column',
+                                alignItems: 'center',
+                                marginTop: rowStartsNewChapter && rowIndex > 0 ? '60px' : '0',
+                              }}
+                            >
+                              <div style={{ 
+                                display: 'flex', 
+                                gap: '24px',
+                                justifyContent: 'flex-start',
+                              }}>
+                              {rowItems.map((item, idx) => {
                               // Check if THIS item specifically starts a new chapter (for mid-row breaks)
                               const itemStartsChapter = item.startsNewChapter && idx > 0;
                               
@@ -1377,7 +1901,10 @@ export function WorkbookProLayout({ theme, toggleTheme }: WorkbookProLayoutProps
                                           } else if (selectedPages.size > 0 && !isDragging) {
                                             handlePageSelect(pageNum, false);
                                           } else if (page) {
-                                            handleEditPage(page.id, page.worksheetId);
+                                            handleEditPage(page.id, page.worksheetId, page.worksheetPageIndex);
+                                          } else {
+                                            // Empty placeholder — create a new chapter here
+                                            handleAddChapterAtPage(pageNum);
                                           }
                                         }}
                                         onDragStart={(e) => {
@@ -1450,19 +1977,43 @@ export function WorkbookProLayout({ theme, toggleTheme }: WorkbookProLayoutProps
                                           </div>
                                         )}
                                         {ws ? (
-                                          <span style={{ 
-                                            fontSize: '11px', 
-                                            color: '#64748b',
-                                            textAlign: 'center',
+                                          <WorkbookLivePagePreview
+                                            worksheet={ws}
+                                            pageIndex={page?.worksheetPageIndex ?? 0}
+                                            width={140}
+                                            height={198}
+                                            onLoadRequested={() => ensureWorksheetLoaded(page!.worksheetId)}
+                                          />
+                                        ) : (
+                                          <div style={{
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            gap: '6px',
+                                            width: '100%',
+                                            height: '100%',
                                             padding: '8px',
                                           }}>
-                                            {ws.title}
-                                          </span>
-                                        ) : (
-                                          <>
-                                            <Plus size={20} style={{ color: '#475569' }} />
-                                            <span style={{ fontSize: '11px', color: '#64748b' }}>Prázdná</span>
-                                          </>
+                                            <div
+                                              style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}
+                                              onMouseEnter={e => {
+                                                const plusEl = e.currentTarget.querySelector('svg') as SVGElement | null;
+                                                if (plusEl) plusEl.style.color = '#94a3b8';
+                                                const label = e.currentTarget.querySelector('span') as HTMLElement | null;
+                                                if (label) label.style.color = '#94a3b8';
+                                              }}
+                                              onMouseLeave={e => {
+                                                const plusEl = e.currentTarget.querySelector('svg') as SVGElement | null;
+                                                if (plusEl) plusEl.style.color = '#475569';
+                                                const label = e.currentTarget.querySelector('span') as HTMLElement | null;
+                                                if (label) label.style.color = '#64748b';
+                                              }}
+                                            >
+                                              <Plus size={22} style={{ color: '#475569', transition: 'color 120ms' }} />
+                                              <span style={{ fontSize: '11px', color: '#64748b', transition: 'color 120ms' }}>Nová kapitola</span>
+                                            </div>
+                                          </div>
                                         )}
                                       </div>
                                       {/* Page number below card */}
@@ -1640,7 +2191,9 @@ export function WorkbookProLayout({ theme, toggleTheme }: WorkbookProLayoutProps
                                             } else if (selectedPages.size > 0 && !isDragging) {
                                               handlePageSelect(leftPageNum, false);
                                             } else if (leftPage) {
-                                              handleEditPage(leftPage.id, leftPage.worksheetId);
+                                              handleEditPage(leftPage.id, leftPage.worksheetId, leftPage.worksheetPageIndex);
+                                            } else {
+                                              handleAddChapterAtPage(leftPageNum);
                                             }
                                           }}
                                           onDragStart={(e) => {
@@ -1706,19 +2259,19 @@ export function WorkbookProLayout({ theme, toggleTheme }: WorkbookProLayoutProps
                                           </div>
                                         )}
                                         {leftWs ? (
-                                          <span style={{ 
-                                            fontSize: '11px', 
-                                            color: '#64748b',
-                                            textAlign: 'center',
-                                            padding: '8px',
-                                          }}>
-                                            {leftWs.title}
-                                          </span>
+                                          <WorkbookLivePagePreview
+                                            worksheet={leftWs}
+                                            pageIndex={leftPage?.worksheetPageIndex ?? 0}
+                                            width={140}
+                                            height={198}
+                                            borderRadius="4px 0 0 4px"
+                                            onLoadRequested={() => ensureWorksheetLoaded(leftPage!.worksheetId)}
+                                          />
                                         ) : (
-                                          <>
-                                            <Plus size={20} style={{ color: '#475569' }} />
-                                            <span style={{ fontSize: '11px', color: '#64748b' }}>Prázdná</span>
-                                          </>
+                                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}>
+                                            <Plus size={22} style={{ color: '#475569' }} />
+                                            <span style={{ fontSize: '11px', color: '#64748b' }}>Nová kapitola</span>
+                                          </div>
                                           )}
                                         </div>
                                       </div>
@@ -1776,7 +2329,9 @@ export function WorkbookProLayout({ theme, toggleTheme }: WorkbookProLayoutProps
                                             } else if (selectedPages.size > 0 && !isDragging) {
                                               handlePageSelect(rightPageNum, false);
                                             } else if (rightPage) {
-                                              handleEditPage(rightPage.id, rightPage.worksheetId);
+                                              handleEditPage(rightPage.id, rightPage.worksheetId, rightPage.worksheetPageIndex);
+                                            } else {
+                                              handleAddChapterAtPage(rightPageNum);
                                             }
                                           }}
                                           onDragStart={(e) => {
@@ -1842,19 +2397,19 @@ export function WorkbookProLayout({ theme, toggleTheme }: WorkbookProLayoutProps
                                           </div>
                                         )}
                                         {rightWs ? (
-                                          <span style={{ 
-                                            fontSize: '11px', 
-                                            color: '#64748b',
-                                            textAlign: 'center',
-                                            padding: '8px',
-                                          }}>
-                                            {rightWs.title}
-                                          </span>
+                                          <WorkbookLivePagePreview
+                                            worksheet={rightWs}
+                                            pageIndex={rightPage?.worksheetPageIndex ?? 0}
+                                            width={140}
+                                            height={198}
+                                            borderRadius="0 4px 4px 0"
+                                            onLoadRequested={() => ensureWorksheetLoaded(rightPage!.worksheetId)}
+                                          />
                                         ) : (
-                                          <>
-                                            <Plus size={20} style={{ color: '#475569' }} />
-                                            <span style={{ fontSize: '11px', color: '#64748b' }}>Prázdná</span>
-                                          </>
+                                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}>
+                                            <Plus size={22} style={{ color: '#475569' }} />
+                                            <span style={{ fontSize: '11px', color: '#64748b' }}>Nová kapitola</span>
+                                          </div>
                                           )}
                                         </div>
                                       </div>
@@ -1885,8 +2440,9 @@ export function WorkbookProLayout({ theme, toggleTheme }: WorkbookProLayoutProps
                                 );
                               }
                             })}
+                              </div>
                             </div>
-                          </div>
+                          </VirtualizedWorkbookRow>
                         );
                       })}
                     </div>
@@ -2067,6 +2623,22 @@ export function WorkbookProLayout({ theme, toggleTheme }: WorkbookProLayoutProps
                 </div>
               </div>
             </InfiniteCanvas>
+          ) : viewMode === 'design' ? (
+            <div className="flex-1 flex flex-col min-h-0 overflow-hidden" style={{ backgroundColor: '#0d1117' }}>
+              <DesignSystemPanel
+                activeDesignSystem={bookDesignSystem}
+                onDesignSystemChange={setBookDesignSystem}
+                onApplyToProject={(ds) => {
+                  setBookDesignSystem(ds);
+                }}
+              />
+            </div>
+          ) : viewMode === 'dataset' ? (
+            <div className="flex-1 flex flex-col min-h-0 overflow-hidden" style={{ backgroundColor: '#0f172a' }}>
+              <div className="flex-1 overflow-y-auto p-4 min-h-0">
+                <DatasetPanel scopeId={id ? `workbook-${id}` : 'workbook'} />
+              </div>
+            </div>
           ) : (
             // Settings view - full settings form in main area
             <div className="h-full overflow-y-auto" style={{ backgroundColor: '#0f172a' }}>
@@ -2127,18 +2699,25 @@ export function WorkbookProLayout({ theme, toggleTheme }: WorkbookProLayoutProps
                       {/* Page limit */}
                       <div>
                         <label className="block text-sm text-slate-400 mb-2">
-                          Limit stránek: <span className="text-white font-medium">{workbook.settings.pageLimit}</span>
+                          Limit stránek:{' '}
+                          <span className="text-white font-medium">
+                            {workbook.settings.pageLimit ?? DEFAULT_BOOK_PAGE_LIMIT}
+                          </span>
                         </label>
                         <input
                           type="range"
                           min={8}
                           max={128}
                           step={8}
-                          value={workbook.settings.pageLimit}
-                          onChange={(e) => setWorkbook(prev => ({
-                            ...prev,
-                            settings: { ...prev.settings, pageLimit: parseInt(e.target.value) },
-                          }))}
+                          value={workbook.settings.pageLimit ?? DEFAULT_BOOK_PAGE_LIMIT}
+                          onChange={(e) => {
+                            const v = parseInt(e.target.value, 10);
+                            setWorkbook((prev) => ({
+                              ...prev,
+                              settings: { ...prev.settings, pageLimit: v },
+                            }));
+                            schedulePersistBookPageLimit(v);
+                          }}
                           className="w-full mt-2"
                         />
                       </div>

@@ -4,7 +4,11 @@
  * Uses the EXACT same design as QuizViewPage
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useQuizNavigation } from '../../hooks/quiz/useQuizNavigation';
+import { useSlidePreload } from '../../hooks/quiz/useSlidePreload';
+import { useSlideComments } from '../../hooks/quiz/useSlideComments';
+import { getQuiz } from '../../utils/quiz-storage';
 import {
   X,
   ChevronLeft,
@@ -16,6 +20,7 @@ import {
   ArrowRight,
   Menu,
   PanelLeftClose,
+  PanelLeft,
   ExternalLink,
   Globe,
   Youtube,
@@ -37,6 +42,7 @@ import {
   FillBlanksActivitySlide,
   ImageHotspotsActivitySlide,
   VideoQuizActivitySlide,
+  FlashcardActivitySlide,
   InfoSlide,
   SlideResponse,
   ToolsSlide,
@@ -54,54 +60,13 @@ import { ImageHotspotsView } from './slides/ImageHotspotsView';
 import { VideoQuizView } from './slides/VideoQuizView';
 import { FormView } from './slides/FormView';
 import { CertificateView } from './slides/CertificateView';
-import Lottie from 'lottie-react';
-import { QRCodeSVG } from 'qrcode.react';
+import { FlashcardSlideView } from './slides/FlashcardSlideView';
 import { checkMathAnswer } from '../../utils/math-compare';
+import { evaluateABCAnswer, getABCSelectedAnswerIds } from '../../utils/abc-evaluation';
 import { getContrastColor } from '../../utils/color-utils';
 import { MathKeyboard } from '../math/MathKeyboard';
-import { addBoardComment, getSlideComments, BoardComment } from '../../utils/supabase/board-comments';
-
-/**
- * Lottie Block Preview - for viewing lottie animations in slides
- */
-function LottieBlockPreview({ 
-  url, 
-  loop = true, 
-  autoplay = true 
-}: { 
-  url: string; 
-  loop?: boolean; 
-  autoplay?: boolean;
-}) {
-  const [animationData, setAnimationData] = React.useState<any>(null);
-  const [error, setError] = React.useState(false);
-
-  React.useEffect(() => {
-    if (!url) return;
-    
-    fetch(url)
-      .then(res => res.json())
-      .then(data => setAnimationData(data))
-      .catch(() => setError(true));
-  }, [url]);
-
-  if (error || !animationData) {
-    return (
-      <div className="h-full w-full flex items-center justify-center text-slate-400">
-        {error ? 'Chyba načítání animace' : 'Načítání...'}
-      </div>
-    );
-  }
-
-  return (
-    <Lottie
-      animationData={animationData}
-      loop={loop !== false}
-      autoplay={autoplay !== false}
-      style={{ width: '100%', height: '100%' }}
-    />
-  );
-}
+import { BlockLayoutView, LottieBlockPreview } from './BlockLayoutView';
+import { OsnovaPanel, OsnovaIcon } from './OsnovaPanel';
 
 const NoteIcon = ({ size = 20, className = "" }: { size?: number, className?: string }) => (
   <svg 
@@ -319,7 +284,7 @@ function ABCSlideView({
         {isMobile ? (
           <>
             <div className="flex-1 flex items-center justify-center py-6 px-2">
-              <h1 className="text-2xl font-bold leading-relaxed text-center" style={{ color: 'inherit' }}>
+              <h1 className="text-2xl font-bold leading-relaxed text-center" style={{ color: '#4E5871' }}>
                 <MathText>{slide.question || ''}</MathText>
               </h1>
             </div>
@@ -330,13 +295,11 @@ function ABCSlideView({
             )}
           </>
         ) : hasImage ? (
-          <div className="flex-1 flex flex-col">
+          <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
             <div className="flex items-center justify-center p-4" style={{ height: '50%' }}>
-              <h1 className="text-3xl md:text-4xl font-bold text-center leading-tight" style={{ color: 'inherit' }}>
-                <MathText>{slide.question || ''}</MathText>
-              </h1>
+              <AutoScaleQuestion targetFill={0.85} maxFontSize={120}>{slide.question || ''}</AutoScaleQuestion>
             </div>
-            <div className="flex items-center justify-center" style={{ height: '50%' }}>
+            <div className="flex items-center justify-center overflow-hidden" style={{ height: '50%' }}>
               <img src={slide.media!.url} alt="" className="max-w-full max-h-full object-contain" />
             </div>
           </div>
@@ -394,7 +357,7 @@ function ABCSlideView({
       <div className="flex flex-col h-full p-4 overflow-auto">
         {/* Question - more space around it */}
         <div className="flex-1 flex items-center justify-center py-6 px-2">
-          <h1 className="text-2xl font-bold leading-relaxed text-center" style={{ color: 'inherit' }}>
+          <h1 className="text-2xl font-bold leading-relaxed text-center" style={{ color: '#4E5871' }}>
             <MathText>{slide.question || ''}</MathText>
           </h1>
         </div>
@@ -428,18 +391,16 @@ function ABCSlideView({
   // Desktop layout WITH image: Left side (question + image) | Right side (options)
   if (hasImage) {
     return (
-      <div className="flex h-full p-6 gap-6">
+      <div className="flex h-full p-6 gap-6 overflow-hidden">
         {/* Left side - Question and Image */}
-        <div className="flex-1 flex flex-col">
+        <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
           {/* Question - 50% height */}
           <div className="flex items-center justify-center p-4" style={{ height: '50%' }}>
-            <h1 className="text-3xl md:text-4xl font-bold text-center leading-tight" style={{ color: 'inherit' }}>
-              <MathText>{slide.question || ''}</MathText>
-            </h1>
+            <AutoScaleQuestion targetFill={0.85} maxFontSize={120}>{slide.question || ''}</AutoScaleQuestion>
           </div>
           
           {/* Image - 50% height */}
-          <div className="flex items-center justify-center" style={{ height: '50%' }}>
+          <div className="flex items-center justify-center overflow-hidden" style={{ height: '50%' }}>
             <img 
               src={slide.media!.url} 
               alt="Obrázek k otázce"
@@ -610,968 +571,80 @@ function InfoSlideView({ slide }: { slide: InfoSlide }) {
   );
 }
 
-// Image block with gallery support for preview
-function ImageBlockPreview({ block, borderRadius }: { block: any; borderRadius: number }) {
-  const [galleryIndex, setGalleryIndex] = useState(0);
-  const [showSolution, setShowSolution] = useState(false);
-
-  const hasGallery = block.gallery && block.gallery.length > 1;
-  const imageScale = block.imageScale || 100;
-  // If scale > 100%, use cover mode (crop), otherwise contain
-  const imageFit = imageScale > 100 ? 'cover' : (block.imageFit || 'contain');
-  const navType = block.galleryNavType || 'dots-bottom';
-  
-  // Image position for object-position (0-100, default 50 = center)
-  const posX = block.imagePositionX ?? 50;
-  const posY = block.imagePositionY ?? 50;
-
-  // Get current image
-  const currentImage = hasGallery
-    ? (navType === 'solution' ? (showSolution ? block.gallery[1] : block.gallery[0]) : block.gallery[galleryIndex])
-    : block.content;
-
-  const goNext = () => {
-    if (hasGallery) {
-      setGalleryIndex((prev) => (prev + 1) % block.gallery.length);
-    }
-  };
-
-  const goPrev = () => {
-    if (hasGallery) {
-      setGalleryIndex((prev) => (prev - 1 + block.gallery.length) % block.gallery.length);
-    }
-  };
-
-  if (!currentImage) return null;
-
-  const renderNavigation = () => {
-    if (!hasGallery) return null;
-
-    switch (navType) {
-      case 'dots-bottom':
-        return (
-          <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-2 bg-black/30 px-3 py-2 rounded-full">
-            {block.gallery.map((_: string, idx: number) => (
-              <button
-                key={idx}
-                onClick={() => setGalleryIndex(idx)}
-                className={`w-3 h-3 rounded-full transition-all ${
-                  idx === galleryIndex ? 'bg-white scale-125' : 'bg-white/50 hover:bg-white/80'
-                }`}
-              />
-            ))}
-          </div>
-        );
-
-      case 'dots-side':
-        return (
-          <div className="absolute right-3 top-1/2 -translate-y-1/2 flex flex-col gap-2 bg-black/30 px-2 py-3 rounded-full">
-            {block.gallery.map((_: string, idx: number) => (
-              <button
-                key={idx}
-                onClick={() => setGalleryIndex(idx)}
-                className={`w-3 h-3 rounded-full transition-all ${
-                  idx === galleryIndex ? 'bg-white scale-125' : 'bg-white/50 hover:bg-white/80'
-                }`}
-              />
-            ))}
-          </div>
-        );
-
-      case 'arrows':
-        return (
-          <>
-            <button
-              onClick={goPrev}
-              className="absolute left-2 top-1/2 -translate-y-1/2 p-2 rounded-full shadow-lg"
-              style={{ backgroundColor: 'rgba(0,0,0,0.5)', color: 'white' }}
-            >
-              <ChevronLeft className="w-6 h-6" />
-            </button>
-            <button
-              onClick={goNext}
-              className="absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-full shadow-lg"
-              style={{ backgroundColor: 'rgba(0,0,0,0.5)', color: 'white' }}
-            >
-              <ChevronRight className="w-6 h-6" />
-            </button>
-          </>
-        );
-
-      case 'solution':
-        return (
-          <button
-            onClick={() => setShowSolution(!showSolution)}
-            className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 px-5 py-2 rounded-full font-medium text-sm transition-all flex items-center gap-2 shadow-lg z-30"
-            style={{
-              backgroundColor: showSolution ? '#334155' : '#4f46e5',
-              color: 'white',
-            }}
-          >
-            {showSolution ? 'Skrýt řešení' : 'Zobrazit řešení'}
-          </button>
-        );
-
-      default:
-        return null;
-    }
-  };
-
-  const imageContent = (
-    <div className="absolute inset-0 flex items-center justify-center overflow-hidden" style={{ borderRadius }}>
-      {imageFit === 'cover' ? (
-        <img
-          src={currentImage}
-          alt={block.imageCaption || ''}
-          className="w-full h-full"
-          style={{
-            objectFit: 'cover',
-            objectPosition: `${posX}% ${posY}%`,
-            transform: imageScale > 100 ? `scale(${imageScale / 100})` : undefined,
-          }}
-        />
-      ) : (
-        <img
-          src={currentImage}
-          alt={block.imageCaption || ''}
-          className="transition-transform max-w-full max-h-full"
-          style={{
-            width: `${imageScale}%`,
-            height: 'auto',
-            maxHeight: '100%',
-            objectFit: 'contain',
-            borderRadius: Math.max(0, borderRadius - 4),
-          }}
-        />
-      )}
-      {renderNavigation()}
-      {block.imageCaption && (
-        <div className={`absolute ${hasGallery ? 'bottom-14' : 'bottom-0'} left-0 right-0 bg-black/50 text-white text-sm px-3 py-2 text-center`}>
-          {block.imageCaption}
-        </div>
-      )}
-    </div>
-  );
-
-  if (block.imageLink) {
-    return (
-      <a href={block.imageLink} target="_blank" rel="noopener noreferrer" className="h-full w-full block">
-        {imageContent}
-      </a>
-    );
-  }
-
-  return imageContent;
-}
-
-// Block-based layout renderer for new info slides
-export function BlockLayoutView({ slide }: { slide: InfoSlide }) {
-  const layout = slide.layout!;
-  const blocks = layout.blocks;
-  const titleHeight = layout.titleHeight || 15;
-  const columnRatios = layout.columnRatios || [50, 50];
-  const splitRatio = layout.splitRatio || 50;
-
-  // Device detection - better than just screen width
-  const { isMobile: isMobileDevice, isTablet } = useDeviceDetect();
-  const isMobile = isMobileDevice || isTablet;
-
-  // Get template settings
-  const template = slide.templateId ? getTemplateById(slide.templateId) : undefined;
-  const blockGap = slide.blockGap ?? template?.defaultGap ?? 11;
-  const blockRadius = slide.blockRadius ?? template?.defaultRadius ?? 8;
-  const blockColors = template?.blockColors || [];
-  const fontFamily = template?.font ? (template.font.includes(' ') ? `"${template.font}", sans-serif` : `${template.font}, sans-serif`) : 'inherit';
-
-  // Get background style for slide
-  const getSlideBackgroundStyle = (): React.CSSProperties => {
-    if (!slide.slideBackground) return {};
-    const bg = slide.slideBackground;
-    if (bg.type === 'color' && bg.color) {
-      return { backgroundColor: bg.color === 'transparent' ? 'transparent' : bg.color };
-    }
-    if (bg.type === 'image' && bg.imageUrl) {
-      return {
-        backgroundImage: `url(${bg.imageUrl})`,
-        backgroundSize: 'cover',
-        backgroundPosition: 'center',
-      };
-    }
-    return {};
-  };
-
-  // Render a single block with template styling
-  const renderBlock = (block: typeof blocks[0], blockIndex: number) => {
-    const bgStyle: React.CSSProperties = {
-      borderRadius: blockRadius,
-    };
-    
-    // Use block background if set, otherwise template color
-    if (block.background?.type === 'color' && block.background.color) {
-      bgStyle.backgroundColor = block.background.color === 'transparent' ? 'transparent' : block.background.color;
-    } else if (blockColors[blockIndex % blockColors.length]) {
-      bgStyle.backgroundColor = blockColors[blockIndex % blockColors.length];
-    }
-
-    const textAlignClass = block.textAlign === 'center' ? 'text-center' : block.textAlign === 'right' ? 'text-right' : 'text-left';
-    const verticalAlignClass = block.verticalAlign === 'middle' ? 'justify-center' : block.verticalAlign === 'bottom' ? 'justify-end' : 'justify-start';
-    // Use cqw (container query width) for consistent sizing relative to container
-    const fontSize = block.fontSize === 'xxlarge' ? 'clamp(64px, 9cqw, 120px)' :
-                     block.fontSize === 'xlarge' ? 'clamp(48px, 6.5cqw, 80px)' : 
-                     block.fontSize === 'large' ? 'clamp(32px, 4.5cqw, 54px)' : 
-                     block.fontSize === 'small' ? 'clamp(16px, 2.2cqw, 24px)' :
-                     block.fontSize === 'xsmall' ? 'clamp(12px, 1.5cqw, 16px)' : 'clamp(22px, 3cqw, 36px)';
-    
-    const blockFontFamilyMap: Record<string, string> = {
-      fenomen: '"Fenomen Sans", ui-sans-serif, system-ui, sans-serif',
-      cooper: '"Cooper Light", serif',
-      space: '"Space Grotesk", sans-serif',
-      sora: '"Sora", sans-serif',
-      playfair: '"Playfair Display", serif',
-      itim: '"Itim", cursive',
-      sacramento: '"Sacramento", cursive',
-      lora: '"Lora", serif',
-      oswald: '"Oswald", sans-serif',
-    };
-    // Get the font family - use block's fontFamily if set, otherwise default to fenomen
-    const actualFontFamily = block.fontFamily && blockFontFamilyMap[block.fontFamily] 
-      ? blockFontFamilyMap[block.fontFamily] 
-      : blockFontFamilyMap.fenomen;
-    
-    const fontWeightClass = block.fontWeight === 'bold' ? 'font-bold' : 'font-normal';
-    const fontStyleClass = block.fontStyle === 'italic' ? 'italic' : '';
-    const textDecorationClass = block.textDecoration === 'underline' ? 'underline' : '';
-
-    const isValidMediaUrl = (url?: string) => {
-      if (!url) return false;
-      return url.startsWith('http') || url.startsWith('data:image/') || url.startsWith('data:application/json');
-    };
-
-    if (block.type === 'image' && (isValidMediaUrl(block.content) || (block.gallery && block.gallery.length > 0))) {
-      return (
-        <div className="h-full w-full overflow-hidden relative" style={bgStyle}>
-          <ImageBlockPreview block={block} borderRadius={Math.max(0, blockRadius - 4)} />
-        </div>
-      );
-    }
-
-    if (block.type === 'lottie' && isValidMediaUrl(block.lottieUrl || block.content)) {
-      return (
-        <div className="h-full w-full overflow-hidden relative" style={bgStyle}>
-          <LottieBlockPreview url={block.lottieUrl || block.content} loop={block.lottieLoop} autoplay={block.lottieAutoplay} />
-        </div>
-      );
-    }
-
-    if (block.type === 'link' && isValidMediaUrl(block.content)) {
-      const mode = block.linkMode || 'button';
-      const url = block.content;
-
-      // Wrap video/embed/preview in a relative container to ensure absolute children stay within bounds
-      const RelativeWrapper = ({ children, className = "" }: { children: React.ReactNode, className?: string }) => (
-        <div className={`relative h-full w-full overflow-hidden ${className}`} style={{ ...bgStyle, borderRadius: blockRadius }}>
-          {children}
-        </div>
-      );
-
-      switch (mode) {
-        case 'qr':
-          return (
-            <div className="h-full w-full flex items-center justify-center p-4" style={bgStyle}>
-              <div 
-                className="w-full h-full max-w-full max-h-full flex items-center justify-center bg-white shadow-sm border border-slate-100 p-4 overflow-hidden"
-                style={{ borderRadius: blockRadius }}
-              >
-                <QRCodeSVG 
-                  value={url} 
-                  size={1000}
-                  style={{ width: '100%', height: '100%', maxWidth: '100%', maxHeight: '100%' }}
-                  level="H" 
-                  includeMargin={true} 
-                />
-              </div>
-            </div>
-          );
-
-        case 'video':
-          const getYoutubeId = (url: string) => {
-            const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
-            const match = url.match(regExp);
-            return (match && match[2].length === 11) ? match[2] : null;
-          };
-          const videoId = getYoutubeId(url);
-          if (videoId) {
-            return (
-              <RelativeWrapper className="bg-black">
-                <iframe
-                  src={`https://www.youtube.com/embed/${videoId}?rel=0&modestbranding=1&autoplay=0`}
-                  className="absolute inset-0 w-full h-full border-none"
-                  title="YouTube video"
-                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                  allowFullScreen
-                />
-              </RelativeWrapper>
-            );
-          }
-          break;
-
-        case 'embed':
-          // Convert http:// to https:// to avoid mixed content errors on HTTPS pages
-          const secureUrl = url.startsWith('http://') ? url.replace('http://', 'https://') : url;
-          return (
-            <RelativeWrapper className="bg-slate-50">
-              <iframe
-                src={secureUrl}
-                className="absolute inset-0 w-full h-full border-none"
-                title="Embedded content"
-                sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
-              />
-            </RelativeWrapper>
-          );
-
-        case 'preview':
-          return (
-            <RelativeWrapper className="bg-white">
-              <div 
-                className="h-full w-full flex flex-col cursor-pointer group shadow-sm hover:shadow-md transition-shadow" 
-                onClick={() => window.open(url, '_blank')}
-              >
-                {block.linkThumbnail ? (
-                  <div className="flex-1 min-h-0 bg-slate-100 overflow-hidden">
-                    <img src={block.linkThumbnail} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
-                  </div>
-                ) : (
-                  <div className="flex-1 min-h-0 flex items-center justify-center bg-slate-50">
-                    <Globe className="w-12 h-12 text-slate-200" />
-                  </div>
-                )}
-                <div className="p-4 flex flex-col gap-1 shrink-0">
-                  <h4 className="font-bold text-slate-800 truncate line-clamp-1">
-                    {block.linkTitle || 'Náhled odkazu'}
-                  </h4>
-                  {block.linkDescription && (
-                    <p className="text-xs text-slate-500 line-clamp-2 leading-relaxed">
-                      {block.linkDescription}
-                    </p>
-                  )}
-                  <div className="mt-2 flex items-center gap-1.5 text-blue-600 font-medium text-[10px] uppercase tracking-wider">
-                    <ExternalLink className="w-3 h-3" />
-                    <span>Otevřít stránku</span>
-                  </div>
-                </div>
-              </div>
-            </RelativeWrapper>
-          );
-
-        case 'button':
-        default:
-      return (
-        <div className="h-full flex items-center justify-center p-4" style={bgStyle}>
-              <button
-                onClick={() => window.open(url, '_blank')}
-                className="group flex flex-col items-center gap-3 p-6 rounded-2xl transition-all hover:scale-105 active:scale-95 text-white"
-                style={{
-                  backgroundColor: slide.templateId ? getTemplateById(slide.templateId)?.colors.primary : '#4f46e5',
-                  boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)'
-                }}
-              >
-                <div className="w-12 h-12 rounded-xl bg-white/20 flex items-center justify-center transition-colors group-hover:bg-white/30">
-                  <ExternalLink className="w-6 h-6" />
-                </div>
-                <span className="text-lg font-bold tracking-tight">
-                  {block.linkTitle || 'Přejít na odkaz'}
-                </span>
-              </button>
-        </div>
-      );
-      }
-    }
-
-    // Text block
-    const textStyle: React.CSSProperties = {
-      fontSize,
-      fontFamily: actualFontFamily,
-      color: block.textColor || '#1e293b',
-    };
-    
-    // Background: use highlight if set, otherwise block background
-    const blockBgColor = block.highlightColor && block.highlightColor !== 'transparent' 
-      ? block.highlightColor 
-      : bgStyle.backgroundColor;
-    
-    // For 'fit' mode, calculate font size based on container (desktop only)
-    const TextContent = ({ theFontFamily }: { theFontFamily: string }) => {
-      const containerRef = React.useRef<HTMLDivElement>(null);
-      const [fitFontSize, setFitFontSize] = React.useState<number | null>(null);
-
-      const calculateFitSize = React.useCallback(() => {
-        // On mobile, don't calculate - use large readable sizes
-        if (isMobile) return;
-        
-        // Default to 'fit' if not explicitly set to 'scroll'
-        const isFitMode = block.textOverflow === 'fit' || block.textOverflow === undefined;
-        if (!isFitMode || !containerRef.current || !block.content) return;
-        
-        const container = containerRef.current;
-        // Use dynamic textPadding (default 20px on each side)
-        const padding = (block.textPadding ?? 20) * 2;
-        const targetHeight = (container.clientHeight - padding) * 0.9; // 90% of available height (matching editor)
-        const containerWidth = container.clientWidth - padding;
-
-        if (targetHeight <= 0 || containerWidth <= 0) return;
-
-        // Can go up to 200px for short text in large blocks
-        let minSize = 8;
-        let maxSize = 200;
-        
-        const measureEl = document.createElement('div');
-        measureEl.style.cssText = `
-          position: absolute;
-          visibility: hidden;
-          white-space: pre-wrap;
-          overflow-wrap: normal;
-          word-break: normal;
-          hyphens: none;
-          width: ${containerWidth}px;
-          font-family: ${theFontFamily};
-          font-weight: ${block.fontWeight === 'bold' ? 'bold' : 'normal'};
-          font-style: ${block.fontStyle === 'italic' ? 'italic' : 'normal'};
-          line-height: ${block.lineHeight ?? 1.5};
-          letter-spacing: ${block.letterSpacing ?? 0}px;
-          box-sizing: border-box;
-        `;
-        measureEl.textContent = block.content;
-        document.body.appendChild(measureEl);
-
-        let optimalSize = minSize;
-        while (minSize <= maxSize) {
-          const midSize = Math.floor((minSize + maxSize) / 2);
-          measureEl.style.fontSize = `${midSize}px`;
-          
-          // Check both height AND width (for single words that might be too wide)
-          const fitsHeight = measureEl.scrollHeight <= targetHeight;
-          const fitsWidth = measureEl.scrollWidth <= containerWidth;
-          
-          if (fitsHeight && fitsWidth) {
-            optimalSize = midSize;
-            minSize = midSize + 1;
-          } else {
-            maxSize = midSize - 1;
-          }
-        }
-
-        document.body.removeChild(measureEl);
-        setFitFontSize(optimalSize);
-      }, [isMobile, theFontFamily, block.textPadding, block.lineHeight, block.letterSpacing]);
-
-      // Initial calculation and recalculate when typography settings change
-      React.useEffect(() => {
-        calculateFitSize();
-      }, [calculateFitSize, block.textPadding, block.lineHeight, block.letterSpacing]);
-
-      // ResizeObserver for real-time updates (desktop only)
-      React.useEffect(() => {
-        if (isMobile) return;
-        const isFitMode = block.textOverflow === 'fit' || block.textOverflow === undefined;
-        if (!isFitMode || !containerRef.current) return;
-
-        const resizeObserver = new ResizeObserver(() => {
-          calculateFitSize();
-        });
-
-        resizeObserver.observe(containerRef.current);
-
-        return () => {
-          resizeObserver.disconnect();
-        };
-      }, [calculateFitSize, isMobile, block.textPadding]);
-
-      // On mobile: use large readable font sizes for 'fit' mode
-      // On desktop: use fit calculation or scroll based on setting
-      const isFitMode = block.textOverflow === 'fit' || block.textOverflow === undefined;
-      const hasScroll = isMobile || block.textOverflow === 'scroll';
-      
-      // Mobile font sizes - LARGE and readable for 'fit' mode (auto)
-      // These scale based on content length for better readability
-      const contentLength = block.content?.length || 0;
-      const getMobileFitSize = () => {
-        if (contentLength < 20) return '72px';  // Very short text - huge
-        if (contentLength < 50) return '56px';  // Short text - large
-        if (contentLength < 100) return '42px'; // Medium text
-        if (contentLength < 200) return '32px'; // Longer text
-        return '24px'; // Long text
-      };
-      
-      const mobileFontSize = isFitMode 
-        ? getMobileFitSize()
-        : (block.fontSize === 'xxlarge' ? '64px' :
-           block.fontSize === 'xlarge' ? '48px' : 
-           block.fontSize === 'large' ? '32px' : 
-           block.fontSize === 'small' ? '16px' :
-           block.fontSize === 'xsmall' ? '12px' : '24px');
-      
-      const finalFontSize = isMobile 
-        ? mobileFontSize 
-        : (isFitMode && fitFontSize ? `${fitFontSize}px` : textStyle.fontSize);
-      
-      return (
-        <div 
-          ref={containerRef}
-          className={`w-full flex flex-col ${textAlignClass} ${verticalAlignClass} ${fontWeightClass} ${fontStyleClass} ${textDecorationClass}`} 
-          style={{
-            ...bgStyle,
-            backgroundColor: blockBgColor,
-            fontSize: finalFontSize,
-            color: textStyle.color,
-            fontFamily: theFontFamily,
-            whiteSpace: 'pre-wrap',
-            // Never break words in the middle - keep words intact
-            wordWrap: 'normal',
-            overflowWrap: 'anywhere', // Only break very long strings without spaces (like URLs)
-            wordBreak: 'normal',
-            hyphens: 'none',
-            lineHeight: block.lineHeight ?? 1.5,
-            letterSpacing: `${block.letterSpacing ?? 0}px`,
-            // On mobile: cap padding at 16px to prevent text overflow
-            padding: isMobile 
-              ? `${Math.min(block.textPadding ?? 20, 16)}px` 
-              : `${block.textPadding ?? 20}px`,
-            // On mobile: flex-grow to fill parent (for vertical alignment)
-            // On desktop: fixed height with scroll or fit
-            height: isMobile ? '100%' : '100%',
-            flex: isMobile ? 1 : undefined,
-            minHeight: isMobile ? 'auto' : undefined,
-            overflowY: isMobile ? 'visible' : (hasScroll ? 'auto' : 'hidden'),
-            overflowX: 'hidden',
-            // Always show scrollbar when scrollable
-            scrollbarWidth: hasScroll && !isMobile ? 'thin' : undefined,
-            scrollbarColor: hasScroll && !isMobile ? '#cbd5e1 transparent' : undefined,
-          }}
-        >
-          <MathText style={{ fontFamily: theFontFamily }}>{block.content}</MathText>
-        </div>
-      );
-    };
-
-    return <TextContent theFontFamily={actualFontFamily} key={`text-${blockIndex}-${block.fontFamily || 'fenomen'}`} />;
-  };
-
-  // DESKTOP LAYOUT - exact proportions from editor
-  const renderDesktopLayout = () => {
-    const gapStyle = { gap: blockGap };
-    const halfGap = blockGap / 2;
-    const twoThirdsGap = blockGap * 2 / 3;
-    
-    switch (layout.type) {
-      case 'single':
-        return (
-          <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-            <div style={{ flex: 1, minHeight: 0 }}>{renderBlock(blocks[0], 0)}</div>
-          </div>
-        );
-
-      case 'title-content':
-        return (
-          <div style={{ height: '100%', display: 'flex', flexDirection: 'column', ...gapStyle }}>
-            <div style={{ flex: `0 0 calc(${titleHeight}% - ${halfGap}px)`, minHeight: 60 }}>{renderBlock(blocks[0], 0)}</div>
-            <div style={{ flex: 1, minHeight: 0 }}>{renderBlock(blocks[1], 1)}</div>
-          </div>
-        );
-
-      case 'title-2cols':
-        return (
-          <div style={{ height: '100%', display: 'flex', flexDirection: 'column', ...gapStyle }}>
-            <div style={{ flex: `0 0 calc(${titleHeight}% - ${halfGap}px)`, minHeight: 60 }}>{renderBlock(blocks[0], 0)}</div>
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'row', minHeight: 0, ...gapStyle }}>
-              <div style={{ flex: `0 0 calc(${columnRatios[0]}% - ${halfGap}px)`, minHeight: 0, minWidth: 0 }}>{renderBlock(blocks[1], 1)}</div>
-              <div style={{ flex: 1, minHeight: 0, minWidth: 0 }}>{renderBlock(blocks[2], 2)}</div>
-            </div>
-          </div>
-        );
-
-      case 'title-3cols':
-        return (
-          <div style={{ height: '100%', display: 'flex', flexDirection: 'column', ...gapStyle }}>
-            <div style={{ flex: `0 0 calc(${titleHeight}% - ${halfGap}px)`, minHeight: 60 }}>{renderBlock(blocks[0], 0)}</div>
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'row', minHeight: 0, ...gapStyle }}>
-              <div style={{ flex: `0 0 calc(${columnRatios[0]}% - ${twoThirdsGap}px)`, minHeight: 0, minWidth: 0 }}>{renderBlock(blocks[1], 1)}</div>
-              <div style={{ flex: `0 0 calc(${columnRatios[1]}% - ${twoThirdsGap}px)`, minHeight: 0, minWidth: 0 }}>{renderBlock(blocks[2], 2)}</div>
-              <div style={{ flex: 1, minHeight: 0, minWidth: 0 }}>{renderBlock(blocks[3], 3)}</div>
-            </div>
-          </div>
-        );
-
-      case '2cols':
-        return (
-          <div style={{ height: '100%', display: 'flex', flexDirection: 'row', ...gapStyle }}>
-            <div style={{ flex: `0 0 calc(${columnRatios[0]}% - ${halfGap}px)`, minHeight: 0, minWidth: 0 }}>{renderBlock(blocks[0], 0)}</div>
-            <div style={{ flex: 1, minHeight: 0, minWidth: 0 }}>{renderBlock(blocks[1], 1)}</div>
-          </div>
-        );
-
-      case '3cols':
-        return (
-          <div style={{ height: '100%', display: 'flex', flexDirection: 'row', ...gapStyle }}>
-            <div style={{ flex: `0 0 calc(${columnRatios[0]}% - ${twoThirdsGap}px)`, minHeight: 0, minWidth: 0 }}>{renderBlock(blocks[0], 0)}</div>
-            <div style={{ flex: `0 0 calc(${columnRatios[1]}% - ${twoThirdsGap}px)`, minHeight: 0, minWidth: 0 }}>{renderBlock(blocks[1], 1)}</div>
-            <div style={{ flex: 1, minHeight: 0, minWidth: 0 }}>{renderBlock(blocks[2], 2)}</div>
-          </div>
-        );
-
-      case 'left-large-right-split':
-        return (
-          <div style={{ height: '100%', display: 'flex', flexDirection: 'row', ...gapStyle }}>
-            <div style={{ flex: `0 0 calc(${columnRatios[0]}% - ${halfGap}px)`, minHeight: 0, minWidth: 0 }}>{renderBlock(blocks[0], 0)}</div>
-            <div style={{ flex: `0 0 calc(${columnRatios[1]}% - ${halfGap}px)`, display: 'flex', flexDirection: 'column', minHeight: 0, minWidth: 0, ...gapStyle }}>
-              <div style={{ flex: `0 0 calc(${splitRatio}% - ${halfGap}px)`, minHeight: 0 }}>{renderBlock(blocks[1], 1)}</div>
-              <div style={{ flex: 1, minHeight: 0 }}>{renderBlock(blocks[2], 2)}</div>
-            </div>
-          </div>
-        );
-
-      case 'right-large-left-split':
-        return (
-          <div style={{ height: '100%', display: 'flex', flexDirection: 'row', ...gapStyle }}>
-            <div style={{ flex: `0 0 calc(${columnRatios[0]}% - ${halfGap}px)`, display: 'flex', flexDirection: 'column', minHeight: 0, minWidth: 0, ...gapStyle }}>
-              <div style={{ flex: `0 0 calc(${splitRatio}% - ${halfGap}px)`, minHeight: 0 }}>{renderBlock(blocks[0], 0)}</div>
-              <div style={{ flex: 1, minHeight: 0 }}>{renderBlock(blocks[1], 1)}</div>
-            </div>
-            <div style={{ flex: `0 0 calc(${columnRatios[1]}% - ${halfGap}px)`, minHeight: 0, minWidth: 0 }}>{renderBlock(blocks[2], 2)}</div>
-          </div>
-        );
-
-      default:
-        return null;
-    }
-  };
-
-  // MOBILE LAYOUT - simple vertical stack, scrollable
-  // Special case: single block with image should be vertically centered
-  const renderMobileLayout = () => {
-    // Check if this is a single block with an image - if so, center it vertically
-    const isSingleImageBlock = blocks.length === 1 && (blocks[0].type === 'image' || blocks[0].type === 'lottie');
-    
-    if (isSingleImageBlock) {
-      const block = blocks[0];
-      const imageScale = block.imageScale || 100;
-      const imageFit = imageScale > 100 ? 'cover' : (block.imageFit || 'contain');
-      const posX = block.imagePositionX ?? 50;
-      const posY = block.imagePositionY ?? 50;
-      const hasGallery = block.gallery && block.gallery.length > 1;
-      const currentImage = (hasGallery && block.gallery) ? block.gallery[0] : block.content;
-      
-      // Full height centered layout for single image/lottie - minimal padding for max image size
-      return (
-        <div style={{ 
-          display: 'flex', 
-          flexDirection: 'column', 
-          alignItems: 'center',
-          justifyContent: 'center',
-          flex: 1,
-          width: '100%',
-          padding: 8, // Minimal padding for largest possible image
-        }}>
-          {block.type === 'image' ? (
-            <img
-              src={currentImage}
-              alt={block.imageCaption || ''}
-              style={{
-                maxWidth: '100%',
-                maxHeight: 'calc(100vh - 200px)',
-                objectFit: imageFit as any,
-                objectPosition: imageFit === 'cover' ? `${posX}% ${posY}%` : undefined,
-                borderRadius: blockRadius,
-              }}
-            />
-          ) : (
-            <div style={{ 
-              width: '100%', 
-              maxWidth: '400px',
-              aspectRatio: '1',
-            }}>
-              <LottieBlockPreview 
-                url={block.lottieUrl || block.content} 
-                loop={block.lottieLoop} 
-                autoplay={block.lottieAutoplay} 
-              />
-            </div>
-          )}
-          {block.imageCaption && (
-            <div className="mt-3 text-center text-sm text-slate-600 px-4">
-              {block.imageCaption}
-            </div>
-          )}
-        </div>
-      );
-    }
-    
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: blockGap }}>
-        {blocks.map((block, index) => {
-          // For text blocks with vertical alignment, use minHeight to allow alignment to work
-          const hasVerticalAlign = block.type === 'text' && block.verticalAlign && block.verticalAlign !== 'top';
-          const textMinHeight = hasVerticalAlign ? 300 : 60;
-          
-          // For link blocks with embed/video/preview mode, need explicit height for iframe
-          // Use most of viewport height for better mobile experience
-          const isEmbedLink = block.type === 'link' && ['embed', 'video', 'preview'].includes(block.linkMode || '');
-          const linkHeight = isEmbedLink ? 'calc(100vh - 120px)' : 'auto';
-          
-          // Determine block height
-          let blockHeight: number | string = 'auto';
-          if (block.type === 'image' || block.type === 'lottie') {
-            blockHeight = 250;
-          } else if (isEmbedLink) {
-            blockHeight = linkHeight;
-          }
-          
-          return (
-            <div 
-              key={index} 
-              style={{ 
-                height: blockHeight,
-                minHeight: block.type === 'text' ? textMinHeight : undefined,
-                display: 'flex',
-                flexDirection: 'column',
-              }}
-            >
-              {renderBlock(block, index)}
-            </div>
-          );
-        })}
-      </div>
-    );
-  };
-
-  // Desktop: full height with aspect ratio, Mobile: auto height scrollable
-  if (isMobile) {
-    // Check if this is a single block with an image - if so, we need full height for centering
-    const isSingleImageBlock = blocks.length === 1 && (blocks[0].type === 'image' || blocks[0].type === 'lottie');
-    
-    if (isSingleImageBlock) {
-      // For single image blocks, use flex to fill entire available space
-      return (
-        <div 
-          style={{ 
-            ...getSlideBackgroundStyle(), 
-            fontFamily,
-            display: 'flex',
-            flexDirection: 'column',
-            flex: 1,
-            minHeight: '100%',
-          }}
-        >
-          {renderMobileLayout()}
-        </div>
-      );
-    }
-    
-    return (
-      <div 
-        style={{ 
-          ...getSlideBackgroundStyle(), 
-          padding: blockGap > 0 ? blockGap : 0,
-          fontFamily,
-        }}
-      >
-        {renderMobileLayout()}
-      </div>
-    );
-  }
-
-  return (
-    <div 
-      style={{ 
-        ...getSlideBackgroundStyle(), 
-        padding: blockGap > 0 ? blockGap : 0,
-        fontFamily,
-        containerType: 'inline-size',
-        height: '100%',
-      }}
-    >
-      {renderDesktopLayout()}
-    </div>
-  );
-}
-
 // ============================================
 // MAIN COMPONENT
 // ============================================
 
 export function QuizPreview({ quiz, onClose, isLive = false, onComplete, initialSlideIndex = 0, isPublicMode = false, boardId }: QuizPreviewProps) {
-  const [currentSlideIndex, setCurrentSlideIndex] = useState(initialSlideIndex);
-  const [prevSlideIndex, setPrevSlideIndex] = useState(0);
-  const [isAnimating, setIsAnimating] = useState(false);
   const [responses, setResponses] = useState<SlideResponse[]>([]);
-  const [selectedOption, setSelectedOption] = useState<string | null>(null);
+  const [selectedOption, setSelectedOption] = useState<string | string[] | null>(null);
   const [textAnswer, setTextAnswer] = useState('');
   const [formAnswer, setFormAnswer] = useState<Record<string, string | string[]>>({});
   const [showResult, setShowResult] = useState(false);
-  const [isCompleted, setIsCompleted] = useState(false);
   const [showChapterMenu, setShowChapterMenu] = useState(false);
   const [showNotePanel, setShowNotePanel] = useState(false);
   const [showMathPanel, setShowMathPanel] = useState(false);
+  const [showOsnovaPanel, setShowOsnovaPanel] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(300);
+  const sidebarRef = React.useRef<HTMLDivElement>(null);
+
+  // Live worksheetMap — updates when thumbnails are generated in the background
+  const [worksheetMap, setWorksheetMap] = React.useState(quiz.worksheetMap);
+  React.useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ quizId: string }>).detail;
+      if (detail?.quizId !== quiz.id) return;
+      const fresh = getQuiz(quiz.id);
+      if (fresh?.worksheetMap) setWorksheetMap(fresh.worksheetMap);
+    };
+    window.addEventListener('quiz-thumbnails-updated', handler);
+    return () => window.removeEventListener('quiz-thumbnails-updated', handler);
+  }, [quiz.id]);
   
   // Device detection - better than just screen width
   const { isMobile: isMobileDevice, isTablet, isTouchDevice } = useDeviceDetect();
   const isMobile = isMobileDevice || isTablet;
-  
-  // Public mode - comments state
-  const [showCommentsPanel, setShowCommentsPanel] = useState(false);
-  const [slideComments, setSlideComments] = useState<BoardComment[]>([]);
-  const [commentAuthorName, setCommentAuthorName] = useState('');
-  const [commentContent, setCommentContent] = useState('');
-  const [submittingComment, setSubmittingComment] = useState(false);
-  const [commentSuccess, setCommentSuccess] = useState(false);
-  
+
+  // Navigation hook — must be called before deriving currentSlide
+  const {
+    currentSlideIndex, setCurrentSlideIndex,
+    prevSlideIndex, setPrevSlideIndex,
+    isAnimating, setIsAnimating,
+    isCompleted, setIsCompleted,
+    goToNextSlide,
+    goToPrevSlide,
+  } = useQuizNavigation({
+    slideCount: quiz.slides.length,
+    initialSlideIndex,
+    allowBack: quiz?.settings?.allowBack ?? true,
+    responses,
+    onComplete,
+  });
+
   const currentSlide = quiz.slides[currentSlideIndex];
   const currentResponse = responses.find(r => r.slideId === currentSlide?.id);
-  
-  // Get chapters from slides with chapterName
-  const chapters = quiz.slides
-    .map((slide, index) => ({
-      index,
-      name: (slide as InfoSlide).chapterName,
-    }))
-    .filter(ch => ch.name);
   const hasAnswered = !!currentResponse;
-  
-  const score = calculateQuizScore(responses, quiz.slides);
-  
-  // Outer background color (area around slide)
-  const bgColor = '#F0F1F8';
-  
-  // Slide background color from current slide settings
-  const slideBgColor = (currentSlide as any)?.slideBackground?.color || '#ffffff';
-  const slideTextColor = getContrastColor(slideBgColor);
-  
-  // Reset on slide change
-  useEffect(() => {
-    setSelectedOption(null);
-    setTextAnswer('');
-    setShowResult(false);
-  }, [currentSlideIndex]);
-  
-  // Preload adjacent slides (previous and next)
-  useEffect(() => {
-    const preloadSlideImages = (slide: QuizSlide | undefined) => {
-      if (!slide) return;
-      
-      // Collect all image URLs from the slide
-      const imageUrls: string[] = [];
-      
-      // Check for media on activity slides
-      if ((slide as any).media?.url && (slide as any).media?.type === 'image') {
-        imageUrls.push((slide as any).media.url);
-      }
-      
-      // Check for block-based layouts (info slides)
-      if (slide.type === 'info') {
-        const infoSlide = slide as InfoSlide;
-        if (infoSlide.layout?.blocks) {
-          infoSlide.layout.blocks.forEach(block => {
-            if (block.type === 'image' && block.content) {
-              imageUrls.push(block.content);
-              // Also preload gallery images
-              if (block.gallery) {
-                block.gallery.forEach(url => imageUrls.push(url));
-              }
-            }
-          });
-        }
-        // Legacy format
-        if (infoSlide.imageUrl) {
-          imageUrls.push(infoSlide.imageUrl);
-        }
-      }
-      
-      // Check for slide background image
-      if ((slide as any).slideBackground?.type === 'image' && (slide as any).slideBackground?.imageUrl) {
-        imageUrls.push((slide as any).slideBackground.imageUrl);
-      }
-      
-      // Preload each image
-      imageUrls.forEach(url => {
-        if (url && url.startsWith('http')) {
-          const img = new Image();
-          img.src = url;
-        }
-      });
-    };
-    
-    // Preload previous slide
-    if (currentSlideIndex > 0) {
-      preloadSlideImages(quiz.slides[currentSlideIndex - 1]);
-    }
-    
-    // Preload next slide
-    if (currentSlideIndex < quiz.slides.length - 1) {
-      preloadSlideImages(quiz.slides[currentSlideIndex + 1]);
-    }
-  }, [currentSlideIndex, quiz.slides]);
-  
-  // Load comments for current slide (public mode)
-  useEffect(() => {
-    if (isPublicMode && boardId && currentSlide) {
-      getSlideComments(boardId, currentSlide.id).then(setSlideComments);
-      setCommentContent('');
-      setCommentSuccess(false);
-    }
-  }, [isPublicMode, boardId, currentSlide?.id]);
-  
-  // Load saved author name
-  useEffect(() => {
-    if (isPublicMode) {
-      const saved = localStorage.getItem('public-viewer-author-name');
-      if (saved) setCommentAuthorName(saved);
-    }
-  }, [isPublicMode]);
-  
-  // Submit comment handler
-  const submitComment = async () => {
-    if (!boardId || !currentSlide || !commentContent.trim()) return;
-    
-    console.log('[PublicViewer] Submitting comment:', { boardId, slideId: currentSlide.id, content: commentContent.trim() });
-    setSubmittingComment(true);
-    try {
-      const result = await addBoardComment({
-        board_id: boardId,
-        slide_id: currentSlide.id,
-        author_name: commentAuthorName.trim() || null,
-        content: commentContent.trim(),
-      });
-      
-      console.log('[PublicViewer] Comment result:', result);
-      
-      if (result) {
-        setCommentSuccess(true);
-        setCommentContent('');
-        // Save author name
-        if (commentAuthorName.trim()) {
-          localStorage.setItem('public-viewer-author-name', commentAuthorName.trim());
-        }
-        // Reload comments
-        const updated = await getSlideComments(boardId, currentSlide.id);
-        setSlideComments(updated);
-        // Reset success after 3s
-        setTimeout(() => setCommentSuccess(false), 3000);
-      } else {
-        console.error('[PublicViewer] Failed to add comment - result was null');
-      }
-    } catch (e) {
-      console.error('Error submitting comment:', e);
-    } finally {
-      setSubmittingComment(false);
-    }
-  };
-  
+
+  // Preload adjacent slide images
+  useSlidePreload(currentSlideIndex, quiz.slides);
+
+  // Comments hook (public mode only)
+  const {
+    showCommentsPanel, setShowCommentsPanel,
+    slideComments,
+    commentAuthorName, setCommentAuthorName,
+    commentContent, setCommentContent,
+    submittingComment,
+    commentSuccess,
+    submitComment,
+  } = useSlideComments(isPublicMode, boardId, currentSlide?.id);
+
   // Keyboard navigation
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
         goToPrevSlide();
       } else if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === ' ') {
-        // In preview mode (not live), allow free navigation
         if (!isLive || hasAnswered || currentSlide?.type !== 'activity') {
           goToNextSlide();
         }
@@ -1579,32 +652,35 @@ export function QuizPreview({ quiz, onClose, isLive = false, onComplete, initial
         onClose?.();
       }
     };
-    
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [currentSlideIndex, hasAnswered, currentSlide]);
-  
-  const goToNextSlide = useCallback(() => {
-    if (currentSlideIndex < quiz.slides.length - 1 && !isAnimating) {
-      setIsAnimating(true);
-      setPrevSlideIndex(currentSlideIndex);
-      setCurrentSlideIndex(prev => prev + 1);
-      setTimeout(() => setIsAnimating(false), 500);
-    } else if (currentSlideIndex === quiz.slides.length - 1) {
-      setIsCompleted(true);
-      onComplete?.(responses);
-    }
-  }, [quiz, currentSlideIndex, isAnimating, responses, onComplete]);
-  
-  const goToPrevSlide = useCallback(() => {
-    const allowBack = quiz?.settings?.allowBack ?? true;
-    if (currentSlideIndex > 0 && !isAnimating && allowBack) {
-      setIsAnimating(true);
-      setPrevSlideIndex(currentSlideIndex);
-      setCurrentSlideIndex(prev => prev - 1);
-      setTimeout(() => setIsAnimating(false), 500);
-    }
-  }, [currentSlideIndex, isAnimating, quiz?.settings?.allowBack]);
+  }, [goToNextSlide, goToPrevSlide, isLive, hasAnswered, currentSlide, onClose]);
+
+  // Get chapters from slides with chapterName
+  const chapters = quiz.slides
+    .map((slide, index) => ({
+      index,
+      name: (slide as InfoSlide).chapterName,
+    }))
+    .filter(ch => ch.name);
+
+  const score = calculateQuizScore(responses, quiz.slides);
+
+  // Outer background color (area around slide)
+  const bgColor = '#F0F1F8';
+
+  // Slide background color — flashcard uses its own cardColor, others use slideBackground
+  const slideBgColor = (currentSlide as any)?.activityType === 'flashcard'
+    ? ((currentSlide as any)?.cardColor || '#6366f1')
+    : ((currentSlide as any)?.slideBackground?.color || '#ffffff');
+  const slideTextColor = getContrastColor(slideBgColor);
+
+  // Reset on slide change
+  useEffect(() => {
+    setSelectedOption(null);
+    setTextAnswer('');
+    setShowResult(false);
+  }, [currentSlideIndex]);
   
   // Submit answer
   const submitAnswer = () => {
@@ -1615,9 +691,9 @@ export function QuizPreview({ quiz, onClose, isLive = false, onComplete, initial
     
     if (currentSlide.activityType === 'abc') {
       const abcSlide = currentSlide as ABCActivitySlide;
-      const correctOption = abcSlide.options.find(o => o.isCorrect);
-      isCorrect = selectedOption === correctOption?.id;
-      answer = selectedOption || '';
+      isCorrect = evaluateABCAnswer(abcSlide, selectedOption);
+      const selectedIds = getABCSelectedAnswerIds(selectedOption);
+      answer = abcSlide.allowMultipleCorrect ? selectedIds : (selectedIds[0] || '');
     } else if (currentSlide.activityType === 'open') {
       const openSlide = currentSlide as OpenActivitySlide;
       // Use mathematical comparison for numeric answers
@@ -1887,6 +963,15 @@ export function QuizPreview({ quiz, onClose, isLive = false, onComplete, initial
                 isReadOnly={false}
               />
             );
+          case 'flashcard':
+            return (
+              <div className="w-full h-full">
+                <FlashcardSlideView
+                  slide={slide as FlashcardActivitySlide}
+                  startFlipped={false}
+                />
+              </div>
+            );
           default:
             return <div className="text-slate-500 text-center">Nepodporovaný typ aktivity</div>;
         }
@@ -1976,23 +1061,31 @@ export function QuizPreview({ quiz, onClose, isLive = false, onComplete, initial
   
   return (
     <div className="fixed inset-0 flex z-50" style={{ backgroundColor: bgColor }}>
-      {/* Fixed Close Button - Always in top left corner - ABSOLUTE, doesn't affect layout */}
-      {onClose && (
-        <div className="hidden lg:block absolute top-0 left-0 z-50 p-4">
-          <button
-            onClick={onClose}
-            className="w-10 h-10 rounded-full backdrop-blur shadow-sm flex items-center justify-center transition-colors bg-white/80 text-slate-500 hover:bg-white hover:text-slate-700"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-      )}
       
       {/* Sidebar Area - Desktop - ONLY when sidebar is OPEN - takes space in flex layout */}
-      {(showChapterMenu || showNotePanel || showCommentsPanel) && (
-        <div className="hidden lg:flex h-full flex-shrink-0">
-          {/* Sidebar content - 1/4 of screen width */}
-          <div className="flex flex-col flex-shrink-0 bg-white/95 backdrop-blur-sm z-30 border-r border-slate-100" style={{ width: '25vw', minWidth: '280px', maxWidth: '400px' }}>
+      {(showChapterMenu || showNotePanel || showCommentsPanel || showOsnovaPanel) && (
+        <div className="hidden lg:flex h-full flex-shrink-0 relative" ref={sidebarRef}>
+          {/* Sidebar content */}
+          <div className="flex flex-col flex-shrink-0 bg-white/95 backdrop-blur-sm z-30 border-r border-slate-100" style={{ width: sidebarWidth, minWidth: 240, maxWidth: 600 }}>
+            {showOsnovaPanel && worksheetMap ? (
+              <div className="flex-1 overflow-hidden">
+                <OsnovaPanel
+                  worksheetMap={worksheetMap}
+                  slides={quiz.slides}
+                  selectedSlideId={quiz.slides[currentSlideIndex]?.id ?? null}
+                  onSlideSelect={(id) => {
+                    const idx = quiz.slides.findIndex(s => s.id === id);
+                    if (idx >= 0) {
+                      setIsAnimating(true);
+                      setPrevSlideIndex(currentSlideIndex);
+                      setCurrentSlideIndex(idx);
+                      setTimeout(() => setIsAnimating(false), 400);
+                    }
+                  }}
+                  headerPaddingTop={16}
+                />
+              </div>
+            ) : (
             <div className="flex-1 overflow-y-auto px-5 py-10" style={{ paddingTop: 100 }}>
               <div className="mb-8">
                 <h2 className="text-slate-800 text-lg font-bold leading-tight">{quiz.title}</h2>
@@ -2105,88 +1198,153 @@ export function QuizPreview({ quiz, onClose, isLive = false, onComplete, initial
                 </div>
               ) : null}
             </div>
-          </div>
-      
-          {/* Buttons next to open sidebar - part of flex layout */}
-          <div className="flex flex-col gap-2 p-4" style={{ paddingTop: 64 }}>
-            {/* Close button */}
-            <button
-              onClick={() => { setShowChapterMenu(false); setShowNotePanel(false); setShowCommentsPanel(false); }}
-              className="w-10 h-10 rounded-full backdrop-blur shadow-sm flex items-center justify-center transition-colors bg-white/80 text-slate-500 hover:bg-white hover:text-slate-700"
-              title="Zavřít"
-            >
-              <PanelLeftClose className="w-5 h-5" />
-            </button>
-            
-            {/* Chapter menu button */}
-            {!showChapterMenu && chapters.length > 0 && (
-              <button
-                onClick={() => { setShowNotePanel(false); setShowCommentsPanel(false); setShowChapterMenu(true); }}
-                className="w-10 h-10 rounded-full backdrop-blur shadow-sm flex items-center justify-center transition-colors bg-white/80 text-slate-500 hover:bg-white hover:text-slate-700"
-                title="Osnova"
-              >
-                <Menu className="w-5 h-5" />
-              </button>
-            )}
-            
-            {/* Note button */}
-            {!showNotePanel && currentSlide?.note && (
-              <button
-                onClick={() => { setShowChapterMenu(false); setShowCommentsPanel(false); setShowNotePanel(true); }}
-                className="w-10 h-10 rounded-full backdrop-blur shadow-sm flex items-center justify-center transition-colors bg-white/80 text-slate-500 hover:bg-white hover:text-slate-700"
-                title="Poznámka"
-              >
-                <NoteIcon size={20} />
-              </button>
-            )}
-            
-            {/* Comments button - public mode only */}
-            {!showCommentsPanel && isPublicMode && (
-              <button
-                onClick={() => { setShowChapterMenu(false); setShowNotePanel(false); setShowCommentsPanel(true); }}
-                className="w-10 h-10 rounded-full backdrop-blur shadow-sm flex items-center justify-center transition-colors bg-white/80 text-slate-500 hover:bg-white hover:text-slate-700"
-                title="Komentáře"
-              >
-                <MessageSquare className="w-5 h-5" />
-              </button>
             )}
           </div>
+          {/* Subtle edge line only */}
+          <div className="absolute top-0 h-full w-px bg-slate-200 z-30" style={{ right: -1 }} />
         </div>
       )}
-      
-      {/* Buttons when sidebar is CLOSED - ABSOLUTE position, doesn't affect layout */}
-      {!showChapterMenu && !showNotePanel && !showCommentsPanel && (chapters.length > 0 || currentSlide?.note || isPublicMode) && (
-        <div className="hidden lg:flex absolute top-20 left-4 z-40 flex-col gap-2">
+
+      {/* Control column - always visible on desktop */}
+      <div className="hidden lg:flex flex-col items-center flex-shrink-0 h-full relative" style={{ width: 64, paddingTop: 20, gap: 0 }}>
+        {/* Buttons group at top */}
+        <div className="flex flex-col items-center gap-3">
+          {/* Close button */}
+          {onClose && (
+            <button
+              onClick={onClose}
+              className="w-10 h-10 rounded-full backdrop-blur shadow-sm flex items-center justify-center transition-colors"
+              style={{ backgroundColor: 'rgba(255,255,255,0.8)', color: '#64748b', border: 'none' }}
+              title="Zavřít"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          )}
+
+          {/* Panel toggle button */}
+          {(chapters.length > 0 || (worksheetMap && worksheetMap.pages.length > 0) || currentSlide?.note || isPublicMode) && (() => {
+            const isOpen = showChapterMenu || showOsnovaPanel || showNotePanel || showCommentsPanel;
+            return (
+              <button
+                onClick={() => {
+                  if (isOpen) {
+                    setShowChapterMenu(false); setShowOsnovaPanel(false); setShowNotePanel(false); setShowCommentsPanel(false);
+                  } else if (worksheetMap && worksheetMap.pages.length > 0) {
+                    setShowOsnovaPanel(true);
+                  } else if (chapters.length > 0) {
+                    setShowChapterMenu(true);
+                  } else if (currentSlide?.note) {
+                    setShowNotePanel(true);
+                  }
+                }}
+                className="w-10 h-10 rounded-full backdrop-blur shadow-sm flex items-center justify-center transition-colors"
+                style={{ backgroundColor: isOpen ? '#334155' : 'rgba(255,255,255,0.8)', color: isOpen ? 'white' : '#64748b', border: 'none' }}
+                title={isOpen ? 'Zavřít panel' : 'Otevřít panel'}
+              >
+                {isOpen ? <PanelLeftClose className="w-5 h-5" /> : <PanelLeft className="w-5 h-5" />}
+              </button>
+            );
+          })()}
+
+          {/* Chapter menu button */}
           {chapters.length > 0 && (
             <button
-              onClick={() => setShowChapterMenu(true)}
-              className="w-10 h-10 rounded-full backdrop-blur shadow-sm flex items-center justify-center transition-colors bg-white/80 text-slate-500 hover:bg-white hover:text-slate-700"
-              title="Osnova"
+              onClick={() => { setShowNotePanel(false); setShowCommentsPanel(false); setShowOsnovaPanel(false); setShowChapterMenu(!showChapterMenu); }}
+              className="w-10 h-10 rounded-full backdrop-blur shadow-sm flex items-center justify-center transition-colors"
+              style={{ backgroundColor: showChapterMenu ? '#334155' : 'rgba(255,255,255,0.8)', color: showChapterMenu ? 'white' : '#64748b', border: 'none' }}
+              title="Obsah"
             >
               <Menu className="w-5 h-5" />
             </button>
           )}
+
+          {/* Worksheet Osnova button */}
+          {worksheetMap && worksheetMap.pages.length > 0 && (
+            <button
+              onClick={() => { setShowChapterMenu(false); setShowNotePanel(false); setShowCommentsPanel(false); setShowOsnovaPanel(!showOsnovaPanel); }}
+              className="w-10 h-10 rounded-full backdrop-blur shadow-sm flex items-center justify-center transition-colors"
+              style={{ backgroundColor: showOsnovaPanel ? '#334155' : 'rgba(255,255,255,0.8)', border: 'none' }}
+              title="Osnova pracovního listu"
+            >
+              <OsnovaIcon active={showOsnovaPanel} />
+            </button>
+          )}
+
+          {/* Note button */}
           {currentSlide?.note && (
             <button
-              onClick={() => setShowNotePanel(true)}
-              className="w-10 h-10 rounded-full backdrop-blur shadow-sm flex items-center justify-center transition-colors bg-white/80 text-slate-500 hover:bg-white hover:text-slate-700"
+              onClick={() => { setShowChapterMenu(false); setShowCommentsPanel(false); setShowOsnovaPanel(false); setShowNotePanel(!showNotePanel); }}
+              className="w-10 h-10 rounded-full backdrop-blur shadow-sm flex items-center justify-center transition-colors"
+              style={{ backgroundColor: showNotePanel ? '#334155' : 'rgba(255,255,255,0.8)', color: showNotePanel ? 'white' : '#64748b', border: 'none' }}
               title="Poznámka"
             >
               <NoteIcon size={20} />
             </button>
           )}
+
+          {/* Comments button - public mode only */}
           {isPublicMode && (
             <button
-              onClick={() => setShowCommentsPanel(true)}
-              className="w-10 h-10 rounded-full backdrop-blur shadow-sm flex items-center justify-center transition-colors bg-indigo-500 text-white hover:bg-indigo-600"
+              onClick={() => { setShowChapterMenu(false); setShowNotePanel(false); setShowOsnovaPanel(false); setShowCommentsPanel(!showCommentsPanel); }}
+              className="w-10 h-10 rounded-full backdrop-blur shadow-sm flex items-center justify-center transition-colors"
+              style={{ backgroundColor: showCommentsPanel ? '#6366f1' : 'rgba(255,255,255,0.8)', color: showCommentsPanel ? 'white' : '#64748b', border: 'none' }}
               title="Komentáře"
             >
               <MessageSquare className="w-5 h-5" />
             </button>
           )}
         </div>
-      )}
-      
+
+        {/* Resize grip — visible only when sidebar panel is open */}
+        {(showChapterMenu || showNotePanel || showCommentsPanel || showOsnovaPanel) && (
+          <div
+            className="absolute left-1/2 -translate-x-1/2 flex flex-col items-center gap-1.5 cursor-col-resize group z-50"
+            style={{ top: '70%', transform: 'translate(-50%, -50%)' }}
+            title="Přetáhnout pro změnu šířky"
+            onMouseDown={(e) => {
+              e.preventDefault();
+              const sidebar = sidebarRef.current?.querySelector(':first-child') as HTMLElement | null;
+              if (!sidebar) return;
+              const startX = e.clientX;
+              const startW = sidebar.getBoundingClientRect().width;
+              const onMove = (mv: MouseEvent) => {
+                const newW = Math.min(600, Math.max(240, startW + mv.clientX - startX));
+                sidebar.style.width = `${newW}px`;
+              };
+              const onUp = (mv: MouseEvent) => {
+                const newW = Math.min(600, Math.max(240, startW + mv.clientX - startX));
+                setSidebarWidth(newW);
+                document.removeEventListener('mousemove', onMove);
+                document.removeEventListener('mouseup', onUp);
+              };
+              document.addEventListener('mousemove', onMove);
+              document.addEventListener('mouseup', onUp);
+            }}
+          >
+            {[0,1,2,3,4].map(i => (
+              <div
+                key={i}
+                className="rounded-full transition-colors group-hover:bg-indigo-400"
+                style={{ width: 5, height: 5, backgroundColor: '#94a3b8' }}
+              />
+            ))}
+          </div>
+        )}
+
+        {/* Arrow - absolutely centered in the column */}
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
+          <button
+            onClick={goToPrevSlide}
+            disabled={currentSlideIndex === 0 || !(quiz?.settings?.allowBack ?? true)}
+            className={`w-12 h-12 rounded-full flex items-center justify-center transition-all duration-300 ease-out bg-[#CBD5E1] text-slate-600 ${
+              currentSlideIndex === 0 || !(quiz?.settings?.allowBack ?? true) ? 'opacity-30 cursor-not-allowed' : 'hover:h-28'
+            }`}
+          >
+            <ArrowLeft className="w-5 h-5" />
+          </button>
+        </div>
+      </div>
+
       {/* Main content */}
       <div className="flex-1 flex flex-col">
         
@@ -2249,7 +1407,7 @@ export function QuizPreview({ quiz, onClose, isLive = false, onComplete, initial
             onClick={() => {
               if (!isLive || hasAnswered || currentSlide?.type !== 'activity') {
                 goToNextSlide();
-              } else if (selectedOption || textAnswer.trim()) {
+              } else if (getABCSelectedAnswerIds(selectedOption).length > 0 || textAnswer.trim()) {
                 submitAnswer();
               }
             }}
@@ -2283,22 +1441,6 @@ export function QuizPreview({ quiz, onClose, isLive = false, onComplete, initial
           minHeight: 0, 
           paddingBottom: isMobile ? 8 : 5,
         }}>
-          {/* Desktop: Left arrow - same width as right arrow for symmetry */}
-          <div 
-            className="hidden lg:flex flex-shrink-0 items-center justify-center"
-            style={{ width: 65 }}
-          >
-            <button
-              onClick={goToPrevSlide}
-              disabled={currentSlideIndex === 0 || !(quiz?.settings?.allowBack ?? true)}
-              className={`w-12 h-12 rounded-full flex items-center justify-center transition-all duration-300 ease-out bg-[#CBD5E1] text-slate-600 ${
-                currentSlideIndex === 0 || !(quiz?.settings?.allowBack ?? true) ? 'opacity-30 cursor-not-allowed' : 'hover:h-28'
-              }`}
-            >
-              <ArrowLeft className="w-5 h-5" />
-            </button>
-          </div>
-          
           {/* Slide content - fills remaining space */}
           <div 
             className="flex-1"
@@ -2347,7 +1489,7 @@ export function QuizPreview({ quiz, onClose, isLive = false, onComplete, initial
               {/* Submit button for activities (except example and bubbles ABC - they have their own) */}
               {currentSlide?.type === 'activity' && currentSlide.activityType !== 'example' && !((currentSlide as any).activityType === 'abc' && ((currentSlide as any).answerType === 'bubbles' || (currentSlide as any).answerType === 'squares')) && !hasAnswered && (
                 // Show for regular activities when answer is provided
-                (currentSlide.activityType !== 'form' && (selectedOption || textAnswer.trim())) ||
+                (currentSlide.activityType !== 'form' && (getABCSelectedAnswerIds(selectedOption).length > 0 || textAnswer.trim())) ||
                 // Show for form when it has fields
                 (currentSlide.activityType === 'form' && (currentSlide as any).fields?.length > 0)
               ) && (
@@ -2385,7 +1527,7 @@ export function QuizPreview({ quiz, onClose, isLive = false, onComplete, initial
                 // In preview mode (not live), allow free navigation
                 if (!isLive || hasAnswered || currentSlide?.type !== 'activity') {
                   goToNextSlide();
-                } else if (selectedOption || textAnswer.trim()) {
+                } else if (getABCSelectedAnswerIds(selectedOption).length > 0 || textAnswer.trim()) {
                   submitAnswer();
                 }
               }}

@@ -841,9 +841,44 @@ function MediaTab({ dataSet, onRefresh }: { dataSet: TopicDataSet; onRefresh: ()
       
       {/* Images */}
       <div className="border-t border-slate-200 pt-6">
-        <h3 className="text-sm font-semibold text-slate-700 mb-3">
-          🖼️ Obrázky z webu ({dataSet.media?.images?.length || 0})
-        </h3>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-semibold text-slate-700">
+            🖼️ Obrázky z webu ({dataSet.media?.images?.length || 0})
+          </h3>
+          {dataSet.media?.images?.length > 0 && (
+            <button
+              onClick={async () => {
+                if (!dataSet.id) return;
+                const btn = document.getElementById('translate-captions-btn');
+                if (btn) btn.textContent = '⏳ Překládám...';
+                try {
+                  const { translateImageCaptions } = await import('../../utils/dataset/material-generators');
+                  const translated = await translateImageCaptions(dataSet.media!.images);
+                  // Save translated captions back to Supabase
+                  const { supabase } = await import('../../utils/supabase/client');
+                  await supabase
+                    .from('topic_data_sets')
+                    .update({ media: { ...dataSet.media, images: translated } })
+                    .eq('id', dataSet.id);
+                  // Update local state
+                  setDataSets(prev => prev.map(ds => ds.id === dataSet.id
+                    ? { ...ds, media: { ...ds.media!, images: translated } }
+                    : ds
+                  ));
+                  if (btn) btn.textContent = '✅ Přeloženo';
+                  setTimeout(() => { if (btn) btn.textContent = '🌐 Přeložit popisky do češtiny'; }, 2000);
+                } catch (e) {
+                  console.error(e);
+                  if (btn) btn.textContent = '❌ Chyba překladu';
+                }
+              }}
+              id="translate-captions-btn"
+              className="text-xs px-3 py-1.5 rounded-lg bg-indigo-50 text-indigo-700 hover:bg-indigo-100 font-medium transition-colors border border-indigo-200"
+            >
+              🌐 Přeložit popisky do češtiny
+            </button>
+          )}
+        </div>
         {dataSet.media?.images?.length > 0 ? (
           <div className="grid grid-cols-3 gap-4">
             {dataSet.media.images.map((img: ValidatedImage, i: number) => (
@@ -1157,13 +1192,52 @@ function GenerateTab({ dataSet, onRefresh }: { dataSet: TopicDataSet; onRefresh:
     return colors[id] || '#64748b';
   };
   
+  const ensureDatasetFolder = async (): Promise<string | null> => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user || !dataSet) return null;
+      const gradeName = `${dataSet.grade}. ročník`;
+      const topicName = dataSet.topic;
+
+      const { data: gf } = await supabase.from('teacher_folders').select('id')
+        .eq('teacher_id', user.id).eq('name', gradeName).is('parent_id', null).limit(1);
+      let gradeFolderId: string;
+      if (gf && gf.length > 0) {
+        gradeFolderId = gf[0].id;
+      } else {
+        gradeFolderId = `folder-grade${dataSet.grade}-${Date.now()}`;
+        await supabase.from('teacher_folders').insert({
+          id: gradeFolderId, teacher_id: user.id, name: gradeName,
+          parent_id: null, position: dataSet.grade,
+          created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+        });
+      }
+
+      const { data: tf } = await supabase.from('teacher_folders').select('id')
+        .eq('teacher_id', user.id).eq('name', topicName).eq('parent_id', gradeFolderId).limit(1);
+      if (tf && tf.length > 0) return tf[0].id;
+
+      const topicFolderId = `folder-topic-${dataSet.id}-${Date.now()}`;
+      await supabase.from('teacher_folders').insert({
+        id: topicFolderId, teacher_id: user.id, name: topicName,
+        parent_id: gradeFolderId, position: 0,
+        created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+      });
+      return topicFolderId;
+    } catch (err) {
+      console.warn('[DataSetCreator] ensureDatasetFolder failed:', err);
+      return null;
+    }
+  };
+
   const handleGenerate = async (type: string) => {
     setGenerating(type);
     setJustGenerated(null);
     
     try {
       const { generateFromDataSet } = await import('../../utils/dataset/material-generators');
-      const result = await generateFromDataSet(dataSet, type);
+      const folderId = await ensureDatasetFolder();
+      const result = await generateFromDataSet(dataSet, type, undefined, folderId);
       
       if (result.success && result.id) {
         setJustGenerated({ type, id: result.id });

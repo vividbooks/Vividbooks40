@@ -5,13 +5,500 @@
  * To je spolehlivější a méně náchylné na chyby.
  */
 
-import { TopicDataSet, ValidatedImage, IllustrationPrompt } from '../../types/topic-dataset';
+import { TopicDataSet, ValidatedImage, IllustrationPrompt, ImageGroup, ImageGroupSubject } from '../../types/topic-dataset';
+import { SectionMediaItem } from '../../types/section-media';
 import { Quiz, QuizSlide, createABCSlide, createInfoSlide, createOpenSlide, createVotingSlide, createBoardSlide, createConnectPairsSlide, createFillBlanksSlide } from '../../types/quiz';
-import { Worksheet, WorksheetBlock, generateBlockId } from '../../types/worksheet';
+import { Worksheet, WorksheetBlock, FillBlankSegment, generateBlockId } from '../../types/worksheet';
+import { worksheetToPresentation } from '../worksheet-to-presentation';
 import { saveQuiz, syncQuizDirectToSupabase } from '../quiz-storage';
 import { saveWorksheet } from '../worksheet-storage';
 import { saveDocument, syncDocumentDirectToSupabase } from '../document-storage';
 import { chatWithAIProxy } from '../ai-chat-proxy';
+import { searchRagExamples, formatRagExamplesForPrompt, formatRagAsLayoutTemplate, type RagExample, type ContentPlan } from '../worksheet-rag';
+import { TEXTBOOK_LAYOUTS, layoutsToAgent2Prompt, buildSlotPrompt, type TemplateSlot } from '../textbook-layouts';
+import { supabase } from '../supabase/client';
+import { convertLegacyLayoutsToLayoutSections } from '../layout-sections';
+
+/**
+ * Přeloží title a description obrázků z webu do češtiny pomocí Gemini Flash.
+ * Zpracuje dávkově až 20 obrázků najednou.
+ */
+export { translateImageCaptions } from './translate-captions';
+
+/**
+ * Načte HTML obsah učebního textu (typ 'text') z localStorage nebo Supabase.
+ * Vrátí plain text (bez HTML tagů) pro použití jako kontext v AI promptech.
+ */
+export async function loadSourceTextContent(docId: string): Promise<string | null> {
+  try {
+    const local = localStorage.getItem(`vivid-doc-${docId}`);
+    if (local) {
+      const parsed = JSON.parse(local);
+      if (parsed?.content) {
+        return parsed.content.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+      }
+    }
+  } catch { /* ignore */ }
+
+  try {
+    const { data } = await supabase
+      .from('teacher_documents')
+      .select('content')
+      .eq('id', docId)
+      .single();
+    if (data?.content) {
+      const html = typeof data.content === 'string' ? data.content : JSON.stringify(data.content);
+      return html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+    }
+  } catch { /* ignore */ }
+
+  return null;
+}
+
+/**
+ * Načte HTML obsah učebního textu a převede ho přímo na WorksheetBlock[].
+ * Pravidla layoutu:
+ *   - H1 → nadpis celá šířka
+ *   - H2/H3 → nadpis celá šířka
+ *   - Odstavec pod H2/H3 + dostupný obrázek → odstavec levá půlka + obrázek pravá půlka
+ *   - Odstavec bez obrázku → celá šířka
+ */
+export async function loadSourceTextAsBlocks(docId: string, dataSet: TopicDataSet): Promise<WorksheetBlock[] | null> {
+  let html: string | null = null;
+
+  try {
+    const local = localStorage.getItem(`vivid-doc-${docId}`);
+    if (local) {
+      const parsed = JSON.parse(local);
+      if (parsed?.content) html = parsed.content;
+    }
+  } catch { /* ignore */ }
+
+  if (!html) {
+    try {
+      const { data } = await supabase
+        .from('teacher_documents')
+        .select('content')
+        .eq('id', docId)
+        .single();
+      if (data?.content) {
+        html = typeof data.content === 'string' ? data.content : JSON.stringify(data.content);
+      }
+    } catch { /* ignore */ }
+  }
+
+  if (!html) return null;
+
+  // Load sectionImages from document (H2 → image mapping set by user/AI)
+  let docSectionImages: any[] = [];
+  try {
+    const local = localStorage.getItem(`vivid-doc-${docId}`);
+    if (local) {
+      const parsed = JSON.parse(local);
+      if (Array.isArray(parsed?.sectionImages)) docSectionImages = parsed.sectionImages;
+    }
+  } catch { /* ignore */ }
+
+  // Build lookup: normalized H2 heading text → first image URL + caption from sectionImages
+  const h2ImageMap = new Map<string, { url: string; title: string; caption: string; imageSteps?: any[] }>();
+  for (const si of docSectionImages) {
+    const key = (si.heading || '').toLowerCase().trim();
+    if (!key) continue;
+    const firstUrl = si.imageSteps?.[0]?.url || si.imageUrl || '';
+    if (!firstUrl) continue;
+    h2ImageMap.set(key, {
+      url: firstUrl,
+      title: si.heading || '',
+      caption: si.imageSteps?.[0]?.description || si.heading || '',
+      imageSteps: si.imageSteps,
+    });
+  }
+
+  // Collect all available images from dataset (fallback for sections without explicit mapping)
+  const allImages: { url: string; title: string; caption: string }[] = [
+    ...(dataSet.media?.generatedIllustrations || []).map((m: any) => ({
+      url: m.url || '', title: m.name || m.title || '', caption: m.name || m.title || '',
+    })),
+    ...(dataSet.media?.generatedPhotos || []).map((m: any) => ({
+      url: m.url || '', title: m.name || m.title || '', caption: m.name || m.title || '',
+    })),
+    ...(dataSet.media?.images || []).map((m: any) => {
+      const licenseStr = [m.source, m.license].filter(Boolean).join(' • ');
+      return {
+        url: m.url || '',
+        title: m.title || '',
+        caption: licenseStr ? `${m.title || ''}\n${licenseStr}` : (m.title || ''),
+      };
+    }),
+  ].filter(m => !!m.url);
+
+  // Parse HTML into raw block list
+  type RawBlock = { tag: string; html: string; text: string };
+  const raw: RawBlock[] = [];
+  const blockPattern = /<(h1|h2|h3|h4|p|ul|ol|blockquote)[^>]*>([\s\S]*?)<\/\1>/gi;
+  let match;
+  while ((match = blockPattern.exec(html)) !== null) {
+    const tag = match[1].toLowerCase();
+    const inner = match[2].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+    if (!inner) continue;
+    raw.push({ tag, html: match[0], text: inner });
+  }
+
+  if (raw.length === 0) return null;
+
+  // Keywords for infobox-type paragraphs (Shrnutí, Věděli jste?, Pozor, Tip, ...)
+  const INFOBOX_KW = /^(shrnut[ií]|v[eě]d[eě]li jste|pozor|tip\b|poznámka|zajímavost|důležit[eé] pojm)/i;
+  // Infobox color map
+  const INFOBOX_VARIANT: Record<string, 'green'|'blue'|'yellow'|'purple'> = {
+    shrnutí: 'green', shrnutí2: 'green',
+    věděli: 'blue', věděli2: 'blue',
+    pozor: 'yellow',
+    tip: 'purple',
+  };
+  const getInfoboxVariant = (text: string): 'green'|'blue'|'yellow'|'purple' => {
+    const t = text.toLowerCase();
+    if (/shrnut/.test(t)) return 'green';
+    if (/v[eě]d[eě]li/.test(t)) return 'blue';
+    if (/pozor/.test(t)) return 'yellow';
+    if (/tip/.test(t)) return 'purple';
+    return 'blue';
+  };
+
+  // Classify each raw block
+  type BlockKind = 'h1' | 'h2' | 'h3' | 'infobox-heading' | 'section-heading' | 'paragraph' | 'list' | 'blockquote';
+  const classify = (rb: { tag: string; text: string }): BlockKind => {
+    if (rb.tag === 'h1') return 'h1';
+    if (rb.tag === 'h2') return 'h2';
+    if (rb.tag === 'h3' || rb.tag === 'h4') return 'h3';
+    if (rb.tag === 'blockquote') return 'blockquote';
+    if (rb.tag === 'ul' || rb.tag === 'ol') return 'list';
+    // For <p>: heuristic detection
+    const t = rb.text.trim();
+    if (INFOBOX_KW.test(t)) return 'infobox-heading';
+    // Short paragraph without sentence-ending punctuation → section heading
+    if (t.length <= 80 && !/[.!?;]$/.test(t) && !t.startsWith('📚')) return 'section-heading';
+    return 'paragraph';
+  };
+
+  // ── Group raw blocks into sections ──────────────────────────────────────
+  type InfoboxData = { title: string; html: string; variant: 'green'|'blue'|'yellow'|'purple' };
+  type Section = {
+    headingText: string | null;
+    headingLevel: 'h1'|'h2'|'h3';
+    paragraphs: RawBlock[];
+    infoboxes: InfoboxData[];
+    lists: RawBlock[];
+  };
+
+  const sections: Section[] = [];
+  let cur: Section = { headingText: null, headingLevel: 'h2', paragraphs: [], infoboxes: [], lists: [] };
+
+  const pushSection = () => {
+    if (cur.headingText !== null || cur.paragraphs.length > 0 || cur.infoboxes.length > 0) {
+      sections.push(cur);
+    }
+  };
+
+  for (let i = 0; i < raw.length; i++) {
+    const rb = raw[i];
+    const kind = classify(rb);
+
+    if (kind === 'h1' || kind === 'h2' || kind === 'h3' || kind === 'section-heading') {
+      pushSection();
+      const level: 'h1'|'h2'|'h3' = kind === 'h1' ? 'h1' : kind === 'h3' || kind === 'section-heading' ? 'h3' : 'h2';
+      cur = { headingText: rb.text, headingLevel: level, paragraphs: [], infoboxes: [], lists: [] };
+    } else if (kind === 'infobox-heading') {
+      const variant = getInfoboxVariant(rb.text);
+      const nextRb = raw[i + 1];
+      const contentHtml = nextRb && classify(nextRb) === 'paragraph' ? nextRb.html : '';
+      if (contentHtml) i++;
+      cur.infoboxes.push({ title: rb.text, html: contentHtml, variant });
+    } else if (kind === 'blockquote') {
+      cur.infoboxes.push({ title: '', html: rb.html, variant: 'blue' });
+    } else if (kind === 'list') {
+      cur.lists.push(rb);
+    } else if (kind === 'paragraph') {
+      cur.paragraphs.push(rb);
+    }
+  }
+  pushSection();
+
+  if (sections.length === 0) return null;
+
+  // ── Distribute images to content sections ─────────────────────────────
+  // Priority 1: sections with H2 heading that has a mapped image in sectionImages
+  // Priority 2: evenly distribute remaining dataset images to remaining content sections
+  const contentSections = sections.filter(s => s.paragraphs.length > 0);
+  const sectionGetsImage = new Set<number>();
+  // Track which global images are already claimed by h2ImageMap
+  const usedGlobalImageUrls = new Set<string>(Array.from(h2ImageMap.values()).map(v => v.url));
+  const remainingImages = allImages.filter(m => !usedGlobalImageUrls.has(m.url));
+  // Mark sections that will use fallback images (those without an h2 mapping)
+  const sectionsNeedingFallback = contentSections.filter(s => !h2ImageMap.has((s.headingText || '').toLowerCase().trim()));
+  if (remainingImages.length > 0 && sectionsNeedingFallback.length > 0) {
+    const step = Math.max(1, Math.ceil(sectionsNeedingFallback.length / remainingImages.length));
+    let used = 0;
+    for (let si = 0; si < sectionsNeedingFallback.length && used < remainingImages.length; si += step) {
+      sectionGetsImage.add(sections.indexOf(sectionsNeedingFallback[si]));
+      used++;
+    }
+  }
+
+  // ── Layout heuristics ─────────────────────────────────────────────────
+  type LayoutType = 'A'|'A2'|'B'|'B2'|'C'|'C+I'|'B+G+I'|'B2+G+I'|'G';
+  let layoutCounter = 0;
+
+  const pickLayout = (s: Section, hasImg: boolean): LayoutType => {
+    if (s.headingLevel === 'h1') return 'G'; // H1 sections handled separately
+    const hasInfobox = s.infoboxes.length > 0;
+    const textLen = s.paragraphs.reduce((sum, p) => sum + p.text.length, 0);
+
+    if (hasImg && hasInfobox) return layoutCounter % 2 === 0 ? 'B+G+I' : 'B2+G+I';
+    if (hasImg) {
+      const variants: LayoutType[] = ['A', 'B', 'A2', 'B2'];
+      return variants[layoutCounter % 4];
+    }
+    if (hasInfobox) return 'C+I';
+    if (textLen > 350) return 'C';
+    return 'G';
+  };
+
+  // ── Block builder helpers ─────────────────────────────────────────────
+  /** Nahradí mezeru za nezlomitelnou mezeru po jednoznakových předložkách/spojkách (česká typografie) */
+  const fixWidows = (text: string): string =>
+    text.replace(/(\s|^)([aiouvzksAIOUVZKS])\s+/g, (_m, pre, letter) => `${pre}${letter}\u00A0`);
+
+  let order = 0;
+  let globalImgIdx = 0;
+  const blocks: WorksheetBlock[] = [];
+
+  const mk = {
+    heading: (text: string, level: 'h1'|'h2'|'h3', span = 12): WorksheetBlock => ({
+      id: generateBlockId(), type: 'heading', order: order++,
+      width: span < 12 ? 'half' : 'full', gridSpan: span,
+      content: { text: fixWidows(text), level },
+    }),
+    para: (html: string, span = 12, columns?: 1|2): WorksheetBlock => ({
+      id: generateBlockId(), type: 'paragraph', order: order++,
+      width: span < 12 ? 'half' : 'full', gridSpan: span,
+      content: columns ? { html, columns } : { html },
+    }),
+    img: (img: { url: string; title: string; caption: string }, span = 6): WorksheetBlock => ({
+      id: generateBlockId(), type: 'image', order: order++,
+      width: span < 12 ? 'half' : 'full', gridSpan: span,
+      content: { url: img.url, alt: img.title, caption: img.caption, alignment: 'center' as const, size: 100 },
+    }),
+    floatImg: (img: { url: string; title: string; caption: string }, side: 'left'|'right', gridSpan: number, spanBlocks: number): WorksheetBlock => ({
+      id: generateBlockId(), type: 'image', order: order++,
+      width: 'half', gridSpan,
+      floatSide: side, floatSpanBlocks: spanBlocks, floatGridSpan: gridSpan,
+      content: { url: img.url, alt: img.title, caption: img.caption, alignment: 'center' as const, size: 100 },
+    } as WorksheetBlock),
+    gallery: (urls: string[], side: 'left'|'right', gridSpan: number, spanBlocks: number, cols: number): WorksheetBlock => ({
+      id: generateBlockId(), type: 'image', order: order++,
+      width: 'half', gridSpan,
+      floatSide: side, floatSpanBlocks: spanBlocks, floatGridSpan: gridSpan,
+      content: { url: urls[0] || '', alt: '', caption: '', alignment: 'center' as const, size: 100,
+        gallery: urls, galleryLayout: 'grid' as const, gridColumns: cols },
+    } as WorksheetBlock),
+    infobox: (ib: InfoboxData, span = 12): WorksheetBlock => ({
+      id: generateBlockId(), type: 'infobox', order: order++,
+      width: span < 12 ? 'half' : 'full', gridSpan: span,
+      content: { title: ib.title, html: ib.html, variant: ib.variant },
+    }),
+    inlineGallery: (urls: string[], captions: string[], cols: number, span = 12): WorksheetBlock => ({
+      id: generateBlockId(), type: 'image', order: order++,
+      width: 'full', gridSpan: span,
+      content: {
+        url: urls[0] || '',
+        alt: captions[0] || '',
+        caption: '',
+        alignment: 'center' as const,
+        size: 100,
+        gallery: urls,
+        galleryCaptions: captions,
+        galleryLayout: 'grid' as const,
+        gridColumns: Math.min(cols, urls.length),
+      },
+    }),
+  };
+
+  // ── Prepend H1 title if HTML doesn't contain one ─────────────────────
+  const hasH1InSections = sections.some(s => s.headingLevel === 'h1');
+  if (!hasH1InSections && dataSet.topic) {
+    blocks.push(mk.heading(dataSet.topic, 'h1', 12));
+  }
+
+  // ── Generate blocks per section ───────────────────────────────────────
+  sections.forEach((s, sIdx) => {
+    // First check if there's a direct H2→image mapping, then fall back to even distribution
+    const mappedImg = h2ImageMap.get((s.headingText || '').toLowerCase().trim()) || null;
+    const hasImg = !!mappedImg || sectionGetsImage.has(sIdx);
+    const img = mappedImg || (sectionGetsImage.has(sIdx) && globalImgIdx < remainingImages.length ? remainingImages[globalImgIdx] : null);
+
+    // Detect multi-image group (imageSteps with 2+ valid URLs)
+    const imageSteps: any[] = mappedImg?.imageSteps?.filter((st: any) => !!st.url) || [];
+    const isMultiImage = imageSteps.length >= 2;
+
+    // H1 title sections: always full width, no layout transformation
+    if (s.headingLevel === 'h1') {
+      if (s.headingText) blocks.push(mk.heading(s.headingText, 'h1', 12));
+      for (const p of s.paragraphs) blocks.push(mk.para(p.html, 12));
+      for (const l of s.lists) blocks.push(mk.para(l.html, 12));
+      for (const ib of s.infoboxes) blocks.push(mk.infobox(ib, 12));
+      return;
+    }
+
+    // Multi-image group: H2 + full-width text + gallery below
+    if (isMultiImage) {
+      if (s.headingText) blocks.push(mk.heading(s.headingText, s.headingLevel, 12));
+      for (const p of s.paragraphs) blocks.push(mk.para(p.html, 12));
+      for (const l of s.lists) blocks.push(mk.para(l.html, 12));
+      for (const ib of s.infoboxes) blocks.push(mk.infobox(ib, 12));
+      const urls = imageSteps.map((st: any) => st.url);
+      const captions = imageSteps.map((st: any) => st.description || st.name || '');
+      blocks.push(mk.inlineGallery(urls, captions, Math.min(imageSteps.length, 4)));
+      layoutCounter++;
+      return;
+    }
+
+    const layout = pickLayout(s, !!img);
+    if (img) {
+      if (!mappedImg) globalImgIdx++; // only increment for fallback images
+      layoutCounter++;
+    } else if (s.paragraphs.length > 0) layoutCounter++;
+
+    const level = s.headingLevel;
+    const mainPara = s.paragraphs[0];
+    const extraParas = s.paragraphs.slice(1);
+    const firstIb = s.infoboxes[0];
+    const extraIbs = s.infoboxes.slice(1);
+
+    switch (layout) {
+      case 'A': // H2(12) + para(6) + img(6)
+        if (s.headingText) blocks.push(mk.heading(s.headingText, level, 12));
+        if (mainPara && img) { blocks.push(mk.para(mainPara.html, 6)); blocks.push(mk.img(img, 6)); }
+        else if (mainPara) blocks.push(mk.para(mainPara.html, 12));
+        break;
+
+      case 'A2': // H2(12) + img(6) + para(6)
+        if (s.headingText) blocks.push(mk.heading(s.headingText, level, 12));
+        if (mainPara && img) { blocks.push(mk.img(img, 6)); blocks.push(mk.para(mainPara.html, 6)); }
+        else if (mainPara) blocks.push(mk.para(mainPara.html, 12));
+        break;
+
+      case 'B': // floatImg(left,6) + H2(6) + para(6)
+        if (img) {
+          blocks.push(mk.floatImg(img, 'left', 6, s.headingText ? 2 : 1));
+          if (s.headingText) blocks.push(mk.heading(s.headingText, level, 6));
+          if (mainPara) blocks.push(mk.para(mainPara.html, 6));
+        } else {
+          if (s.headingText) blocks.push(mk.heading(s.headingText, level, 12));
+          if (mainPara) blocks.push(mk.para(mainPara.html, 12));
+        }
+        break;
+
+      case 'B2': // floatImg(right,6) + H2(6) + para(6)
+        if (img) {
+          blocks.push(mk.floatImg(img, 'right', 6, s.headingText ? 2 : 1));
+          if (s.headingText) blocks.push(mk.heading(s.headingText, level, 6));
+          if (mainPara) blocks.push(mk.para(mainPara.html, 6));
+        } else {
+          if (s.headingText) blocks.push(mk.heading(s.headingText, level, 12));
+          if (mainPara) blocks.push(mk.para(mainPara.html, 12));
+        }
+        break;
+
+      case 'C': // H2(12) + para(12, 2 cols)
+        if (s.headingText) blocks.push(mk.heading(s.headingText, level, 12));
+        if (mainPara) blocks.push(mk.para(mainPara.html, 12, 2));
+        break;
+
+      case 'C+I': // H2(12) + para(8) + infobox(4)
+        if (s.headingText) blocks.push(mk.heading(s.headingText, level, 12));
+        if (mainPara) blocks.push(mk.para(mainPara.html, 8));
+        if (firstIb) blocks.push(mk.infobox(firstIb, 4));
+        break;
+
+      case 'B+G+I': { // gallery(float left,5) + H2(7) + para(7) + infobox(7)
+        const galleryUrls = [img?.url || '', ''];
+        blocks.push(mk.gallery(galleryUrls, 'left', 5, 3, 1));
+        if (s.headingText) blocks.push(mk.heading(s.headingText, level, 7));
+        if (mainPara) blocks.push(mk.para(mainPara.html, 7));
+        blocks.push(mk.infobox(firstIb || { title: 'Klíčové pojmy', html: '<p>Doplňte klíčové pojmy...</p>', variant: 'blue' }, 7));
+        break;
+      }
+
+      case 'B2+G+I': { // gallery(float right,5) + H2(7) + para(7) + infobox(7)
+        const galleryUrls = [img?.url || '', ''];
+        blocks.push(mk.gallery(galleryUrls, 'right', 5, 3, 1));
+        if (s.headingText) blocks.push(mk.heading(s.headingText, level, 7));
+        if (mainPara) blocks.push(mk.para(mainPara.html, 7));
+        blocks.push(mk.infobox(firstIb || { title: 'Klíčové pojmy', html: '<p>Doplňte klíčové pojmy...</p>', variant: 'blue' }, 7));
+        break;
+      }
+
+      default: // G: H2(12) + para(12)
+        if (s.headingText) blocks.push(mk.heading(s.headingText, level, 12));
+        if (mainPara) blocks.push(mk.para(mainPara.html, 12));
+        break;
+    }
+
+    // Append remaining content full-width
+    for (const p of extraParas) blocks.push(mk.para(p.html, 12));
+    for (const l of s.lists) blocks.push(mk.para(l.html, 12));
+    const remainingIbs = layout === 'C+I' ? extraIbs : (firstIb ? extraIbs : s.infoboxes);
+    for (const ib of remainingIbs) blocks.push(mk.infobox(ib, 12));
+  });
+
+  // ── Append saved charts at the end ─────────────────────────────────────────
+  const savedCharts: any[] = dataSet.media?.charts || [];
+  for (const ch of savedCharts) {
+    if (!ch.columns || !ch.rows || ch.rows.length === 0) continue;
+    const chartBlock: WorksheetBlock = {
+      id: `chart-${ch.id || Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      type: 'chart',
+      order: blocks.length,
+      width: 'full',
+      gridSpan: 12,
+      content: {
+        chartType: ch.chartType || 'bar',
+        chartTitle: ch.title || '',
+        chartColumns: ch.columns,
+        chartRows: ch.rows,
+        chartHeight: 320,
+      },
+    };
+    blocks.push(chartBlock);
+  }
+
+  // Skupiny obrázků → H2 nadpis + galerie
+  const imageGroups: any[] = dataSet.media?.imageGroups || [];
+  for (const group of imageGroups) {
+    const doneSubjects = (group.subjects || []).filter((s: any) => s.status === 'done' && s.imageUrl);
+    if (doneSubjects.length === 0) continue;
+    blocks.push(mk.heading(group.title, 'h2', 12));
+    const galleryBlock: WorksheetBlock = {
+      id: `ig-${group.id}-${Math.random().toString(36).slice(2, 7)}`,
+      type: 'image',
+      order: blocks.length,
+      width: 'full',
+      gridSpan: 12,
+      content: {
+        url: doneSubjects[0].imageUrl,
+        gallery: doneSubjects.map((s: any) => s.imageUrl),
+        galleryCaptions: doneSubjects.map((s: any) => s.name),
+        gridColumns: Math.min(doneSubjects.length, 4),
+        containerHeight: 220,
+      },
+    };
+    blocks.push(galleryBlock);
+  }
+
+  const finalBlocks = convertLegacyLayoutsToLayoutSections(blocks);
+  console.log(`[loadSourceTextAsBlocks] ${sections.length} sekcí → ${finalBlocks.length} bloků, ${h2ImageMap.size} H2→img mapování, ${globalImgIdx}/${remainingImages.length} fallback obrázků, ${savedCharts.length} grafů, ${imageGroups.length} skupin`);
+  return finalBlocks.length > 0 ? finalBlocks : null;
+}
 
 // =====================================================
 // MAIN EXPORT
@@ -21,15 +508,44 @@ export interface GenerateResult {
   success: boolean;
   id?: string;
   error?: string;
-  preview?: string; // Textový náhled vygenerovaného obsahu
+  preview?: string;
+  generationMethod?: 'two-agent' | 'legacy';
+  contentPlan?: ContentPlan;
+  /** ID propojeného boardu (pouze pro language aktivity) */
+  linkedBoardId?: string;
+}
+
+export type ProgressCallback = (step: string, detail?: string, payload?: unknown) => void;
+
+// Module-level folderId context – nastaví se před každým generováním a sdílí se
+// se všemi interními generátory bez nutnosti předávat parametr přes každou funkci.
+let _activeFolderId: string | null = null;
+
+function _saveWs(worksheet: Parameters<typeof saveWorksheet>[0]): void {
+  saveWorksheet({
+    ...worksheet,
+    blocks: convertLegacyLayoutsToLayoutSections(worksheet.blocks || []),
+  }, _activeFolderId);
+}
+function _saveQz(quiz: Parameters<typeof saveQuiz>[0]): void {
+  saveQuiz(quiz, _activeFolderId);
+}
+function _syncQz(quiz: Parameters<typeof syncQuizDirectToSupabase>[0]): Promise<boolean> {
+  return syncQuizDirectToSupabase(quiz, _activeFolderId);
+}
+function _saveDoc(doc: Parameters<typeof saveDocument>[0], content?: Parameters<typeof saveDocument>[1]): void {
+  saveDocument({ ...doc, folderId: _activeFolderId }, content);
 }
 
 export async function generateFromDataSet(
   dataSet: TopicDataSet,
-  materialType: string
+  materialType: string,
+  onProgress?: ProgressCallback,
+  folderId?: string | null
 ): Promise<GenerateResult> {
-  console.log(`[Generator] Generating ${materialType} from DataSet:`, dataSet.topic);
-  
+  console.log(`[Generator] Generating ${materialType} from DataSet:`, dataSet.topic, 'folder:', folderId);
+  _activeFolderId = folderId ?? null;
+
   switch (materialType) {
     case 'text':
       return generateText(dataSet);
@@ -38,7 +554,17 @@ export async function generateFromDataSet(
     case 'board-hard':
       return generateBoard(dataSet, 'hard');
     case 'worksheet':
-      return generateWorksheet(dataSet);
+      return generateWorksheet(dataSet, onProgress);
+    case 'textbook-page': {
+      // Pokud existuje učební text pro tento dataset, použij ho jako zdroj
+      const textMat = (dataSet.generatedMaterials ?? []).find((m: any) => m.type === 'text');
+      const sourceTextContent = textMat?.id ? await loadSourceTextContent(textMat.id) : null;
+      if (sourceTextContent) {
+        console.log('[Generator] Nalezen učební text, použiji ho jako zdroj pro list učebnice');
+        onProgress?.('source-text', 'Načten učební text jako zdroj obsahu...');
+      }
+      return generateTextbookPage(dataSet, onProgress, sourceTextContent ?? undefined);
+    }
     case 'test':
       return generateTest(dataSet);
     case 'lesson':
@@ -47,9 +573,113 @@ export async function generateFromDataSet(
       return generateMultipleLessons(dataSet);
     case 'methodology':
       return generateMethodology(dataSet);
+    case 'hodnoceni':
+      return generateHodnoceni(dataSet);
+    // ── Language-specific generators ──────────────────────────
+    case 'vocabulary-set':
+      return generateLanguageVocabularySet(dataSet, onProgress);
+    case 'grammar-lesson':
+      return generateLanguageGrammarLesson(dataSet, onProgress);
+    case 'reading-activity':
+      return generateLanguageReadingActivity(dataSet, onProgress);
+    case 'writing-activity':
+      return generateLanguageWritingActivity(dataSet, onProgress);
+    case 'speaking-activity':
+      return generateLanguageSpeakingActivity(dataSet, onProgress);
+    case 'language-quiz':
+      return generateLanguageQuiz(dataSet, onProgress);
+    case 'listening-activity':
+      return generateListeningActivity(dataSet, onProgress);
+    case 'unit-plan':
+      return generateUnitPlan(dataSet);
     default:
       return { success: false, error: `Neznámý typ materiálu: ${materialType}` };
   }
+}
+
+/**
+ * Pouze Agent 1 — vrátí ContentPlan bez generování bloků.
+ * Použij pro dvoustupňové generování kde uživatel plán schvaluje.
+ */
+export async function generateContentPlanOnly(
+  dataSet: TopicDataSet,
+  onProgress?: ProgressCallback
+): Promise<{ success: boolean; contentPlan?: ContentPlan; ragCount?: number; error?: string }> {
+  onProgress?.('rag', 'Hledám podobné pracovní listy v RAG databázi...');
+  const keyTerms = dataSet.content?.keyTerms?.map((t: any) => t.term) ?? [];
+  const ragExamples = await searchRagExamples({
+    topic: dataSet.topic,
+    subject: dataSet.subjectCode,
+    grade: dataSet.grade,
+    keyTerms,
+    matchCount: 3,
+  });
+  const ragSection = formatRagExamplesForPrompt(ragExamples);
+  onProgress?.('rag-done', `Nalezeno ${ragExamples.length} podobných listů v RAG databázi`, { examples: ragExamples, ragSection });
+
+  onProgress?.('agent1', 'Agent 1: Plánuji obsah pracovního listu...');
+  const contentPlan = await runContentAgent(dataSet, ragSection);
+  if (!contentPlan) {
+    return { success: false, error: 'Agent 1 selhal — nepodařilo se sestavit plán obsahu' };
+  }
+  onProgress?.('agent1-done', `Agent 1 hotovo — ${contentPlan.sections.length} sekcí, obtížnost: ${contentPlan.difficulty}, ${contentPlan.estimatedTimeMinutes} min`);
+
+  return { success: true, contentPlan, ragCount: ragExamples.length };
+}
+
+/**
+ * Pouze Agent 2 — vezme hotový ContentPlan a vygeneruje bloky.
+ * Použij po schválení plánu uživatelem.
+ */
+export async function generateFromContentPlan(
+  dataSet: TopicDataSet,
+  contentPlan: ContentPlan,
+  onProgress?: ProgressCallback,
+  folderId?: string | null
+): Promise<GenerateResult> {
+  _activeFolderId = folderId ?? _activeFolderId;
+  onProgress?.('rag', 'Načítám RAG příklady pro layout...');
+  const keyTerms = dataSet.content?.keyTerms?.map((t: any) => t.term) ?? [];
+  const ragExamples = await searchRagExamples({
+    topic: dataSet.topic,
+    subject: dataSet.subjectCode,
+    grade: dataSet.grade,
+    keyTerms,
+    matchCount: 3,
+  });
+  const ragSection = formatRagExamplesForPrompt(ragExamples);
+  onProgress?.('rag-done', `RAG: nalezeno ${ragExamples.length} příkladů pro Agent 2`, { examples: ragExamples, ragSection });
+
+  onProgress?.('agent2', 'Agent 2: Navrhuji layout a rozmísťuji bloky...');
+  const { text: layoutText } = await runLayoutAgent(dataSet, contentPlan, ragSection, 'worksheet', ragExamples, onProgress);
+  if (!layoutText) {
+    onProgress?.('error', 'Agent 2 selhal');
+    return { success: false, error: 'Agent 2 selhal — nepodařilo se vygenerovat layout' };
+  }
+  onProgress?.('agent2-done', `Agent 2 hotovo — layout připraven`);
+
+  onProgress?.('saving', 'Ukládám pracovní list...');
+  const blocks = parseTextToWorksheetBlocks(layoutText, dataSet);
+  const worksheetId = `worksheet-${Date.now()}`;
+  const worksheet: Worksheet = {
+    id: worksheetId,
+    title: contentPlan.title || `${dataSet.topic} - Pracovní list`,
+    blocks,
+    settings: { showAnswerKey: true, pageSize: 'A4', margins: 'normal' },
+    metadata: {
+      subject: dataSet.subjectCode,
+      grade: dataSet.grade,
+      topic: dataSet.topic,
+      estimatedTime: contentPlan.estimatedTimeMinutes,
+      sourceDatasetId: dataSet.id,
+    },
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+  _saveWs(worksheet);
+  onProgress?.('done', `Uloženo (${blocks.length} bloků)`);
+
+  return { success: true, id: worksheetId, preview: layoutText, generationMethod: 'two-agent', contentPlan };
 }
 
 // =====================================================
@@ -405,13 +1035,13 @@ B) správná odpověď *
 C) možnost
 D) možnost
 
-ABC OTÁZKA S OBRÁZKEM (použij název z 🖼️ OBRÁZKY nebo 🎨 ILUSTRACE):
+${(images.length > 0 || illustrations.length > 0) ? `ABC OTÁZKA S OBRÁZKEM (použij název z 🖼️ OBRÁZKY nebo 🎨 ILUSTRACE):
 OTÁZKA: Co je na tomto obrázku?
 OBRÁZEK: Řecká helma hoplíta
 A) Špatná odpověď
 B) Správná odpověď *
 C) Špatná odpověď
-D) Špatná odpověď
+D) Špatná odpověď` : ''}
 
 SPOJOVAČKA (4 dvojice):
 SPOJOVAČKA: Spoj správné dvojice
@@ -426,9 +1056,12 @@ Text věty s ___ mezerou. = správná odpověď
 Další věta s ___. = odpověď
 
 ===== PRAVIDLA PRO OBRÁZKY =====
-- K 1-2 ABC otázkám přidej obrázek - použij PŘESNÝ název ze seznamu výše
+${(images.length > 0 || illustrations.length > 0) ? `- K 1-2 ABC otázkám SMÍŠ přidat obrázek — použij PŘESNÝ název ze seznamu výše
 - Můžeš použít obrázky (🖼️) i ilustrace (🎨)
-- Min. 1 otázka typu "Co je na obrázku?" nebo "Co vidíš na ilustraci?"
+- Formát: OBRÁZEK: Přesný název ze seznamu` : `- ŽÁDNÉ obrázky nejsou k dispozici — ABSOLUTNĚ ZAKAZUJI:
+  - Nepiš "na tomto obrázku", "na ilustraci", "co vidíš na obrázku"
+  - Nepoužívej formát OBRÁZEK: ...
+  - Pátej POUZE textové otázky bez jakéhokoliv odkazu na vizuální materiály`}
 
 ZAČNI GENEROVAT:`;
 
@@ -437,7 +1070,7 @@ ZAČNI GENEROVAT:`;
   try {
     const response = await chatWithAIProxy(
       [{ role: 'user', content: prompt }],
-      'gemini-3.0-flash',
+      'gemini-3-flash',
       { temperature: 0.7, max_tokens: 4096 }
     );
     
@@ -464,17 +1097,18 @@ ZAČNI GENEROVAT:`;
       },
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
+      sourceDatasetId: dataSet.id,
     };
     
     // Uložit - localStorage může selhat, proto přímý sync do Supabase
     try {
-      saveQuiz(quiz);
+      _saveQz(quiz);
     } catch (e) {
       console.warn(`[Generator] localStorage failed for board ${quizId}:`, e);
     }
     
     // Přímý sync do Supabase (nezávisí na localStorage)
-    const synced = await syncQuizDirectToSupabase(quiz);
+    const synced = await _syncQz(quiz);
     if (!synced) {
       console.warn(`[Generator] Supabase sync failed for board ${quizId}`);
     }
@@ -684,17 +1318,902 @@ function parseTextToSlides(text: string, dataSet: TopicDataSet, difficulty: stri
 }
 
 // =====================================================
-// WORKSHEET GENERATOR - Textový přístup
+// WORKSHEET GENERATOR - Dvou-agentní pipeline
+// Agent 1: Obsahový (ContentPlan) → Agent 2: Designový (bloky)
 // =====================================================
 
-async function generateWorksheet(dataSet: TopicDataSet): Promise<GenerateResult> {
-  console.log('[Generator] Generating worksheet...');
+async function generateWorksheet(dataSet: TopicDataSet, onProgress?: ProgressCallback): Promise<GenerateResult> {
+  console.log('[Generator] Starting two-agent worksheet pipeline...');
+
+  // ── 0. RAG vyhledávání ──────────────────────────────────────────────────
+  onProgress?.('rag', 'Hledám podobné pracovní listy v RAG databázi...');
+  const keyTerms = dataSet.content?.keyTerms?.map((t: any) => t.term) ?? [];
+  const ragExamples = await searchRagExamples({
+    topic: dataSet.topic,
+    subject: dataSet.subjectCode,
+    grade: dataSet.grade,
+    keyTerms,
+    matchCount: 3,
+  });
+  const ragSection = formatRagExamplesForPrompt(ragExamples);
+  console.log(`[Generator] RAG: ${ragExamples.length} examples found`);
+  onProgress?.('rag-done', `RAG: nalezeno ${ragExamples.length} podobných listů`, { examples: ragExamples, ragSection });
+
+  // ── 1. Agent 1: Obsahový planer ─────────────────────────────────────────
+  onProgress?.('agent1', 'Agent 1: Plánuji obsah (sekce, cvičení, obrázky)...');
+  const contentPlan = await runContentAgent(dataSet, ragSection);
+  if (!contentPlan) {
+    console.warn('[Generator] Agent 1 failed, falling back to legacy generator');
+    onProgress?.('fallback', 'Agent 1 selhal → záložní generátor');
+    return { ...(await generateWorksheetLegacy(dataSet)), generationMethod: 'legacy' };
+  }
+  console.log('[Generator] Agent 1 done, sections:', contentPlan.sections.length);
+  onProgress?.('agent1-done', `Agent 1 ✅ — ${contentPlan.sections.length} sekcí, obtížnost: ${contentPlan.difficulty}, ${contentPlan.estimatedTimeMinutes} min`);
+
+  // ── 2. Agent 2: Designový ────────────────────────────────────────────────
+  onProgress?.('agent2', 'Agent 2: Navrhuji layout a rozmísťuji bloky...');
+  const { text: layoutText } = await runLayoutAgent(dataSet, contentPlan, ragSection, 'worksheet', ragExamples, onProgress);
+  if (!layoutText) {
+    console.warn('[Generator] Agent 2 failed, falling back to legacy generator');
+    onProgress?.('fallback', 'Agent 2 selhal → záložní generátor');
+    return { ...(await generateWorksheetLegacy(dataSet)), generationMethod: 'legacy' };
+  }
+  console.log('[Generator] Agent 2 done, layout text length:', layoutText.length);
+  onProgress?.('agent2-done', `Agent 2 ✅ — layout připraven (${layoutText.length} znaků)`);
+
+  // ── 3. Parsuj bloky a ulož ───────────────────────────────────────────────
+  const blocks = parseTextToWorksheetBlocks(layoutText, dataSet);
+  const worksheetId = `worksheet-${Date.now()}`;
+
+  const worksheet: Worksheet = {
+    id: worksheetId,
+    title: contentPlan.title || `${dataSet.topic} - Pracovní list`,
+    blocks,
+    settings: {
+      showAnswerKey: true,
+      pageSize: 'A4',
+      margins: 'normal',
+    },
+    metadata: {
+      subject: dataSet.subjectCode,
+      grade: dataSet.grade,
+      topic: dataSet.topic,
+      estimatedTime: contentPlan.estimatedTimeMinutes,
+      sourceDatasetId: dataSet.id,
+    },
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+
+  onProgress?.('saving', 'Ukládám pracovní list...');
+  _saveWs(worksheet);
+  console.log('[Generator] Worksheet saved:', worksheetId);
+  onProgress?.('done', `Hotovo ✅ — uloženo ${blocks.length} bloků`);
+  return { success: true, id: worksheetId, preview: layoutText, generationMethod: 'two-agent', contentPlan };
+}
+
+// ── Agent 1: Obsahový planer ─────────────────────────────────────────────────
+async function runContentAgent(
+  dataSet: TopicDataSet,
+  ragSection: string,
+  mode: 'worksheet' | 'textbook' = 'worksheet',
+  sourceTextContent?: string
+): Promise<ContentPlan | null> {
+  const context = buildContext(dataSet);
+
+  const images = dataSet.media?.images ?? [];
+  const illustrations = dataSet.media?.generatedIllustrations ?? [];
+  const imageList = [
+    ...images.map((img: any, i: number) =>
+      `[OBRAZ-${i}] url="${img.url}" title="${img.title}" popis="${img.description || ''}"`
+    ),
+    ...illustrations.map((ill: any, i: number) =>
+      `[ILUSTRACE-${i}] url="${ill.url || ''}" title="${ill.name || ill.title || ''}" popis="${ill.description || ''}"`
+    ),
+  ].join('\n');
+
+  const modeInstructions = mode === 'textbook' ? `
+## PRAVIDLA PRO LIST UČEBNICE
+- Toto je UČEBNÍ TEXT (stránka z učebnice), NE pracovní list s úkoly
+- Hlavní obsah: čtivé výkladové texty, vysvětlení pojmů, příběhy osobností, zajímavosti
+- Obrázky: POVINNĚ vyber 2-4 obrázky z datasetu — jsou klíčové pro učebnicový styl
+- Cvičení: MAX 1-2 krátká cvičení na konci (connect-pairs nebo fill-blank), zbytek je text
+- Sekce: 5-8 sekcí, převaha "reading", "intro", "timeline", "vocabulary"
+- Styl: přístupný, zajímavý, jako dobrá učebnice — ne suchý výčet faktů
+- Délka textů: obsáhlejší odstavce (8-15 vět), ne krátké bullet pointy
+- Konec: "summary" sekce s klíčovými poznatky
+- Vyber VŠECHNY dobré obrázky z datasetu — čím více, tím lepší (priorita: historické fotky, mapy, portréty osobností)
+` : `
+## PRAVIDLA PRO PRACOVNÍ LIST
+- Vždy začni s "intro" sekcí (shrnutí tématu)
+- Zahrni sekci "vocabulary" pro klíčové pojmy
+- Mix cvičení: alespoň 2 různé typy (multiple-choice, fill-blank, connect-pairs, free-answer)
+- Konec: "summary" sekce
+- Obrázky z datasetu jsou primární zdroj
+- Pro selectedImages použij přesné url z dostupných obrázků
+`;
+
+  const docLabel = mode === 'textbook' ? 'stránky učebnice' : 'pracovního listu';
+
+  const sourceTextSection = (mode === 'textbook' && sourceTextContent)
+    ? `\n## ⭐ ZDROJOVÝ UČEBNÍ TEXT (PRIORITNÍ ZDROJ)\nNíže je učební text který byl pro toto téma vygenerován. Použij ho jako HLAVNÍ ZDROJ obsahu — zachovej stejná fakta, stejnou terminologii, stejnou strukturu výkladu. Jen uprav formát do podoby vizuálně bohaté stránky učebnice.\n\n${sourceTextContent.substring(0, 6000)}\n`
+    : '';
+
+  const prompt = `Jsi pedagogický expert. Vytvoř plán obsahu ${docLabel} pro žáky.
+
+${ragSection}
+
+## VSTUPNÍ DATA
+Téma: ${dataSet.topic}
+Předmět: ${dataSet.subjectCode || 'Dějepis'}
+Ročník: ${dataSet.grade}. třída
+${sourceTextSection}
+## OBSAH Z DATASETU
+${context}
+
+## DOSTUPNÉ OBRÁZKY A ILUSTRACE
+${imageList || 'Žádné obrázky nejsou dostupné.'}
+
+${modeInstructions}
+
+## ÚKOL
+⚠️ ZÁVAZNÉ: Pokud jsou výše uvedeny vzory (VZOR 1, VZOR 2...), plán MUSÍ odpovídat jejich rozsahu a struktuře. Počet sekcí, typy cvičení a výběr obrázků kopíruj ze vzorů!
+
+Vytvoř ContentPlan jako JSON:
+1. title — hlavní název
+2. learningGoal — co žák po přečtení/vyplnění umí
+3. difficulty — "easy" | "medium" | "hard"
+4. estimatedTimeMinutes — odhadovaný čas
+5. selectedImages — ${mode === 'textbook' ? '2-4 obrázky' : '1-3 obrázky'} z dostupných (přesné URL)
+6. sections — ${mode === 'textbook' ? '5-8' : '6-10'} sekcí (podle vzorů výše)
+
+Pro každou sekci:
+- type: "intro" | "vocabulary" | "exercise-multiple-choice" | "exercise-fill-blank" | "exercise-free-answer" | "exercise-connect-pairs" | "timeline" | "reading" | "summary"
+- title, content, items (pole), layoutHint (nápověda pro designéra — odvoď z layoutu vzorů)
+
+Výstup: POUZE validní JSON, žádný jiný text.
+
+\`\`\`json
+{
+  "title": "...",
+  "learningGoal": "...",
+  "difficulty": "medium",
+  "estimatedTimeMinutes": 45,
+  "selectedImages": [
+    {
+      "url": "...",
+      "title": "...",
+      "description": "...",
+      "suggestedPlacement": "intro",
+      "sectionIndex": 0,
+      "sectionHint": "..."
+    }
+  ],
+  "sections": [
+    {
+      "type": "intro",
+      "title": "...",
+      "content": "...",
+      "items": [],
+      "layoutHint": "..."
+    }
+  ]
+}
+\`\`\``;
+
+  try {
+    const response = await chatWithAIProxy(
+      [
+        { role: 'system', content: 'Jsi expert na tvorbu vzdělávacích materiálů. Odpovídáš VÝHRADNĚ validním JSON objektem dle zadané struktury. Žádný jiný text.' },
+        { role: 'user', content: prompt },
+      ],
+      'gemini-3-pro',
+      { temperature: 0.4, max_tokens: 8192 }
+    );
+
+    // Robustní extrakce JSON — Gemini občas přidá text před/za JSON
+    let jsonStr = response.trim();
+
+    // 1. zkus ```json ... ```
+    const fencedMatch = jsonStr.match(/```(?:json)?\s*([\s\S]+?)\s*```/);
+    if (fencedMatch) {
+      jsonStr = fencedMatch[1].trim();
+    } else {
+      // 2. najdi první { a poslední } — vezmi vše mezi nimi
+      const start = jsonStr.indexOf('{');
+      const end = jsonStr.lastIndexOf('}');
+      if (start !== -1 && end !== -1 && end > start) {
+        jsonStr = jsonStr.slice(start, end + 1);
+      }
+    }
+
+    console.log('[Agent 1] Parsing JSON, length:', jsonStr.length, 'preview:', jsonStr.substring(0, 200));
+    const plan = JSON.parse(jsonStr) as ContentPlan;
+
+    // Validace minimální struktury
+    if (!plan.sections || !Array.isArray(plan.sections) || plan.sections.length === 0) {
+      console.error('[Agent 1] ContentPlan has no sections');
+      return null;
+    }
+
+    return plan;
+  } catch (err) {
+    console.error('[Agent 1] Failed to parse ContentPlan:', err);
+    console.error('[Agent 1] Raw response (first 500):', response?.substring(0, 500));
+    return null;
+  }
+}
+
+// ── Agent 2: Designový / Layout Designer ────────────────────────────────────
+
+/**
+ * Returns the selected template (first matching layout) or null.
+ * Checks both built-in TEXTBOOK_LAYOUTS and custom layouts from localStorage.
+ */
+function getSelectedTemplate(selectedLayoutIds: string[]): import('../textbook-layouts').TextbookLayout | null {
+  if (selectedLayoutIds.length === 0) return null;
+  const targetId = selectedLayoutIds[0];
+  // Built-in layouts
+  const builtIn = TEXTBOOK_LAYOUTS.find(l => l.id === targetId);
+  if (builtIn) return builtIn;
+  // Custom layouts from localStorage
+  try {
+    const custom: import('../textbook-layouts').TextbookLayout[] = JSON.parse(localStorage.getItem('vividbooks_custom_layouts') || '[]');
+    return custom.find(l => l.id === targetId) ?? null;
+  } catch { return null; }
+}
+
+async function runLayoutAgent(
+  dataSet: TopicDataSet,
+  contentPlan: ContentPlan,
+  ragSection: string,
+  mode: 'worksheet' | 'textbook' = 'worksheet',
+  ragExamples: RagExample[] = [],
+  onProgress?: ProgressCallback,
+  selectedLayoutIds: string[] = []
+): Promise<{ blocks?: WorksheetBlock[]; text?: string; template: import('../textbook-layouts').TemplateSlot[] | null }> {
+
+  // ── Template-fill mode: a layout is selected ────────────────────────────
+  const selectedLayout = getSelectedTemplate(selectedLayoutIds);
+  console.log('[Agent 2] selectedLayoutIds:', selectedLayoutIds, '→ template:', selectedLayout?.id ?? 'none (free-form)');
+
+  if (selectedLayout && mode === 'textbook') {
+    console.log('[Agent 2] ✅ Template-fill mode — layout:', selectedLayout.name, `(${selectedLayout.template.length} slotů)`);
+    const { blocks, template } = await runTemplateFillAgent(dataSet, contentPlan, selectedLayout, onProgress);
+    return { blocks, template };
+  }
+
+  // ── Free-form mode (existing logic) ───────────────────────────────────────
+  console.log('[Agent 2] 🔄 Free-form mode (no template selected or worksheet mode)');
+  const freeFormText = await runFreeFormLayoutAgent(
+    dataSet, contentPlan, ragSection, mode, ragExamples, onProgress, selectedLayoutIds
+  );
+  return { text: freeFormText ?? '', template: null };
+}
+
+/**
+ * Template-fill mode: structure is 100% from the template, AI only returns JSON content.
+ *
+ * Steps:
+ * 1. Build all WorksheetBlocks from the template (structure guaranteed).
+ * 2. Ask AI to fill just the text/URL content for each non-fixed slot (JSON response).
+ * 3. Merge AI content into the pre-built blocks.
+ *
+ * Returns blocks directly — no text parsing needed.
+ */
+async function runTemplateFillAgent(
+  dataSet: TopicDataSet,
+  contentPlan: ContentPlan,
+  layout: import('../textbook-layouts').TextbookLayout,
+  onProgress?: ProgressCallback
+): Promise<{ blocks: WorksheetBlock[]; template: import('../textbook-layouts').TemplateSlot[] }> {
+
+  // ── Collect media ──────────────────────────────────────────────────────────
+  const allMedia = [
+    ...(dataSet.media?.generatedIllustrations || []),
+    ...(dataSet.media?.generatedPhotos || []),
+    ...(dataSet.media?.images || []),
+  ];
+
+  const imageList = allMedia.length > 0
+    ? allMedia.map((m: any) => `- ${m.url || ''} (${m.title || m.name || 'bez názvu'})`).join('\n')
+    : '(žádné obrázky)';
+
+  // ── Full content from ContentPlan (no truncation!) ─────────────────────────
+  const contentSummary = contentPlan.sections.map((s, i) =>
+    `${i + 1}. [${s.type}] "${s.title}"\nObsah: ${s.content}`
+  ).join('\n\n');
+
+  // ── Build slot list for AI (only non-fixed slots) ──────────────────────────
+  const fillableSlots = layout.template.filter(s => !s.fixed);
+  const slotList = fillableSlots.map(s => {
+    const typeHint = s.type.toUpperCase();
+    const widthHint = s.width === 'half' ? ' [polovina šíře]' : '';
+    const imgHint = s.imageSlot ? ' → vrať URL obrázku z datasetu' : '';
+    const formatHint: Record<string, string> = {
+      'connect-pairs': ' → formát: "Pojem | Definice" (každý pár na nový řádek)',
+      'fill-blank':    ' → formát: "věta s ___ mezerou = odpověď"',
+      'multiple-choice': ' → formát: "Otázka?\\nA) možnost\\nB) správná *\\nC) možnost"',
+      'table':         ' → formát: "Záhlaví A | Záhlaví B\\nHodnota 1 | Hodnota 2"',
+      'free-answer':   ' → vrať text otázky',
+      'heading-h1':    ' → 2-5 slov',
+      'heading':       ' → 3-6 slov',
+    };
+    const extra = imgHint || formatHint[s.type] || '';
+    return `  "${s.id}": "${typeHint}${widthHint} — ${s.role}${extra}"`;
+  }).join(',\n');
+
+  const prompt = `Vyplňuješ stránku učebnice "${dataSet.topic}" (${dataSet.subjectCode}, ${dataSet.grade}. třída).
+
+## UČEBNÍ TEXT — použij tento obsah v plném rozsahu:
+${contentSummary}
+
+## DOSTUPNÉ OBRÁZKY (pro IMAGE sloty vrať přesné URL):
+${imageList}
+
+## ÚKOL
+Rozděl výše uvedený učební text do slotů šablony. NEKRAŤ, NEPŘEPISUJ — použij přímo dodaný obsah.
+Pro odstavce (PARAGRAPH) použij celé pasáže z učebního textu, ne jen shrnutí.
+Pro nadpisy (HEADING) použij nadpisy z učebního textu.
+Pro infobox, connect-pairs atd. extrahuj relevantní data z textu.
+
+Vrať POUZE validní JSON (bez markdown backticks):
+{
+${slotList}
+}
+
+PRAVIDLA:
+- Použij přesně dodaný text, nevymýšlej vlastní
+- Pro PARAGRAPH sloty: plné odstavce (5–10 vět), ne zkráceniny
+- Pro IMAGE sloty: vrať přesné URL ze seznamu výše
+- Nevynechej žádný klíč
+- Piš v češtině`;
+
+  onProgress?.('agent2-prompt', `Template-fill JSON prompt (${prompt.length} znaků)`, { prompt });
+
+  // ── Ask AI for JSON content ────────────────────────────────────────────────
+  let contentMap: Record<string, string> = {};
+  try {
+    const response = await chatWithAIProxy(
+      [
+        {
+          role: 'system',
+          content: 'Jsi asistent vyplňující obsah do šablon učebnic. Vrať POUZE čistý JSON bez markdown. Žádný jiný text. Použij CELÝ dodaný obsah — nepřepisuj ho vlastními slovy, ale využij ho v plném rozsahu.',
+        },
+        { role: 'user', content: prompt },
+      ],
+      'gemini-3-pro',
+      { temperature: 0.4, max_tokens: 8192 }
+    );
+
+    onProgress?.('agent2-raw', `JSON odpověď (${response.length} znaků)`, { raw: response });
+
+    // Strip markdown fences if present
+    const cleaned = response.replace(/```json?\s*/gi, '').replace(/```\s*/g, '').trim();
+    contentMap = JSON.parse(cleaned);
+    console.log('[Agent 2 Template] AI JSON parsed OK, keys:', Object.keys(contentMap).join(', '));
+  } catch (err) {
+    console.error('[Agent 2 Template] JSON parse failed:', err);
+    // Fallback: build blocks from template with placeholder content
+  }
+
+  // ── Build blocks from template + AI content ────────────────────────────────
+  const resolveImageUrl = (raw: string): { url: string; caption: string } => {
+    const s = raw.trim();
+    if (s.startsWith('http://') || s.startsWith('https://')) return { url: s, caption: '' };
+    const nameLower = s.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const found = allMedia.find((m: any) => {
+      const title = ((m as any).title || (m as any).name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      return title && (title.includes(nameLower) || nameLower.includes(title));
+    });
+    if (found) return { url: (found as any).url || '', caption: s };
+    if (allMedia.length > 0) return { url: (allMedia[0] as any).url || '', caption: s };
+    return { url: '', caption: s };
+  };
+
+  const blocks: WorksheetBlock[] = [];
+  let order = 0;
+  let i = 0;
+
+  while (i < layout.template.length) {
+    const slot = layout.template[i];
+    const content = String(contentMap[String(slot.id)] ?? '');
+
+    // Check if consecutive half-width slots → side-by-side
+    const nextSlot = layout.template[i + 1];
+    const isPair = slot.width === 'half' && nextSlot?.width === 'half';
+
+    if (isPair) {
+      const content2 = String(contentMap[String(nextSlot.id)] ?? '');
+      blocks.push(makeTemplateBlock(slot, content, order++, 'half', dataSet, resolveImageUrl));
+      blocks.push(makeTemplateBlock(nextSlot, content2, order++, 'half', dataSet, resolveImageUrl));
+      i += 2;
+    } else {
+      blocks.push(makeTemplateBlock(slot, content, order++, slot.width, dataSet, resolveImageUrl));
+      i++;
+    }
+  }
+
+  console.log('[Agent 2 Template] Built', blocks.length, 'blocks from template:', layout.id);
+  return { blocks, template: layout.template };
+}
+
+/**
+ * Original free-form layout generation (existing logic, renamed).
+ */
+async function runFreeFormLayoutAgent(
+  dataSet: TopicDataSet,
+  contentPlan: ContentPlan,
+  ragSection: string,
+  mode: 'worksheet' | 'textbook' = 'worksheet',
+  ragExamples: RagExample[] = [],
+  onProgress?: ProgressCallback,
+  selectedLayoutIds: string[] = []
+): Promise<string | null> {
+
+  // Sestavíme popis dostupných bloků pro designéra
+  const blocksGuide = `
+DOSTUPNÉ TYPY BLOKŮ (použij PŘESNĚ tato klíčová slova):
+
+HEADER:
+Jméno: ________________ Třída: ________ Datum: ________
+
+HEADING-H1:
+Hlavní nadpis (pouze jeden, na začátku)
+
+HEADING:
+Podnadpis sekce (H2)
+
+PARAGRAPH:
+Odstavec textu.
+
+PARAGRAPH: HALF LAYOUT
+Text na půl šířky (vedle obrázku nebo infoboxu).
+
+INFOBOX:
+Zvýrazněný rámeček s důležitou informací.
+
+INFOBOX: HALF LAYOUT
+Infobox na půl šířky.
+
+OBRÁZEK: url obrázku nebo název
+(Používej pro obrázky z datasetu)
+
+TABLE:
+Sloupec A | Sloupec B
+Hodnota 1 | Hodnota 2
+
+MULTIPLE-CHOICE:
+Otázka?
+A) možnost
+B) správná odpověď *
+C) možnost
+D) možnost
+
+FILL-BLANK:
+Věta s ___ mezerou pro doplnění. = správná odpověď
+
+FREE-ANSWER:
+Otevřená otázka pro žáka?
+
+CONNECT-PAIRS:
+Pojem 1 | Definice 1
+Pojem 2 | Definice 2
+Pojem 3 | Definice 3
+
+FOOTER:
+Zpětná vazba: 😊 😐 ☹️
+
+PRAVIDLA FORMÁTU:
+- Typ bloku VŽDY VELKÝMI PÍSMENY + dvojtečka
+- Obsah VŽDY na nových řádcích (nikoli na stejném jako typ)
+- Prázdný řádek mezi bloky
+- HEADING-H1 pouze jednou na začátku
+- Začni VŽDY s "HEADER:"
+`.trim();
+
+  // Shrnutí ContentPlan pro designéra
+  const contentSummary = contentPlan.sections.map((s, i) => {
+    const imgForSection = contentPlan.selectedImages?.filter(img => img.sectionIndex === i) ?? [];
+    const imgNote = imgForSection.length > 0
+      ? `\n    → Obrázek: ${imgForSection.map(img => img.url).join(', ')} (${imgForSection[0].sectionHint || ''})`
+      : '';
+    return `${i + 1}. [${s.type}] "${s.title}"
+   Obsah: ${s.content.substring(0, 200)}${s.content.length > 200 ? '...' : ''}
+   ${s.items && s.items.length > 0 ? `Položky (${s.items.length}x): ${s.items.slice(0, 3).join(' | ')}${s.items.length > 3 ? '...' : ''}` : ''}
+   Hint designu: ${s.layoutHint || '–'}${imgNote}`;
+  }).join('\n\n');
+
+  const layoutTemplate = formatRagAsLayoutTemplate(ragExamples);
+
+  // Vybrané layout typy uživatelem
+  const chosenLayouts = selectedLayoutIds.length > 0
+    ? TEXTBOOK_LAYOUTS.filter(l => selectedLayoutIds.includes(l.id))
+    : [];
+  const selectedLayoutsSection = chosenLayouts.length > 0
+    ? `## 🎯 UŽIVATELEM VYBRANÉ TYPY LAYOUTU — POVINNĚ POUŽIJ TYTO SEKVENCE BLOKŮ
+
+Uživatel vybral ${chosenLayouts.length} typů layoutu. MUSÍŠ je zapracovat do stránky v tomto pořadí:
+${layoutsToAgent2Prompt(chosenLayouts)}
+
+⚠️ KAŽDÝ vybraný layout musí být na stránce zastoupen alespoň jednou.
+⚠️ Bloky z každé sekce naplň obsahem z ContentPlan výše.
+---`
+    : '';
+
+  const prompt = `Jsi expert na design vzdělávacích pracovních listů. Převeď ContentPlan do formátu bloků.
+
+${ragSection}
+
+${layoutTemplate}
+
+${selectedLayoutsSection}
+
+## OBSAH (od Agenta 1 — obsahového planera)
+Název: ${contentPlan.title}
+Cíl: ${contentPlan.learningGoal}
+Obtížnost: ${contentPlan.difficulty}
+Čas: ${contentPlan.estimatedTimeMinutes} minut
+
+SEKCE:
+${contentSummary}
+
+## DOSTUPNÉ BLOKY A JEJICH FORMÁT
+${blocksGuide}
+
+## TVŮJ ÚKOL
+Přepiš CELÝ ContentPlan do formátu bloků.
+
+⚠️ PRIORITY (seřazeno od nejdůležitějšího):
+1. STRUKTURÁLNÍ ŠABLONA výše — dodržuj počet a pořadí bloků
+2. VZORY výše — pokud mají HALF LAYOUT, INFOBOX, cvičení, MUSÍŠ je také použít
+3. Níže uvedená pravidla jsou jen doplňková — NESMÍ omezovat co říkají vzory
+
+${mode === 'textbook' ? `### PRAVIDLA PRO LIST UČEBNICE (platí jen tam kde vzory neurčují jinak)
+- Toto je STRÁNKA UČEBNICE — důraz na čtivý výklad, vizuální bohatost
+- intro sekce → HEADING-H1 + PARAGRAPH (delší, 8-12 vět)
+- reading sekce → střídej PARAGRAPH a PARAGRAPH: HALF LAYOUT + OBRÁZEK: HALF LAYOUT naproti
+- Každá reading sekce by měla mít alespoň 1 PARAGRAPH: HALF LAYOUT + OBRÁZEK: HALF LAYOUT pár
+- vocabulary sekce → TABLE (Pojem | Vysvětlení) nebo INFOBOX: HALF LAYOUT pro každý pojem
+- timeline sekce → TABLE s roky nebo INFOBOX: HALF LAYOUT pro každou událost
+- Obrázky: POVINNĚ umísti VŠECHNY obrázky z ContentPlan.selectedImages — VŽDY jako OBRÁZEK: HALF LAYOUT vedle textu
+- Cvičení: zahrň TOLIK cvičení kolik ukazují vzory (CONNECT-PAIRS, FILL-BLANK, FREE-ANSWER, MULTIPLE-CHOICE)
+- Přidej INFOBOX bloky pro zajímavosti — "Věděl jsi, že...", tipy, citáty
+- summary sekce → INFOBOX se shrnutím klíčových poznatků
+- Styl: vizuálně bohatý, jako moderní učebnice — NIKDY ne jednoduchý seznam odstavců` : `### PRAVIDLA PRO PRACOVNÍ LIST
+- intro sekce → PARAGRAPH (nebo PARAGRAPH: HALF LAYOUT + OBRÁZEK vedle sebe)
+- vocabulary sekce → TABLE (2 sloupce: Pojem | Definice)
+- timeline sekce → TABLE nebo PARAGRAPH s chronologickým seznamem
+- exercise-multiple-choice → MULTIPLE-CHOICE blok
+- exercise-fill-blank → FILL-BLANK blok
+- exercise-connect-pairs → CONNECT-PAIRS blok
+- exercise-free-answer → FREE-ANSWER blok
+- Pokud má sekce layoutHint "dvousloupec" → použij PARAGRAPH: HALF LAYOUT + INFOBOX: HALF LAYOUT
+- Pokud má sekce layoutHint "infobox" → INFOBOX blok
+- Pro obrázky: OBRÁZEK: [url z ContentPlan.selectedImages]
+- Obrázky umísti vedle textu (PARAGRAPH: HALF LAYOUT + OBRÁZEK: ...)`}
+
+Dodržuj přesný formát. Začni s HEADER:, konči FOOTER:.`;
+
+  // Send the full prompt to UI for debugging
+  onProgress?.('agent2-prompt', `Prompt Agent 2 (${prompt.length} znaků)`, { prompt });
+
+  try {
+    const response = await chatWithAIProxy(
+      [
+        {
+          role: 'system',
+          content: `Jsi designér ${mode === 'textbook' ? 'stránek učebnice' : 'pracovních listů'}. MUSÍŠ dodržet PŘESNÝ formát bloků.
+ABSOLUTNÍ PRAVIDLA:
+1. Každý blok MUSÍ začínat klíčovým slovem VELKÝMI PÍSMENY + dvojtečka
+2. Obsah VŽDY na NOVÝCH ŘÁDCÍCH, prázdný řádek mezi bloky
+3. Žádný Markdown (žádné #, **, _)
+4. Začni VŽDY s "HEADER:"
+5. HALF LAYOUT: "PARAGRAPH: HALF LAYOUT" a "OBRÁZEK: HALF LAYOUT" jsou vždy páry vedle sebe — použij je pro vizuální bohatost
+6. Dodržuj STRUKTURÁLNÍ ŠABLONU a vzory — jsou závazné${mode === 'textbook' ? '\n7. Umísti KAŽDÝ obrázek z ContentPlan.selectedImages — žádný nevynechej\n8. NIKDY negeneruj méně než 18 bloků pro list učebnice' : ''}`,
+        },
+        { role: 'user', content: prompt },
+      ],
+      'gemini-3-pro',
+      { temperature: 0.5, max_tokens: 8192 }
+    );
+
+    // Send raw response to UI for debugging
+    onProgress?.('agent2-raw', `Raw výstup Agent 2 (${response.length} znaků)`, { raw: response });
+
+    if (!response.trim().startsWith('HEADER:')) {
+      return normalizeWorksheetResponse(response);
+    }
+    return response;
+  } catch (err) {
+    console.error('[Agent 2] Layout generation failed:', err);
+    return null;
+  }
+}
+
+// =====================================================
+// TEXTBOOK PAGE GENERATOR - Dvou-agentní pipeline
+// Jako worksheet, ale: více textu, více obrázků, méně úkolů
+// =====================================================
+
+async function generateTextbookPage(dataSet: TopicDataSet, onProgress?: ProgressCallback, sourceTextContent?: string): Promise<GenerateResult> {
+  console.log('[Generator] Starting textbook page two-agent pipeline...');
+
+  onProgress?.('rag', 'Hledám podobné listy učebnice v RAG databázi...');
+  const keyTerms = dataSet.content?.keyTerms?.map((t: any) => t.term) ?? [];
+  const ragExamples = await searchRagExamples({
+    topic: dataSet.topic,
+    subject: dataSet.subjectCode,
+    grade: dataSet.grade,
+    keyTerms,
+    matchCount: 3,
+  });
+  const ragSection = formatRagExamplesForPrompt(ragExamples, 'textbook');
+  onProgress?.('rag-done', `RAG: nalezeno ${ragExamples.length} podobných listů`, { examples: ragExamples, ragSection });
+
+  onProgress?.('agent1', 'Agent 1: Plánuji obsah stránky učebnice...');
+  const contentPlan = await runContentAgent(dataSet, ragSection, 'textbook', sourceTextContent);
+  if (!contentPlan) {
+    onProgress?.('fallback', 'Agent 1 selhal → záložní generátor');
+    return { ...(await generateWorksheetLegacy(dataSet)), generationMethod: 'legacy' };
+  }
+  onProgress?.('agent1-done', `Agent 1 ✅ — ${contentPlan.sections.length} sekcí, ${contentPlan.estimatedTimeMinutes} min`);
+
+  onProgress?.('agent2', 'Agent 2: Navrhuji vizuální layout stránky učebnice...');
+  const layoutResult = await runLayoutAgent(dataSet, contentPlan, ragSection, 'textbook', ragExamples, onProgress);
+  onProgress?.('agent2-done', `Agent 2 ✅ — layout připraven`);
+
+  onProgress?.('saving', 'Ukládám list učebnice...');
+  let blocks: WorksheetBlock[];
+  if (layoutResult.blocks) {
+    // Template-fill mode: blocks already built from template
+    blocks = layoutResult.blocks;
+  } else if (layoutResult.text) {
+    // Free-form mode: parse text response
+    const text = layoutResult.text;
+    blocks = layoutResult.template
+      ? fillTemplateWithContent(layoutResult.template, text, dataSet)
+      : parseTextToWorksheetBlocks(text, dataSet);
+  } else {
+    onProgress?.('fallback', 'Agent 2 selhal → záložní generátor');
+    return { ...(await generateWorksheetLegacy(dataSet)), generationMethod: 'legacy' };
+  }
+  const worksheetId = `worksheet-${Date.now()}`;
+
+  const worksheet: Worksheet = {
+    id: worksheetId,
+    title: contentPlan.title || `${dataSet.topic} - List učebnice`,
+    blocks,
+    settings: { showAnswerKey: false, pageSize: 'A4', margins: 'normal' },
+    metadata: {
+      subject: dataSet.subjectCode,
+      grade: dataSet.grade,
+      topic: dataSet.topic,
+      estimatedTime: contentPlan.estimatedTimeMinutes,
+      sourceDatasetId: dataSet.id,
+    },
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+
+  _saveWs(worksheet);
+  onProgress?.('done', `Hotovo ✅ — uloženo ${blocks.length} bloků`);
+  return { success: true, id: worksheetId, preview: layoutResult.text || '', generationMethod: 'two-agent', contentPlan };
+}
+
+export async function generateTextbookPlanOnly(
+  dataSet: TopicDataSet,
+  onProgress?: ProgressCallback,
+  sourceTextContent?: string
+): Promise<{ success: boolean; contentPlan?: ContentPlan; ragCount?: number; error?: string }> {
+  onProgress?.('rag', 'Hledám podobné listy učebnice v RAG databázi...');
+  const keyTerms = dataSet.content?.keyTerms?.map((t: any) => t.term) ?? [];
+  const ragExamples = await searchRagExamples({
+    topic: dataSet.topic,
+    subject: dataSet.subjectCode,
+    grade: dataSet.grade,
+    keyTerms,
+    matchCount: 3,
+  });
+  const ragSection = formatRagExamplesForPrompt(ragExamples, 'textbook');
+  onProgress?.('rag-done', `Nalezeno ${ragExamples.length} podobných listů v RAG databázi`, { examples: ragExamples, ragSection });
+
+  if (sourceTextContent) {
+    onProgress?.('source-text', '📄 Učební text načten — použiji ho jako zdroj obsahu...');
+  }
+
+  onProgress?.('agent1', 'Agent 1: Plánuji obsah stránky učebnice...');
+  const contentPlan = await runContentAgent(dataSet, ragSection, 'textbook', sourceTextContent);
+  if (!contentPlan) {
+    return { success: false, error: 'Agent 1 selhal — nepodařilo se sestavit plán obsahu' };
+  }
+  onProgress?.('agent1-done', `Agent 1 hotovo — ${contentPlan.sections.length} sekcí, ${contentPlan.estimatedTimeMinutes} min`);
+  return { success: true, contentPlan, ragCount: ragExamples.length };
+}
+
+export async function generateTextbookFromContentPlan(
+  dataSet: TopicDataSet,
+  contentPlan: ContentPlan,
+  onProgress?: ProgressCallback,
+  _selectedLayoutIds: string[] = [],
+  folderId?: string
+): Promise<GenerateResult> {
+  if (folderId) _activeFolderId = folderId;
+
+  onProgress?.('agent2', 'Skládám obsah do bloků...');
+
+  const blocks: WorksheetBlock[] = [];
+  let order = 0;
+
+  // Build section→image map from Agent 1's selectedImages (which have sectionIndex)
+  const imagesBySectionIndex = new Map<number, { url: string; title: string }>();
+  console.log('[TextbookGen] selectedImages from plan:', JSON.stringify(contentPlan.selectedImages?.map((i: any) => ({ url: i.url?.substring(0, 40), sectionIndex: i.sectionIndex }))));
+  for (const img of (contentPlan.selectedImages || [])) {
+    const url = (img as any).url;
+    const idx = (img as any).sectionIndex;
+    if (url && idx !== undefined && idx !== null && !imagesBySectionIndex.has(idx)) {
+      imagesBySectionIndex.set(idx, { url, title: (img as any).title || '' });
+    }
+  }
+  console.log('[TextbookGen] imagesBySectionIndex keys:', [...imagesBySectionIndex.keys()]);
+
+  const INFOBOX_TYPES = new Set(['vocabulary', 'summary']);
+  const isInfobox = (type: string) => INFOBOX_TYPES.has(type);
+
+  // H1 — hlavní nadpis, celá šířka
+  blocks.push({
+    id: generateBlockId(),
+    type: 'heading',
+    order: order++,
+    width: 'full',
+    gridSpan: 12,
+    content: { text: contentPlan.title || dataSet.topic, level: 'h1' },
+  });
+
+  for (let si = 0; si < contentPlan.sections.length; si++) {
+    const section = contentPlan.sections[si];
+    const img = imagesBySectionIndex.get(si);
+    const useInfobox = isInfobox(section.type);
+
+    // H2 nadpis — vždy celá šířka
+    blocks.push({
+      id: generateBlockId(),
+      type: 'heading',
+      order: order++,
+      width: 'full',
+      gridSpan: 12,
+      content: { text: section.title, level: 'h2' },
+    });
+
+    if (useInfobox) {
+      // Vocabulary / summary → infobox styl, celá šířka
+      blocks.push({
+        id: generateBlockId(),
+        type: 'paragraph',
+        order: order++,
+        width: 'full',
+        gridSpan: 12,
+        content: { html: `<p>${section.content || ''}</p>` },
+        visualStyles: {
+          displayPreset: 'infobox',
+          backgroundColor: section.type === 'summary' ? '#f0fdf4' : '#dbeafe',
+          borderColor: section.type === 'summary' ? '#22c55e' : '#3b82f6',
+          borderRadius: 12,
+        },
+      } as WorksheetBlock);
+    } else if (img) {
+      // Sekce s obrázkem → text na levou půlku, obrázek na pravou půlku
+      blocks.push({
+        id: generateBlockId(),
+        type: 'paragraph',
+        order: order++,
+        width: 'half',
+        gridSpan: 6,
+        content: { html: `<p>${section.content || ''}</p>` },
+      });
+      blocks.push({
+        id: generateBlockId(),
+        type: 'image',
+        order: order++,
+        width: 'half',
+        gridSpan: 6,
+        content: { url: img.url, alt: img.title, caption: img.title, alignment: 'center', size: 100 },
+      });
+    } else {
+      // Sekce bez obrázku → text na celou šířku
+      blocks.push({
+        id: generateBlockId(),
+        type: 'paragraph',
+        order: order++,
+        width: 'full',
+        gridSpan: 12,
+        content: { html: `<p>${section.content || ''}</p>` },
+      });
+    }
+  }
+
+  console.log('[TextbookGen] Built', blocks.length, 'blocks (rule-based layout)');
+
+  // ── Append saved charts ──────────────────────────────────────────────────────
+  const savedCharts: any[] = dataSet.media?.charts || [];
+  for (const ch of savedCharts) {
+    if (!ch.columns || !ch.rows || ch.rows.length === 0) continue;
+    blocks.push({
+      id: generateBlockId(),
+      type: 'chart',
+      order: order++,
+      width: 'full',
+      gridSpan: 12,
+      content: {
+        chartType: ch.chartType || 'bar',
+        chartTitle: ch.title || '',
+        chartColumns: ch.columns,
+        chartRows: ch.rows,
+        chartHeight: 320,
+      },
+    } as WorksheetBlock);
+  }
+  // ── Append image groups ───────────────────────────────────────────────────────
+  const imageGroupsDoc: any[] = dataSet.media?.imageGroups || [];
+  for (const group of imageGroupsDoc) {
+    const doneSubjects = (group.subjects || []).filter((s: any) => s.status === 'done' && s.imageUrl);
+    if (doneSubjects.length === 0) continue;
+    blocks.push({
+      id: generateBlockId(), type: 'heading', order: order++, width: 'full', gridSpan: 12,
+      content: { text: group.title, level: 'h2' },
+    } as WorksheetBlock);
+    blocks.push({
+      id: generateBlockId(), type: 'image', order: order++, width: 'full', gridSpan: 12,
+      content: {
+        url: doneSubjects[0].imageUrl,
+        gallery: doneSubjects.map((s: any) => s.imageUrl),
+        galleryCaptions: doneSubjects.map((s: any) => s.name),
+        gridColumns: Math.min(doneSubjects.length, 4),
+        containerHeight: 220,
+      },
+    } as WorksheetBlock);
+  }
+
+  if (savedCharts.length > 0 || imageGroupsDoc.length > 0) {
+    onProgress?.('agent2-done', `✅ Obsah poskládán (${blocks.length} bloků, ${savedCharts.filter((c: any) => c.columns).length} grafů, ${imageGroupsDoc.length} skupin)`);
+  } else {
+    onProgress?.('agent2-done', `✅ Obsah poskládán (${blocks.length} bloků)`);
+  }
+
+  // ── Save ────────────────────────────────────────────────────────────────────
+  onProgress?.('saving', `Ukládám list učebnice (${blocks.length} bloků)...`);
+  const worksheetId = `worksheet-${Date.now()}`;
+  const worksheet: Worksheet = {
+    id: worksheetId,
+    title: contentPlan.title || `${dataSet.topic} - List učebnice`,
+    blocks,
+    settings: { showAnswerKey: false, pageSize: 'A4', margins: 'normal' },
+    metadata: {
+      subject: dataSet.subjectCode,
+      grade: dataSet.grade,
+      topic: dataSet.topic,
+      estimatedTime: contentPlan.estimatedTimeMinutes,
+      sourceDatasetId: dataSet.id,
+      layoutMode: 'grid' as const,
+      gridColumns: 12 as const,
+    },
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+  _saveWs(worksheet);
+  onProgress?.('done', `Uloženo (${blocks.length} bloků)`);
+  return { success: true, id: worksheetId, preview: '', generationMethod: 'two-agent', contentPlan };
+}
+
+// =====================================================
+// WORKSHEET GENERATOR - Legacy (záloha)
+// =====================================================
+
+async function generateWorksheetLegacy(dataSet: TopicDataSet): Promise<GenerateResult> {
+  console.log('[Generator] Using legacy worksheet generator...');
   
   const context = buildContext(dataSet);
-  console.log('[Generator] Context generated:', context);
-  
   const feedback = getFeedbackForType('worksheet');
-  console.log('[Generator] Feedback:', feedback);
   
   const prompt = `PROMPT PRO VYTVOŘENÍ TEXTOVÉHO PRACOVNÍHO LISTU
 
@@ -931,13 +2450,12 @@ ZAČNI ODPOVĚĎ PŘESNĚ TAKTO: "HEADER:"
         { role: 'system', content: systemPrompt },
         { role: 'user', content: prompt }
       ],
-      'gemini-3.0-flash',
+      'gemini-3-flash',
       { temperature: 0.5, max_tokens: 8192 }
     );
     
     console.log('[Generator] Raw worksheet response:', response);
     
-    // Pokud AI vrátilo správný formát (začíná HEADER:), nepoužívat normalizaci
     const startsWithHeader = response.trim().startsWith('HEADER:');
     const finalResponse = startsWithHeader ? response : normalizeWorksheetResponse(response);
     console.log('[Generator] Using normalization:', !startsWithHeader);
@@ -960,14 +2478,14 @@ ZAČNI ODPOVĚĎ PŘESNĚ TAKTO: "HEADER:"
         subject: dataSet.subjectCode,
         grade: dataSet.grade,
         topic: dataSet.topic,
+        sourceDatasetId: dataSet.id,
       },
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
     
-    saveWorksheet(worksheet);
+    _saveWs(worksheet);
     
-    // Zobrazit PŘESNĚ to co vrátilo AI
     const preview = response;
     
     console.log('[Generator] Worksheet saved:', worksheetId);
@@ -975,6 +2493,340 @@ ZAČNI ODPOVĚĎ PŘESNĚ TAKTO: "HEADER:"
   } catch (err) {
     console.error('[Generator] Worksheet error:', err);
     return { success: false, error: String(err) };
+  }
+}
+
+// =====================================================
+// TEMPLATE-FILL PARSER
+// Fills a TemplateSlot[] with AI-generated content.
+// The structure is deterministic — AI only provides text for each slot.
+// =====================================================
+
+/**
+ * Parses AI output with [SLOT N] tags and builds WorksheetBlock[] from template + content.
+ * The template defines ALL structural decisions (type, width, order).
+ * The AI only fills in text/content for each slot.
+ */
+function fillTemplateWithContent(
+  template: TemplateSlot[],
+  aiOutput: string,
+  dataSet: TopicDataSet
+): WorksheetBlock[] {
+  // ── 1. Parse [SLOT N] sections from AI output ──────────────────────────
+  const slotContents = new Map<number, string>();
+  // Match [SLOT N] followed by content until next [SLOT N] or end
+  const slotPattern = /\[SLOT\s+(\d+)\]\s*\n?([\s\S]*?)(?=\[SLOT\s+\d+\]|$)/g;
+  let match;
+  while ((match = slotPattern.exec(aiOutput)) !== null) {
+    const slotId = parseInt(match[1], 10);
+    const content = match[2].trim();
+    slotContents.set(slotId, content);
+  }
+
+  console.log('[TemplateParser] Parsed slots:', slotContents.size, 'of', template.length, 'template slots');
+  console.log('[TemplateParser] Slot IDs found:', Array.from(slotContents.keys()).join(', '));
+
+  // ── 2. Build blocks from template + content ────────────────────────────
+  const blocks: WorksheetBlock[] = [];
+  let order = 0;
+
+  // Collect all available images from the dataset for image slot resolution
+  const allMedia = [
+    ...(dataSet.media?.generatedIllustrations || []),
+    ...(dataSet.media?.generatedPhotos || []),
+    ...(dataSet.media?.images || []),
+  ];
+
+  let imageIndex = 0; // rotating fallback for image slots
+
+  const resolveImageUrl = (content: string): { url: string; caption: string } => {
+    const raw = content.trim();
+    if (raw.startsWith('http://') || raw.startsWith('https://')) {
+      return { url: raw, caption: '' };
+    }
+    // Try name-based lookup
+    if (raw.length > 0) {
+      const nameLower = raw.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const found = allMedia.find(m => {
+        const title = ((m as any).title || (m as any).name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+        return title && (title.includes(nameLower) || nameLower.includes(title));
+      });
+      if (found) return { url: (found as any).url || '', caption: raw };
+    }
+    // Fallback: use next available image
+    if (allMedia.length > 0) {
+      const img = allMedia[imageIndex % allMedia.length];
+      imageIndex++;
+      return { url: (img as any).url || '', caption: raw };
+    }
+    return { url: '', caption: raw };
+  };
+
+  // Process template slots in order (pairing consecutive half-width slots)
+  let i = 0;
+  while (i < template.length) {
+    const slot = template[i];
+    const content = slotContents.get(slot.id) || '';
+
+    // Check if this slot + next slot form a half-width pair
+    const isHalfPair =
+      slot.width === 'half' &&
+      i + 1 < template.length &&
+      template[i + 1].width === 'half';
+
+    if (isHalfPair) {
+      const slot2 = template[i + 1];
+      const content2 = slotContents.get(slot2.id) || '';
+      blocks.push(makeTemplateBlock(slot, content, order++, 'half', dataSet, resolveImageUrl));
+      blocks.push(makeTemplateBlock(slot2, content2, order++, 'half', dataSet, resolveImageUrl));
+      i += 2;
+    } else {
+      blocks.push(makeTemplateBlock(slot, content, order++, 'full', dataSet, resolveImageUrl));
+      i++;
+    }
+  }
+
+  console.log('[TemplateParser] Built', blocks.length, 'blocks');
+  return blocks;
+}
+
+/**
+ * Converts a single TemplateSlot + AI content string into a WorksheetBlock.
+ */
+function makeTemplateBlock(
+  slot: TemplateSlot,
+  content: string,
+  order: number,
+  width: 'full' | 'half',
+  dataSet: TopicDataSet,
+  resolveImageUrl: (content: string) => { url: string; caption: string }
+): WorksheetBlock {
+  // Pro editor uses a 12-column CSS grid → half-width = gridSpan 6
+  const base = {
+    id: generateBlockId(),
+    order,
+    width,
+    ...(width === 'half' ? { widthPercent: 50, gridSpan: 6 } : {}),
+  };
+
+  switch (slot.type) {
+    case 'header':
+      return {
+        ...base,
+        width: 'full',
+        type: 'header-footer',
+        content: {
+          variant: 'header',
+          columns: 1,
+          showName: true,
+          showSurname: true,
+          showClass: true,
+          showGrade: true,
+        },
+      };
+
+    case 'footer':
+      return {
+        ...base,
+        width: 'full',
+        type: 'header-footer',
+        content: {
+          variant: 'footer',
+          columns: 1,
+          showFeedback: true,
+          feedbackType: 'smileys',
+          feedbackCount: 3,
+          feedbackText: 'Zpětná vazba:',
+        },
+      };
+
+    case 'heading-h1':
+      return {
+        ...base,
+        width: 'full',
+        type: 'heading',
+        content: { text: content || dataSet.topic, level: 'h1' as const },
+      };
+
+    case 'heading':
+      return {
+        ...base,
+        type: 'heading',
+        content: { text: content || 'Sekce', level: 'h2' as const },
+      };
+
+    case 'paragraph': {
+      const html = content.startsWith('<') ? content : `<p>${content}</p>`;
+      return {
+        ...base,
+        type: 'paragraph',
+        content: { html },
+      };
+    }
+
+    case 'image': {
+      const { url, caption } = resolveImageUrl(content);
+      return {
+        ...base,
+        type: 'image',
+        content: {
+          url,
+          alt: caption,
+          caption,
+          size: 100,
+          alignment: 'center' as const,
+          showCaption: !!caption,
+        },
+      };
+    }
+
+    case 'infobox': {
+      const html = content.startsWith('<') ? content : `<p>${content}</p>`;
+      return {
+        ...base,
+        type: 'paragraph',
+        content: { html },
+        visualStyles: {
+          displayPreset: 'infobox',
+          backgroundColor: '#dbeafe',
+          borderColor: '#3b82f6',
+          borderRadius: 12,
+        },
+      } as WorksheetBlock;
+    }
+
+    case 'table': {
+      // Build TipTap-compatible HTML table from "Col A | Col B\nVal 1 | Val 2"
+      const tableRows = content
+        .split('\n')
+        .map(l => l.trim())
+        .filter(l => l.length > 0)
+        .map(l => l.split('|').map(c => c.trim()));
+
+      if (tableRows.length === 0) {
+        return { ...base, type: 'paragraph', content: { html: `<p>${content}</p>` } };
+      }
+
+      const headerRow = tableRows[0];
+      const dataRows = tableRows.slice(1);
+
+      const thCells = headerRow.map(c => `<th><p>${c}</p></th>`).join('');
+      const tdRows = dataRows.map(row => {
+        const cells = row.map((c, ci) => `<td><p>${c || headerRow[ci] ? c : ''}</p></td>`).join('');
+        return `<tr>${cells}</tr>`;
+      }).join('');
+
+      const html = `<table><tbody><tr>${thCells}</tr>${tdRows}</tbody></table>`;
+
+      return {
+        ...base,
+        type: 'table',
+        content: {
+          html,
+          rows: tableRows.length,
+          columns: headerRow.length,
+          hasHeader: true,
+          hasBorder: true,
+          hasRoundedCorners: true,
+        },
+      };
+    }
+
+    case 'connect-pairs': {
+      const pairLines = content.split('\n').filter(l => l.includes('|'));
+      const pairs = pairLines.map((line, i) => {
+        const [left, right] = line.split('|').map(s => s.trim());
+        return {
+          id: `pair-${order}-${i}`,
+          left: { id: `left-${order}-${i}`, type: 'text' as const, content: left || '' },
+          right: { id: `right-${order}-${i}`, type: 'text' as const, content: right || '' },
+        };
+      });
+      if (pairs.length === 0) {
+        return { ...base, type: 'paragraph', content: { html: `<p>${content}</p>` } };
+      }
+      return {
+        ...base,
+        type: 'connect-pairs',
+        content: {
+          instruction: 'Spoj správné dvojice',
+          pairs,
+          shuffleSides: true,
+        },
+      };
+    }
+
+    case 'fill-blank': {
+      // Format: "věta s ___ mezerou = správná odpověď"
+      const eqMatch = content.match(/^([\s\S]+?)\s*=\s*(.+)$/);
+      if (eqMatch) {
+        const textPart = eqMatch[1].trim();
+        const answer = eqMatch[2].trim();
+        const parts = textPart.split(/_{2,}/);
+        const segments: any[] = [];
+        parts.forEach((part, idx) => {
+          if (part) segments.push({ type: 'text', content: part });
+          if (idx < parts.length - 1) {
+            segments.push({
+              type: 'blank',
+              id: `blank-${order}-${idx}`,
+              correctAnswer: answer,
+              acceptedAnswers: [answer],
+            });
+          }
+        });
+        return {
+          ...base,
+          type: 'fill-blank',
+          content: { instruction: '', segments },
+        };
+      }
+      // Fallback: treat whole content as a paragraph
+      return { ...base, type: 'paragraph', content: { html: `<p>${content}</p>` } };
+    }
+
+    case 'free-answer':
+      return {
+        ...base,
+        type: 'free-answer',
+        content: { question: content, lines: 3 },
+      };
+
+    case 'multiple-choice': {
+      const mcLines = content.split('\n').map(l => l.trim()).filter(Boolean);
+      const question = mcLines[0] || '';
+      const options: { id: string; text: string }[] = [];
+      const correctAnswers: string[] = [];
+
+      mcLines.slice(1).forEach((line, idx) => {
+        const m = line.match(/^([A-Da-d])\)\s*(.+)/);
+        if (m) {
+          let text = m[2].trim();
+          const isCorrect = text.endsWith('*');
+          if (isCorrect) text = text.slice(0, -1).trim();
+          const optId = `opt-${order}-${idx}`;
+          options.push({ id: optId, text });
+          if (isCorrect) correctAnswers.push(optId);
+        }
+      });
+
+      if (question && options.length > 0) {
+        return {
+          ...base,
+          type: 'multiple-choice',
+          content: {
+            question,
+            options,
+            correctAnswers: correctAnswers.length > 0 ? correctAnswers : [options[0]?.id || 'opt-0'],
+            allowMultiple: false,
+          },
+        };
+      }
+      return { ...base, type: 'paragraph', content: { html: `<p>${content}</p>` } };
+    }
+
+    default:
+      return { ...base, type: 'paragraph', content: { html: `<p>${content}</p>` } };
   }
 }
 
@@ -1099,13 +2951,46 @@ function parseTextToWorksheetBlocks(text: string, dataSet: TopicDataSet): Worksh
         break;
         
       case 'OBRÁZEK':
-      case 'IMAGE':
-        // Najdi obrázek v datasetu
-        const imgName = content.replace(/- HALF LAYOUT/i, '').trim();
-        const img = dataSet.media?.images?.find(i => 
-          i.title.toLowerCase().includes(imgName.toLowerCase()) ||
-          imgName.toLowerCase().includes(i.title.toLowerCase())
-        );
+      case 'IMAGE': {
+        // Resolve image: content may be a direct URL or a name to look up
+        const imgRaw = content.replace(/- HALF LAYOUT/i, '').trim();
+        let resolvedUrl = '';
+        let resolvedCaption = imgRaw;
+
+        if (imgRaw.startsWith('http://') || imgRaw.startsWith('https://')) {
+          // AI already output a URL directly — use it as-is
+          resolvedUrl = imgRaw;
+          resolvedCaption = '';
+        } else {
+          // Name-based lookup across all media sources
+          const nameLower = imgRaw.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+          const matchFn = (candidate: string) => {
+            const c = candidate.toLowerCase().replace(/[^a-z0-9]/g, '');
+            return c === nameLower || c.includes(nameLower) || nameLower.includes(c);
+          };
+
+          const webImg = (dataSet.media?.images || []).find((i: any) => matchFn(i.title || ''));
+          const ill = (dataSet.media?.generatedIllustrations || []).find((i: any) => matchFn(i.name || i.title || ''));
+          const photo = (dataSet.media?.generatedPhotos || []).find((i: any) => matchFn(i.name || i.title || ''));
+
+          const found = webImg || ill || photo;
+          resolvedUrl = found?.url || '';
+
+          // If still not found, use any available image as fallback
+          if (!resolvedUrl) {
+            const allMedia = [
+              ...(dataSet.media?.generatedIllustrations || []),
+              ...(dataSet.media?.generatedPhotos || []),
+              ...(dataSet.media?.images || []),
+            ];
+            resolvedUrl = allMedia[0]?.url || '';
+            console.log('[Parser] Image not matched by name, using first available:', resolvedUrl ? 'found' : 'none');
+          } else {
+            console.log('[Parser] ✅ Image resolved by name:', imgRaw, '->', resolvedUrl.slice(0, 60));
+          }
+        }
+
         blocks.push({
           id: generateBlockId(),
           type: 'image',
@@ -1113,14 +2998,15 @@ function parseTextToWorksheetBlocks(text: string, dataSet: TopicDataSet): Worksh
           width: 'half',
           widthPercent: 50,
           content: {
-            url: img?.url || '',
-            alt: imgName,
-            caption: imgName,
+            url: resolvedUrl,
+            alt: resolvedCaption,
+            caption: resolvedCaption,
             size: 100,
             alignment: 'center',
           },
         });
         break;
+      }
         
       case 'MULTIPLE-CHOICE':
         const mcLines = content.split('\n').filter(l => l.trim());
@@ -1304,10 +3190,16 @@ async function generateText(dataSet: TopicDataSet): Promise<GenerateResult> {
   const photoList = availablePhotos.length > 0
     ? `\n📷 DOSTUPNÉ FOTKY (vyber 1-2 relevantní):\n${availablePhotos.map((photo: any, i: number) => `  ${i + 1}. ${formatItem(photo, 'name')}`).join('\n')}`
     : '';
+
+  const availableImageGroups = (dataSet.media?.imageGroups || [])
+    .filter((g: any) => (g.subjects || []).some((s: any) => s.status === 'done' && s.imageUrl));
+  const imageGroupList = availableImageGroups.length > 0
+    ? `\n🖼️ SKUPINY OBRÁZKŮ (GALERIE) - pod vhodné H2 přidej SkupinaH2: Název skupiny:\n${availableImageGroups.map((g: any, i: number) => `  ${i + 1}. "${g.title}" (${(g.subjects || []).filter((s: any) => s.status === 'done' && s.imageUrl).length} obrázků)`).join('\n')}`
+    : '';
   
   const prompt = `Napiš PODROBNÝ výukový text k tématu "${dataSet.topic}" pro ${dataSet.grade}. třídu ZŠ.
 
-${context}${feedback}${illustrationList}${photoList}${imageList}
+${context}${feedback}${illustrationList}${photoList}${imageList}${imageGroupList}
 
 FORMÁT TEXTU (NEZAČÍNEJ H1 nadpisem - ten je automaticky z názvu dokumentu):
 
@@ -1315,6 +3207,7 @@ FORMÁT TEXTU (NEZAČÍNEJ H1 nadpisem - ten je automaticky z názvu dokumentu):
 IlustraceH2: Název ilustrace ze seznamu (PREFERUJ - pro vygenerované ikony/ilustrace)
 FotkaH2: Název fotky ze seznamu (pro vygenerované fotografie)
 ObrázekH2: Název obrázku ze seznamu (pro fotky z webu - POUZE pokud nejsou lepší ilustrace/fotky)
+SkupinaH2: Název skupiny ze seznamu skupin (pro galerii více obrázků najednou)
 Text odstavce (3-5 vět s konkrétními fakty a příklady)...
 
 INFOBOX modrý: Věděli jste?
@@ -1349,6 +3242,7 @@ PRAVIDLA:
 - IlustraceH2: [přesný název z 🎨 DOSTUPNÉ ILUSTRACE] - PŘEDNOSTNĚ POD H2 nadpis
 - FotkaH2: [přesný název z 📷 DOSTUPNÉ FOTKY] - pro AI fotografie
 - ObrázekH2: [přesný název z 🖼️ DOSTUPNÉ OBRÁZKY Z WEBU] - pouze jako doplněk
+- SkupinaH2: [přesný název ze 🖼️ SKUPINY OBRÁZKŮ] - použij pro H2 kde se hodí zobrazit galerii více obrázků
 - U většiny H2 použij ilustraci nebo fotku, obrázky z webu jen výjimečně
 - INFOBOX modrý: pro zajímavosti, "věděli jste?" (info)
 - INFOBOX zelený: pro tipy a rady (tip)
@@ -1362,14 +3256,14 @@ PRAVIDLA:
   try {
     const response = await chatWithAIProxy(
       [{ role: 'user', content: prompt }],
-      'gemini-3.0-flash',
+      'gemini-3-flash',
       { temperature: 0.7, max_tokens: 4096 }
     );
     
     console.log('[Generator] Raw text response:', response.substring(0, 500));
     
     // Extrahovat přiřazení obrázků k H2 nadpisům (nový formát: ObrázekH2: Název)
-    const sectionImages: { heading: string; imageUrl: string; imageTitle: string }[] = [];
+    const sectionImages: SectionMediaItem[] = [];
     const lines = response.split('\n');
     let currentH2 = '';
     
@@ -1382,10 +3276,11 @@ PRAVIDLA:
         currentH2 = h2Match[1].trim();
       }
       
-      // Najít ObrázekH2:, FotkaH2:, IlustraceH2: pod nadpisem
+      // Najít ObrázekH2:, FotkaH2:, IlustraceH2:, SkupinaH2: pod nadpisem
       const imgMatch = line.match(/^ObrázekH2:\s*(.+)/i);
       const illMatch = line.match(/^IlustraceH2:\s*(.+)/i);
       const photoMatch = line.match(/^FotkaH2:\s*(.+)/i);
+      const groupMatch = line.match(/^SkupinaH2:\s*(.+)/i);
       
       if (imgMatch && currentH2) {
         const imageName = imgMatch[1].trim().toLowerCase();
@@ -1400,9 +3295,11 @@ PRAVIDLA:
         
         if (foundImage?.url) {
           sectionImages.push({
+            id: crypto.randomUUID(),
             heading: currentH2,
+            type: 'image',
             imageUrl: foundImage.url,
-            imageTitle: foundImage.title,
+            imageSteps: [{ id: crypto.randomUUID(), url: foundImage.url, description: foundImage.title }],
           });
           console.log('[Generator] Found image for H2:', currentH2, '->', foundImage.title);
         }
@@ -1419,9 +3316,11 @@ PRAVIDLA:
         
         if (foundIll?.url) {
           sectionImages.push({
+            id: crypto.randomUUID(),
             heading: currentH2,
+            type: 'image',
             imageUrl: foundIll.url,
-            imageTitle: foundIll.name,
+            imageSteps: [{ id: crypto.randomUUID(), url: foundIll.url, description: foundIll.name }],
           });
           console.log('[Generator] Found illustration for H2:', currentH2, '->', foundIll.name);
         }
@@ -1438,19 +3337,44 @@ PRAVIDLA:
         
         if (foundPhoto?.url) {
           sectionImages.push({
+            id: crypto.randomUUID(),
             heading: currentH2,
+            type: 'image',
             imageUrl: foundPhoto.url,
-            imageTitle: foundPhoto.name,
+            imageSteps: [{ id: crypto.randomUUID(), url: foundPhoto.url, description: foundPhoto.name }],
           });
           console.log('[Generator] Found photo for H2:', currentH2, '->', foundPhoto.name);
+        }
+      } else if (groupMatch && currentH2) {
+        const groupName = groupMatch[1].trim().toLowerCase();
+        const foundGroup = (dataSet.media?.imageGroups || []).find((g: any) => {
+          const title = (g.title || '').toLowerCase();
+          return title === groupName ||
+                 title.includes(groupName) ||
+                 groupName.includes(title) ||
+                 title.replace(/[^a-z0-9]/g, '').includes(groupName.replace(/[^a-z0-9]/g, ''));
+        });
+        if (foundGroup) {
+          const doneSubjects = (foundGroup.subjects || []).filter((s: any) => s.status === 'done' && s.imageUrl);
+          if (doneSubjects.length > 0) {
+            sectionImages.push({
+              id: crypto.randomUUID(),
+              heading: currentH2,
+              type: 'image',
+              imageUrl: doneSubjects[0].imageUrl,
+              imageSteps: doneSubjects.map((s: any) => ({ id: crypto.randomUUID(), url: s.imageUrl, description: s.name })),
+            });
+            console.log('[Generator] Found image group for H2:', currentH2, '->', foundGroup.title, `(${doneSubjects.length} subjects)`);
+          }
         }
       }
     }
     
-    // Odstranit řádky s ObrázekH2:, IlustraceH2:, FotkaH2: z textu (obrázky jsou v sidebaru a galerii)
+    // Odstranit řádky s ObrázekH2:, IlustraceH2:, FotkaH2:, SkupinaH2: z textu (obrázky jsou v sidebaru a galerii)
     let cleanedResponse = response.replace(/^ObrázekH2:.*$/gm, '');
     cleanedResponse = cleanedResponse.replace(/^IlustraceH2:.*$/gm, '');
     cleanedResponse = cleanedResponse.replace(/^FotkaH2:.*$/gm, '');
+    cleanedResponse = cleanedResponse.replace(/^SkupinaH2:.*$/gm, '');
     
     // Odstranit H1 nadpis (název je v title dokumentu)
     cleanedResponse = cleanedResponse.replace(/^#\s+.+$/gm, '');
@@ -1495,7 +3419,7 @@ PRAVIDLA:
     
     if (allImages.length > 0 || allIllustrations.length > 0 || allPhotos.length > 0) {
       html += '\n<h2>🖼️ Galerie</h2>\n';
-      html += '<div class="image-gallery" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 16px;">';
+      html += '<div class="image-gallery not-prose" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 16px;">';
       
       // Přidat všechny ilustrace PRVNÍ (prioritní)
       for (const ill of allIllustrations) {
@@ -1506,9 +3430,11 @@ PRAVIDLA:
         
         if (!sectionImages.find(si => si.imageUrl === ill.url)) {
           sectionImages.push({
+            id: crypto.randomUUID(),
             heading: '🖼️ Galerie',
+            type: 'image',
             imageUrl: ill.url,
-            imageTitle: ill.name,
+            imageSteps: [{ id: crypto.randomUUID(), url: ill.url, description: ill.name }],
           });
         }
       }
@@ -1522,9 +3448,11 @@ PRAVIDLA:
         
         if (!sectionImages.find(si => si.imageUrl === photo.url)) {
           sectionImages.push({
+            id: crypto.randomUUID(),
             heading: '🖼️ Galerie',
+            type: 'image',
             imageUrl: photo.url,
-            imageTitle: photo.name,
+            imageSteps: [{ id: crypto.randomUUID(), url: photo.url, description: photo.name }],
           });
         }
       }
@@ -1538,9 +3466,11 @@ PRAVIDLA:
         
         if (!sectionImages.find(si => si.imageUrl === img.url)) {
           sectionImages.push({
+            id: crypto.randomUUID(),
             heading: '🖼️ Galerie',
+            type: 'image',
             imageUrl: img.url,
-            imageTitle: img.title,
+            imageSteps: [{ id: crypto.randomUUID(), url: img.url, description: img.title }],
           });
         }
       }
@@ -1575,7 +3505,7 @@ PRAVIDLA:
     
     try {
       // 1. Uložit do localStorage pro okamžitý přístup
-      saveDocument(
+      _saveDoc(
         {
           id: docId,
           title: dataSet.topic,
@@ -1724,7 +3654,7 @@ PRAVIDLA PRO OBRÁZKY:
   try {
     const response = await chatWithAIProxy(
       [{ role: 'user', content: prompt }],
-      'gemini-3.0-flash',
+      'gemini-3-flash',
       { temperature: 0.7, max_tokens: 2048 }
     );
     
@@ -1746,17 +3676,18 @@ PRAVIDLA PRO OBRÁZKY:
       },
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
+      sourceDatasetId: dataSet.id,
     };
     
     // Uložit - localStorage může selhat, proto přímý sync do Supabase
     try {
-      saveQuiz(quiz);
+      _saveQz(quiz);
     } catch (e) {
       console.warn(`[Generator] localStorage failed for test ${quizId}:`, e);
     }
     
     // Přímý sync do Supabase
-    const synced = await syncQuizDirectToSupabase(quiz);
+    const synced = await _syncQz(quiz);
     if (!synced) {
       console.warn(`[Generator] Supabase sync failed for test ${quizId}`);
     }
@@ -1987,7 +3918,7 @@ PRAVIDLA:
   try {
     const response = await chatWithAIProxy(
       [{ role: 'user', content: prompt }],
-      'gemini-3.0-flash',
+      'gemini-3-flash',
       { temperature: 0.7, max_tokens: 2048 }
     );
     
@@ -2013,13 +3944,13 @@ PRAVIDLA:
     
     // Uložit - localStorage může selhat, proto přímý sync do Supabase
     try {
-      saveQuiz(quiz);
+      _saveQz(quiz);
     } catch (e) {
       console.warn(`[Generator] localStorage failed for lesson ${quizId}:`, e);
     }
     
     // Přímý sync do Supabase
-    const synced = await syncQuizDirectToSupabase(quiz);
+    const synced = await _syncQz(quiz);
     if (!synced) {
       console.warn(`[Generator] Supabase sync failed for lesson ${quizId}`);
     }
@@ -2497,7 +4428,7 @@ Vrať POUZE JSON pole s 2-3 podtématy:
     try {
       const response = await chatWithAIProxy(
         [{ role: 'user', content: subtopicsPrompt }],
-        'gemini-3.0-flash',
+        'gemini-3-flash',
         { temperature: 0.7, max_tokens: 500 }
       );
       const jsonMatch = response.match(/\[[\s\S]*\]/);
@@ -2599,7 +4530,7 @@ DŮLEŽITÉ:
     try {
       const response = await chatWithAIProxy(
         [{ role: 'user', content: lessonPrompt }],
-        'gemini-3.0-flash',
+        'gemini-3-flash',
         { temperature: 0.7, max_tokens: 3000 }
       );
       
@@ -2655,13 +4586,13 @@ DŮLEŽITÉ:
     // Přímý sync do Supabase (localStorage má quota limit)
     // saveQuiz může selhat, proto ukládáme přímo do Supabase
     try {
-      saveQuiz(quiz); // Pokus o localStorage (může selhat)
+      _saveQz(quiz); // Pokus o localStorage (může selhat)
     } catch (e) {
       console.warn(`[Generator] localStorage failed for ${quizId}:`, e);
     }
     
     // Přímý sync do Supabase s quiz objektem (nezávisí na localStorage)
-    const synced = await syncQuizDirectToSupabase(quiz);
+    const synced = await _syncQz(quiz);
     if (synced) {
       console.log(`[Generator] ✅ Lesson synced to Supabase: ${quizId}`);
       savedIds.push(quizId);
@@ -2762,7 +4693,7 @@ PRAVIDLA:
   try {
     const response = await chatWithAIProxy(
       [{ role: 'user', content: prompt }],
-      'gemini-3.0-flash',
+      'gemini-3-flash',
       { temperature: 0.7, max_tokens: 3000 }
     );
     
@@ -2826,11 +4757,129 @@ PRAVIDLA:
 }
 
 // =====================================================
+// HODNOCENÍ GENERATOR – Výstupní dokument uzávěru
+// "Co se žáci naučili" – jednoduchý přehled pro učitele
+// =====================================================
+
+async function generateHodnoceni(dataSet: TopicDataSet): Promise<GenerateResult> {
+  console.log('[Generator] Generating hodnoceni...');
+
+  // coveredTopics jsou uloženy jako keyFacts v buildDataSetObject pro milestone
+  const coveredTopics = (dataSet.content?.keyFacts || [])
+    .map((f: any) => (typeof f === 'string' ? f.replace(/^Téma:\s*/i, '') : f.topic || f))
+    .filter(Boolean);
+
+  const rvpOutputs = dataSet.rvp?.expectedOutcomes?.join('\n- ') || '';
+  const keyTermsList = (dataSet.content?.keyTerms || [])
+    .map((t: any) => typeof t === 'string' ? t : t.term)
+    .filter(Boolean)
+    .join(', ');
+
+  const topicsBlock = coveredTopics.length > 0
+    ? coveredTopics.map((t: string) => `- ${t}`).join('\n')
+    : `- ${dataSet.topic}`;
+
+  const prompt = `Napiš VÝSTUPNÍ HODNOCENÍ uzávěru tematického bloku "${dataSet.topic}" pro ${dataSet.grade}. třídu.
+
+Tematický blok zahrnoval tato témata:
+${topicsBlock}
+
+${rvpOutputs ? `Očekávané výstupy dle RVP:\n- ${rvpOutputs}\n` : ''}
+${keyTermsList ? `Klíčové pojmy: ${keyTermsList}\n` : ''}
+
+POVINNÁ STRUKTURA:
+
+## ✅ Co žáci po absolvování bloku znají a umí
+
+Napiš 6–10 konkrétních bodů. Každý začíná "Žák..."
+Příklady: "Žák vysvětlí...", "Žák popíše...", "Žák rozlišuje...", "Žák ukáže na mapě..."
+
+## 📝 Kritéria hodnocení
+
+Pro KAŽDÝ ze 3 typů škol napiš hodnocení pro stupně 1–5.
+Struktura pro každý typ školy:
+
+### 🏫 ZŠ praktická / speciální
+**1 – Výborný:** Co přesně žák zvládne (jednodušší nároky, základní pojmy)
+**2 – Chvalitebný:** ...
+**3 – Dobrý:** ...
+**4 – Dostatečný:** ...
+**5 – Nedostatečný:** Co žák nezvládl
+
+### 🏫 ZŠ standardní
+**1 – Výborný:** Co přesně žák zvládne (standardní nároky RVP)
+**2 – Chvalitebný:** ...
+**3 – Dobrý:** ...
+**4 – Dostatečný:** ...
+**5 – Nedostatečný:** Co žák nezvládl
+
+### 🏫 Gymnázium
+**1 – Výborný:** Co přesně žák zvládne (rozšiřující nároky, aplikace, analýza)
+**2 – Chvalitebný:** ...
+**3 – Dobrý:** ...
+**4 – Dostatečný:** ...
+**5 – Nedostatečný:** Co žák nezvládl
+
+## 🔑 Klíčové pojmy
+
+Vypiš 8–12 nejdůležitějších pojmů které žák musí znát.
+
+INFOBOX oranžový: Na co si dát pozor
+Typické chyby nebo obtížná místa v tomto bloku.
+
+PRAVIDLA:
+- Každé kritérium = 1–2 konkrétní věty, ne obecné fráze
+- Kritéria musí být MĚŘITELNÁ ("žák vyjmenuje 3 planety" ne "žák chápe")
+- Liš obtížnost mezi typy škol (speciální = základní pojmy, gymnázium = analýza, vztahy, aplikace)`;
+
+  try {
+    const response = await chatWithAIProxy(
+      [{ role: 'user', content: prompt }],
+      'gemini-3-pro',
+      { temperature: 0.5, max_tokens: 6000 }
+    );
+
+    const calloutTypeMap: Record<string, string> = {
+      'modrý': 'info', 'červený': 'danger', 'zelený': 'tip', 'oranžový': 'warning', 'fialový': 'summary',
+    };
+    let processedResponse = response.replace(
+      /INFOBOX (modrý|červený|zelený|oranžový|fialový):\s*(.+?)(?:\n([^\n#]*))?(?=\n\n|\n##|$)/gim,
+      (_match, color, title, content) => {
+        const calloutType = calloutTypeMap[color.toLowerCase()] || 'info';
+        const contentText = content ? content.trim() : '';
+        return `\n<div data-type="callout" data-callout-type="${calloutType}" class="callout callout-${calloutType}"><p><strong>${title.trim()}</strong></p>${contentText ? `<p>${contentText}</p>` : ''}</div>\n`;
+      }
+    );
+
+    const html = markdownToHtml(processedResponse);
+    const docId = crypto.randomUUID();
+    const docData = {
+      id: docId,
+      title: `${dataSet.topic} – Výstupní dokument`,
+      content: html,
+      documentType: 'hodnoceni',
+      sectionImages: [],
+    };
+
+    try { localStorage.setItem(`vivid-doc-${docId}`, JSON.stringify(docData)); } catch (e) { /* ignore */ }
+    const synced = await syncDocumentDirectToSupabase(docData);
+    if (!synced) console.warn(`[Generator] Supabase sync failed for hodnoceni ${docId}`);
+
+    const preview = processedResponse.replace(/<[^>]+>/g, '').substring(0, 200);
+    console.log('[Generator] Hodnoceni saved:', docId);
+    return { success: true, id: docId, preview };
+  } catch (err) {
+    console.error('[Generator] Hodnoceni error:', err);
+    return { success: false, error: String(err) };
+  }
+}
+
+// =====================================================
 // ILLUSTRATION PROMPT GENERATOR
 // =====================================================
 
 // Styl pro všechny ilustrace - Ligne Claire (Tintin style)
-const ILLUSTRATION_STYLE = `Create educational illustration in Ligne Claire style (like Tintin comics):
+export const ILLUSTRATION_STYLE = `Create educational illustration in Ligne Claire style (like Tintin comics):
 
 LINE ART:
 - Dead line technique - consistent line weight, no pressure variation
@@ -2853,23 +4902,45 @@ COMPOSITION:
 
 TECHNICAL:
 - 800x800 pixels
-- No text in image
 - Educational and professional look
-- Suitable for school materials`;
+- Suitable for school materials
+
+TEXT:
+- If the subject or description includes any text, labels, numbers, or annotations — include them in the image
+- Render all text in a simple geometric grotesque sans-serif typeface (like Futura or Avenir)
+- Text must be clean, minimal, and clearly legible — no decorative or serif fonts`;
 
 // =====================================================
 // PHOTO GENERATION (Fotorealistické fotky + historická selfie)
 // =====================================================
 
-const PHOTO_STYLE = `CRITICAL: Generate a REAL PHOTOGRAPH, NOT an illustration or cartoon.
-Technical requirements:
-- Photorealistic 8K photograph with natural lighting
-- Shot on professional DSLR camera (Canon EOS R5 or Sony A7R IV)
-- Sharp focus, realistic skin pores, hair strands, fabric textures
-- Natural color grading, no artistic filters
-- Documentary/National Geographic style photography
-- Realistic shadows, depth of field, lens characteristics
-FORBIDDEN: illustration, drawing, cartoon, anime, digital art, painting, vector art, Ligne Claire`;
+const PHOTO_STYLE = `Generate a REAL PHOTOGRAPH that looks like it was taken by a regular person with a good camera, NOT a studio production.
+
+LOOK & FEEL:
+- Candid, authentic, unstaged — like a travel blog or school textbook photo
+- Natural ambient lighting (sunlight, overcast sky, indoor daylight from windows)
+- Slight imperfections: minor lens flare, soft vignetting, gentle noise/grain in shadows
+- Warm, natural color palette — no oversaturated colors, no HDR look
+- Shallow-to-medium depth of field (f/2.8–f/5.6), gentle background bokeh
+
+CAMERA CHARACTERISTICS:
+- Shot on a mirrorless camera or quality smartphone (natural perspective, ~35-50mm equivalent)
+- Slightly off-center or rule-of-thirds composition — NOT perfectly centered or symmetrical
+- Natural white balance (slightly warm in golden hour, slightly cool in shade)
+- NO studio lighting, NO ring light reflections in eyes, NO perfectly even illumination
+
+REALISM MARKERS:
+- Real textures: dust, weathering, patina, fabric creases, skin texture with pores and fine lines
+- Environmental context: background tells a story (other people, furniture, landscape, buildings)
+- Motion hints where appropriate: slight motion blur on moving hands, wind in hair/clothes
+- Realistic scale relationships between objects
+
+STRICTLY FORBIDDEN:
+- Illustration, drawing, cartoon, anime, digital art, painting, vector art
+- Plastic/waxy skin, uncanny valley faces, symmetrical perfection
+- Hyper-sharpened details, HDR tone mapping, neon-bright colors
+- Studio backdrop, isolated subjects on plain backgrounds
+- Stock photo poses (pointing at camera, corporate handshake, thumbs up)`;
 
 const SELFIE_STYLE = `Generate a GROUP SELFIE photograph from the camera's point of view.
 COMPOSITION:
@@ -2946,35 +5017,85 @@ Navrhni 5-8 fotek (první MUSÍ být selfie):`;
   try {
     const response = await chatWithAIProxy(
       [{ role: 'user', content: prompt }],
-      'gemini-3.0-flash',
+      'gemini-3-flash',
       { temperature: 0.8, max_tokens: 2048 }
     );
     
-    console.log('[Generator] Photo prompts raw:', response.substring(0, 300));
+    console.log('[Generator] Photo prompts raw:', response.substring(0, 400));
     
     const prompts: PhotoPrompt[] = [];
+
+    // Pokus 1: parsovat textový formát FOTKA:/KATEGORIE:/POPIS:
     const blocks = response.split(/(?=FOTKA:)/gi).filter(b => b.trim());
-    
     for (const block of blocks) {
-      const nameMatch = block.match(/FOTKA:\s*(.+)/i);
-      const categoryMatch = block.match(/KATEGORIE:\s*(.+)/i);
-      const keywordsMatch = block.match(/KLÍČOVÁ SLOVA:\s*(.+)/i);
-      const descMatch = block.match(/POPIS:\s*(.+?)(?=(?:FOTKA:|$))/is);
+      const nameMatch = block.match(/FOTKA:\s*\*{0,2}(.+?)\*{0,2}\s*\n/i);
+      const categoryMatch = block.match(/KATEGORIE:\s*\*{0,2}(.+?)\*{0,2}\s*\n/i);
+      const keywordsMatch = block.match(/KL[IÍ][CČ]OV[AÁ]\s+SLOVA:\s*(.+)/i);
+      const descMatch = block.match(/POPIS:\s*([\s\S]+?)(?=FOTKA:|$)/i);
       
       if (nameMatch && descMatch) {
-        const categoryRaw = categoryMatch?.[1]?.trim().toLowerCase() || 'scene';
-        const category = ['selfie', 'scene', 'portrait', 'artifact', 'location'].includes(categoryRaw) 
+        const categoryRaw = (categoryMatch?.[1] ?? '').trim().toLowerCase();
+        const category = (['selfie', 'scene', 'portrait', 'artifact', 'location'] as const).includes(categoryRaw as any)
           ? categoryRaw as PhotoPrompt['category']
           : 'scene';
-          
         prompts.push({
           id: crypto.randomUUID(),
           name: nameMatch[1].trim(),
           category,
-          keywords: keywordsMatch?.[1]?.split(',').map(k => k.trim()) || [],
+          keywords: keywordsMatch?.[1]?.split(',').map((k: string) => k.trim()).filter(Boolean) || [],
           description: descMatch[1].trim(),
           status: 'pending',
         });
+      }
+    }
+
+    // Pokus 2: fallback – pokud AI vrátilo JSON pole
+    if (prompts.length === 0) {
+      const jsonMatch = response.match(/\[[\s\S]*\]/);
+      if (jsonMatch) {
+        try {
+          const arr = JSON.parse(jsonMatch[0]);
+          for (const item of arr) {
+            if (item.name || item.title || item.description) {
+              prompts.push({
+                id: crypto.randomUUID(),
+                name: item.name || item.title || 'Fotka',
+                category: (['selfie', 'scene', 'portrait', 'artifact', 'location'] as const).includes(item.category)
+                  ? item.category : 'scene',
+                keywords: Array.isArray(item.keywords) ? item.keywords : [],
+                description: item.description || item.popis || '',
+                status: 'pending',
+              });
+            }
+          }
+        } catch { /* silent */ }
+      }
+    }
+
+    // Pokus 3: fallback – vygenerovat znovu jako JSON
+    if (prompts.length === 0) {
+      console.warn('[Generator] Text parsing failed, retrying as JSON...');
+      const jsonPrompt = `Navrhni 6 fotorealistických fotografií pro vzdělávací téma "${dataSet.topic}" (${dataSet.grade}. třída).
+Vrať POUZE JSON pole:
+[{"name":"název","category":"selfie|scene|portrait|artifact|location","keywords":["slovo1","slovo2"],"description":"detailní popis fotky"}]
+První fotka musí být "selfie" – člověk z tématu si dělá selfie s mobilem. POUZE JSON.`;
+      const jsonResp = await chatWithAIProxy([{ role: 'user', content: jsonPrompt }], 'gemini-3-flash');
+      const jm = jsonResp.match(/\[[\s\S]*\]/);
+      if (jm) {
+        try {
+          const arr = JSON.parse(jm[0]);
+          for (const item of arr) {
+            prompts.push({
+              id: crypto.randomUUID(),
+              name: item.name || item.title || 'Fotka',
+              category: (['selfie', 'scene', 'portrait', 'artifact', 'location'] as const).includes(item.category)
+                ? item.category : 'scene',
+              keywords: Array.isArray(item.keywords) ? item.keywords : [],
+              description: item.description || '',
+              status: 'pending',
+            });
+          }
+        } catch { /* silent */ }
       }
     }
     
@@ -2987,7 +5108,7 @@ Navrhni 5-8 fotek (první MUSÍ být selfie):`;
   }
 }
 
-export async function generatePhoto(prompt: PhotoPrompt, dataSet: TopicDataSet): Promise<string | null> {
+export async function generatePhoto(prompt: PhotoPrompt, dataSet: TopicDataSet, model: 'pro' | 'flash' = 'flash'): Promise<string | null> {
   console.log('[Generator] Generating photo:', prompt.name);
   
   const { generateImageWithImagen } = await import('../ai-chat-proxy');
@@ -3010,7 +5131,8 @@ OUTPUT: Ultra-realistic 8K photograph, documentary style. NO illustration, NO ca
       aspectRatio: '1:1',
       numberOfImages: 1,
       dataSetId: dataSet.id,
-      illustrationName: `📷 ${prompt.name}`
+      illustrationName: `📷 ${prompt.name}`,
+      model,
     });
     
     if (result.success && (result.url || result.images?.[0]?.base64)) {
@@ -3042,7 +5164,7 @@ OUTPUT: Ultra-realistic 8K photograph, documentary style. NO illustration, NO ca
 // ILLUSTRATION PROMPTS
 // =====================================================
 
-export async function generateIllustrationPrompts(dataSet: TopicDataSet): Promise<IllustrationPrompt[]> {
+export async function generateIllustrationPrompts(dataSet: TopicDataSet, withLabels: boolean = false): Promise<IllustrationPrompt[]> {
   console.log('[Generator] Generating illustration prompts for:', dataSet.topic);
   
   // Připravit kontext z datasetu
@@ -3078,46 +5200,89 @@ POPIS: Bronzová korintská přilba řeckého hoplíty zobrazená z boku, s čer
 
 Navrhni ilustrace pokrývající různé aspekty tématu. Soustřeď se na vizuálně zajímavé a edukativně hodnotné náměty. Vše piš v češtině.`;
 
+  const buildPrompt = (name: string, description: string, category: string): IllustrationPrompt => {
+    const labelInstruction = withLabels
+      ? `\n\nTEXT LABEL: Add a clean, short Czech label directly on the illustration. Use simple sans-serif font, bold, dark color, placed at the bottom or beside the main element. Label text: "${name}"`
+      : `\n\nNO TEXT: Do not include any text, words, letters or labels in the illustration.`;
+    return {
+      id: crypto.randomUUID(),
+      name,
+      prompt: `${description}${labelInstruction}\n\nStyle requirements:\n${ILLUSTRATION_STYLE}`,
+      category: (['icon', 'portrait', 'object', 'scene', 'map'] as const).includes(category as any)
+        ? category as IllustrationPrompt['category'] : 'icon',
+      keywords: [],
+      status: 'pending',
+    };
+  };
+
   try {
     const response = await chatWithAIProxy(
       [{ role: 'user', content: prompt }],
-      'gemini-3.0-flash',
+      'gemini-3-flash',
       { temperature: 0.8, max_tokens: 2500 }
     );
     
     console.log('[Generator] Illustration prompts raw:', response.substring(0, 500));
     
-    // Parsovat odpověď
     const prompts: IllustrationPrompt[] = [];
-    const blocks = response.split(/ILUSTRACE:/i).slice(1);
-    
-    for (const block of blocks) {
-      const lines = block.trim().split('\n');
-      const name = lines[0]?.trim() || '';
-      
-      const categoryMatch = block.match(/KATEGORIE:\s*(\w+)/i);
-      const keywordsMatch = block.match(/KLÍČOVÁ SLOVA:\s*(.+)/i);
-      const descMatch = block.match(/POPIS:\s*(.+)/is);
-      
-      if (name && descMatch) {
-        const category = (categoryMatch?.[1]?.toLowerCase() || 'icon') as IllustrationPrompt['category'];
-        const keywords = keywordsMatch?.[1]?.split(',').map(k => k.trim()) || [];
-        const description = descMatch[1]?.split('\n')[0]?.trim() || '';
-        
-        // Sestavit plný prompt s naším stylem
-        const fullPrompt = `${description}
 
-Style requirements:
-${ILLUSTRATION_STYLE}`;
-        
-        prompts.push({
-          id: crypto.randomUUID(),
-          name,
-          prompt: fullPrompt,
-          category,
-          keywords,
-          status: 'pending',
-        });
+    // Pokus 1: textový formát ILUSTRACE:/KATEGORIE:/POPIS:
+    const blocks = response.split(/(?=ILUSTRACE:)/i).filter(b => b.trim());
+    for (const block of blocks) {
+      const nameMatch = block.match(/ILUSTRACE:\s*\*{0,2}(.+?)\*{0,2}\s*\n/i);
+      const categoryMatch = block.match(/KATEGORIE:\s*\*{0,2}(\w+)\*{0,2}/i);
+      const keywordsMatch = block.match(/KL[IÍ][CČ]OV[AÁ]\s+SLOVA:\s*(.+)/i);
+      const descMatch = block.match(/POPIS:\s*([\s\S]+?)(?=ILUSTRACE:|$)/i);
+
+      if (nameMatch && descMatch) {
+        const name = nameMatch[1].trim();
+        const description = descMatch[1].trim().split('\n').filter(l => l.trim()).join(' ');
+        const category = (categoryMatch?.[1] ?? 'icon').toLowerCase();
+        const item = buildPrompt(name, description, category);
+        item.keywords = keywordsMatch?.[1]?.split(',').map((k: string) => k.trim()).filter(Boolean) || [];
+        prompts.push(item);
+      }
+    }
+
+    // Pokus 2: JSON fallback
+    if (prompts.length === 0) {
+      const jsonMatch = response.match(/\[[\s\S]*\]/);
+      if (jsonMatch) {
+        try {
+          const arr = JSON.parse(jsonMatch[0]);
+          for (const item of arr) {
+            if (item.name || item.title) {
+              prompts.push(buildPrompt(
+                item.name || item.title,
+                item.description || item.popis || '',
+                item.category || 'icon',
+              ));
+            }
+          }
+        } catch { /* silent */ }
+      }
+    }
+
+    // Pokus 3: nový dotaz přímo jako JSON
+    if (prompts.length === 0) {
+      console.warn('[Generator] Text parsing failed, retrying as JSON...');
+      const jsonPrompt = `Navrhni 8 ilustrací pro vzdělávací téma "${dataSet.topic}" (${dataSet.grade}. třída).
+Vrať POUZE JSON pole:
+[{"name":"název česky","category":"icon|portrait|object|scene|map","description":"detailní popis co zobrazit (2-3 věty)"}]
+POUZE JSON, žádný jiný text.`;
+      const jsonResp = await chatWithAIProxy([{ role: 'user', content: jsonPrompt }], 'gemini-3-flash');
+      const jm = jsonResp.match(/\[[\s\S]*\]/);
+      if (jm) {
+        try {
+          const arr = JSON.parse(jm[0]);
+          for (const item of arr) {
+            prompts.push(buildPrompt(
+              item.name || item.title || 'Ilustrace',
+              item.description || '',
+              item.category || 'icon',
+            ));
+          }
+        } catch { /* silent */ }
       }
     }
     
@@ -3155,4 +5320,1538 @@ export async function generateIllustration(
   } catch (err) {
     return { success: false, error: String(err) };
   }
+}
+
+// =====================================================
+// SUGGEST IMAGE GROUPS
+// =====================================================
+export async function suggestImageGroups(dataSet: TopicDataSet): Promise<ImageGroup[]> {
+  console.log('[suggestImageGroups] START for topic:', dataSet.topic);
+  const keyTerms = dataSet.content?.keyTerms?.map(t => t.term).join(', ') || '';
+  const keyFacts = dataSet.content?.keyFacts?.slice(0, 6).join('; ') || '';
+
+  const prompt = `Jsi pedagog navrhující vizuální materiály pro učebnici.
+Téma: "${dataSet.topic}" (${dataSet.grade}. třída, ${dataSet.subjectCode || (dataSet as any).subject_code || ''})
+
+Klíčové pojmy: ${keyTerms}
+Fakta: ${keyFacts}
+
+Navrhni 2–4 SKUPINY OBRÁZKŮ kde má smysl mít sérii obrázků se stejným stylem (např. "Typy řeckých sloupů" → 3 druhy, "Fáze měsíce" → 8 fází, "Světové náboženské symboly" → 5–6 symbolů).
+
+PRAVIDLO PRO POČET SUBJEKTŮ: Zvol přesně tolik kolik jich téma přirozeně má.
+- Pokud jsou to diskrétní kategorie (druhy, typy, fáze): přesný počet (2, 3, 4, 5, 6, 7, 8...)
+- Nekrát uměle doplňuj ani nezkracuj — "4 roční období" = právě 4, "3 typy hornin" = právě 3
+- Min 2, max 8 subjektů na skupinu
+
+Vrať POUZE validní JSON pole (žádný markdown, žádné bloky kódu, čistý JSON):
+[
+  {
+    "title": "Název skupiny česky",
+    "description": "Vzdělávací záměr 1 věta",
+    "type": "illustration",
+    "stylePrompt": "detailed educational illustration, white background, same scale and composition, consistent line weight",
+    "layout": "gallery",
+    "subjects": [
+      { "name": "Přesný název subjektu 1" },
+      { "name": "Přesný název subjektu 2" }
+    ]
+  }
+]`;
+
+  try {
+    const raw = await chatWithAIProxy(
+      [{ role: 'user', content: prompt }],
+      'gemini-3-flash',
+      { temperature: 0.7, max_tokens: 1500 }
+    );
+
+    console.log('[suggestImageGroups] raw response (first 600):', raw.substring(0, 600));
+
+    // Strip possible markdown code fences
+    const stripped = raw.replace(/```json\s*/gi, '').replace(/```\s*/gi, '').trim();
+    const jsonMatch = stripped.match(/\[[\s\S]*\]/);
+    if (!jsonMatch) {
+      console.warn('[suggestImageGroups] no JSON array found in response');
+      return [];
+    }
+
+    const parsed: any[] = JSON.parse(jsonMatch[0]);
+    console.log('[suggestImageGroups] parsed', parsed.length, 'groups');
+
+    const now = new Date().toISOString();
+    return parsed.map((g: any): ImageGroup => ({
+      id: `ig-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      title: g.title || 'Skupina obrázků',
+      description: g.description || '',
+      type: (['illustration', 'photo', 'diagram'] as const).includes(g.type) ? g.type : 'illustration',
+      stylePrompt: g.stylePrompt || 'educational illustration, white background, consistent style',
+      layout: 'gallery',
+      subjects: (g.subjects || []).map((s: any): ImageGroupSubject => ({
+        id: `subj-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        name: typeof s === 'string' ? s : s.name,
+        status: 'pending',
+      })),
+      createdAt: now,
+      updatedAt: now,
+    }));
+  } catch (e) {
+    console.error('[suggestImageGroups] error:', e);
+    return [];
+  }
+}
+
+// =====================================================
+// LANGUAGE MATERIAL GENERATORS
+// =====================================================
+
+/**
+ * Detects CEFR level from grade for language subjects.
+ * Czech school mapping: 6→A1+, 7→A2, 8→A2+/B1, 9→B1, secondary→B1+
+ */
+function gradeToLevel(grade: number): string {
+  if (grade <= 6) return 'A1';
+  if (grade === 7) return 'A2';
+  if (grade === 8) return 'B1';
+  if (grade >= 9) return 'B1';
+  return 'A2';
+}
+
+/**
+ * Vocabulary Set Generator
+ * Generates a VividBoard with 15-20 flashcard slides + a companion quiz board.
+ * Also saves a printable worksheet HTML for the vocabulary list.
+ */
+async function generateLanguageVocabularySet(
+  dataSet: TopicDataSet,
+  onProgress?: ProgressCallback
+): Promise<GenerateResult> {
+  onProgress?.('plan', 'Generuji slovní zásobu pro téma...');
+
+  const level = gradeToLevel(dataSet.grade);
+  const subject = dataSet.subjectCode?.includes('nemcin') ? 'němčina'
+    : dataSet.subjectCode?.includes('francouz') ? 'francouzština'
+    : 'angličtina';
+  const langCode = dataSet.subjectCode?.includes('nemcin') ? 'German'
+    : dataSet.subjectCode?.includes('francouz') ? 'French'
+    : 'English';
+
+  const prompt = `You are an EFL/EFL material designer. Generate a structured vocabulary set for Czech school students.
+
+TOPIC: "${dataSet.topic}"
+LANGUAGE: ${langCode}
+CEFR LEVEL: ${level}
+GRADE: ${dataSet.grade}. ročník (Czech school)
+
+Generate exactly 16 vocabulary items relevant to this topic at the ${level} level.
+
+Return ONLY this JSON (no markdown fences):
+{
+  "title": "string — e.g. 'Food & Restaurants - Vocabulary'",
+  "cefrLevel": "${level}",
+  "items": [
+    {
+      "word": "string — ${langCode} word or phrase",
+      "translation": "string — Czech translation",
+      "phonetic": "string — IPA transcription e.g. /pɔːʃ.ən/",
+      "exampleSentence": "string — simple example sentence at ${level} level",
+      "exampleTranslation": "string — Czech translation of the example"
+    }
+  ]
+}
+
+Rules:
+- Items must be thematically coherent with the topic
+- Example sentences must be at ${level} level (simple grammar, common vocabulary)
+- Czech translations must be natural, not overly formal
+- Phonetics in IPA for all items
+- Mix: nouns, verbs, adjectives, useful phrases
+`;
+
+  const response = await chatWithAIProxy([{ role: 'user', content: prompt }], 'gemini-3.1-pro', { max_tokens: 8192 });
+  if (!response) return { success: false, error: 'AI neodpovědělo' };
+
+  let vocab: any;
+  try {
+    const jsonMatch = response.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error('Žádný JSON v odpovědi');
+    vocab = JSON.parse(jsonMatch[0]);
+  } catch (e) {
+    return { success: false, error: `Chyba parsování: ${e}` };
+  }
+
+  onProgress?.('build', 'Přiřazuji obrázky z datasetu...');
+
+  // Use only images already present in the dataset — no auto-generation.
+  // Priority: illustrations (manually generated) → imageGroups → web images
+  const items: any[] = vocab.items || [];
+
+  // Collect all available dataset image URLs with their searchable text
+  const datasetImages: Array<{ url: string; text: string }> = [];
+
+  // 1. Illustrations (from DatasetContextPanel, manually generated)
+  (dataSet.media?.illustrations || []).forEach((ill: any) => {
+    if (ill.url) {
+      datasetImages.push({ url: ill.url, text: (ill.prompt || ill.subject || '').toLowerCase() });
+    }
+  });
+
+  // 2. ImageGroup subjects (generated via imageGroups panel)
+  (dataSet.media?.imageGroups || []).forEach((group: any) => {
+    (group.subjects || []).forEach((subj: any) => {
+      if (subj.imageUrl && subj.status === 'done') {
+        datasetImages.push({ url: subj.imageUrl, text: (subj.name || subj.subject || '').toLowerCase() });
+      }
+    });
+  });
+
+  // 3. Web images (ValidatedImage[])
+  (dataSet.media?.images || []).forEach((img: any) => {
+    if (img.url) {
+      datasetImages.push({
+        url: img.url,
+        text: [img.title, img.description, img.query, img.alt].filter(Boolean).join(' ').toLowerCase(),
+      });
+    }
+  });
+
+  // Match each vocabulary word to the best dataset image (by substring match)
+  const imageUrls: (string | null)[] = items.map((item: any) => {
+    const word = (item.word || '').toLowerCase();
+    const translation = (item.translation || '').toLowerCase();
+    const found = datasetImages.find(
+      img => img.text.includes(word) || img.text.includes(translation)
+    );
+    return found?.url ?? null;
+  });
+
+  onProgress?.('build', 'Sestavuji flashcard board...');
+
+  // Build flashcard VividBoard
+  const { createFlashcardSlide, createInfoSlide } = await import('../../types/quiz');
+  const slides: any[] = [];
+
+  // Title info slide
+  const titleSlide = createInfoSlide(0, 'title-only');
+  titleSlide.title = vocab.title || `${dataSet.topic} – Vocabulary`;
+  (titleSlide as any).backgroundColor = '#6366f1';
+  slides.push(titleSlide);
+
+  // Flashcard slides — with generated images
+  items.forEach((item: any, idx: number) => {
+    const card = createFlashcardSlide(idx + 1);
+    card.word = item.word || '';
+    card.translation = item.translation || '';
+    card.phonetic = item.phonetic || '';
+    card.exampleSentence = item.exampleSentence || '';
+    card.exampleTranslation = item.exampleTranslation || '';
+    card.audioLang = langCode === 'German' ? 'en-US' : langCode === 'French' ? 'en-US' : 'en-US';
+    card.mode = 'language';
+    if (imageUrls[idx]) {
+      card.image = imageUrls[idx]!;
+    }
+    slides.push(card);
+  });
+
+  const quiz = {
+    id: `quiz-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    title: vocab.title || `${dataSet.topic} – Slovní zásoba`,
+    slides,
+    settings: {
+      showProgress: true,
+      showScore: false,
+      allowSkip: true,
+      allowBack: true,
+      shuffleQuestions: false,
+      shuffleOptions: false,
+      showExplanations: 'immediately' as const,
+    },
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+
+  const { stripBase64FromObject } = await import('../supabase/upload-image');
+  const safeQuiz = stripBase64FromObject(quiz) as typeof quiz;
+  saveQuiz(safeQuiz);
+
+  onProgress?.('save', 'Ukládám do Supabase...');
+  await _syncQz(safeQuiz);
+
+  return {
+    success: true,
+    id: quiz.id,
+    preview: `Kartičky: ${(vocab.items || []).length} slov | Téma: ${dataSet.topic} | Úroveň: ${level}`,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Shared helpers for language activity generators
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Saves a language activity as both a worksheet AND a linked board (presentation).
+ * Returns the IDs of both created items.
+ */
+async function _saveLangMaterial(
+  blocks: WorksheetBlock[],
+  title: string,
+  dataSet: TopicDataSet,
+): Promise<{ worksheetId: string; boardId: string }> {
+  const { stripBase64FromObject } = await import('../supabase/upload-image');
+
+  const worksheetId = `worksheet-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+  const boardId = `board-${Date.now() + 1}-${Math.random().toString(36).slice(2, 6)}`;
+
+  const worksheet: Worksheet = {
+    id: worksheetId,
+    title,
+    blocks,
+    settings: { showAnswerKey: true, pageSize: 'A4', margins: 'normal' },
+    metadata: {
+      subject: dataSet.subjectCode as any,
+      grade: dataSet.grade as any,
+      topic: dataSet.topic,
+    },
+    linkedBoardId: boardId,
+    status: 'draft',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+  _saveWs(worksheet);
+
+  // Strip worksheetOnly blocks before converting to board
+  const boardWorksheet = { ...worksheet, blocks: blocks.filter(b => !b.worksheetOnly) };
+  const quiz = worksheetToPresentation(boardWorksheet);
+  quiz.id = boardId;
+  (quiz as any).linkedWorksheetId = worksheetId;
+  quiz.title = title;
+
+  const safeQuiz = stripBase64FromObject(quiz) as typeof quiz;
+  _saveQz(safeQuiz);
+  await _syncQz(safeQuiz);
+
+  return { worksheetId, boardId };
+}
+
+/**
+ * Generates a single topic illustration for a language activity.
+ * Returns a public Storage URL, or null if generation fails.
+ */
+async function _generateLangIllustration(
+  topic: string,
+  activityType: string,
+  grade: number,
+): Promise<string | null> {
+  try {
+    const { generateImageWithImagen } = await import('../ai-chat-proxy');
+    const { processImageUrl } = await import('../supabase/upload-image');
+
+    const imgPrompt = `Educational illustration for an English language learning activity.
+Topic: "${topic}"
+Activity: ${activityType}
+Style: Clean, bright, flat illustration. White background. No text, no letters. Suitable for grade ${grade} students.`;
+
+    const imgResult = await generateImageWithImagen(imgPrompt, {
+      aspectRatio: '16:9',
+      numberOfImages: 1,
+      model: 'flash',
+    });
+
+    if (imgResult.success && (imgResult.url || imgResult.images?.[0]?.base64)) {
+      const rawUrl = imgResult.url
+        || `data:${imgResult.images![0].mimeType || 'image/png'};base64,${imgResult.images![0].base64}`;
+      const slug = topic.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '').slice(0, 30);
+      return await processImageUrl(rawUrl, `lang-${activityType}-${slug}`, 'illustrations');
+    }
+  } catch (err) {
+    console.warn('[LangGen] Illustration failed:', err);
+  }
+  return null;
+}
+
+/**
+ * Converts a sentence with a ___ blank marker into FillBlankSegment[].
+ * E.g. "I ___ (go) to school." + answer "go" → [text, blank, text]
+ */
+function _parseFillBlankSentence(
+  sentence: string,
+  answer: string,
+  blankId: string,
+): FillBlankSegment[] {
+  const parts = sentence.split('___');
+  if (parts.length < 2) {
+    return [{ type: 'text', content: sentence }];
+  }
+  const segments: FillBlankSegment[] = [];
+  segments.push({ type: 'text', content: parts[0] });
+  segments.push({ type: 'blank', id: blankId, correctAnswer: answer.trim() });
+  segments.push({ type: 'text', content: parts.slice(1).join('___') });
+  return segments;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Grammar Lesson Generator
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Grammar Lesson Generator
+ * PPP structure: Presentation → Practice → Production
+ * Generates: WorksheetBlock[] → worksheet (teacher_worksheets) + board (teacher_boards)
+ */
+async function generateLanguageGrammarLesson(
+  dataSet: TopicDataSet,
+  onProgress?: ProgressCallback
+): Promise<GenerateResult> {
+  onProgress?.('plan', 'Generuji gramatickou lekci (PPP struktura)...');
+
+  const level = gradeToLevel(dataSet.grade);
+
+  // Ilustrace se generují manuálně v panelu datasetu — zde jen reservujeme slot
+  const imageUrl: string | null = null;
+
+  onProgress?.('agent1', 'Generuji obsah lekce...');
+  const prompt = `You are an EFL teacher creating a grammar lesson for Czech students (grade ${dataSet.grade}, CEFR ${level}).
+
+TOPIC/GRAMMAR POINT: "${dataSet.topic}"
+CEFR LEVEL: ${level}
+
+Return ONLY this JSON (no markdown, no code fences):
+{
+  "title": "string — grammar topic in English, e.g. 'Present Simple – Habits & Routines'",
+  "grammarPoint": "string — short grammar name, e.g. 'Present Simple'",
+  "contextText": "string — short dialogue or 4-6 sentences showcasing the grammar. Use **word** to bold target structures.",
+  "noticeNote": "string — Czech: brief observation, e.g. 'Všimni si, jak tvoříme přítomný čas...'",
+  "ruleExplanation": "string — Czech: clear concise rule explanation (1-3 sentences)",
+  "ruleAffirmative": "string — English affirmative example sentence",
+  "ruleNegative": "string — English negative example sentence",
+  "ruleQuestion": "string — English question example sentence",
+  "examples": [
+    "string — English example 1",
+    "string — English example 2",
+    "string — English example 3"
+  ],
+  "fillBlanks": [
+    { "sentence": "I ___ (go) to school every day.", "answer": "go" },
+    { "sentence": "She ___ (not/like) vegetables.", "answer": "doesn't like" },
+    { "sentence": "We ___ (have) English on Mondays.", "answer": "have" },
+    { "sentence": "My sister ___ (study) hard.", "answer": "studies" },
+    { "sentence": "They ___ (not/be) at home.", "answer": "aren't" },
+    { "sentence": "___ he ___ (play) football every week?", "answer": "Does / play" }
+  ],
+  "productionTask": "string — Czech production task, e.g. 'Napiš 4-5 vět o svém denním programu pomocí přítomného času.'"
+}
+
+Rules:
+- Czech for explanations and instructions, English for all examples
+- Fill-blank sentences MUST use ___ as the blank marker — exactly one ___ per sentence
+- Exactly 6 fill-blank sentences, exactly 3 examples
+- CEFR ${level} appropriate difficulty throughout`;
+
+  const response = await chatWithAIProxy([{ role: 'user', content: prompt }], 'gemini-3.1-pro', { max_tokens: 4096 });
+  if (!response) return { success: false, error: 'AI neodpovědělo' };
+
+  let data: any;
+  try {
+    const jsonMatch = response.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error('Žádný JSON v odpovědi');
+    data = JSON.parse(jsonMatch[0]);
+  } catch (e) {
+    return { success: false, error: `Chyba parsování JSON: ${e}` };
+  }
+
+  onProgress?.('build', 'Sestavuji pracovní list...');
+
+  const title = data.title || `${dataSet.topic} – Gramatická lekce`;
+  let order = 0;
+  const blocks: WorksheetBlock[] = [];
+
+  // 1. Title heading
+  blocks.push({
+    id: generateBlockId(), order: order++, type: 'heading', width: 'full',
+    content: { text: title, level: 'h1', headingStyle: 'left-border' },
+  });
+
+  // 2. Topic illustration (half) + context text (half)
+  if (imageUrl) {
+    blocks.push({
+      id: generateBlockId(), order: order++, type: 'image', width: 'half',
+      content: { url: imageUrl, alt: dataSet.topic, size: 100, alignment: 'center' },
+    });
+  }
+  blocks.push({
+    id: generateBlockId(), order: order++, type: 'paragraph',
+    width: imageUrl ? 'half' : 'full',
+    content: {
+      html: `<h3>🔍 Gramatika v kontextu</h3><p>${
+        (data.contextText || '').replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br>')
+      }</p><p><em>${data.noticeNote || ''}</em></p>`,
+    },
+  });
+
+  // 3. Grammar rule infobox
+  blocks.push({
+    id: generateBlockId(), order: order++, type: 'infobox', width: 'full',
+    content: {
+      title: `📋 Pravidlo: ${data.grammarPoint || ''}`,
+      html: `<p>${data.ruleExplanation || ''}</p>
+<table style="width:100%;border-collapse:collapse;margin-top:8px">
+<tr><td style="padding:4px 8px;border:1px solid #ccc"><strong>(+)</strong></td><td style="padding:4px 8px;border:1px solid #ccc">${data.ruleAffirmative || ''}</td></tr>
+<tr><td style="padding:4px 8px;border:1px solid #ccc"><strong>(−)</strong></td><td style="padding:4px 8px;border:1px solid #ccc">${data.ruleNegative || ''}</td></tr>
+<tr><td style="padding:4px 8px;border:1px solid #ccc"><strong>(?)</strong></td><td style="padding:4px 8px;border:1px solid #ccc">${data.ruleQuestion || ''}</td></tr>
+</table>`,
+      variant: 'blue',
+    },
+  });
+
+  // 4. Examples paragraph
+  const examplesHtml = (data.examples || []).map((ex: string) => `<li>${ex}</li>`).join('');
+  blocks.push({
+    id: generateBlockId(), order: order++, type: 'paragraph', width: 'full',
+    content: { html: `<h3>✏️ Příklady</h3><ul>${examplesHtml}</ul>` },
+  });
+
+  // 5. Fill-blank practice
+  const fillBlanks: Array<{ sentence: string; answer: string }> = data.fillBlanks || [];
+  if (fillBlanks.length > 0) {
+    blocks.push({
+      id: generateBlockId(), order: order++, type: 'heading', width: 'full',
+      content: { text: 'Cvičení – Doplň správný tvar', level: 'h2' },
+    });
+    const allSegments: FillBlankSegment[] = [];
+    fillBlanks.forEach((fb, i) => {
+      if (i > 0) allSegments.push({ type: 'text', content: '   ' });
+      allSegments.push({ type: 'text', content: `${i + 1}. ` });
+      const segs = _parseFillBlankSentence(fb.sentence || '', fb.answer || '', `gram-blank-${i + 1}`);
+      allSegments.push(...segs);
+    });
+    blocks.push({
+      id: generateBlockId(), order: order++, type: 'fill-blank', width: 'full',
+      content: { instruction: 'Doplň správný tvar slovesa do mezer.', segments: allSegments },
+    });
+  }
+
+  // 6. Production free-answer
+  blocks.push({
+    id: generateBlockId(), order: order++, type: 'heading', width: 'full',
+    content: { text: '🗣️ Volné použití (Production)', level: 'h2' },
+  });
+  blocks.push({
+    id: generateBlockId(), order: order++, type: 'free-answer', width: 'full',
+    content: { question: data.productionTask || 'Napiš 4-5 vět pomocí nové gramatiky.', lines: 5 },
+  });
+
+  onProgress?.('save', 'Ukládám lekci jako pracovní list a board...');
+  const { worksheetId, boardId } = await _saveLangMaterial(blocks, title, dataSet);
+
+  return {
+    success: true,
+    id: worksheetId,
+    linkedBoardId: boardId,
+    preview: `Gramatická lekce (PPP) | ${level} | ${dataSet.grade}. ročník | + Board`,
+  };
+}
+
+/**
+ * Reading Activity Generator
+ * Creates a reading text at the right CEFR level with graduated comprehension tasks.
+ * Generates: WorksheetBlock[] → worksheet (teacher_worksheets) + board (teacher_boards)
+ */
+async function generateLanguageReadingActivity(
+  dataSet: TopicDataSet,
+  onProgress?: ProgressCallback
+): Promise<GenerateResult> {
+  onProgress?.('plan', 'Generuji čtecí aktivitu...');
+
+  const level = gradeToLevel(dataSet.grade);
+  const wordCount = level === 'A1' ? '100-150' : level === 'A2' ? '150-220' : '250-350';
+
+  const imageUrl: string | null = null;
+
+  onProgress?.('agent1', 'Generuji čtecí text a úkoly...');
+  const prompt = `You are an EFL material designer. Create a reading activity for Czech students (grade ${dataSet.grade}, CEFR ${level}).
+
+TOPIC: "${dataSet.topic}"
+CEFR LEVEL: ${level}
+TEXT LENGTH: ${wordCount} words
+
+Return ONLY this JSON (no markdown, no code fences):
+{
+  "title": "string — title of the reading text in English, e.g. 'Life in the City'",
+  "preReadingVocab": [
+    { "word": "string — English word/phrase", "translation": "string — Czech translation" }
+  ],
+  "predictionQuestion": "string — Czech prediction question to think about before reading",
+  "text": "string — the reading text in English, ${wordCount} words. Use \\n\\n for paragraph breaks.",
+  "trueFalseStatements": [
+    { "statement": "string — English statement about the text", "answer": "T or F or NM" }
+  ],
+  "comprehensionQuestions": [
+    "string — Czech question, student answers in English"
+  ],
+  "discussionQuestion": "string — Czech personal response question connecting text to student's life",
+  "answerKey": "string — compact answer key for T/F, e.g. '1-T, 2-F, 3-NM, 4-T, 5-F, 6-T'"
+}
+
+Rules:
+- Exactly 4-5 pre-reading vocabulary items
+- Text strictly at ${level} level (simple grammar and common vocabulary for A1/A2, more varied for B1)
+- Exactly 6 True/False/NM statements
+- Exactly 3 comprehension questions
+- Czech for instructions and questions, English for the reading text
+- Engaging scenario connected to "${dataSet.topic}"`;
+
+  const response = await chatWithAIProxy([{ role: 'user', content: prompt }], 'gemini-3.1-pro', { max_tokens: 6144 });
+  if (!response) return { success: false, error: 'AI neodpovědělo' };
+
+  let data: any;
+  try {
+    const jsonMatch = response.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error('Žádný JSON v odpovědi');
+    data = JSON.parse(jsonMatch[0]);
+  } catch (e) {
+    return { success: false, error: `Chyba parsování JSON: ${e}` };
+  }
+
+  onProgress?.('build', 'Sestavuji pracovní list...');
+
+  const title = data.title ? `${data.title}` : `${dataSet.topic} – Čtení`;
+  let order = 0;
+  const blocks: WorksheetBlock[] = [];
+
+  // 1. Title heading
+  blocks.push({
+    id: generateBlockId(), order: order++, type: 'heading', width: 'full',
+    content: { text: `📖 ${title}`, level: 'h1', headingStyle: 'left-border' },
+  });
+
+  // 2. Topic illustration (full width for reading — big visual context)
+  if (imageUrl) {
+    blocks.push({
+      id: generateBlockId(), order: order++, type: 'image', width: 'full',
+      content: { url: imageUrl, alt: dataSet.topic, size: 60, alignment: 'center' },
+    });
+  }
+
+  // 3. Pre-reading vocabulary infobox
+  const vocabRows = (data.preReadingVocab || [])
+    .map((v: any) => `<tr><td style="padding:4px 8px;border:1px solid #ccc"><strong>${v.word || ''}</strong></td><td style="padding:4px 8px;border:1px solid #ccc">${v.translation || ''}</td></tr>`)
+    .join('');
+  blocks.push({
+    id: generateBlockId(), order: order++, type: 'infobox', width: 'full',
+    content: {
+      title: '📚 Před čtením – Nová slovíčka',
+      html: `<table style="width:100%;border-collapse:collapse">${vocabRows}</table>
+<p style="margin-top:8px"><strong>Přemýšlej:</strong> ${data.predictionQuestion || ''}</p>`,
+      variant: 'green',
+    },
+  });
+
+  // 4. Reading text paragraph
+  const textHtml = (data.text || '').replace(/\n\n/g, '</p><p>').replace(/\n/g, '<br>');
+  blocks.push({
+    id: generateBlockId(), order: order++, type: 'paragraph', width: 'full',
+    content: { html: `<h3>📖 Text</h3><p>${textHtml}</p>` },
+  });
+
+  // 5. True/False/NM as free-answer subquestions
+  const tfStatements: Array<{ statement: string; answer: string }> = data.trueFalseStatements || [];
+  if (tfStatements.length > 0) {
+    blocks.push({
+      id: generateBlockId(), order: order++, type: 'heading', width: 'full',
+      content: { text: 'Úkol 1 – Pravda / Nepravda / Nezmíněno', level: 'h2' },
+    });
+    blocks.push({
+      id: generateBlockId(), order: order++, type: 'free-answer', width: 'full',
+      content: {
+        question: 'Označ každé tvrzení: T (True) / F (False) / NM (Not Mentioned)',
+        lines: 1,
+        subQuestions: tfStatements.map((tf, i) => ({
+          id: `tf-${i + 1}`,
+          text: `${i + 1}. ${tf.statement || ''}`,
+          lines: 1,
+          sampleAnswer: tf.answer || '',
+        })),
+        subColumns: 1,
+      },
+    });
+  }
+
+  // 6. Comprehension questions as free-answer subquestions
+  const compQs: string[] = data.comprehensionQuestions || [];
+  if (compQs.length > 0) {
+    blocks.push({
+      id: generateBlockId(), order: order++, type: 'heading', width: 'full',
+      content: { text: 'Úkol 2 – Otázky s porozuměním', level: 'h2' },
+    });
+    blocks.push({
+      id: generateBlockId(), order: order++, type: 'free-answer', width: 'full',
+      content: {
+        question: 'Odpověz na otázky anglicky.',
+        lines: 2,
+        subQuestions: compQs.map((q, i) => ({
+          id: `comp-${i + 1}`,
+          text: `${i + 1}. ${q}`,
+          lines: 2,
+        })),
+        subColumns: 1,
+      },
+    });
+  }
+
+  // 7. Answer key infobox
+  if (data.answerKey) {
+    blocks.push({
+      id: generateBlockId(), order: order++, type: 'infobox', width: 'full',
+      content: { title: '✔️ Klíč k odpovědím', html: `<p>${data.answerKey}</p>`, variant: 'yellow' },
+    });
+  }
+
+  // 8. Discussion free-answer
+  blocks.push({
+    id: generateBlockId(), order: order++, type: 'free-answer', width: 'full',
+    content: { question: `💬 Diskuse: ${data.discussionQuestion || 'Co si myslíš o tématu textu?'}`, lines: 3 },
+  });
+
+  onProgress?.('save', 'Ukládám čtecí aktivitu jako pracovní list a board...');
+  const { worksheetId, boardId } = await _saveLangMaterial(blocks, title, dataSet);
+
+  return {
+    success: true,
+    id: worksheetId,
+    linkedBoardId: boardId,
+    preview: `Čtení s porozuměním | ${level} | ${wordCount} slov | ${dataSet.grade}. ročník | + Board`,
+  };
+}
+
+/**
+ * Writing Activity Generator
+ * Creates a guided writing task with model text, language bank, and writing frame.
+ * Generates: WorksheetBlock[] → worksheet (teacher_worksheets) + board (teacher_boards)
+ */
+async function generateLanguageWritingActivity(
+  dataSet: TopicDataSet,
+  onProgress?: ProgressCallback,
+): Promise<GenerateResult> {
+  onProgress?.('plan', 'Generuji aktivitu pro psaní...');
+
+  const level = gradeToLevel(dataSet.grade);
+  const wordTarget = level === 'A1' ? '40-60' : level === 'A2' ? '60-100' : '100-150';
+
+  const imageUrl: string | null = null;
+
+  onProgress?.('agent1', 'Generuji zadání a vzorový text...');
+  const prompt = `Create a guided writing activity for Czech EFL students (grade ${dataSet.grade}, CEFR ${level}).
+
+TOPIC: "${dataSet.topic}"
+WRITING TARGET: ${wordTarget} words
+
+Return ONLY this JSON (no markdown, no code fences):
+{
+  "title": "string — writing task title in English, e.g. 'My Favourite Place'",
+  "task": "string — Czech: clear writing task (who, why, what to include). End with: Napiš ${wordTarget} slov.",
+  "modelText": "string — model text in English (${wordTarget} words). Use **phrase** to bold key phrases. Use \\n\\n for paragraphs.",
+  "languageBank": [
+    { "phrase": "string — English phrase/connector", "translation": "string — Czech translation" }
+  ],
+  "writingFrame": "string — writing frame with sentence starters, e.g. 'My favourite place is ___.\\nI like it because ___.\\nEvery time I go there, I ___.'",
+  "checklist": [
+    "string — self-assessment item, e.g. 'Did I write ${wordTarget} words?'"
+  ]
+}
+
+Rules:
+- Exactly 8-10 language bank phrases
+- Exactly 5 checklist items
+- Model text strictly at ${level} level
+- Czech for task and checklist; English for model text, language bank phrases, and writing frame`;
+
+  const response = await chatWithAIProxy([{ role: 'user', content: prompt }], 'gemini-3.1-pro', { max_tokens: 4096 });
+  if (!response) return { success: false, error: 'AI neodpovědělo' };
+
+  let data: any;
+  try {
+    const jsonMatch = response.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error('Žádný JSON v odpovědi');
+    data = JSON.parse(jsonMatch[0]);
+  } catch (e) {
+    return { success: false, error: `Chyba parsování JSON: ${e}` };
+  }
+
+  onProgress?.('build', 'Sestavuji pracovní list...');
+
+  const title = data.title || `${dataSet.topic} – Psaní`;
+  let order = 0;
+  const blocks: WorksheetBlock[] = [];
+
+  // 1. Title heading
+  blocks.push({
+    id: generateBlockId(), order: order++, type: 'heading', width: 'full',
+    content: { text: `✍️ ${title}`, level: 'h1', headingStyle: 'left-border' },
+  });
+
+  // 2. Illustration (half) + task (half)
+  if (imageUrl) {
+    blocks.push({
+      id: generateBlockId(), order: order++, type: 'image', width: 'half',
+      content: { url: imageUrl, alt: dataSet.topic, size: 100, alignment: 'center' },
+    });
+  }
+  blocks.push({
+    id: generateBlockId(), order: order++, type: 'infobox',
+    width: imageUrl ? 'half' : 'full',
+    content: {
+      title: '📝 Zadání',
+      html: `<p>${(data.task || '').replace(/\n/g, '<br>')}</p>`,
+      variant: 'blue',
+    },
+  });
+
+  // 3. Model text
+  const modelHtml = (data.modelText || '')
+    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\n\n/g, '</p><p>')
+    .replace(/\n/g, '<br>');
+  blocks.push({
+    id: generateBlockId(), order: order++, type: 'paragraph', width: 'full',
+    content: { html: `<h3>📄 Vzorový text</h3><p>${modelHtml}</p>` },
+  });
+
+  // 4. Language bank infobox
+  const langRows = (data.languageBank || [])
+    .map((lb: any) => `<tr><td style="padding:4px 8px;border:1px solid #ccc"><em>${lb.phrase || ''}</em></td><td style="padding:4px 8px;border:1px solid #ccc">${lb.translation || ''}</td></tr>`)
+    .join('');
+  blocks.push({
+    id: generateBlockId(), order: order++, type: 'infobox', width: 'full',
+    content: {
+      title: '💡 Užitečné fráze',
+      html: `<table style="width:100%;border-collapse:collapse">${langRows}</table>`,
+      variant: 'green',
+    },
+  });
+
+  // 5. Writing frame paragraph
+  blocks.push({
+    id: generateBlockId(), order: order++, type: 'paragraph', width: 'full',
+    content: {
+      html: `<h3>🗂️ Šablona pro psaní</h3><p style="font-style:italic">${
+        (data.writingFrame || '').replace(/\n/g, '<br>')
+      }</p>`,
+    },
+  });
+
+  // 6. Writing space free-answer
+  blocks.push({
+    id: generateBlockId(), order: order++, type: 'free-answer', width: 'full',
+    content: { question: `Napiš svůj text (${wordTarget} slov):`, lines: 8 },
+  });
+
+  // 7. Self-assessment checklist infobox
+  const checklistHtml = (data.checklist || [])
+    .map((item: string) => `<li>☐ ${item}</li>`)
+    .join('');
+  blocks.push({
+    id: generateBlockId(), order: order++, type: 'infobox', width: 'full',
+    content: { title: '✅ Sebehodnocení', html: `<ul>${checklistHtml}</ul>`, variant: 'yellow' },
+  });
+
+  onProgress?.('save', 'Ukládám aktivitu psaní jako pracovní list a board...');
+  const { worksheetId, boardId } = await _saveLangMaterial(blocks, title, dataSet);
+
+  return {
+    success: true,
+    id: worksheetId,
+    linkedBoardId: boardId,
+    preview: `Řízené psaní | ${level} | ${wordTarget} slov | ${dataSet.grade}. ročník | + Board`,
+  };
+}
+
+/**
+ * Speaking Activity Generator
+ * Creates printable speaking cards: discussion questions, role-play, useful language.
+ * Generates: WorksheetBlock[] → worksheet (teacher_worksheets) + board (teacher_boards)
+ */
+async function generateLanguageSpeakingActivity(
+  dataSet: TopicDataSet,
+  onProgress?: ProgressCallback,
+): Promise<GenerateResult> {
+  onProgress?.('plan', 'Generuji aktivitu pro mluvení...');
+
+  const level = gradeToLevel(dataSet.grade);
+
+  const imageUrl: string | null = null;
+
+  onProgress?.('agent1', 'Generuji diskusní otázky a role-play...');
+  const prompt = `Create a speaking activity for Czech EFL students (grade ${dataSet.grade}, CEFR ${level}).
+
+TOPIC: "${dataSet.topic}"
+
+Return ONLY this JSON (no markdown, no code fences):
+{
+  "title": "string — speaking activity title in English, e.g. 'Talking About Food'",
+  "discussionQuestions": [
+    "string — English discussion question suitable for ${level}"
+  ],
+  "rolePlayA": "string — Student A role: Czech role description + English conversation prompts. Use \\n for line breaks.",
+  "rolePlayB": "string — Student B role: Czech role description + English conversation prompts. Use \\n for line breaks.",
+  "usefulLanguage": [
+    { "phrase": "string — English phrase", "translation": "string — Czech translation" }
+  ],
+  "selfAssessment": [
+    "string — Czech 'Can I...' self-assessment statement"
+  ]
+}
+
+Rules:
+- Exactly 8 discussion questions (vary difficulty slightly: start easier, get harder)
+- Exactly 8-10 useful language phrases (include: agreeing, disagreeing, giving opinion, asking for opinion)
+- Exactly 3-4 self-assessment items (Can I...? statements)
+- English for discussion questions and useful phrases; Czech for role descriptions and self-assessment`;
+
+  const response = await chatWithAIProxy([{ role: 'user', content: prompt }], 'gemini-3.1-pro', { max_tokens: 4096 });
+  if (!response) return { success: false, error: 'AI neodpovědělo' };
+
+  let data: any;
+  try {
+    const jsonMatch = response.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error('Žádný JSON v odpovědi');
+    data = JSON.parse(jsonMatch[0]);
+  } catch (e) {
+    return { success: false, error: `Chyba parsování JSON: ${e}` };
+  }
+
+  onProgress?.('build', 'Sestavuji pracovní list...');
+
+  const title = data.title || `${dataSet.topic} – Mluvení`;
+  let order = 0;
+  const blocks: WorksheetBlock[] = [];
+
+  // 1. Title heading
+  blocks.push({
+    id: generateBlockId(), order: order++, type: 'heading', width: 'full',
+    content: { text: `🗣️ ${title}`, level: 'h1', headingStyle: 'left-border' },
+  });
+
+  // 2. Illustration (half) + discussion questions (half)
+  if (imageUrl) {
+    blocks.push({
+      id: generateBlockId(), order: order++, type: 'image', width: 'half',
+      content: { url: imageUrl, alt: dataSet.topic, size: 100, alignment: 'center' },
+    });
+  }
+  const questionsHtml = (data.discussionQuestions || [])
+    .map((q: string, i: number) => `<li>${i + 1}. ${q}</li>`)
+    .join('');
+  blocks.push({
+    id: generateBlockId(), order: order++, type: 'paragraph',
+    width: imageUrl ? 'half' : 'full',
+    content: { html: `<h3>💬 Diskusní otázky</h3><ol>${questionsHtml}</ol>` },
+  });
+
+  // 3. Role-play cards (two infoboxes side by side)
+  blocks.push({
+    id: generateBlockId(), order: order++, type: 'heading', width: 'full',
+    content: { text: '🎭 Role-play', level: 'h2' },
+  });
+  blocks.push({
+    id: generateBlockId(), order: order++, type: 'infobox', width: 'half',
+    content: {
+      title: 'Student A',
+      html: `<p>${(data.rolePlayA || '').replace(/\n/g, '<br>')}</p>`,
+      variant: 'blue',
+    },
+  });
+  blocks.push({
+    id: generateBlockId(), order: order++, type: 'infobox', width: 'half',
+    content: {
+      title: 'Student B',
+      html: `<p>${(data.rolePlayB || '').replace(/\n/g, '<br>')}</p>`,
+      variant: 'green',
+    },
+  });
+
+  // 4. Useful language infobox
+  const langRows = (data.usefulLanguage || [])
+    .map((ul: any) => `<tr><td style="padding:4px 8px;border:1px solid #ccc"><em>${ul.phrase || ''}</em></td><td style="padding:4px 8px;border:1px solid #ccc">${ul.translation || ''}</td></tr>`)
+    .join('');
+  blocks.push({
+    id: generateBlockId(), order: order++, type: 'infobox', width: 'full',
+    content: {
+      title: '💬 Užitečný jazyk',
+      html: `<table style="width:100%;border-collapse:collapse">${langRows}</table>`,
+      variant: 'purple',
+    },
+  });
+
+  // 5. Self-assessment infobox
+  const selfHtml = (data.selfAssessment || [])
+    .map((item: string) => `<li>☐ ${item}</li>`)
+    .join('');
+  blocks.push({
+    id: generateBlockId(), order: order++, type: 'infobox', width: 'full',
+    content: { title: '⭐ Sebehodnocení', html: `<ul>${selfHtml}</ul>`, variant: 'yellow' },
+  });
+
+  onProgress?.('save', 'Ukládám aktivitu mluvení jako pracovní list a board...');
+  const { worksheetId, boardId } = await _saveLangMaterial(blocks, title, dataSet);
+
+  return {
+    success: true,
+    id: worksheetId,
+    linkedBoardId: boardId,
+    preview: `Konverzační aktivita | ${level} | Role-play + diskuse | ${dataSet.grade}. ročník | + Board`,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Language Quiz Generator
+// VividBoard with ABC vocabulary, fill-blanks grammar, connect-pairs matching
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Language Quiz Generator
+ *
+ * Generates an interactive VividBoard quiz with:
+ * - ABC vocabulary questions (choose correct translation)
+ * - Connect-pairs slides (match word ↔ translation)
+ * - Fill-blanks grammar sentences
+ * - ABC grammar form questions (choose the correct verb form / preposition)
+ */
+async function generateLanguageQuiz(
+  dataSet: TopicDataSet,
+  onProgress?: ProgressCallback
+): Promise<GenerateResult> {
+  onProgress?.('plan', 'Generuji jazykový kvíz (slovní zásoba + gramatika)...');
+
+  const level = gradeToLevel(dataSet.grade);
+  const langCode = dataSet.subjectCode?.includes('nemcin') ? 'German'
+    : dataSet.subjectCode?.includes('francouz') ? 'French'
+    : 'English';
+
+  const prompt = `You are an EFL assessment designer. Create a language quiz for Czech students (grade ${dataSet.grade}, CEFR ${level}).
+
+TOPIC: "${dataSet.topic}"
+LANGUAGE: ${langCode}
+CEFR LEVEL: ${level}
+
+Return ONLY this JSON (no markdown fences, no extra text):
+{
+  "title": "string — e.g. 'Food & Restaurants – Language Quiz'",
+  "sections": [
+    {
+      "sectionTitle": "🔤 Slovní zásoba",
+      "abcVocab": [
+        {
+          "question": "string — e.g. 'What does \\"portion\\" mean?'",
+          "options": ["string (correct)", "string (wrong)", "string (wrong)", "string (wrong)"],
+          "correctIndex": 0
+        }
+      ],
+      "connectPairs": [
+        { "english": "string — English word", "czech": "string — Czech translation" }
+      ]
+    },
+    {
+      "sectionTitle": "📐 Gramatika",
+      "fillBlanks": [
+        {
+          "sentence": "string — sentence with [BLANK] marker, e.g. 'She [BLANK] to school every day.'",
+          "answer": "string — correct answer, e.g. 'goes'"
+        }
+      ],
+      "abcGrammar": [
+        {
+          "question": "string — e.g. 'Choose the correct form: She ___ happy.'",
+          "options": ["is (correct)", "are (wrong)", "am (wrong)", "be (wrong)"],
+          "correctIndex": 0
+        }
+      ]
+    }
+  ]
+}
+
+Rules:
+- abcVocab: exactly 5 questions. Each has 4 options (1 correct Czech translation + 3 plausible distractors).
+- connectPairs: exactly 6 word-translation pairs (different words from abcVocab).
+- fillBlanks: exactly 6 sentences. Each has exactly one [BLANK] marker. Answer is 1-2 words.
+- abcGrammar: exactly 4 questions. Cover grammar typical for ${level} level.
+- All questions must relate to topic "${dataSet.topic}".
+- Difficulty appropriate for CEFR ${level}.
+- Options in abcVocab and abcGrammar are plain strings WITHOUT "(correct)" labels — correctIndex specifies which is correct.
+`;
+
+  const response = await chatWithAIProxy([{ role: 'user', content: prompt }], 'gemini-3.1-pro', { max_tokens: 8192 });
+  if (!response) return { success: false, error: 'AI neodpovědělo' };
+
+  let quizData: any;
+  try {
+    const jsonMatch = response.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error('Žádný JSON v odpovědi');
+    quizData = JSON.parse(jsonMatch[0]);
+  } catch (e) {
+    return { success: false, error: `Chyba parsování JSON: ${e}` };
+  }
+
+  onProgress?.('build', 'Sestavuji VividBoard kvíz...');
+
+  const {
+    createInfoSlide,
+    createABCSlide,
+    createFillBlanksSlide,
+    createConnectPairsSlide,
+  } = await import('../../types/quiz');
+
+  const slides: any[] = [];
+  let order = 0;
+
+  // Title slide
+  const titleSlide = createInfoSlide(order++, 'title-only');
+  titleSlide.title = quizData.title || `${dataSet.topic} – Jazykový kvíz`;
+  (titleSlide as any).backgroundColor = '#4f46e5';
+  slides.push(titleSlide);
+
+  for (const section of (quizData.sections || [])) {
+    // Section header slide
+    const sectionSlide = createInfoSlide(order++, 'title-only');
+    sectionSlide.title = section.sectionTitle || 'Sekce';
+    (sectionSlide as any).backgroundColor = '#7c3aed';
+    slides.push(sectionSlide);
+
+    // ABC vocabulary questions
+    for (const q of (section.abcVocab || [])) {
+      const slide = createABCSlide(order++);
+      slide.question = q.question || '';
+      const opts = (q.options || []).slice(0, 4);
+      slide.options = opts.map((opt: string, i: number) => ({
+        id: ['a', 'b', 'c', 'd'][i] || `opt-${i}`,
+        label: ['A', 'B', 'C', 'D'][i] || String(i + 1),
+        content: opt,
+        isCorrect: i === (q.correctIndex ?? 0),
+      }));
+      slides.push(slide);
+    }
+
+    // ABC grammar questions
+    for (const q of (section.abcGrammar || [])) {
+      const slide = createABCSlide(order++);
+      slide.question = q.question || '';
+      const opts = (q.options || []).slice(0, 4);
+      slide.options = opts.map((opt: string, i: number) => ({
+        id: ['a', 'b', 'c', 'd'][i] || `opt-${i}`,
+        label: ['A', 'B', 'C', 'D'][i] || String(i + 1),
+        content: opt,
+        isCorrect: i === (q.correctIndex ?? 0),
+      }));
+      slides.push(slide);
+    }
+
+    // Connect pairs (word ↔ translation matching)
+    const pairs = (section.connectPairs || []).slice(0, 6);
+    if (pairs.length >= 2) {
+      const pairSlide = createConnectPairsSlide(order++);
+      pairSlide.instruction = `Spoj ${langCode === 'English' ? 'anglické' : langCode === 'German' ? 'německé' : 'francouzské'} slovo s českým překladem`;
+      pairSlide.pairs = pairs.map((p: any, i: number) => ({
+        id: `pair-${i + 1}`,
+        left: { id: `left-${i + 1}`, type: 'text', content: p.english || '' },
+        right: { id: `right-${i + 1}`, type: 'text', content: p.czech || '' },
+      }));
+      pairSlide.countAsMultiple = true;
+      pairSlide.shuffleSides = true;
+      slides.push(pairSlide);
+    }
+
+    // Fill-blanks grammar sentences
+    const fbSentences = (section.fillBlanks || []).slice(0, 6);
+    if (fbSentences.length > 0) {
+      const fbSlide = createFillBlanksSlide(order++);
+      fbSlide.instruction = 'Doplň správný tvar slova';
+      fbSlide.sentences = fbSentences.map((fb: any, i: number) => {
+        const rawText: string = fb.sentence || '';
+        const answer: string = fb.answer || '';
+        const blankId = `blank-${i + 1}-1`;
+        // Replace [BLANK] with placeholder reference
+        const text = rawText.replace('[BLANK]', `[${blankId}]`);
+        // Find character position of the blank placeholder
+        const position = text.indexOf(`[${blankId}]`);
+        return {
+          id: `sentence-${i + 1}`,
+          text,
+          blanks: [{ id: blankId, text: answer, position: position >= 0 ? position : 0 }],
+        };
+      });
+      fbSlide.distractors = [];
+      fbSlide.shuffleOptions = true;
+      slides.push(fbSlide);
+    }
+  }
+
+  const quiz = {
+    id: `quiz-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    title: quizData.title || `${dataSet.topic} – Jazykový kvíz`,
+    slides,
+    settings: {
+      showProgress: true,
+      showScore: true,
+      allowSkip: false,
+      allowBack: false,
+      shuffleQuestions: false,
+      shuffleOptions: true,
+      showExplanations: 'after-all' as const,
+    },
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+
+  const { stripBase64FromObject } = await import('../supabase/upload-image');
+  const safeQuiz = stripBase64FromObject(quiz) as typeof quiz;
+  saveQuiz(safeQuiz);
+
+  onProgress?.('save', 'Ukládám kvíz do Supabase...');
+  await _syncQz(safeQuiz);
+
+  const slideCount = slides.length - 1; // exclude title
+  return {
+    success: true,
+    id: quiz.id,
+    preview: `Jazykový kvíz | ${slideCount} slides | ABC + Spojovačka + Doplňování | ${level} | ${dataSet.grade}. ročník`,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Listening Activity Generator
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Listening Activity Generator
+ *
+ * Creates a listening task with audio script, pre/while/post-listening tasks.
+ * Generates: WorksheetBlock[] → worksheet (teacher_worksheets) + board (teacher_boards)
+ */
+async function generateListeningActivity(
+  dataSet: TopicDataSet,
+  onProgress?: ProgressCallback
+): Promise<GenerateResult> {
+  onProgress?.('plan', 'Generuji poslechovou aktivitu...');
+
+  const level = gradeToLevel(dataSet.grade);
+  const wordCount = level === 'A1' ? '80-120' : level === 'A2' ? '130-190' : '200-280';
+
+  onProgress?.('build', 'Generuji ilustraci tématu...');
+  const imageUrl: string | null = null;
+
+  onProgress?.('agent1', 'Generuji audioskript a úkoly...');
+  const prompt = `Create a listening activity for Czech EFL students (grade ${dataSet.grade}, CEFR ${level}).
+
+TOPIC: "${dataSet.topic}"
+SCRIPT LENGTH: ${wordCount} words
+
+Return ONLY this JSON (no markdown, no code fences):
+{
+  "title": "string — listening activity title in English, e.g. 'A Day at the Market'",
+  "preListeningVocab": [
+    { "word": "string — English word/phrase", "translation": "string — Czech translation" }
+  ],
+  "predictionQuestion": "string — Czech prediction question to think about before listening",
+  "script": "string — the listening script in English, ${wordCount} words. Natural dialogue or monologue. Use 'Speaker: ' labels for dialogues. Use \\n\\n for paragraph breaks.",
+  "orderingEvents": [
+    "string — English sentence describing an event from the script (scrambled order)"
+  ],
+  "correctOrder": [1, 2, 3, 4, 5],
+  "trueFalseStatements": [
+    { "statement": "string — English statement about the script", "answer": "T or F" }
+  ],
+  "comprehensionQuestions": [
+    "string — Czech comprehension question, student answers in English"
+  ],
+  "discussionQuestions": [
+    "string — Czech personal discussion question"
+  ],
+  "answerKey": "string — compact key, e.g. 'Ordering: 3-1-4-2-5 | T/F: T-F-T-T-F'"
+}
+
+Rules:
+- Exactly 5 pre-listening vocabulary items
+- Exactly 5 ordering events (scrambled) + correctOrder array with numbers 1-5
+- Exactly 5 True/False statements
+- Exactly 3 comprehension questions
+- Exactly 2 discussion questions
+- Script at CEFR ${level} level — short sentences for A1/A2, varied for B1
+- Czech for instructions and questions, English for the script`;
+
+  const response = await chatWithAIProxy([{ role: 'user', content: prompt }], 'gemini-3.1-pro', { max_tokens: 6144 });
+  if (!response) return { success: false, error: 'AI neodpovědělo' };
+
+  let data: any;
+  try {
+    const jsonMatch = response.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error('Žádný JSON v odpovědi');
+    data = JSON.parse(jsonMatch[0]);
+  } catch (e) {
+    return { success: false, error: `Chyba parsování JSON: ${e}` };
+  }
+
+  onProgress?.('build', 'Sestavuji pracovní list...');
+
+  const title = data.title || `${dataSet.topic} – Poslech`;
+  let order = 0;
+  const blocks: WorksheetBlock[] = [];
+
+  // 1. Title heading
+  blocks.push({
+    id: generateBlockId(), order: order++, type: 'heading', width: 'full',
+    content: { text: `🎧 ${title}`, level: 'h1', headingStyle: 'left-border' },
+  });
+
+  // 2. Illustration (half) + pre-listening vocab (half)
+  if (imageUrl) {
+    blocks.push({
+      id: generateBlockId(), order: order++, type: 'image', width: 'half',
+      content: { url: imageUrl, alt: dataSet.topic, size: 100, alignment: 'center' },
+    });
+  }
+  const vocabRows = (data.preListeningVocab || [])
+    .map((v: any) => `<tr><td style="padding:4px 8px;border:1px solid #ccc"><strong>${v.word || ''}</strong></td><td style="padding:4px 8px;border:1px solid #ccc">${v.translation || ''}</td></tr>`)
+    .join('');
+  blocks.push({
+    id: generateBlockId(), order: order++, type: 'infobox',
+    width: imageUrl ? 'half' : 'full',
+    content: {
+      title: '📚 Před poslechem – Klíčová slovíčka',
+      html: `<table style="width:100%;border-collapse:collapse">${vocabRows}</table>
+<p style="margin-top:8px"><strong>Přemýšlej:</strong> ${data.predictionQuestion || ''}</p>`,
+      variant: 'green',
+    },
+  });
+
+  // 3a. Teacher instruction (worksheet only — not shown in board)
+  blocks.push({
+    id: generateBlockId(), order: order++, type: 'paragraph', width: 'full',
+    worksheetOnly: true,
+    content: {
+      html: `<p><em>📌 Pro učitele: Přečtěte text nahlas nebo přehrajte nahrávku. Tempo: přirozené pro ${level}. Speaker: viz audioskript níže.</em></p>`,
+    },
+  } as any);
+
+  // 3b. Audio script — clean text for board (with TTS), full HTML for worksheet
+  const scriptHtml = (data.script || '')
+    .replace(/\n\n/g, '</p><p>')
+    .replace(/\n/g, '<br>');
+  blocks.push({
+    id: generateBlockId(), order: order++, type: 'infobox', width: 'full',
+    content: {
+      title: '🎧 Audioskript',
+      html: `<p>${scriptHtml}</p>`,
+      variant: 'blue',
+      // TTS hint stored in metadata — picked up by board conversion
+      ttsText: data.script || '',
+      ttsLang: 'en-US',
+    },
+  });
+
+  // 4. Ordering events free-answer
+  const events: string[] = data.orderingEvents || [];
+  const correctOrder: number[] = data.correctOrder || [];
+  if (events.length > 0) {
+    blocks.push({
+      id: generateBlockId(), order: order++, type: 'heading', width: 'full',
+      content: { text: 'Úkol 1 – Seřaď události', level: 'h2' },
+    });
+    const eventsHtml = events
+      .map((ev: string, i: number) => `${String.fromCharCode(65 + i)}. ${ev}`)
+      .join('<br>');
+    const keyStr = correctOrder.length > 0
+      ? ` (Správné pořadí: ${correctOrder.map((n: number) => String.fromCharCode(64 + n)).join(' → ')})`
+      : '';
+    blocks.push({
+      id: generateBlockId(), order: order++, type: 'paragraph', width: 'full',
+      content: { html: `<p>Seřaď tyto události ve správném pořadí (1–${events.length}) podle poslechu:</p><p>${eventsHtml}</p><p style="color:#666;font-size:0.85em">${keyStr}</p>` },
+    });
+    blocks.push({
+      id: generateBlockId(), order: order++, type: 'free-answer', width: 'full',
+      content: { question: 'Moje pořadí: ___ → ___ → ___ → ___ → ___', lines: 1 },
+    });
+  }
+
+  // 5. True/False — one multiple-choice block per statement
+  //    → in the board these become ABC slides with True / False bubbles
+  const tfStatements: Array<{ statement: string; answer: string }> = data.trueFalseStatements || [];
+  if (tfStatements.length > 0) {
+    blocks.push({
+      id: generateBlockId(), order: order++, type: 'heading', width: 'full',
+      content: { text: 'Úkol 2 – Pravda / Nepravda', level: 'h2' },
+    });
+    for (let i = 0; i < tfStatements.length; i++) {
+      const tf = tfStatements[i];
+      const isTrue = (tf.answer || '').toUpperCase().startsWith('T');
+      blocks.push({
+        id: generateBlockId(), order: order++, type: 'multiple-choice', width: 'full',
+        content: {
+          question: `${i + 1}. ${tf.statement || ''}`,
+          options: [
+            { id: 'T', text: '✅ True' },
+            { id: 'F', text: '❌ False' },
+          ],
+          correctAnswers: [isTrue ? 'T' : 'F'],
+          allowMultiple: false,
+          layout: 'horizontal',
+          visualStyle: 'playful',
+        },
+      });
+    }
+  }
+
+  // 6. Comprehension questions
+  const compQs: string[] = data.comprehensionQuestions || [];
+  if (compQs.length > 0) {
+    blocks.push({
+      id: generateBlockId(), order: order++, type: 'heading', width: 'full',
+      content: { text: 'Úkol 3 – Otázky s porozuměním', level: 'h2' },
+    });
+    blocks.push({
+      id: generateBlockId(), order: order++, type: 'free-answer', width: 'full',
+      content: {
+        question: 'Odpověz na otázky anglicky.',
+        lines: 2,
+        subQuestions: compQs.map((q, i) => ({
+          id: `comp-${i + 1}`,
+          text: `${i + 1}. ${q}`,
+          lines: 2,
+        })),
+        subColumns: 1,
+      },
+    });
+  }
+
+  // 7. Answer key infobox
+  if (data.answerKey) {
+    blocks.push({
+      id: generateBlockId(), order: order++, type: 'infobox', width: 'full',
+      content: { title: '✔️ Klíč', html: `<p>${data.answerKey}</p>`, variant: 'yellow' },
+    });
+  }
+
+  // 8. Discussion free-answer
+  const discQs: string[] = data.discussionQuestions || [];
+  if (discQs.length > 0) {
+    const discHtml = discQs.map((q, i) => `${i + 1}. ${q}`).join('<br>');
+    blocks.push({
+      id: generateBlockId(), order: order++, type: 'free-answer', width: 'full',
+      content: { question: `💬 Diskuse:\n${discHtml}`, lines: 3 },
+    });
+  }
+
+  onProgress?.('save', 'Ukládám poslechovou aktivitu jako pracovní list a board...');
+  const { worksheetId, boardId } = await _saveLangMaterial(blocks, title, dataSet);
+
+  return {
+    success: true,
+    id: worksheetId,
+    linkedBoardId: boardId,
+    preview: `Poslechová aktivita | ${level} | ${wordCount} slov | ${dataSet.grade}. ročník | + Board`,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Unit Plan Generator
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Unit Plan Generator
+ *
+ * Creates a comprehensive teacher-facing lesson plan HTML document covering
+ * learning objectives, lesson sequence, assessment criteria, and extension tasks.
+ */
+async function generateUnitPlan(dataSet: TopicDataSet): Promise<GenerateResult> {
+  const level = gradeToLevel(dataSet.grade);
+  const langCode = dataSet.subjectCode?.includes('nemcin') ? 'German'
+    : dataSet.subjectCode?.includes('francouz') ? 'French'
+    : 'English';
+
+  const prompt = `Create a complete language unit plan for a Czech EFL teacher (grade ${dataSet.grade}, CEFR ${level}).
+
+TOPIC: "${dataSet.topic}"
+LANGUAGE: ${langCode}
+LEVEL: ${level}
+
+Return ONLY HTML (no markdown fences, no extra text). This is a TEACHER document — formal language, Czech, professional layout.
+
+<h1>📋 Plán jazykové lekce</h1>
+<h2>${dataSet.topic}</h2>
+<p class="meta-info">Ročník: ${dataSet.grade}. | CEFR: ${level} | Jazyk: ${langCode}</p>
+
+<h2>🎯 Výukové cíle</h2>
+<p><strong>Po skončení lekce žák:</strong></p>
+<ul>
+  [4-5 CEFR-based "Can do" statements in Czech, specific to the topic]
+  [e.g. "... dokáže pojmenovat 10 klíčových slov z tématu ..."]
+  [e.g. "... dokáže napsat krátký text (50 slov) o tématu ..."]
+</ul>
+
+<h2>📚 Jazykový obsah</h2>
+<table>
+  <tr><th>Složka</th><th>Obsah</th></tr>
+  <tr><td>Slovní zásoba</td><td>[15 key lexical items for this topic and level]</td></tr>
+  <tr><td>Gramatika</td><td>[2-3 grammar structures relevant to topic + level]</td></tr>
+  <tr><td>Funkce jazyka</td><td>[Communicative functions: describing, comparing, asking about...]</td></tr>
+</table>
+
+<h2>⏱️ Plán lekcí (4 × 45 minut)</h2>
+
+<h3>Lekce 1 – Úvod do tématu + slovní zásoba</h3>
+[Detailed lesson plan: warm-up (5 min), main activities (35 min), closure (5 min)]
+[Include: materials needed, grouping (individual/pairs/groups), instructions in Czech]
+
+<h3>Lekce 2 – Čtení a gramatika</h3>
+[Detailed plan for lesson 2]
+
+<h3>Lekce 3 – Poslech a mluvení</h3>
+[Detailed plan for lesson 3]
+
+<h3>Lekce 4 – Psaní + zopakování + test</h3>
+[Detailed plan with revision and assessment]
+
+<h2>📊 Hodnocení</h2>
+<table>
+  <tr><th>Aktivita</th><th>Typ hodnocení</th><th>Váha</th></tr>
+  <tr><td>Slovní zásoba (kvíz)</td><td>Formativní</td><td>—</td></tr>
+  <tr><td>Psaní</td><td>Sumativní</td><td>40 %</td></tr>
+  <tr><td>Mluvení (role-play)</td><td>Sumativní</td><td>30 %</td></tr>
+  <tr><td>Gramatický test</td><td>Sumativní</td><td>30 %</td></tr>
+</table>
+
+<h2>📎 Materiály</h2>
+<ul>
+  [List of all materials the teacher needs: worksheets, VividBoard quizzes, printouts, etc.]
+  [Include digital tools suggestions]
+</ul>
+
+<h2>🔧 Diferenciace</h2>
+<p><strong>Pro slabší žáky:</strong></p>
+[2-3 scaffolding strategies]
+<p><strong>Pro rychlejší žáky:</strong></p>
+[2-3 extension tasks]
+
+<h2>🔗 Mezipředmětové vztahy</h2>
+[2-3 connections to other school subjects]
+
+Rules:
+- Professional teacher-facing document in Czech
+- Practical, specific, actionable (not generic advice)
+- Timing should be realistic for a 45-minute lesson
+- Activities should match CEFR ${level} and grade ${dataSet.grade}
+`;
+
+  const response = await chatWithAIProxy([{ role: 'user', content: prompt }], 'gemini-3.1-pro', { max_tokens: 8192 });
+  if (!response) return { success: false, error: 'AI neodpovědělo' };
+
+
+  const docId = `doc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const title = `${dataSet.topic} – Plán lekce`;
+
+  saveDocument({ id: docId, title, content: response, type: 'lesson' });
+  await syncDocumentDirectToSupabase({ id: docId, title, content: response, documentType: 'lesson' });
+
+  return {
+    success: true,
+    id: docId,
+    preview: `Plán lekce | 4 × 45 min | Cíle, aktivity, hodnocení, diferenciace | ${level} | ${dataSet.grade}. ročník`,
+  };
 }

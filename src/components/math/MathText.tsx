@@ -258,15 +258,14 @@ export function MathText({ children, className, mathScale = 1.3, style }: MathTe
     return result.length > 0 ? result : [text];
   };
 
-  // Regex to match LaTeX expressions
-  // Matches: $$...$$, $...$, \[...\], \(...\)
-  const latexRegex = /(\$\$[\s\S]*?\$\$|\$[^$\n]+?\$|\\\[[\s\S]*?\\\]|\\\([\s\S]*?\\\))/g;
-  
-  
+  // Regex to match LaTeX expressions AND inline HTML tags (e.g. <mark>, <strong>, <span>)
+  // HTML group: <tagName attrs?>content</tagName>  — backreference \2 closes the right tag
+  const latexAndHtmlRegex = /(\$\$[\s\S]*?\$\$|\$[^$\n]+?\$|\\\[[\s\S]*?\\\]|\\\([\s\S]*?\\\)|<([a-zA-Z][a-zA-Z0-9]*)(?:\s[^>]*)?>[\s\S]*?<\/\2>)/g;
+
   let lastIndex = 0;
   let match;
 
-  while ((match = latexRegex.exec(processedInput)) !== null) {
+  while ((match = latexAndHtmlRegex.exec(processedInput)) !== null) {
     // Add text before the match (process text commands like \textbf)
     if (match.index > lastIndex) {
       const textBefore = processedInput.slice(lastIndex, match.index);
@@ -276,33 +275,39 @@ export function MathText({ children, className, mathScale = 1.3, style }: MathTe
       });
     }
 
-    const latex = match[0];
-    
-    try {
-      if (latex.startsWith('$$') || latex.startsWith('\\[')) {
-        // Block math
-        const content = latex.startsWith('$$') 
-          ? latex.slice(2, -2) 
-          : latex.slice(2, -2);
-        parts.push(
-          <ScaledMath key={key++} scale={mathScale}>
-            <BlockMath math={content} />
-          </ScaledMath>
-        );
-      } else {
-        // Inline math
-        const content = latex.startsWith('$') 
-          ? latex.slice(1, -1) 
-          : latex.slice(2, -2);
-        parts.push(
-          <ScaledMath key={key++} scale={mathScale}>
-            <InlineMath math={content} />
-          </ScaledMath>
-        );
+    const matched = match[0];
+
+    if (matched.startsWith('<')) {
+      // HTML tag — render via dangerouslySetInnerHTML to preserve styles/classes
+      parts.push(<span key={key++} dangerouslySetInnerHTML={{ __html: matched }} />);
+    } else {
+      const latex = matched;
+      try {
+        if (latex.startsWith('$$') || latex.startsWith('\\[')) {
+          // Block math
+          const content = latex.startsWith('$$')
+            ? latex.slice(2, -2)
+            : latex.slice(2, -2);
+          parts.push(
+            <ScaledMath key={key++} scale={mathScale}>
+              <BlockMath math={content} />
+            </ScaledMath>
+          );
+        } else {
+          // Inline math
+          const content = latex.startsWith('$')
+            ? latex.slice(1, -1)
+            : latex.slice(2, -2);
+          parts.push(
+            <ScaledMath key={key++} scale={mathScale}>
+              <InlineMath math={content} />
+            </ScaledMath>
+          );
+        }
+      } catch (e) {
+        // If LaTeX parsing fails, show original text
+        parts.push(<span key={key++}>{latex}</span>);
       }
-    } catch (e) {
-      // If LaTeX parsing fails, show original text
-      parts.push(<span key={key++}>{latex}</span>);
     }
 
     lastIndex = match.index + match[0].length;
@@ -317,11 +322,13 @@ export function MathText({ children, className, mathScale = 1.3, style }: MathTe
     });
   }
 
+  const mergedClass = ['quiz-html-content', className].filter(Boolean).join(' ');
+
   if (parts.length === 0) {
-    return <span className={className} style={style}>{children}</span>;
+    return <span className={mergedClass} style={style}>{children}</span>;
   }
 
-  return <span className={className} style={style}>{parts}</span>;
+  return <span className={mergedClass} style={style}>{parts}</span>;
 }
 
 export default MathText;

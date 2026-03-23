@@ -1,4 +1,4 @@
-import { BrowserRouter as Router, Routes, Route, Navigate, useSearchParams } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useSearchParams, useLocation } from 'react-router-dom';
 import { useState, useEffect, useRef } from 'react';
 import { Toaster } from './components/ui/sonner';
 import { DocumentationLayout } from './components/DocumentationLayout';
@@ -11,7 +11,7 @@ import { MyClassesLayout } from './components/MyClassesLayout';
 import { WorksheetEditorLayout } from './components/WorksheetEditorLayout';
 import { ProEditorLayout } from './components/worksheet-editor-pro';
 import { ImportAgentStudio } from './components/admin/ImportAgentStudio';
-import { WorkbookProLayout } from './components/workbook-editor-pro';
+import { WorkbookProLayout, BookshelfPage } from './components/workbook-editor-pro';
 import { PaperTestPage } from './components/worksheet-editor/PaperTestPage';
 import { PrintPage } from './components/worksheet-editor-pro/PrintPage';
 import { PaperTestUploadPage } from './components/worksheet-editor/PaperTestUploadPage';
@@ -21,8 +21,19 @@ import { QuizJoinPage } from './components/quiz/QuizJoinPage';
 import { QuizResultsPage } from './components/quiz/QuizResultsPage';
 import { QuizStudentView } from './components/quiz/QuizStudentView';
 import { QuizSelfStudyPage } from './components/quiz/QuizSelfStudyPage';
+import { QuizPresentMode } from './components/quiz/QuizPresentMode';
 import { PublicBoardViewer } from './components/quiz/PublicBoardViewer';
 import { BoardCopyPage } from './components/quiz/BoardCopyPage';
+import {
+  BoardEditorPageV2,
+  BoardJoinPageV2,
+  BoardPresentPageV2,
+  BoardResultsPageV2,
+  BoardStudentPageV2,
+  BoardViewPageV2,
+  PublicBoardViewPageV2,
+  boardRoutes,
+} from './features/board-v2';
 import { ProfilePageLayout, LicenseAdminPage } from './components/profile';
 import { StudentWallLayout } from './components/StudentWallLayout';
 import { SharedFolderView } from './components/SharedFolderView';
@@ -35,8 +46,11 @@ import { JoinSession } from './components/classroom/JoinSession';
 import { CustomerSuccess } from './components/admin/CustomerSuccess';
 import { MigrationAgent } from './components/admin/MigrationAgent';
 import { RAGBulkUpload } from './components/admin/RAGBulkUpload';
+import { RAGWorksheetLibrary } from './components/admin/RAGWorksheetLibrary';
 import { CurriculumFactory } from './components/admin/CurriculumFactory';
 import { CurriculumFactoryV2 } from './components/admin/CurriculumFactoryV2';
+import { AtlasApp } from './components/admin/AtlasApp';
+import { VizApp } from './components/admin/VizApp';
 import { DataSetCreator } from './components/admin/DataSetCreator';
 import { StudentProfilePage } from './components/classroom/StudentProfilePage';
 import ClassChatLayout from './components/classroom/ClassChatLayout';
@@ -58,13 +72,24 @@ import { syncFromSupabase as syncDocuments, migrateToSupabase as migrateDocument
 import { syncFromSupabase as syncWorksheets, migrateToSupabase as migrateWorksheets } from './utils/worksheet-storage';
 import { syncFromSupabase as syncFiles, migrateToSupabase as migrateFiles } from './utils/file-storage';
 
+/** Po neautorizovaném vstupu na /laiout — přihlášení a návrat zpět. */
+function RedirectToTeacherLoginWithNext() {
+  const { pathname, search } = useLocation();
+  return (
+    <Navigate
+      to={`/teacher-login?next=${encodeURIComponent(pathname + search)}`}
+      replace
+    />
+  );
+}
+
 // Helper component to redirect /quiz/new while preserving URL params
 function QuizNewRedirect() {
   const [searchParams] = useSearchParams();
   const newId = Date.now().toString();
   // Preserve all URL params
   const paramsString = searchParams.toString();
-  const targetUrl = `/quiz/edit/${newId}${paramsString ? `?${paramsString}` : ''}`;
+  const targetUrl = boardRoutes.edit(newId, Object.fromEntries(searchParams.entries()));
   return <Navigate to={targetUrl} replace />;
 }
 
@@ -565,16 +590,50 @@ export default function App() {
           } 
         />
         
-        {/* Workbook Editor Pro - New workbook */}
+        {/* Workbook Editor Pro - New workbook (redirect to bookshelf) */}
         <Route 
           path="/admin/workbook-pro" 
           element={
             isAuthenticated || isOfflineMode() ? (
-              <Navigate to={`/admin/workbook-pro/${Date.now()}`} replace />
+              <Navigate to="/admin/pro" replace />
             ) : (
               <Navigate to="/admin/login" replace />
             )
           } 
+        />
+
+        {/* Bookshelf — homepage with all books */}
+        <Route
+          path="/admin/pro"
+          element={
+            isAuthenticated || isOfflineMode() ? (
+              <BookshelfPage />
+            ) : (
+              <Navigate to="/admin/login" replace />
+            )
+          }
+        />
+
+        {/* Laiout — knihovna + editor (stejné komponenty jako /admin/pro + /admin/workbook-pro/:id) */}
+        <Route
+          path="/laiout"
+          element={
+            isAuthenticated || isOfflineMode() ? (
+              <BookshelfPage />
+            ) : (
+              <RedirectToTeacherLoginWithNext />
+            )
+          }
+        />
+        <Route
+          path="/laiout/:id"
+          element={
+            isAuthenticated || isOfflineMode() ? (
+              <WorkbookProLayout theme={theme} toggleTheme={toggleTheme} />
+            ) : (
+              <RedirectToTeacherLoginWithNext />
+            )
+          }
         />
         
         <Route 
@@ -607,17 +666,45 @@ export default function App() {
           path="/quiz/edit/:id" 
           element={<QuizEditorLayout theme={theme} />} 
         />
+        <Route
+          path="/content/board/:id"
+          element={<BoardEditorPageV2 theme={theme} />}
+        />
+        <Route
+          path="/content/edit/board/:id"
+          element={<BoardEditorPageV2 theme={theme} />}
+        />
         <Route 
           path="/quiz/view/:id" 
           element={<QuizViewPage />} 
+        />
+        <Route
+          path="/content/view/board/:id"
+          element={<BoardViewPageV2 />}
+        />
+        <Route
+          path="/quiz/present/:id"
+          element={<QuizPresentMode />}
+        />
+        <Route
+          path="/content/present/board/:id"
+          element={<BoardPresentPageV2 />}
         />
         <Route 
           path="/quiz/join" 
           element={<QuizJoinPage />} 
         />
+        <Route
+          path="/content/join/board"
+          element={<BoardJoinPageV2 />}
+        />
         <Route 
           path="/quiz/join/:code" 
           element={<QuizJoinPage />} 
+        />
+        <Route
+          path="/content/join/board/:code"
+          element={<BoardJoinPageV2 />}
         />
         {/* Short URL for joining - redirects to /quiz/join/:code */}
         <Route 
@@ -628,9 +715,17 @@ export default function App() {
           path="/quiz/results/:sessionId" 
           element={<QuizResultsPage />} 
         />
+        <Route
+          path="/content/results/board/:sessionId"
+          element={<BoardResultsPageV2 />}
+        />
         <Route 
           path="/quiz/student/:shareId" 
           element={<QuizStudentView />} 
+        />
+        <Route
+          path="/content/student/board/:shareId"
+          element={<BoardStudentPageV2 />}
         />
         <Route 
           path="/quiz/practice/:id" 
@@ -639,6 +734,10 @@ export default function App() {
         <Route 
           path="/quiz/public/:boardId" 
           element={<PublicBoardViewer />} 
+        />
+        <Route
+          path="/content/public/board/:boardId"
+          element={<PublicBoardViewPageV2 />}
         />
         <Route 
           path="/quiz/copy/:boardId" 
@@ -736,6 +835,28 @@ export default function App() {
             )
           } 
         />
+
+        <Route 
+          path="/admin/atlas" 
+          element={
+            isAuthenticated ? (
+              <AtlasApp />
+            ) : (
+              <Navigate to="/admin/login" replace />
+            )
+          } 
+        />
+
+        <Route 
+          path="/admin/viz" 
+          element={
+            isAuthenticated ? (
+              <VizApp />
+            ) : (
+              <Navigate to="/admin/login" replace />
+            )
+          } 
+        />
         
         <Route 
           path="/admin/curriculum-factory-old" 
@@ -764,6 +885,17 @@ export default function App() {
           element={
             isAuthenticated ? (
               <RAGBulkUpload />
+            ) : (
+              <Navigate to="/admin/login" replace />
+            )
+          } 
+        />
+        
+        <Route 
+          path="/admin/rag-worksheets" 
+          element={
+            isAuthenticated ? (
+              <RAGWorksheetLibrary />
             ) : (
               <Navigate to="/admin/login" replace />
             )

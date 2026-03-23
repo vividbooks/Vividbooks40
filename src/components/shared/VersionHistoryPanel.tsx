@@ -67,6 +67,8 @@ export interface VersionHistoryPanelProps {
   onClose?: () => void;
   /** Whether the panel is in compact mode */
   compact?: boolean;
+  /** Dark chrome for embedding in PRO sidebar (#1e293b) */
+  appearance?: 'light' | 'dark';
   /** Custom class name */
   className?: string;
 }
@@ -75,13 +77,20 @@ export interface VersionHistoryPanelProps {
 // SUB-COMPONENTS
 // ============================================
 
-function ChangeTypeBadge({ type }: { type: ChangeType }) {
-  const colors: Record<ChangeType, { bg: string; text: string }> = {
-    auto: { bg: 'bg-slate-100', text: 'text-slate-600' },
-    manual: { bg: 'bg-blue-100', text: 'text-blue-700' },
-    structural: { bg: 'bg-amber-100', text: 'text-amber-700' },
-    restore: { bg: 'bg-purple-100', text: 'text-purple-700' },
-  };
+function ChangeTypeBadge({ type, dark }: { type: ChangeType; dark?: boolean }) {
+  const colors: Record<ChangeType, { bg: string; text: string }> = dark
+    ? {
+        auto: { bg: 'bg-slate-700/80', text: 'text-slate-200' },
+        manual: { bg: 'bg-blue-900/60', text: 'text-blue-200' },
+        structural: { bg: 'bg-amber-900/50', text: 'text-amber-200' },
+        restore: { bg: 'bg-purple-900/50', text: 'text-purple-200' },
+      }
+    : {
+        auto: { bg: 'bg-slate-100', text: 'text-slate-600' },
+        manual: { bg: 'bg-blue-100', text: 'text-blue-700' },
+        structural: { bg: 'bg-amber-100', text: 'text-amber-700' },
+        restore: { bg: 'bg-purple-100', text: 'text-purple-700' },
+      };
 
   const style = colors[type] || colors.auto;
 
@@ -98,41 +107,61 @@ function VersionItem({
   onRestore,
   onPreview,
   restoring,
+  dark,
 }: {
   version: DocumentVersion;
   isLatest: boolean;
   onRestore: () => void;
   onPreview?: () => void;
   restoring: boolean;
+  dark?: boolean;
 }) {
   const [showActions, setShowActions] = useState(false);
 
+  const cardClass = dark
+    ? isLatest
+      ? 'bg-emerald-950/35 border-emerald-800/80'
+      : 'bg-slate-800/60 border-slate-600 hover:border-slate-500 hover:bg-slate-800'
+    : isLatest
+      ? 'bg-green-50 border-green-200'
+      : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50';
+
+  const titleClass = dark ? 'text-slate-100' : 'text-slate-800';
+  const latestBadge = dark
+    ? 'text-xs px-1.5 py-0.5 rounded bg-emerald-900/70 text-emerald-200'
+    : 'text-xs px-1.5 py-0.5 rounded bg-green-100 text-green-700';
+  const metaClass = dark ? 'text-slate-400' : 'text-slate-500';
+  const descClass = dark ? 'text-slate-300' : 'text-slate-600';
+  const sizeClass = dark ? 'text-slate-500' : 'text-slate-400';
+  const previewBtn = dark
+    ? 'p-1.5 rounded-md bg-slate-700 border border-slate-500 text-slate-200 hover:bg-slate-600'
+    : 'p-1.5 rounded-md bg-white border border-slate-200 text-slate-600 hover:bg-slate-100 hover:text-slate-800 transition-colors';
+  const restoreBtn = dark
+    ? 'p-1.5 rounded-md bg-blue-950/80 border border-blue-700 text-blue-300 hover:bg-blue-900/80'
+    : 'p-1.5 rounded-md bg-blue-50 border border-blue-200 text-blue-600 hover:bg-blue-100 hover:text-blue-700 transition-colors disabled:opacity-50';
+
   return (
     <div
-      className={`group relative p-3 rounded-lg border transition-all ${
-        isLatest
-          ? 'bg-green-50 border-green-200'
-          : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50'
-      }`}
+      className={`group relative p-3 rounded-lg border transition-all ${cardClass}`}
       onMouseEnter={() => setShowActions(true)}
       onMouseLeave={() => setShowActions(false)}
     >
       {/* Header */}
       <div className="flex items-start justify-between gap-2">
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="font-medium text-slate-800 text-sm">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className={`font-medium text-sm ${titleClass}`}>
               Verze {version.version_number}
             </span>
             {isLatest && (
-              <span className="text-xs px-1.5 py-0.5 rounded bg-green-100 text-green-700">
+              <span className={latestBadge}>
                 Aktuální
               </span>
             )}
-            <ChangeTypeBadge type={version.change_type as ChangeType} />
+            <ChangeTypeBadge type={version.change_type as ChangeType} dark={dark} />
           </div>
           
-          <div className="flex items-center gap-2 mt-1 text-xs text-slate-500">
+          <div className={`flex items-center gap-2 mt-1 text-xs ${metaClass}`}>
             <Clock className="w-3 h-3" />
             <span>{formatVersionDate(version.created_at)}</span>
             {version.created_by_name && (
@@ -145,14 +174,14 @@ function VersionItem({
           </div>
 
           {version.change_description && (
-            <p className="mt-1.5 text-xs text-slate-600 italic">
+            <p className={`mt-1.5 text-xs italic ${descClass}`}>
               "{version.change_description}"
             </p>
           )}
         </div>
 
         {/* Size indicator */}
-        <div className="text-xs text-slate-400 whitespace-nowrap">
+        <div className={`text-xs whitespace-nowrap ${sizeClass}`}>
           {formatSize(version.content_size)}
         </div>
       </div>
@@ -163,7 +192,7 @@ function VersionItem({
           {onPreview && (
             <button
               onClick={onPreview}
-              className="p-1.5 rounded-md bg-white border border-slate-200 text-slate-600 hover:bg-slate-100 hover:text-slate-800 transition-colors"
+              className={previewBtn}
               title="Náhled"
             >
               <Eye className="w-3.5 h-3.5" />
@@ -172,7 +201,7 @@ function VersionItem({
           <button
             onClick={onRestore}
             disabled={restoring}
-            className="p-1.5 rounded-md bg-blue-50 border border-blue-200 text-blue-600 hover:bg-blue-100 hover:text-blue-700 transition-colors disabled:opacity-50"
+            className={`${restoreBtn} disabled:opacity-50`}
             title="Obnovit tuto verzi"
           >
             {restoring ? (
@@ -190,9 +219,11 @@ function VersionItem({
 function ManualSaveForm({
   onSave,
   saving,
+  dark,
 }: {
   onSave: (description: string) => void;
   saving: boolean;
+  dark?: boolean;
 }) {
   const [description, setDescription] = useState('');
   const [isOpen, setIsOpen] = useState(false);
@@ -204,32 +235,25 @@ function ManualSaveForm({
     setIsOpen(false);
   };
 
+  const primaryBtn =
+    'w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg text-sm font-medium border-none cursor-pointer transition-opacity hover:opacity-90 bg-blue-600 text-white disabled:opacity-50';
+
   if (!isOpen) {
     return (
-      <button
-        onClick={() => setIsOpen(true)}
-        style={{ 
-          backgroundColor: '#2563eb', 
-          color: 'white',
-          width: '100%',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: '8px',
-          padding: '10px 16px',
-          borderRadius: '8px',
-          fontSize: '14px',
-          fontWeight: 500,
-          border: 'none',
-          cursor: 'pointer',
-        }}
-        className="hover:opacity-90 transition-opacity"
-      >
-        <Save className="w-4 h-4" style={{ width: '16px', height: '16px' }} />
+      <button type="button" onClick={() => setIsOpen(true)} className={primaryBtn}>
+        <Save className="w-4 h-4 shrink-0" />
         <span>Uložit verzi</span>
       </button>
     );
   }
+
+  const inputClass = dark
+    ? 'w-full px-3 py-2 text-sm rounded-lg bg-slate-800 border border-slate-600 text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500'
+    : 'w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500';
+
+  const cancelClass = dark
+    ? 'w-full px-4 py-2 rounded-lg border border-slate-600 text-slate-300 hover:bg-slate-700/80 transition-colors text-sm text-center'
+    : 'w-full px-4 py-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-100 transition-colors text-sm text-center';
 
   return (
     <form onSubmit={handleSubmit} className="space-y-2">
@@ -238,31 +262,11 @@ function ManualSaveForm({
         value={description}
         onChange={(e) => setDescription(e.target.value)}
         placeholder="Popis změny (volitelné)..."
-        className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+        className={inputClass}
         autoFocus
       />
       <div className="flex flex-col gap-2">
-        <button
-          type="submit"
-          disabled={saving}
-          style={{ 
-            backgroundColor: '#2563eb', 
-            color: 'white',
-            width: '100%',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '6px',
-            padding: '10px 16px',
-            borderRadius: '8px',
-            fontSize: '14px',
-            fontWeight: 500,
-            border: 'none',
-            cursor: 'pointer',
-            opacity: saving ? 0.5 : 1,
-          }}
-          className="hover:opacity-90 transition-opacity"
-        >
+        <button type="submit" disabled={saving} className={primaryBtn}>
           {saving ? (
             <Loader2 className="w-4 h-4 animate-spin" />
           ) : (
@@ -270,11 +274,7 @@ function ManualSaveForm({
           )}
           <span>Uložit verzi</span>
         </button>
-        <button
-          type="button"
-          onClick={() => setIsOpen(false)}
-          className="w-full px-4 py-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-100 transition-colors text-sm text-center"
-        >
+        <button type="button" onClick={() => setIsOpen(false)} className={cancelClass}>
           Zrušit
         </button>
       </div>
@@ -311,8 +311,10 @@ export function VersionHistoryPanel({
   onPreview,
   onClose,
   compact = false,
+  appearance = 'light',
   className = '',
 }: VersionHistoryPanelProps) {
+  const dark = appearance === 'dark';
   const [restoringId, setRestoringId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -348,22 +350,28 @@ export function VersionHistoryPanel({
     }
   }, [onLoadMore]);
 
+  const rootBg = dark ? 'bg-[#1e293b]' : 'bg-white';
+  const headerBorder = dark ? 'border-slate-600' : 'border-slate-200';
+  const headerIcon = dark ? 'text-slate-300' : 'text-slate-600';
+  const headerTitle = dark ? 'text-slate-100' : 'text-slate-800';
+  const headerMeta = dark ? 'text-slate-400' : 'text-slate-500';
+  const closeBtn = dark
+    ? 'p-1.5 rounded-md text-slate-400 hover:text-slate-200 hover:bg-slate-700'
+    : 'p-1.5 rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100';
+
   return (
-    <div className={`flex flex-col h-full bg-white ${className}`}>
+    <div className={`flex flex-col h-full min-h-0 ${rootBg} ${className}`}>
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200">
-        <div className="flex items-center gap-2">
-          <History className="w-5 h-5 text-slate-600" />
-          <h3 className="font-semibold text-slate-800">Historie verzí</h3>
+      <div className={`flex items-center justify-between px-4 py-3 border-b shrink-0 ${headerBorder}`}>
+        <div className="flex items-center gap-2 min-w-0">
+          <History className={`w-5 h-5 shrink-0 ${headerIcon}`} />
+          <h3 className={`font-semibold truncate ${headerTitle}`}>Historie verzí</h3>
           {totalVersions > 0 && (
-            <span className="text-xs text-slate-500">({totalVersions})</span>
+            <span className={`text-xs shrink-0 ${headerMeta}`}>({totalVersions})</span>
           )}
         </div>
         {onClose && (
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100"
-          >
+          <button type="button" onClick={onClose} className={closeBtn} aria-label="Zavřít historii">
             <X className="w-4 h-4" />
           </button>
         )}
@@ -371,8 +379,16 @@ export function VersionHistoryPanel({
 
       {/* Status bar */}
       {(hasUnsavedChanges || autoSavePending) && (
-        <div className="px-4 py-2 bg-amber-50 border-b border-amber-200">
-          <div className="flex items-center gap-2 text-amber-700 text-sm">
+        <div
+          className={
+            dark
+              ? 'px-4 py-2 bg-amber-950/50 border-b border-amber-800/60 shrink-0'
+              : 'px-4 py-2 bg-amber-50 border-b border-amber-200 shrink-0'
+          }
+        >
+          <div
+            className={`flex items-center gap-2 text-sm ${dark ? 'text-amber-200' : 'text-amber-700'}`}
+          >
             {autoSavePending ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -389,21 +405,30 @@ export function VersionHistoryPanel({
       )}
 
       {/* Manual save */}
-      <div className="px-4 py-3 border-b border-slate-100">
-        <ManualSaveForm onSave={handleSaveManual} saving={saving} />
+      <div className={`px-4 py-3 border-b shrink-0 ${dark ? 'border-slate-600' : 'border-slate-100'}`}>
+        <ManualSaveForm onSave={handleSaveManual} saving={saving} dark={dark} />
       </div>
 
       {/* Error */}
       {error && (
-        <div className="px-4 py-3 bg-red-50 border-b border-red-200">
-          <div className="flex flex-col gap-2 text-red-700 text-sm">
+        <div
+          className={
+            dark
+              ? 'px-4 py-3 bg-red-950/40 border-b border-red-900/60 shrink-0'
+              : 'px-4 py-3 bg-red-50 border-b border-red-200 shrink-0'
+          }
+        >
+          <div className={`flex flex-col gap-2 text-sm ${dark ? 'text-red-200' : 'text-red-700'}`}>
             <div className="flex items-center gap-2">
               <AlertCircle className="w-4 h-4 flex-shrink-0" />
               <span>{error}</span>
             </div>
             {error.includes('neexistuje') && (
-              <p className="text-xs text-red-600 ml-6">
-                Spusťte SQL migraci v Supabase: <code className="bg-red-100 px-1 rounded">supabase/migrations/20241221_document_versions.sql</code>
+              <p className={`text-xs ml-6 ${dark ? 'text-red-300' : 'text-red-600'}`}>
+                Spusťte SQL migraci v Supabase:{' '}
+                <code className={dark ? 'bg-red-950/80 px-1 rounded' : 'bg-red-100 px-1 rounded'}>
+                  supabase/migrations/20241221_document_versions.sql
+                </code>
               </p>
             )}
           </div>
@@ -411,17 +436,19 @@ export function VersionHistoryPanel({
       )}
 
       {/* Version list */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto min-h-0">
         {loading && versions.length === 0 ? (
           <div className="flex items-center justify-center py-12">
-            <Loader2 className="w-6 h-6 text-slate-400 animate-spin" />
+            <Loader2 className={`w-6 h-6 animate-spin ${dark ? 'text-slate-500' : 'text-slate-400'}`} />
           </div>
         ) : versions.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 text-center px-4">
-            <FileText className="w-12 h-12 text-slate-300 mb-3" />
-            <p className="text-slate-500 text-sm">Zatím žádné uložené verze</p>
-            <p className="text-slate-400 text-xs mt-1">
-              Verze se ukládají automaticky při editaci
+            <FileText className={`w-12 h-12 mb-3 ${dark ? 'text-slate-600' : 'text-slate-300'}`} />
+            <p className={`text-sm ${dark ? 'text-slate-400' : 'text-slate-500'}`}>
+              Zatím žádné uložené verze
+            </p>
+            <p className={`text-xs mt-1 ${dark ? 'text-slate-500' : 'text-slate-400'}`}>
+              Verze se ukládají automaticky při editaci (časovač po změně obsahu)
             </p>
           </div>
         ) : (
@@ -434,15 +461,21 @@ export function VersionHistoryPanel({
                 onRestore={() => handleRestore(version.id)}
                 onPreview={onPreview ? () => onPreview(version) : undefined}
                 restoring={restoringId === version.id}
+                dark={dark}
               />
             ))}
 
             {/* Load more */}
             {hasMoreVersions && (
               <button
+                type="button"
                 onClick={handleLoadMore}
                 disabled={loadingMore}
-                className="w-full flex items-center justify-center gap-2 py-3 text-sm text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors"
+                className={
+                  dark
+                    ? 'w-full flex items-center justify-center gap-2 py-3 text-sm text-slate-300 hover:text-white hover:bg-slate-700/60 rounded-lg transition-colors'
+                    : 'w-full flex items-center justify-center gap-2 py-3 text-sm text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors'
+                }
               >
                 {loadingMore ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
@@ -458,8 +491,10 @@ export function VersionHistoryPanel({
 
       {/* Footer info */}
       {!compact && versions.length > 0 && (
-        <div className="px-4 py-2 border-t border-slate-100 bg-slate-50">
-          <p className="text-xs text-slate-500 text-center">
+        <div
+          className={`px-4 py-2 border-t shrink-0 ${dark ? 'border-slate-600 bg-slate-900/40' : 'border-slate-100 bg-slate-50'}`}
+        >
+          <p className={`text-xs text-center ${dark ? 'text-slate-500' : 'text-slate-500'}`}>
             Verze se ukládají automaticky a uchovávají se po dobu 90 dnů
           </p>
         </div>

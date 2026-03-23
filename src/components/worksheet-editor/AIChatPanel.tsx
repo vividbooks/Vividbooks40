@@ -8,10 +8,10 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Loader2, Sparkles, Trash2, ChevronRight, Check, Plus, FileText, HelpCircle, CheckCircle2, PenLine, BookOpen, Info, Pencil, FilePlus, ArrowLeft, RotateCcw, Folder, FolderOpen, ChevronDown, Library, ClipboardList, FileEdit, ImageIcon, X } from 'lucide-react';
+import { Send, Loader2, Sparkles, Trash2, ChevronRight, Check, Plus, FileText, HelpCircle, CheckCircle2, PenLine, BookOpen, Info, Pencil, FilePlus, ArrowLeft, RotateCcw, Folder, FolderOpen, ChevronDown, Library, ClipboardList, FileEdit, ImageIcon, X, Type } from 'lucide-react';
 import { Button } from '../ui/button';
 import { AIMessage, AIAction } from '../../types/worksheet-editor';
-import { Worksheet, WorksheetBlock, generateBlockId, ImageBlock } from '../../types/worksheet';
+import { Worksheet, WorksheetBlock, BlockType, generateBlockId, ImageBlock } from '../../types/worksheet';
 import { StoredFile, StoredLink } from '../../types/file-storage';
 import { getWorksheetList, getWorksheetsInFolder, WorksheetListItem } from '../../utils/worksheet-storage';
 import { useAIChat } from '../../hooks/useAIChat';
@@ -23,8 +23,13 @@ import { extractImagesFromHtml, ExtractedImage, formatImagesForPrompt } from '..
 import { processImagesWithLottieScreenshots } from '../../utils/lottie-screenshot';
 import { searchImagesForWorksheet, UnsplashImage, trackDownload } from '../../utils/unsplash-search';
 import { ImageSelectionStep, ImageOption } from './ImageSelectionStep';
+import { chatWithAIProxy } from '../../utils/ai-chat-proxy';
+import { supabase } from '../../utils/supabase/client';
+import { getQuestionHtml, richHtmlToPlainText } from '../../utils/worksheet-text';
 
-type AIMode = 'select' | 'create' | 'edit' | 'from-docs' | 'from-my-content';
+type AIMode = 'select' | 'edit-scope' | 'edit' | 'create-scope' | 'create-block-type' | 'create' | 'from-docs' | 'from-my-content';
+type EditScope = 'document' | 'page' | 'block';
+type CreateScope = 'document' | 'page' | 'block';
 type FromDocsStep = 'browse' | 'select-type' | 'select-images' | 'generating';
 type FromMyContentStep = 'browse' | 'select-type' | 'generating';
 type ContentType = 'test' | 'worksheet' | 'text';
@@ -98,6 +103,8 @@ interface AIChatPanelProps {
   onUpdateWorksheet: (updates: Partial<Worksheet>) => void;
   onReplaceBlocks?: (blocks: WorksheetBlock[]) => void;
   onClose?: () => void;
+  selectedBlockId?: string | null;
+  currentPageBlocks?: WorksheetBlock[];
 }
 
 export function AIChatPanel({
@@ -106,15 +113,37 @@ export function AIChatPanel({
   onUpdateWorksheet,
   onReplaceBlocks,
   onClose,
+  selectedBlockId,
+  currentPageBlocks,
 }: AIChatPanelProps) {
   const hasContent = worksheet?.blocks && worksheet.blocks.length > 0;
   
   // Mode state - always start with 'select' to show options
   const [mode, setMode] = useState<AIMode>('select');
+
+  // Edit/Create scope state
+  const [editScope, setEditScope] = useState<EditScope>('document');
+  const [createScope, setCreateScope] = useState<CreateScope>('document');
+  const [createBlockType, setCreateBlockType] = useState<BlockType | null>(null);
   
   // Navigation back handler - goes back within AI panel or closes if at root
   const handleBack = () => {
-    if (mode === 'from-docs') {
+    if (mode === 'edit') {
+      setMode('edit-scope');
+      return;
+    } else if (mode === 'edit-scope') {
+      setMode('select');
+      return;
+    } else if (mode === 'create-block-type') {
+      setMode('create-scope');
+      return;
+    } else if (mode === 'create-scope') {
+      setMode('select');
+      return;
+    } else if (mode === 'create') {
+      setMode('create-scope');
+      return;
+    } else if (mode === 'from-docs') {
       // Navigate within from-docs workflow
       if (fromDocsStep === 'select-images') {
         setFromDocsStep('select-type');
@@ -132,8 +161,6 @@ export function AIChatPanel({
       } else {
         setMode('select');
       }
-    } else if (mode === 'edit' || mode === 'create') {
-      setMode('select');
     } else {
       // At root (select mode) - close the panel
       onClose?.();
@@ -209,6 +236,97 @@ export function AIChatPanel({
   
   // Store fetched content for image selection step
   const [fetchedContent, setFetchedContent] = useState<{ text: string; images: ExtractedImage[] } | null>(null);
+
+  // =============================================
+  // AI CONTEXT – předmět + ročník + curriculum
+  // =============================================
+  // Auto-init from worksheet metadata
+  const [contextSubject, setContextSubject] = useState<string>(worksheet?.metadata?.subject || '');
+  const [contextGrade, setContextGrade] = useState<number | null>(
+    typeof worksheet?.metadata?.grade === 'number' ? worksheet.metadata.grade : null
+  );
+  const [curriculumContext, setCurriculumContext] = useState<string>('');
+  const [isLoadingContext, setIsLoadingContext] = useState(false);
+  const [showContextPicker, setShowContextPicker] = useState(false);
+
+  // Fetch RVP curriculum data from Supabase when subject+grade changes
+  const fetchCurriculumContext = async (subject: string, grade: number) => {
+    if (!subject || !grade) return;
+    setIsLoadingContext(true);
+    try {
+      // 1. Get RVP topics from curriculum_rvp_data
+      const { data: rvpData } = await supabase
+        .from('curriculum_rvp_data')
+        .select('thematic_area, topic, expected_outcomes, key_competencies, vocabulary')
+        .eq('subject_code', subject)
+        .eq('grade', grade)
+        .order('order_index')
+        .limit(20);
+
+      // 2. Get weekly plan topics from curriculum_weekly_plans
+      const { data: weeklyData } = await supabase
+        .from('curriculum_weekly_plans')
+        .select('topic_title, topic_description, vocabulary, learning_goals')
+        .eq('subject_code', subject)
+        .eq('grade', grade)
+        .limit(30);
+
+      // 3. Check RAG cache in localStorage for matching uploaded documents
+      const ragCacheStr = localStorage.getItem('vividbooks_rag_cache');
+      let ragFileIds: string[] = [];
+      if (ragCacheStr) {
+        try {
+          const cache = JSON.parse(ragCacheStr);
+          ragFileIds = Object.values(cache)
+            .filter((entry: any) => entry.status === 'active' && entry.documentId)
+            .map((entry: any) => entry.documentId as string)
+            .slice(0, 5); // max 5 files
+        } catch {}
+      }
+
+      // Build context string
+      const parts: string[] = [];
+
+      if (rvpData && rvpData.length > 0) {
+        parts.push(`=== TEMATICKÉ CELKY A RVP VÝSTUPY (${subject.toUpperCase()} ${grade}. ročník) ===`);
+        rvpData.forEach(d => {
+          parts.push(`Celek: ${d.thematic_area} → Téma: ${d.topic}`);
+          if (d.expected_outcomes?.length) parts.push(`  Výstupy: ${d.expected_outcomes.slice(0, 3).join('; ')}`);
+          if (d.vocabulary?.length) parts.push(`  Pojmy: ${d.vocabulary?.slice(0, 8).join(', ')}`);
+        });
+      }
+
+      if (weeklyData && weeklyData.length > 0) {
+        parts.push(`\n=== TÝDENNÍ PLÁN TÉMAT ===`);
+        weeklyData.slice(0, 10).forEach(w => {
+          parts.push(`• ${w.topic_title}${w.topic_description ? ': ' + w.topic_description.substring(0, 100) : ''}`);
+          if (w.vocabulary?.length) parts.push(`  Pojmy: ${w.vocabulary.slice(0, 6).join(', ')}`);
+        });
+      }
+
+      const contextText = parts.join('\n');
+      setCurriculumContext(contextText);
+
+      // Store RAG file IDs for later use in generate
+      if (ragFileIds.length > 0) {
+        console.log('[Context] RAG file IDs available:', ragFileIds);
+      }
+
+      console.log('[Context] Loaded curriculum context, length:', contextText.length);
+    } catch (err) {
+      console.error('[Context] Failed to fetch curriculum context:', err);
+      setCurriculumContext('');
+    } finally {
+      setIsLoadingContext(false);
+    }
+  };
+
+  // Auto-fetch when subject/grade changes
+  useEffect(() => {
+    if (contextSubject && contextGrade) {
+      fetchCurriculumContext(contextSubject, contextGrade);
+    }
+  }, [contextSubject, contextGrade]);
 
   // Scroll to bottom
   useEffect(() => {
@@ -519,91 +637,128 @@ export function AIChatPanel({
   const startEditMode = () => {
     if (!worksheet?.blocks) return;
     setOriginalBlocks([...worksheet.blocks]);
+    setMode('edit-scope');
+  };
+
+  const startEditWithScope = (scope: EditScope) => {
+    setEditScope(scope);
     setMode('edit');
+    const scopeLabels: Record<EditScope, string> = {
+      document: 'celý dokument',
+      page: 'tuto stránku',
+      block: 'vybraný blok',
+    };
+    const selectedBlock = scope === 'block' && selectedBlockId
+      ? worksheet?.blocks?.find(b => b.id === selectedBlockId)
+      : null;
+    const blockTypeLabels: Record<string, string> = {
+      heading: 'Nadpis', paragraph: 'Odstavec', infobox: 'Infobox',
+      'multiple-choice': 'Výběr z možností', 'fill-blank': 'Doplňovačka',
+      'free-answer': 'Volná otázka', image: 'Obrázek', table: 'Tabulka',
+      'connect-pairs': 'Spojovačka', examples: 'Příklady',
+    };
+    const blockLabel = selectedBlock ? (blockTypeLabels[selectedBlock.type] || selectedBlock.type) : '';
+    const greeting = scope === 'block' && selectedBlock
+      ? `Pracuji s blokem: **${blockLabel}**. Co s ním chcete udělat? Můžete změnit obsah, typ bloku, rozdělit ho, přeměnit na otázky – cokoliv.`
+      : `Upravím ${scopeLabels[scope]}. Napište co s ním chcete udělat – přeložit, zjednodušit, rozšířit, přeměnit na otázky, změnit typy bloků...`;
     setEditMessages([{
       role: 'assistant',
-      content: 'Co chcete s obsahem udělat? Mohu ho přeložit, zjednodušit, rozšířit, opravit pravopis...'
+      content: greeting,
     }]);
   };
 
-  // Handle edit mode message send
-  const handleEditSend = async () => {
-    if (!editInput.trim() || isEditLoading) return;
-    
-    const userMessage = editInput.trim();
+  // Core edit logic - shared between handleEditSend and quick-action chips
+  const sendEditMessage = async (userMessage: string) => {
+    if (!userMessage.trim() || isEditLoading) return;
+
     setEditMessages(prev => [...prev, { role: 'user', content: userMessage }]);
-    setEditInput('');
     setIsEditLoading(true);
 
     try {
-      const currentBlocks = worksheet?.blocks || [];
-      console.log('[Edit] Current blocks count:', currentBlocks.length);
-      
-      if (currentBlocks.length === 0) {
-        setEditMessages(prev => [...prev, { 
-          role: 'assistant', 
-          content: 'Pracovní list je prázdný. Nejprve přidejte nějaký obsah, který můžu upravit.'
+      const allBlocks = worksheet?.blocks || [];
+
+      let scopeBlocks: WorksheetBlock[];
+      if (editScope === 'block' && selectedBlockId) {
+        const selBlock = allBlocks.find(b => b.id === selectedBlockId);
+        scopeBlocks = selBlock ? [selBlock] : allBlocks;
+      } else if (editScope === 'page' && currentPageBlocks && currentPageBlocks.length > 0) {
+        scopeBlocks = currentPageBlocks;
+      } else {
+        scopeBlocks = allBlocks;
+      }
+
+      if (scopeBlocks.length === 0) {
+        setEditMessages(prev => [...prev, {
+          role: 'assistant',
+          content: 'Pracovní list je prázdný. Nejprve přidejte nějaký obsah, který můžu upravit.',
         }]);
         setIsEditLoading(false);
         return;
       }
-      
-      const prompt = buildEditPrompt(userMessage, currentBlocks);
-      console.log('[Edit] Prompt length:', prompt.length);
-      
-      // Call AI to modify blocks
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${import.meta.env.VITE_GEMINI_API_KEY}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{
-            role: 'user',
-            parts: [{ text: prompt }]
-          }],
-          generationConfig: {
-            temperature: 0.7,
-            maxOutputTokens: 8192,
-          }
-        }),
-      });
 
-      const data = await response.json();
-      console.log('[Edit] API response status:', response.status);
-      console.log('[Edit] API response data:', data);
-      
-      if (data.error) {
-        console.error('[Edit] API error:', data.error);
-        throw new Error(data.error.message || 'API error');
-      }
-      
-      const aiResponse = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-      console.log('[Edit] AI response length:', aiResponse.length);
-      
-      // Parse the response and update blocks
-      const updatedBlocks = parseEditResponse(aiResponse, currentBlocks);
-      
+      const prompt = buildEditPrompt(userMessage, scopeBlocks, editScope, curriculumContext || undefined);
+      console.log('[Edit] Scope:', editScope, '| Blocks:', scopeBlocks.length, '| Context:', curriculumContext ? 'yes' : 'no');
+
+      const aiResponse = await chatWithAIProxy(
+        [{ role: 'user', content: prompt }],
+        'gemini-3-flash',
+        { temperature: 0.7, max_tokens: 8192 }
+      );
+      console.log('[Edit] AI raw response (first 1000 chars):', aiResponse.substring(0, 1000));
+      const updatedBlocks = parseEditResponse(aiResponse, scopeBlocks);
+      console.log('[Edit] Parsed blocks:', updatedBlocks ? JSON.stringify(updatedBlocks, null, 2) : 'NULL');
+
       if (updatedBlocks && onReplaceBlocks) {
-        onReplaceBlocks(updatedBlocks);
+        let mergedBlocks: WorksheetBlock[];
+        if (editScope === 'block' && selectedBlockId) {
+          // Replace the selected block with whatever AI returned (1 block → N blocks)
+          const editedBlockIdx = allBlocks.findIndex(b => b.id === selectedBlockId);
+          if (editedBlockIdx === -1) {
+            mergedBlocks = [...allBlocks, ...updatedBlocks];
+          } else {
+            mergedBlocks = [
+              ...allBlocks.slice(0, editedBlockIdx),
+              ...updatedBlocks,
+              ...allBlocks.slice(editedBlockIdx + 1),
+            ];
+          }
+        } else if (editScope === 'page') {
+          // Replace page blocks by ID, preserve rest of document
+          const editedMap = new Map(updatedBlocks.map(b => [b.id, b]));
+          mergedBlocks = allBlocks.map(b => editedMap.get(b.id) || b);
+        } else {
+          mergedBlocks = updatedBlocks;
+        }
+        mergedBlocks = mergedBlocks.map((b, idx) => ({ ...b, order: idx }));
+        onReplaceBlocks(mergedBlocks);
         setHasUnsavedChanges(true);
-        setEditMessages(prev => [...prev, { 
-          role: 'assistant', 
-          content: '✅ Provedl jsem změny. Podívejte se na ně v náhledu vpravo. Pokud jste spokojeni, klikněte na "Potvrdit změny".'
+        setEditMessages(prev => [...prev, {
+          role: 'assistant',
+          content: '✅ Hotovo! Podívejte se na změny vpravo. Klikněte "Potvrdit" nebo pokračujte v úpravách.',
         }]);
       } else {
-        setEditMessages(prev => [...prev, { 
-          role: 'assistant', 
-          content: 'Omlouvám se, nepodařilo se provést změny. Zkuste to prosím znovu s jiným zadáním.'
+        setEditMessages(prev => [...prev, {
+          role: 'assistant',
+          content: 'Omlouvám se, nepodařilo se provést změny. Zkuste to prosím znovu s jiným zadáním.',
         }]);
       }
     } catch (error) {
       console.error('Edit error:', error);
-      setEditMessages(prev => [...prev, { 
-        role: 'assistant', 
-        content: 'Došlo k chybě při zpracování. Zkuste to prosím znovu.'
+      setEditMessages(prev => [...prev, {
+        role: 'assistant',
+        content: 'Došlo k chybě při zpracování. Zkuste to prosím znovu.',
       }]);
     } finally {
       setIsEditLoading(false);
     }
+  };
+
+  // Handle edit mode message send from input
+  const handleEditSend = () => {
+    const msg = editInput.trim();
+    if (!msg) return;
+    setEditInput('');
+    sendEditMessage(msg);
   };
 
   // Confirm changes
@@ -625,16 +780,50 @@ export function AIChatPanel({
     setEditMessages([]);
   };
 
+  // Start create mode with scope
+  const startCreateWithScope = (scope: CreateScope, blockType?: BlockType) => {
+    setCreateScope(scope);
+    setCreateBlockType(blockType || null);
+    setMode('create');
+    clearChat();
+    setShowQuickPrompts(false);
+  };
+
   // Create mode handlers
   const handleSend = () => {
     if (inputValue.trim()) {
-      sendMessage();
+      // For scoped create, prepend scope context to prompt
+      let prompt = inputValue.trim();
+      if (createScope === 'page') {
+        prompt = `Vytvoř sadu bloků pro jednu stranu pracovního listu na téma: ${prompt}`;
+      } else if (createScope === 'block' && createBlockType) {
+        const blockLabels: Record<string, string> = {
+          'heading': 'nadpis', 'paragraph': 'odstavec', 'infobox': 'infobox',
+          'multiple-choice': 'výběr z možností', 'fill-blank': 'doplňovačka',
+          'free-answer': 'volná otázka', 'image': 'obrázek', 'table': 'tabulka',
+          'connect-pairs': 'spojovačka', 'examples': 'příklady', 'spacer': 'oddělovač',
+        };
+        prompt = `Vytvoř JEDEN blok typu "${blockLabels[createBlockType] || createBlockType}". Obsah: ${prompt}`;
+      }
+      // Prepend curriculum context if available
+      if (curriculumContext) {
+        const subjectLabel = contextSubject ? (SUBJECT_LABELS[contextSubject] || contextSubject) : '';
+        const gradeLabel = contextGrade ? `${contextGrade}. ročník` : '';
+        prompt = `[Předmět: ${subjectLabel} ${gradeLabel}]\n[Kurikulum kontext:\n${curriculumContext}\n]\n${prompt}`;
+      }
+      sendMessage(prompt);
       setShowQuickPrompts(false);
     }
   };
 
   const handleQuickPrompt = (prompt: string) => {
-    sendMessage(prompt);
+    let enrichedPrompt = prompt;
+    if (curriculumContext) {
+      const subjectLabel = contextSubject ? (SUBJECT_LABELS[contextSubject] || contextSubject) : '';
+      const gradeLabel = contextGrade ? `${contextGrade}. ročník` : '';
+      enrichedPrompt = `[Předmět: ${subjectLabel} ${gradeLabel}]\n[Kurikulum kontext:\n${curriculumContext}\n]\n${prompt}`;
+    }
+    sendMessage(enrichedPrompt);
     setShowQuickPrompts(false);
   };
 
@@ -1279,9 +1468,27 @@ export function AIChatPanel({
   };
 
   // ========================================
+  // ========================================
+  // HELPERS: Subject/Grade labels
+  // ========================================
+  const SUBJECT_LABELS: Record<string, string> = {
+    fyzika: 'Fyzika', chemie: 'Chemie', matematika: 'Matematika',
+    prirodopis: 'Přírodopis', zemepis: 'Zeměpis', dejepis: 'Dějepis',
+    cestina: 'Čeština', anglictina: 'Angličtina', other: 'Jiný',
+  };
+  const SUBJECT_COLORS: Record<string, string> = {
+    fyzika: '#7c3aed', chemie: '#ef4444', matematika: '#3b82f6',
+    prirodopis: '#22c55e', zemepis: '#f59e0b', dejepis: '#d97706',
+    cestina: '#ec4899', anglictina: '#06b6d4', other: '#64748b',
+  };
+  const ALL_SUBJECTS = Object.entries(SUBJECT_LABELS);
+  const ALL_GRADES = [6, 7, 8, 9, 1, 2, 3, 4, 5];
+
   // RENDER: Mode Selection
   // ========================================
   if (mode === 'select') {
+    const hasContext = !!(contextSubject && contextGrade);
+    const contextColor = contextSubject ? SUBJECT_COLORS[contextSubject] || '#64748b' : '#64748b';
     return (
       <div className="h-full flex flex-col bg-white">
         {/* Header with close button */}
@@ -1297,72 +1504,360 @@ export function AIChatPanel({
             <X className="h-5 w-5" />
           </button>
         </div>
-        
-        <div className="flex-1 flex flex-col items-center justify-center p-6">
-          <Sparkles className="h-12 w-12 text-blue-500 mb-4" />
-          <h2 className="text-lg font-semibold text-slate-800 mb-2">Co chcete udělat?</h2>
-          {hasContent && (
-            <p className="text-sm text-slate-500 text-center mb-6">
-              Váš list už obsahuje {worksheet?.blocks?.length || 0} {(worksheet?.blocks?.length || 0) === 1 ? 'blok' : (worksheet?.blocks?.length || 0) < 5 ? 'bloky' : 'bloků'}
-            </p>
+
+        {/* Context picker */}
+        <div className="shrink-0 px-4 py-3 border-b border-slate-100 bg-slate-50">
+          <button
+            onClick={() => setShowContextPicker(v => !v)}
+            className="w-full flex items-center justify-between group"
+          >
+            <div className="flex items-center gap-2">
+              {isLoadingContext ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-400" />
+              ) : (
+                <div className="w-2 h-2 rounded-full" style={{ backgroundColor: hasContext ? contextColor : '#cbd5e1' }} />
+              )}
+              {hasContext ? (
+                <span className="text-xs font-medium text-slate-700">
+                  {SUBJECT_LABELS[contextSubject] || contextSubject} · {contextGrade}. ročník
+                  {curriculumContext ? ' · RVP načteno' : ''}
+                </span>
+              ) : (
+                <span className="text-xs text-slate-400">Nastavit předmět a ročník</span>
+              )}
+            </div>
+            <ChevronDown className={`h-3.5 w-3.5 text-slate-400 transition-transform ${showContextPicker ? 'rotate-180' : ''}`} />
+          </button>
+
+          {showContextPicker && (
+            <div className="mt-3 space-y-3">
+              {/* Subject grid */}
+              <div>
+                <p className="text-[10px] text-slate-400 uppercase tracking-wide mb-1.5">Předmět</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {ALL_SUBJECTS.map(([id, label]) => {
+                    const active = contextSubject === id;
+                    return (
+                      <button
+                        key={id}
+                        onClick={() => setContextSubject(active ? '' : id)}
+                        className="px-2.5 py-1 text-xs rounded-full border transition-all"
+                        style={active
+                          ? { backgroundColor: SUBJECT_COLORS[id] || '#64748b', borderColor: SUBJECT_COLORS[id] || '#64748b', color: '#fff' }
+                          : { backgroundColor: '#fff', borderColor: '#e2e8f0', color: '#475569' }
+                        }
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Grade row */}
+              <div>
+                <p className="text-[10px] text-slate-400 uppercase tracking-wide mb-1.5">Ročník</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {ALL_GRADES.map(g => {
+                    const active = contextGrade === g;
+                    return (
+                      <button
+                        key={g}
+                        onClick={() => setContextGrade(active ? null : g)}
+                        className="w-8 h-8 text-xs rounded-lg border font-medium transition-all"
+                        style={active
+                          ? { backgroundColor: contextColor, borderColor: contextColor, color: '#fff' }
+                          : { backgroundColor: '#fff', borderColor: '#e2e8f0', color: '#475569' }
+                        }
+                      >
+                        {g}.
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Status */}
+              {curriculumContext && (
+                <div className="flex items-center gap-1.5 text-xs text-green-600">
+                  <Check className="h-3 w-3" />
+                  <span>Kurikulum načteno – AI zná obsah tohoto ročníku</span>
+                </div>
+              )}
+              {hasContext && !curriculumContext && !isLoadingContext && (
+                <p className="text-xs text-slate-400">Pro tento předmět/ročník nebyla nalezena RVP data.</p>
+              )}
+            </div>
           )}
-          
-          <div className="w-full max-w-xs space-y-3">
-            {/* Show "Upravit" only when there's content */}
-            {hasContent && (
-              <button
-                onClick={startEditMode}
-                className="w-full flex items-center gap-3 p-4 rounded-xl border-2 border-purple-200 bg-purple-50 hover:bg-purple-100 hover:border-purple-300 transition-all text-left"
-              >
-                <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ backgroundColor: '#7c3aed' }}>
-                  <Pencil className="h-5 w-5 text-white" />
-                </div>
-                <div>
-                  <p className="font-medium text-slate-800">Upravit obsah</p>
-                  <p className="text-xs text-slate-500">Přeložit, zjednodušit, opravit...</p>
-                </div>
-              </button>
-            )}
+        </div>
+        
+        <div className="flex-1 overflow-y-auto p-5 space-y-3">
+          {/* Primary actions */}
+          <div className="space-y-2">
+            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide px-1 mb-2">Hlavní akce</p>
             
+            {/* UPRAV */}
             <button
-              onClick={() => setMode('create')}
+              onClick={startEditMode}
+              disabled={!hasContent}
+              className="w-full flex items-center gap-3 p-4 rounded-xl border-2 transition-all text-left disabled:opacity-40 disabled:cursor-not-allowed"
+              style={hasContent ? { borderColor: '#a78bfa', backgroundColor: '#f5f3ff' } : { borderColor: '#e2e8f0', backgroundColor: '#f8fafc' }}
+            >
+              <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: hasContent ? '#7c3aed' : '#94a3b8' }}>
+                <Pencil className="h-5 w-5 text-white" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-semibold text-slate-800">Uprav</p>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {hasContent ? 'Celý dok. · Stránku · Blok' : 'Nejprve přidejte obsah'}
+                </p>
+              </div>
+              {hasContent && <ChevronRight className="h-4 w-4 text-slate-400 shrink-0" />}
+            </button>
+
+            {/* VYTVOŘ */}
+            <button
+              onClick={() => setMode('create-scope')}
               className="w-full flex items-center gap-3 p-4 rounded-xl border-2 border-blue-200 bg-blue-50 hover:bg-blue-100 hover:border-blue-300 transition-all text-left"
             >
-              <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ backgroundColor: '#2563eb' }}>
+              <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: '#2563eb' }}>
                 <FilePlus className="h-5 w-5 text-white" />
               </div>
-              <div>
-                <p className="font-medium text-slate-800">{hasContent ? 'Vytvořit nový obsah' : 'Vytvořit obsah'}</p>
-                <p className="text-xs text-slate-500">{hasContent ? 'Přidat další bloky a úlohy' : 'Generovat bloky a úlohy pomocí AI'}</p>
+              <div className="flex-1 min-w-0">
+                <p className="font-semibold text-slate-800">Vytvoř</p>
+                <p className="text-xs text-slate-500 mt-0.5">Dokument · Stránku · Blok</p>
               </div>
+              <ChevronRight className="h-4 w-4 text-slate-400 shrink-0" />
             </button>
+          </div>
+
+          {/* Secondary: from external sources */}
+          <div className="space-y-2 pt-2">
+            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide px-1 mb-2">Z obsahu</p>
 
             <button
               onClick={startFromDocsMode}
-              className="w-full flex items-center gap-3 p-4 rounded-xl border-2 border-amber-200 bg-amber-50 hover:bg-amber-100 hover:border-amber-300 transition-all text-left"
+              className="w-full flex items-center gap-3 p-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 hover:border-slate-300 transition-all text-left"
             >
-              <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ backgroundColor: '#f59e0b' }}>
-                <Library className="h-5 w-5 text-white" />
+              <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: '#f59e0b' }}>
+                <Library className="h-4 w-4 text-white" />
               </div>
-              <div>
-                <p className="font-medium text-slate-800">Z Vividbooks</p>
-                <p className="text-xs text-slate-500">Vytvořit z dokumentů knihovny</p>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-slate-700">Z Vividbooks</p>
+                <p className="text-xs text-slate-400">Dokumenty knihovny</p>
               </div>
+              <ChevronRight className="h-4 w-4 text-slate-300 shrink-0" />
             </button>
 
             <button
               onClick={startFromMyContentMode}
-              className="w-full flex items-center gap-3 p-4 rounded-xl border-2 border-green-200 bg-green-50 hover:bg-green-100 hover:border-green-300 transition-all text-left"
+              className="w-full flex items-center gap-3 p-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 hover:border-slate-300 transition-all text-left"
             >
-              <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ backgroundColor: '#10b981' }}>
-                <FolderUp className="h-5 w-5 text-white" />
+              <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: '#10b981' }}>
+                <FolderUp className="h-4 w-4 text-white" />
               </div>
-              <div>
-                <p className="font-medium text-slate-800">Z mého obsahu</p>
-                <p className="text-xs text-slate-500">Vytvořit z mých souborů a odkazů</p>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-slate-700">Z mého obsahu</p>
+                <p className="text-xs text-slate-400">Soubory a odkazy</p>
               </div>
+              <ChevronRight className="h-4 w-4 text-slate-300 shrink-0" />
             </button>
           </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ========================================
+  // RENDER: Edit Scope Selection
+  // ========================================
+  if (mode === 'edit-scope') {
+    const selectedBlock = selectedBlockId ? worksheet?.blocks?.find(b => b.id === selectedBlockId) : null;
+    const blockTypeLabels: Record<string, string> = {
+      heading: 'Nadpis', paragraph: 'Odstavec', infobox: 'Infobox',
+      'multiple-choice': 'Výběr z možností', 'fill-blank': 'Doplňovačka',
+      'free-answer': 'Volná otázka', image: 'Obrázek', table: 'Tabulka',
+      'connect-pairs': 'Spojovačka', examples: 'Příklady', spacer: 'Oddělovač',
+      'free-canvas': 'Volné plátno', 'qr-code': 'QR kód', 'header-footer': 'Hlavička/Patička',
+    };
+    return (
+      <div className="h-full flex flex-col bg-white">
+        <div className="shrink-0 px-4 py-3 border-b border-slate-200 bg-slate-50">
+          <div className="flex items-center justify-between mb-1">
+            <button onClick={handleBack} className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700">
+              <ArrowLeft className="h-4 w-4" />Zpět
+            </button>
+            <button onClick={handleClose} className="p-1.5 rounded-lg hover:bg-slate-200 text-slate-400 hover:text-slate-600 transition-colors">
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+          <h3 className="font-semibold text-slate-800 flex items-center gap-2">
+            <Pencil className="h-4 w-4 text-purple-500" />Uprav – Co chcete upravit?
+          </h3>
+        </div>
+        <div className="flex-1 flex flex-col justify-center p-5 space-y-3">
+          {/* Celý dokument */}
+          <button
+            onClick={() => startEditWithScope('document')}
+            className="w-full flex items-center gap-3 p-4 rounded-xl border-2 border-purple-200 bg-purple-50 hover:bg-purple-100 hover:border-purple-300 transition-all text-left"
+          >
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: '#7c3aed' }}>
+              <FileEdit className="h-5 w-5 text-white" />
+            </div>
+            <div>
+              <p className="font-semibold text-slate-800">Celý dokument</p>
+              <p className="text-xs text-slate-500">{worksheet?.blocks?.length || 0} bloků</p>
+            </div>
+          </button>
+          {/* Tuto stránku */}
+          <button
+            onClick={() => startEditWithScope('page')}
+            disabled={!currentPageBlocks || currentPageBlocks.length === 0}
+            className="w-full flex items-center gap-3 p-4 rounded-xl border-2 border-blue-200 bg-blue-50 hover:bg-blue-100 hover:border-blue-300 transition-all text-left disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: '#2563eb' }}>
+              <FileText className="h-5 w-5 text-white" />
+            </div>
+            <div>
+              <p className="font-semibold text-slate-800">Tuto stránku</p>
+              <p className="text-xs text-slate-500">{currentPageBlocks?.length || 0} bloků na stránce</p>
+            </div>
+          </button>
+          {/* Vybraný blok */}
+          <button
+            onClick={() => startEditWithScope('block')}
+            disabled={!selectedBlock}
+            className="w-full flex items-center gap-3 p-4 rounded-xl border-2 border-slate-200 bg-slate-50 hover:bg-slate-100 hover:border-slate-300 transition-all text-left disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: selectedBlock ? '#0f172a' : '#94a3b8' }}>
+              <Type className="h-5 w-5 text-white" />
+            </div>
+            <div>
+              <p className="font-semibold text-slate-800">Vybraný blok</p>
+              <p className="text-xs text-slate-500">
+                {selectedBlock ? blockTypeLabels[selectedBlock.type] || selectedBlock.type : 'Žádný blok není vybraný'}
+              </p>
+            </div>
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ========================================
+  // RENDER: Create Scope Selection
+  // ========================================
+  if (mode === 'create-scope') {
+    return (
+      <div className="h-full flex flex-col bg-white">
+        <div className="shrink-0 px-4 py-3 border-b border-slate-200 bg-slate-50">
+          <div className="flex items-center justify-between mb-1">
+            <button onClick={handleBack} className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700">
+              <ArrowLeft className="h-4 w-4" />Zpět
+            </button>
+            <button onClick={handleClose} className="p-1.5 rounded-lg hover:bg-slate-200 text-slate-400 hover:text-slate-600 transition-colors">
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+          <h3 className="font-semibold text-slate-800 flex items-center gap-2">
+            <FilePlus className="h-4 w-4 text-blue-500" />Vytvoř – Co chcete vytvořit?
+          </h3>
+        </div>
+        <div className="flex-1 flex flex-col justify-center p-5 space-y-3">
+          {/* Dokument */}
+          <button
+            onClick={() => startCreateWithScope('document')}
+            className="w-full flex items-center gap-3 p-4 rounded-xl border-2 border-blue-200 bg-blue-50 hover:bg-blue-100 hover:border-blue-300 transition-all text-left"
+          >
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: '#2563eb' }}>
+              <FileEdit className="h-5 w-5 text-white" />
+            </div>
+            <div>
+              <p className="font-semibold text-slate-800">Dokument</p>
+              <p className="text-xs text-slate-500">Celý pracovní list na zadané téma</p>
+            </div>
+          </button>
+          {/* Stránka */}
+          <button
+            onClick={() => startCreateWithScope('page')}
+            className="w-full flex items-center gap-3 p-4 rounded-xl border-2 border-purple-200 bg-purple-50 hover:bg-purple-100 hover:border-purple-300 transition-all text-left"
+          >
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: '#7c3aed' }}>
+              <FileText className="h-5 w-5 text-white" />
+            </div>
+            <div>
+              <p className="font-semibold text-slate-800">Stránku</p>
+              <p className="text-xs text-slate-500">Sada bloků na přibližně jednu stranu</p>
+            </div>
+          </button>
+          {/* Blok */}
+          <button
+            onClick={() => setMode('create-block-type')}
+            className="w-full flex items-center gap-3 p-4 rounded-xl border-2 border-slate-200 bg-slate-50 hover:bg-slate-100 hover:border-slate-300 transition-all text-left"
+          >
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: '#0f172a' }}>
+              <Type className="h-5 w-5 text-white" />
+            </div>
+            <div>
+              <p className="font-semibold text-slate-800">Blok</p>
+              <p className="text-xs text-slate-500">Konkrétní typ bloku</p>
+            </div>
+            <ChevronRight className="h-4 w-4 text-slate-400 shrink-0" />
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ========================================
+  // RENDER: Create Block Type Selection
+  // ========================================
+  if (mode === 'create-block-type') {
+    const blockOptions: { type: BlockType; label: string; desc: string; color: string }[] = [
+      { type: 'heading', label: 'Nadpis', desc: 'Nadpis sekce', color: '#64748b' },
+      { type: 'paragraph', label: 'Odstavec', desc: 'Text s obrázkem', color: '#0ea5e9' },
+      { type: 'infobox', label: 'Infobox', desc: 'Zvýrazněný rámeček', color: '#f59e0b' },
+      { type: 'multiple-choice', label: 'Výběr z možností', desc: 'Testová otázka', color: '#8b5cf6' },
+      { type: 'fill-blank', label: 'Doplňovačka', desc: 'Doplň slova do mezer', color: '#06b6d4' },
+      { type: 'free-answer', label: 'Volná otázka', desc: 'Otevřená odpověď', color: '#10b981' },
+      { type: 'table', label: 'Tabulka', desc: 'Tabulka s daty', color: '#6366f1' },
+      { type: 'connect-pairs', label: 'Spojovačka', desc: 'Spoj dvojice', color: '#ec4899' },
+      { type: 'image', label: 'Obrázek', desc: 'Obrázek / galerie', color: '#f97316' },
+      { type: 'examples', label: 'Příklady', desc: 'Sada příkladů', color: '#84cc16' },
+    ];
+    return (
+      <div className="h-full flex flex-col bg-white">
+        <div className="shrink-0 px-4 py-3 border-b border-slate-200 bg-slate-50">
+          <div className="flex items-center justify-between mb-1">
+            <button onClick={handleBack} className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700">
+              <ArrowLeft className="h-4 w-4" />Zpět
+            </button>
+            <button onClick={handleClose} className="p-1.5 rounded-lg hover:bg-slate-200 text-slate-400 hover:text-slate-600 transition-colors">
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+          <h3 className="font-semibold text-slate-800">Jaký typ bloku?</h3>
+        </div>
+        <div className="flex-1 overflow-y-auto p-3 space-y-1.5">
+          {blockOptions.map(opt => (
+            <button
+              key={opt.type}
+              onClick={() => startCreateWithScope('block', opt.type)}
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 hover:border-slate-300 transition-all text-left"
+            >
+              <div
+                className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0"
+                style={{ backgroundColor: opt.color }}
+              >
+                <Type className="h-3.5 w-3.5 text-white" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-slate-800">{opt.label}</p>
+                <p className="text-xs text-slate-400 truncate">{opt.desc}</p>
+              </div>
+              <ChevronRight className="h-4 w-4 text-slate-300 shrink-0" />
+            </button>
+          ))}
         </div>
       </div>
     );
@@ -1987,9 +2482,17 @@ export function AIChatPanel({
   // RENDER: Edit Mode
   // ========================================
   if (mode === 'edit') {
+    const editScopeBlock = editScope === 'block' && selectedBlockId
+      ? worksheet?.blocks?.find(b => b.id === selectedBlockId)
+      : null;
+    const blockTypeLabelsEdit: Record<string, string> = {
+      heading: 'Nadpis', paragraph: 'Odstavec', infobox: 'Infobox',
+      'multiple-choice': 'Výběr z možností', 'fill-blank': 'Doplňovačka',
+      'free-answer': 'Volná otázka', image: 'Obrázek', table: 'Tabulka',
+      'connect-pairs': 'Spojovačka', examples: 'Příklady',
+    };
     return (
       <div className="h-full flex flex-col bg-white">
-        {/* Header */}
         {/* Header with back and close */}
         <div className="shrink-0 px-4 py-3 border-b border-slate-200 bg-slate-50">
           <div className="flex items-center justify-between">
@@ -2028,6 +2531,19 @@ export function AIChatPanel({
               </button>
             </div>
           </div>
+          {/* Scope badge */}
+          <div className="flex items-center gap-2 mt-2">
+            <span className="text-xs text-slate-500">Upravuji:</span>
+            {editScope === 'block' && editScopeBlock ? (
+              <span className="text-xs px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 font-medium">
+                {blockTypeLabelsEdit[editScopeBlock.type] || editScopeBlock.type}
+              </span>
+            ) : (
+              <span className="text-xs px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 font-medium">
+                {editScope === 'page' ? 'Stránku' : 'Celý dokument'}
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Chat area - centered */}
@@ -2063,13 +2579,73 @@ export function AIChatPanel({
         </div>
 
         {/* Input */}
-        <div className="shrink-0 p-4 border-t border-slate-200 bg-slate-50">
-          <div className="flex gap-2">
+        <div className="shrink-0 border-t border-slate-200 bg-slate-50">
+          {/* Quick action chips - context-aware */}
+          {editMessages.length <= 1 && (() => {
+            const selBlock = editScope === 'block' && selectedBlockId
+              ? worksheet?.blocks?.find(b => b.id === selectedBlockId)
+              : null;
+            const blockType = selBlock?.type;
+
+            // Chips based on block type
+            const allChips: { label: string; prompt: string }[] = [];
+
+            if (editScope === 'block' && blockType) {
+              if (['paragraph', 'infobox', 'heading'].includes(blockType)) {
+                allChips.push({ label: '❓ Udělej otázky ABC', prompt: 'Přeměň na otázky výběrem z možností (multiple-choice)' });
+                allChips.push({ label: '✏️ Volná otázka', prompt: 'Přeměň na otevřenou otázku (free-answer)' });
+                allChips.push({ label: '📝 Doplňovačka', prompt: 'Přeměň na doplňovačku (fill-blank) – vynech klíčová slova' });
+              }
+              if (blockType === 'infobox') {
+                allChips.push({ label: '¶ Na 2 odstavce', prompt: 'Rozděl na 2 odstavce textu (paragraph)' });
+              }
+              if (blockType === 'paragraph') {
+                allChips.push({ label: '💡 Na infobox', prompt: 'Přeměň na infobox (zvýrazněný rámeček)' });
+                allChips.push({ label: '¶ Rozděl na 2', prompt: 'Rozděl obsah na 2 samostatné odstavce' });
+              }
+              if (['multiple-choice', 'free-answer', 'fill-blank'].includes(blockType)) {
+                allChips.push({ label: '¶ Na text', prompt: 'Přeměň na odstavec textu (paragraph)' });
+              }
+            }
+
+            // Universal chips
+            if (editScope !== 'block' || blockType) {
+              allChips.push({ label: '🌍 Přelož EN', prompt: 'Přelož do angličtiny' });
+              allChips.push({ label: '✂️ Zjednoduš', prompt: 'Zjednoduš text pro mladší žáky' });
+              allChips.push({ label: '📚 Rozšiř', prompt: 'Rozšiř a doplň o více informací' });
+              allChips.push({ label: '🔍 Oprav pravopis', prompt: 'Oprav pravopisné chyby' });
+            }
+
+            if (editScope === 'document' || editScope === 'page') {
+              allChips.push({ label: '❓ Přeměň na test', prompt: 'Přeměň celý obsah na testové otázky (multiple-choice)' });
+              allChips.push({ label: '🔗 Spojovačka', prompt: 'Přidej na konec spojovačku klíčových pojmů (connect-pairs)' });
+            }
+
+            return allChips.length > 0 ? (
+              <div className="px-4 pt-3 pb-2">
+                <p className="text-[10px] text-slate-400 uppercase tracking-wide mb-2">Rychlé akce</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {allChips.map((chip, i) => (
+                    <button
+                      key={i}
+                      onClick={() => sendEditMessage(chip.prompt)}
+                      disabled={isEditLoading}
+                      className="px-2.5 py-1 text-xs rounded-full border border-slate-300 bg-white text-slate-600 hover:bg-slate-100 hover:border-slate-400 transition-colors whitespace-nowrap disabled:opacity-40"
+                    >
+                      {chip.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null;
+          })()}
+
+          <div className="p-4 pt-2 flex gap-2">
             <input
               value={editInput}
               onChange={(e) => setEditInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Např. přelož do angličtiny, zjednoduš text..."
+              placeholder="Např. přeměň na otázky, rozděl na odstavce..."
               className="flex-1 px-4 py-3 text-sm bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
               disabled={isEditLoading}
             />
@@ -2095,17 +2671,21 @@ export function AIChatPanel({
   // ========================================
   // RENDER: Create Mode (existing behavior)
   // ========================================
+  const createScopeLabel = createScope === 'page' ? 'Stránka' : createScope === 'block' ? (createBlockType || 'Blok') : 'Dokument';
   return (
     <div className="h-full flex flex-col bg-white">
       {/* Header with back, close, and insert button */}
       <div className="shrink-0 px-4 py-3 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
-        <button
-          onClick={handleBack}
-          className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Zpět
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleBack}
+            className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Zpět
+          </button>
+          <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-medium">{createScopeLabel}</span>
+        </div>
         <div className="flex items-center gap-2">
           {pendingMessage && pendingCount > 0 && (
             <button
@@ -2224,12 +2804,25 @@ export function AIChatPanel({
 
       {/* Fixed input at bottom */}
       <div className="shrink-0 p-3 border-t border-slate-200 bg-slate-50">
+        {/* Scope badge */}
+        {createScope !== 'document' && (
+          <div className="flex items-center gap-1.5 mb-2">
+            <span className="text-xs text-slate-500">Vytvoření:</span>
+            <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-medium">
+              {createScope === 'page' ? 'Stránka' : createBlockType ? `Blok: ${createBlockType}` : 'Blok'}
+            </span>
+          </div>
+        )}
         <div className="flex gap-2">
           <input
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Napiš co potřebuješ..."
+            placeholder={
+              createScope === 'page' ? 'Téma stránky...'
+              : createScope === 'block' ? 'Popis bloku...'
+              : 'Napiš co potřebuješ...'
+            }
             className="flex-1 px-3 py-2 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             disabled={isLoading}
           />
@@ -2265,7 +2858,7 @@ export function AIChatPanel({
 // HELPER FUNCTIONS FOR EDIT MODE
 // ============================================
 
-function buildEditPrompt(userRequest: string, blocks: WorksheetBlock[]): string {
+function buildEditPrompt(userRequest: string, blocks: WorksheetBlock[], scope: 'block' | 'page' | 'document' = 'document', curriculumContext?: string): string {
   // Sanitize blocks - remove large data like base64 images
   const sanitizedBlocks = blocks.map(block => {
     if (block.type === 'image') {
@@ -2282,27 +2875,49 @@ function buildEditPrompt(userRequest: string, blocks: WorksheetBlock[]): string 
   });
   
   const blocksJson = JSON.stringify(sanitizedBlocks, null, 2);
-  console.log('[BuildEditPrompt] Blocks JSON length:', blocksJson.length);
 
-  return `Jsi AI asistent pro úpravu vzdělávacího obsahu. Uživatel chce upravit existující pracovní list.
+  const blockTypeGuide = `PŘESNÁ content struktura typů bloků (MUSÍŠ dodržet tyto field names!):
+- "heading": { "text": string, "level": 1|2|3 }
+- "paragraph": { "html": string }   ← pole "html", NE "text"!
+- "infobox": { "title": string, "html": string, "variant": "info"|"warning"|"tip"|"success" }   ← pole "html", NE "text"!
+- "multiple-choice": { "question": string, "options": [{"id":"opt1","text":string},{"id":"opt2","text":string},...], "correctAnswers": ["opt1"], "allowMultiple": false }
+- "fill-blank": { "segments": [{"type":"text","content":"Doplň "},{"type":"blank","id":"b1","correctAnswer":"slovo"},{"type":"text","content":" do věty."}] }
+- "free-answer": { "question": string, "lines": 3, "hint": string }
+- "table": { "headers": string[], "rows": string[][] }
+- "connect-pairs": { "pairs": [{"left": string, "right": string}] }`;
 
+  const singleBlockInstructions = `TVŮJ ÚKOL (upravuješ JEDEN blok):
+1. Uprav obsah tohoto bloku podle požadavku uživatele – napiš nový text, přepiš, doplň, přelož atd.
+2. Vrať PRÁVĚ JEDEN blok se stejným id, ale aktualizovaným obsahem (content).
+3. Výjimka – vrať více bloků POUZE pokud uživatel explicitně říká "rozděl", "udělej více", "vytvoř seznam bloků" apod.
+4. Pokud uživatel chce změnit TYP bloku (např. "přeměň na otázky") → změň type a uprav content do správné struktury.
+5. Zachovej id, order a width originálního bloku.`;
+
+  const multiBlockInstructions = `TVŮJ ÚKOL:
+1. Proveď co uživatel požaduje – uprav obsah, změň typy bloků, rozděl nebo spoj bloky.
+2. Zachovej původní obsah pokud to jde – jen ho přestrukturuj.
+3. Nové bloky dostanou nové id (např. "blk_abc123").`;
+
+  const curriculumSection = curriculumContext
+    ? `\nKURIKULUM KONTEXT (používej pro generování relevantního obsahu):\n${curriculumContext}\n`
+    : '';
+
+  return `Jsi AI asistent pro úpravu vzdělávacího obsahu.${curriculumSection}
 POŽADAVEK UŽIVATELE: ${userRequest}
 
-AKTUÁLNÍ BLOKY (JSON):
+AKTUÁLNÍ ${scope === 'block' ? 'BLOK' : 'BLOKY'} (JSON):
 ${blocksJson}
 
-TVŮJ ÚKOL:
-1. Uprav bloky podle požadavku uživatele
-2. Zachovej strukturu bloků (id, type, order, width atd.)
-3. Uprav pouze obsah (content) podle požadavku
-4. Vrať POUZE upravený JSON pole bloků, nic jiného
+${blockTypeGuide}
 
-DŮLEŽITÉ:
-- Vrať POUZE validní JSON pole bloků
+${scope === 'block' ? singleBlockInstructions : multiBlockInstructions}
+
+KRITICKY DŮLEŽITÉ:
+- Vrať POUZE validní JSON pole bloků, nic jiného
 - Nezabaluj do markdown code blocks
-- Zachovej všechny originální id a strukturu
-- U obrázků zachovej originální URL (nebo [BASE64_IMAGE] pokud tam je)
-- Uprav pouze to, co uživatel požaduje`;
+- NIKDY negeneruj prázdný html string – každý blok musí mít smysluplný obsah
+- "width" musí být "full" nebo "half"
+- U obrázků zachovej originální URL (nebo [BASE64_IMAGE] pokud tam je)`;
 }
 
 function parseEditResponse(response: string, originalBlocks: WorksheetBlock[]): WorksheetBlock[] | null {
@@ -2344,20 +2959,27 @@ function parseEditResponse(response: string, originalBlocks: WorksheetBlock[]): 
 
     if (!parsedBlocks) return null;
 
-    // Restore original base64 images that were sanitized
+    // Restore original base64 images + fix AI field name mistakes
     const originalBlockMap = new Map(originalBlocks.map(b => [b.id, b]));
     
     const restoredBlocks = parsedBlocks.map(block => {
+      // Fix: AI sometimes uses "text" instead of "html" for paragraph/infobox
+      if ((block.type === 'paragraph' || block.type === 'infobox') && block.content) {
+        const c = block.content;
+        if (!c.html && c.text) {
+          console.log('[EditParse] Fixing: AI used "text" instead of "html" for', block.type);
+          block = { ...block, content: { ...c, html: c.text } };
+          delete block.content.text;
+        }
+      }
+      
+      // Restore base64 images
       if (block.type === 'image' && block.content?.url === '[BASE64_IMAGE]') {
         const original = originalBlockMap.get(block.id);
         if (original && original.type === 'image') {
-          console.log('[EditParse] Restoring base64 image for block:', block.id);
           return {
             ...block,
-            content: {
-              ...block.content,
-              url: (original.content as any).url,
-            }
+            content: { ...block.content, url: (original.content as any).url },
           };
         }
       }
@@ -2443,7 +3065,7 @@ function BlockContent({ block }: { block: WorksheetBlock }) {
     case 'multiple-choice':
       return (
         <div className="space-y-1.5">
-          <p className="text-sm font-medium text-slate-800">{content.question}</p>
+          <p className="text-sm font-medium text-slate-800">{richHtmlToPlainText(getQuestionHtml(content))}</p>
           {content.options?.map((opt: any, i: number) => (
             <div key={i} className="flex items-start gap-2 text-sm">
               <span className={`font-medium ${opt.isCorrect ? 'text-green-600' : 'text-slate-500'}`}>
@@ -2472,7 +3094,7 @@ function BlockContent({ block }: { block: WorksheetBlock }) {
     case 'free-answer':
       return (
         <div>
-          <p className="text-sm font-medium text-slate-800">{content.question}</p>
+          <p className="text-sm font-medium text-slate-800">{richHtmlToPlainText(getQuestionHtml(content))}</p>
           {content.hint && <p className="text-xs text-slate-500 mt-1">Nápověda: {content.hint}</p>}
           {content.sampleAnswer && <p className="text-xs text-green-600 mt-1">Vzor: {content.sampleAnswer}</p>}
     </div>

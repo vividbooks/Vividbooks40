@@ -6,6 +6,8 @@
 
 import { Quiz, QuizSlide } from '../types/quiz';
 import { supabase } from './supabase/client';
+import { stripBase64FromObject } from './supabase/upload-image';
+import { supabaseUrl as SUPABASE_URL, publicAnonKey as SUPABASE_KEY, projectId as SUPABASE_PROJECT_ID } from './supabase/info';
 import { syncBoardToRAG } from './gemini-rag';
 import { clearTeacherTombstone, fetchTeacherTombstones, recordTeacherTombstone } from './sync/teacher-tombstones';
 import { queueUpsert, queueDelete } from './sync/sync-queue';
@@ -15,10 +17,6 @@ const QUIZ_PREFIX = 'vividbooks_quiz_';
 const SUPABASE_IDS_KEY = 'vividbooks_supabase_quiz_ids';
 const DELETED_IDS_KEY = 'vividbooks_deleted_quiz_ids';
 
-// Supabase config for direct fetch calls
-const SUPABASE_URL = 'https://njbtqmsxbyvpwigfceke.supabase.co';
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5qYnRxbXN4Ynl2cHdpZ2ZjZWtlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI4MzczODksImV4cCI6MjA3ODQxMzM4OX0.nY0THq2YU9wrjYsPoxYwXRXczE3Vh7cB1opzAV8c50g';
-const SUPABASE_PROJECT_ID = 'njbtqmsxbyvpwigfceke';
 const SUPABASE_ANON_KEY = SUPABASE_KEY;
 
 // Track which quiz IDs exist in Supabase
@@ -124,7 +122,10 @@ export function getQuizList(): QuizListItem[] {
 /**
  * Uložit/aktualizovat kvíz
  */
-export function saveQuiz(quiz: Quiz): void {
+/**
+ * @param folderId - pokud je zadáno, přepíše existující folderId (vhodné při vytváření nového boardu z generátoru)
+ */
+export function saveQuiz(quiz: Quiz, folderId?: string | null): void {
   try {
     console.log('[QuizStorage] saveQuiz called:', {
       id: quiz.id,
@@ -146,6 +147,11 @@ export function saveQuiz(quiz: Quiz): void {
     const list = getRawQuizList();
     const existingIndex = list.findIndex(item => item.id === quiz.id);
     
+    // Pokud je folderId explicitně předáno, použij ho; jinak zachovej existující
+    const effectiveFolderId = folderId !== undefined
+      ? (folderId ?? undefined)
+      : (existingIndex >= 0 ? list[existingIndex].folderId : undefined);
+
     const listItem: QuizListItem = {
       id: quiz.id,
       title: quiz.title || 'Bez názvu',
@@ -154,7 +160,7 @@ export function saveQuiz(quiz: Quiz): void {
       updatedAt: new Date().toISOString(),
       createdAt: existingIndex >= 0 ? list[existingIndex].createdAt : new Date().toISOString(),
       slidesCount: quiz.slides?.length || 0,
-      folderId: existingIndex >= 0 ? list[existingIndex].folderId : undefined,
+      folderId: effectiveFolderId,
     };
     
     if (existingIndex >= 0) {
@@ -179,7 +185,7 @@ export function saveQuiz(quiz: Quiz): void {
     notifyQuizChange();
     
     // Queue for sync (replaces fire-and-forget async)
-    queueUpsert('teacher_boards', quiz.id, {
+    queueUpsert('teacher_boards', quiz.id, stripBase64FromObject({
       title: quiz.title || 'Bez názvu',
       subject: quiz.subject || null,
       grade: quiz.grade || null,
@@ -188,7 +194,7 @@ export function saveQuiz(quiz: Quiz): void {
       slides_count: quiz.slides?.length || 0,
       folder_id: listItem.folderId || null,
       created_at: listItem.createdAt || new Date().toISOString(),
-    });
+    }) as Record<string, unknown>);
     
     console.log('[QuizStorage] Queued quiz for sync:', quiz.id);
     
@@ -240,7 +246,7 @@ async function syncQuizToSupabase(quiz: Quiz, listItem: QuizListItem): Promise<v
 
     console.log('[QuizStorage] Syncing quiz:', quiz.id, 'for user:', userId);
 
-    const recordData = {
+    const recordData = stripBase64FromObject({
       id: quiz.id,
       teacher_id: userId,
       title: quiz.title || 'Bez názvu',
@@ -252,7 +258,7 @@ async function syncQuizToSupabase(quiz: Quiz, listItem: QuizListItem): Promise<v
       folder_id: listItem.folderId || null,
       created_at: listItem.createdAt || new Date().toISOString(),
       updated_at: new Date().toISOString(),
-    };
+    }) as Record<string, unknown>;
 
     // Use direct fetch for better reliability and RLS handling
     const response = await fetch(
@@ -844,7 +850,7 @@ export async function manualSyncQuizToSupabase(id: string): Promise<boolean> {
  * Uložit quiz přímo do Supabase (bez závislosti na localStorage)
  * Používat když localStorage quota exceeded
  */
-export async function syncQuizDirectToSupabase(quiz: Quiz): Promise<boolean> {
+export async function syncQuizDirectToSupabase(quiz: Quiz, folderId?: string | null): Promise<boolean> {
   try {
     console.log('[QuizStorage] Direct sync starting for:', quiz.id);
     
@@ -856,7 +862,7 @@ export async function syncQuizDirectToSupabase(quiz: Quiz): Promise<boolean> {
       updatedAt: new Date().toISOString(),
       createdAt: new Date().toISOString(),
       slidesCount: quiz.slides?.length || 0,
-      folderId: undefined,
+      folderId: folderId ?? undefined,
     };
     
     await syncQuizToSupabase(quiz, listItem);

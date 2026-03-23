@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { LogOut, Moon, Sun, Save, BookOpen, CheckCircle2, Loader2, ChevronDown, ChevronUp, Settings, User, GraduationCap, ExternalLink, BarChart3, Play, Pencil, Plus, Download, ArrowLeft, Layout } from 'lucide-react';
+import { LogOut, Moon, Sun, Save, BookOpen, CheckCircle2, Loader2, ChevronDown, ChevronUp, Settings, User, GraduationCap, ExternalLink, BarChart3, Play, Pencil, Plus, Download, ArrowLeft, Layout, Database, Globe } from 'lucide-react';
 import { CategoryOverview } from './admin/CategoryOverview';
 import { AdminColumnBrowser } from './admin/AdminColumnBrowser';
 import { RichTextEditor } from './RichTextEditor';
@@ -142,6 +142,34 @@ function ViewModeDropdown() {
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem 
+          onClick={() => window.open(import.meta.env.BASE_URL + 'admin/atlas', '_blank')} 
+          className="cursor-pointer"
+        >
+          <div className="flex items-center gap-2">
+            <div className="p-1 bg-blue-100 rounded text-blue-600">
+              <Globe className="w-3.5 h-3.5" />
+            </div>
+            <div className="flex flex-col">
+              <span className="font-medium text-blue-700">Atlas Explorer</span>
+              <span className="text-xs text-slate-400">Mapový průzkumník</span>
+            </div>
+          </div>
+        </DropdownMenuItem>
+        <DropdownMenuItem 
+          onClick={() => window.open(import.meta.env.BASE_URL + 'admin/viz', '_blank')} 
+          className="cursor-pointer"
+        >
+          <div className="flex items-center gap-2">
+            <div className="p-1 bg-indigo-100 rounded text-indigo-600">
+              <BarChart3 className="w-3.5 h-3.5" />
+            </div>
+            <div className="flex flex-col">
+              <span className="font-medium text-indigo-700">Vizualizér</span>
+              <span className="text-xs text-slate-400">Grafy a mapy (Vega-Lite)</span>
+            </div>
+          </div>
+        </DropdownMenuItem>
+        <DropdownMenuItem 
           onClick={() => window.open(import.meta.env.BASE_URL + 'admin/curriculum-factory', '_blank')} 
           className="cursor-pointer"
         >
@@ -161,6 +189,20 @@ function ViewModeDropdown() {
               <Layout className="w-3.5 h-3.5" />
             </div>
             <span className="font-medium text-indigo-700">Editor PRO</span>
+          </div>
+        </DropdownMenuItem>
+        <DropdownMenuItem 
+          onClick={() => window.open(import.meta.env.BASE_URL + 'admin/rag-worksheets', '_blank')} 
+          className="cursor-pointer"
+        >
+          <div className="flex items-center gap-2">
+            <div className="p-1 bg-violet-100 rounded text-violet-600">
+              <Database className="w-3.5 h-3.5" />
+            </div>
+            <div className="flex flex-col">
+              <span className="font-medium text-violet-700">RAG Knihovna</span>
+              <span className="text-xs text-slate-400">Vzorové pracovní listy</span>
+            </div>
           </div>
         </DropdownMenuItem>
         <DropdownMenuSeparator />

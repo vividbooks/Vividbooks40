@@ -11,7 +11,7 @@
  * - Color palette grid
  */
 
-import React, { useState, useRef } from 'react';
+import React, { useMemo, useState, useRef } from 'react';
 import { Upload, X } from 'lucide-react';
 import { BackgroundSettings } from '../../../types/quiz';
 import { useAssetPicker } from '../../../hooks/useAssetPicker';
@@ -21,10 +21,7 @@ const COLOR_PALETTE = {
   grays: [
     'transparent', // Empty/transparent
     '#ffffff',     // White
-    '#f8fafc',     // Slate 50
-    '#f1f5f9',     // Slate 100
     '#e2e8f0',     // Slate 200
-    '#cbd5e1',     // Slate 300
     '#94a3b8',     // Slate 400
     '#64748b',     // Slate 500
     '#1e293b',     // Slate 800
@@ -32,26 +29,15 @@ const COLOR_PALETTE = {
   ],
   colors: [
     // Row 1 - Deep/Dark
-    '#450a0a', '#7f1d1d', '#14532d', '#134e4a', '#0c4a6e', '#1e3a8a', '#4c1d95', '#701a75',
+    '#450a0a', '#7f1d1d', '#78350f', '#14532d', '#134e4a', '#0c4a6e', '#1e3a8a', '#4c1d95', '#701a75',
     // Row 2 - Dark
-    '#7f1d1d', '#b91c1c', '#166534', '#0f766e', '#0369a1', '#1d4ed8', '#6d28d9', '#a21caf',
+    '#7f1d1d', '#b91c1c', '#a16207', '#166534', '#0f766e', '#0369a1', '#1d4ed8', '#6d28d9', '#a21caf',
     // Row 3 - Medium
-    '#dc2626', '#ef4444', '#22c55e', '#14b8a6', '#0ea5e9', '#3b82f6', '#8b5cf6', '#d946ef',
+    '#dc2626', '#ef4444', '#eab308', '#22c55e', '#14b8a6', '#0ea5e9', '#3b82f6', '#8b5cf6', '#d946ef',
     // Row 4 - Light
-    '#fca5a5', '#fecaca', '#86efac', '#5eead4', '#7dd3fc', '#93c5fd', '#c4b5fd', '#f0abfc',
+    '#fca5a5', '#fecaca', '#fde047', '#86efac', '#5eead4', '#7dd3fc', '#93c5fd', '#c4b5fd', '#f0abfc',
     // Row 5 - Very light
-    '#fee2e2', '#fef2f2', '#dcfce7', '#ccfbf1', '#e0f2fe', '#dbeafe', '#ede9fe', '#fae8ff',
-  ],
-  outlines: [
-    // Outline colors (white fill with colored border)
-    { fill: '#ffffff', stroke: '#ef4444' },
-    { fill: '#ffffff', stroke: '#f97316' },
-    { fill: '#ffffff', stroke: '#eab308' },
-    { fill: '#ffffff', stroke: '#22c55e' },
-    { fill: '#ffffff', stroke: '#06b6d4' },
-    { fill: '#ffffff', stroke: '#3b82f6' },
-    { fill: '#ffffff', stroke: '#8b5cf6' },
-    { fill: '#ffffff', stroke: '#ec4899' },
+    '#fee2e2', '#fef2f2', '#fef9c3', '#dcfce7', '#ccfbf1', '#e0f2fe', '#dbeafe', '#ede9fe', '#fae8ff',
   ],
 };
 
@@ -65,6 +51,20 @@ interface BackgroundPickerProps {
   inline?: boolean; // If true, renders inline without absolute positioning
 }
 
+type PickerLayer = 'fill' | 'stroke';
+
+const CHECKERBOARD_STYLE: React.CSSProperties = {
+  backgroundColor: '#ffffff',
+  backgroundImage: `
+    linear-gradient(45deg, #e2e8f0 25%, transparent 25%),
+    linear-gradient(-45deg, #e2e8f0 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #e2e8f0 75%),
+    linear-gradient(-45deg, transparent 75%, #e2e8f0 75%)
+  `,
+  backgroundSize: '10px 10px',
+  backgroundPosition: '0 0, 0 5px, 5px -5px, -5px 0',
+};
+
 export function BackgroundPicker({
   value,
   onChange,
@@ -74,11 +74,11 @@ export function BackgroundPicker({
   showBlur = true,
   inline = false,
 }: BackgroundPickerProps) {
+  const [activeLayer, setActiveLayer] = useState<PickerLayer>('fill');
   const [recentColors, setRecentColors] = useState<string[]>(() => {
     const saved = localStorage.getItem('vividboard-recent-colors');
     return saved ? JSON.parse(saved) : [];
   });
-  const [customColorOpen, setCustomColorOpen] = useState(false);
   const colorInputRef = useRef<HTMLInputElement>(null);
   
   const { openAssetPicker, AssetPickerModal } = useAssetPicker({
@@ -88,13 +88,22 @@ export function BackgroundPicker({
         imageUrl: result.url,
         opacity,
         blur,
+        strokeColor: value?.strokeColor,
+        strokeWidth: value?.strokeWidth,
       });
     },
   });
 
-  const selectedColor = value?.color || 'transparent';
+  const selectedFillColor = value?.type === 'color' ? (value.color || 'transparent') : 'transparent';
+  const selectedStrokeColor = value?.strokeColor || '#0f172a';
   const opacity = value?.opacity ?? 100;
   const blur = value?.blur ?? 0;
+  const strokeWidth = value?.strokeWidth ?? 0;
+  const selectedColor = activeLayer === 'fill' ? selectedFillColor : selectedStrokeColor;
+  const colorInputValue = useMemo(() => {
+    if (selectedColor && selectedColor.startsWith('#')) return selectedColor;
+    return '#ffffff';
+  }, [selectedColor]);
 
   const handleColorSelect = (color: string) => {
     // Add to recent colors
@@ -102,11 +111,26 @@ export function BackgroundPicker({
     setRecentColors(newRecent);
     localStorage.setItem('vividboard-recent-colors', JSON.stringify(newRecent));
 
+    if (activeLayer === 'stroke') {
+      onChange({
+        ...(value || { type: 'color', color: '#ffffff' }),
+        type: value?.type || 'color',
+        color: value?.color || '#ffffff',
+        strokeColor: color,
+        strokeWidth: strokeWidth > 0 ? strokeWidth : 2,
+      });
+      return;
+    }
+
     onChange({
+      ...value,
       type: 'color',
       color,
+      imageUrl: undefined,
       opacity,
       blur,
+      strokeColor: value?.strokeColor,
+      strokeWidth: value?.strokeWidth,
     });
   };
 
@@ -121,6 +145,7 @@ export function BackgroundPicker({
     onChange({
       ...value,
       type: value?.type || 'color',
+      color: value?.color || '#ffffff',
       opacity: newOpacity,
     });
   };
@@ -129,14 +154,68 @@ export function BackgroundPicker({
     onChange({
       ...value,
       type: value?.type || 'color',
+      color: value?.color || '#ffffff',
       blur: newBlur,
     });
   };
 
+  const handleStrokeWidthChange = (newStrokeWidth: number) => {
+    onChange({
+      ...(value || { type: 'color', color: '#ffffff' }),
+      type: value?.type || 'color',
+      color: value?.color || '#ffffff',
+      strokeWidth: newStrokeWidth,
+      strokeColor: newStrokeWidth > 0 ? selectedStrokeColor : undefined,
+    });
+  };
+
+  const clearStroke = () => {
+    onChange({
+      ...(value || { type: 'color', color: '#ffffff' }),
+      type: value?.type || 'color',
+      color: value?.color || '#ffffff',
+      strokeWidth: 0,
+      strokeColor: undefined,
+    });
+  };
+
+  const renderSwatchFill = (color: string) => {
+    if (color === 'transparent') {
+      return (
+        <div className="absolute inset-0 rounded-full overflow-hidden">
+          <div className="absolute inset-0" style={CHECKERBOARD_STYLE} />
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="w-6 h-0.5 bg-rose-400 rotate-45" />
+          </div>
+        </div>
+      );
+    }
+
+    return <div className="absolute inset-0 rounded-full" style={{ backgroundColor: color }} />;
+  };
+
+  const currentPreview = useMemo<React.CSSProperties>(() => {
+    if (activeLayer === 'stroke') return {};
+
+    if (value?.type === 'image' && value.imageUrl) {
+      return {
+        backgroundImage: `url(${value.imageUrl})`,
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+      };
+    }
+
+    if (selectedFillColor !== 'transparent') {
+      return { backgroundColor: selectedFillColor };
+    }
+
+    return CHECKERBOARD_STYLE;
+  }, [activeLayer, value, selectedFillColor]);
+
   return (
     <div 
-      className={`bg-white rounded-2xl border border-slate-200 p-4 ${
-        inline ? 'w-full' : 'absolute z-50 shadow-2xl w-[360px]'
+      className={`bg-white rounded-2xl border border-slate-200 p-2.5 ${
+        inline ? 'w-full' : 'absolute z-50 shadow-2xl w-[320px]'
       }`}
       style={inline ? {} : { top: '100%', left: 0, marginTop: 8 }}
     >
@@ -150,152 +229,250 @@ export function BackgroundPicker({
         </button>
       )}
 
-      {/* Upload and Custom Color buttons */}
-      <div className="flex gap-2 mb-4">
-        {showUpload && (
-          <button
-            onClick={openAssetPicker}
-            className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium transition-colors"
-          >
-            <Upload className="w-4 h-4" />
-            Nahrát
-          </button>
-        )}
+      <div className="flex gap-2 mb-2.5">
         <button
-          onClick={handleCustomColor}
-          className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium transition-colors"
+          onClick={() => setActiveLayer('fill')}
+          className={`flex-1 flex items-center gap-2 px-3 py-2 rounded-2xl transition-all ${
+            activeLayer === 'fill'
+              ? 'text-white shadow-sm'
+              : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+          }`}
+          style={activeLayer === 'fill' ? { backgroundColor: '#59627B' } : undefined}
         >
-          <div className="w-5 h-5 rounded-full bg-gradient-to-br from-red-500 via-green-500 to-blue-500" />
-          Vlastní barva
+          <div
+            className="relative rounded-full border border-slate-200 overflow-hidden shrink-0"
+            style={value?.type === 'image' && value.imageUrl ? {
+              width: 30,
+              height: 30,
+              flex: '0 0 30px',
+              backgroundImage: `url(${value.imageUrl})`,
+              backgroundSize: 'cover',
+              backgroundPosition: 'center',
+            } : selectedFillColor === 'transparent' ? {
+              width: 30,
+              height: 30,
+              flex: '0 0 30px',
+              ...CHECKERBOARD_STYLE,
+            } : {
+              width: 30,
+              height: 30,
+              flex: '0 0 30px',
+              backgroundColor: selectedFillColor,
+            }}
+          >
+            {selectedFillColor === 'transparent' && value?.type !== 'image' ? (
+              <div className="absolute inset-0 flex items-center justify-center">
+                <div className="w-5 h-0.5 bg-rose-400 rotate-45" />
+              </div>
+            ) : null}
+          </div>
+          <div className="text-left leading-tight">
+            <div className="font-medium text-[12px]">Výplň</div>
+            <div className={`text-[10px] ${activeLayer === 'fill' ? 'text-white/75' : 'text-slate-400'}`}>Barva nebo obrázek</div>
+          </div>
         </button>
-        <input
-          ref={colorInputRef}
-          type="color"
-          value={selectedColor === 'transparent' ? '#ffffff' : selectedColor}
-          onChange={(e) => handleColorSelect(e.target.value)}
-          className="hidden"
-        />
+        <button
+          onClick={() => setActiveLayer('stroke')}
+          className={`flex-1 flex items-center gap-2 px-3 py-2 rounded-2xl transition-all ${
+            activeLayer === 'stroke'
+              ? 'text-white shadow-sm'
+              : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+          }`}
+          style={activeLayer === 'stroke' ? { backgroundColor: '#59627B' } : undefined}
+        >
+          <div
+            className="relative rounded-full border border-slate-200 bg-white shrink-0 flex items-center justify-center"
+            style={{
+              width: 30,
+              height: 30,
+              flex: '0 0 30px',
+            }}
+          >
+            <div
+              className="rounded-full"
+              style={{
+                width: Math.max(Math.min(strokeWidth * 2, 8), 2),
+                height: 18,
+                backgroundColor: strokeWidth > 0 ? selectedStrokeColor : '#cbd5e1',
+              }}
+            />
+            {strokeWidth === 0 && (
+              <div className="absolute inset-0 flex items-center justify-center">
+                <div className="w-4 h-0.5 bg-slate-300 rotate-45" />
+              </div>
+            )}
+          </div>
+          <div className="text-left leading-tight">
+            <div className="font-medium text-[12px]">Stroke</div>
+            <div className={`text-[10px] ${activeLayer === 'stroke' ? 'text-white/75' : 'text-slate-400'}`}>Obrys prvku</div>
+          </div>
+        </button>
       </div>
 
-      {/* Opacity and Blur sliders */}
-      <div className="grid grid-cols-2 gap-4 mb-4">
-        {showOpacity && (
-          <div>
-            <label className="text-xs text-slate-500 mb-1 block">Krytí</label>
-            <div className="flex items-center gap-2">
-              <div className="w-6 h-6 rounded bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTYiIGhlaWdodD0iMTYiIHZpZXdCb3g9IjAgMCAxNiAxNiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iOCIgaGVpZ2h0PSI4IiBmaWxsPSIjY2NjIi8+PHJlY3QgeD0iOCIgeT0iOCIgd2lkdGg9IjgiIGhlaWdodD0iOCIgZmlsbD0iI2NjYyIvPjwvc3ZnPg==')]" />
-              <input
-                type="range"
-                min="0"
-                max="100"
-                value={opacity}
-                onChange={(e) => handleOpacityChange(Number(e.target.value))}
-                className="flex-1 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-slate-700"
-              />
-              <div className="w-6 h-6 rounded bg-slate-800" />
-            </div>
-          </div>
-        )}
-        {showBlur && (
-          <div>
-            <label className="text-xs text-slate-500 mb-1 block">Rozmlžení</label>
-            <div className="flex items-center gap-2">
-              <div className="w-6 h-6 flex items-center justify-center">
-                <div className="w-4 h-4 rounded-full border-2 border-slate-400 border-dotted" />
-              </div>
-              <input
-                type="range"
-                min="0"
-                max="20"
-                value={blur}
-                onChange={(e) => handleBlurChange(Number(e.target.value))}
-                className="flex-1 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-slate-700"
-              />
-              <div className="w-6 h-6 flex items-center justify-center">
-                <div className="w-4 h-4 rounded-full bg-slate-400 blur-[2px]" />
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
+      <input
+        ref={colorInputRef}
+        type="color"
+        value={colorInputValue}
+        onChange={(e) => handleColorSelect(e.target.value)}
+        className="hidden"
+      />
 
-      {/* Recently used colors */}
+      {activeLayer === 'fill' ? (
+        <>
+          {(showOpacity || showBlur) && (
+            <div className={`grid ${showOpacity && showBlur ? 'grid-cols-2' : 'grid-cols-1'} gap-2 mb-2.5`}>
+              {showOpacity && (
+                <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-2">
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs text-slate-500 block">Krytí</label>
+                    <span className="text-xs font-medium text-slate-600">{opacity}%</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-6 h-6 rounded-md border border-slate-200 shrink-0" style={CHECKERBOARD_STYLE} />
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      value={opacity}
+                      onChange={(e) => handleOpacityChange(Number(e.target.value))}
+                      className="flex-1 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-slate-700"
+                    />
+                    <div
+                      className="w-6 h-6 rounded-md border border-slate-200 shrink-0"
+                      style={value?.type === 'image' && value.imageUrl ? {
+                        backgroundImage: `url(${value.imageUrl})`,
+                        backgroundSize: 'cover',
+                        backgroundPosition: 'center',
+                      } : selectedFillColor === 'transparent' ? CHECKERBOARD_STYLE : { backgroundColor: selectedFillColor }}
+                    />
+                  </div>
+                </div>
+              )}
+              {showBlur && (
+                <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-2">
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs text-slate-500 block">Rozmlžení</label>
+                    <span className="text-xs font-medium text-slate-600">{blur}px</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-6 h-6 flex items-center justify-center shrink-0">
+                      <div className="w-4 h-4 rounded-full border-2 border-slate-400 border-dotted" />
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="20"
+                      value={blur}
+                      onChange={(e) => handleBlurChange(Number(e.target.value))}
+                      className="flex-1 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-slate-700"
+                    />
+                    <div className="w-6 h-6 flex items-center justify-center shrink-0">
+                      <div className="w-4 h-4 rounded-full bg-slate-400 blur-[2px]" />
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </>
+      ) : (
+        <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-2 mb-2.5">
+          <div className="flex items-center justify-between mb-1">
+            <label className="text-xs text-slate-500 block">Síla tahu</label>
+            <span className="text-xs font-medium text-slate-600">{strokeWidth}px</span>
+          </div>
+          <div className="flex items-center gap-2.5">
+            <div
+              className="rounded-full border border-slate-200 bg-white shrink-0 flex items-center justify-center"
+              style={{ width: 30, height: 30, flex: '0 0 30px' }}
+            >
+              <div
+                className="rounded-full"
+                style={{
+                  width: Math.max(Math.min(strokeWidth * 2, 8), 2),
+                  height: 18,
+                  backgroundColor: strokeWidth > 0 ? selectedStrokeColor : '#cbd5e1',
+                }}
+              />
+            </div>
+            <input
+              type="range"
+              min="0"
+              max="12"
+              value={strokeWidth}
+              onChange={(e) => handleStrokeWidthChange(Number(e.target.value))}
+              className="flex-1 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-slate-700"
+            />
+            <button
+              onClick={clearStroke}
+              className="px-2 py-1 rounded-xl bg-white border border-slate-200 text-[11px] font-medium text-slate-600 hover:bg-slate-50 transition-colors"
+            >
+              Bez tahu
+            </button>
+          </div>
+        </div>
+      )}
+
       {recentColors.length > 0 && (
-        <div className="mb-4">
-          <label className="text-xs text-slate-500 mb-2 block">Naposledy použité</label>
-          <div className="flex gap-1.5 flex-wrap">
+        <div className="mb-2.5">
+          <label className="text-[11px] text-slate-500 mb-1 block">Naposledy použité</label>
+          <div className="flex gap-1 flex-wrap">
             {recentColors.map((color, idx) => (
               <button
                 key={`${color}-${idx}`}
                 onClick={() => handleColorSelect(color)}
-                className={`w-8 h-8 rounded-full border-2 transition-all hover:scale-110 ${
+                className={`relative w-9 h-9 rounded-full border-2 transition-all hover:scale-110 shrink-0 ${
                   selectedColor === color ? 'border-indigo-500 ring-2 ring-indigo-200' : 'border-slate-200'
                 }`}
-                style={{ backgroundColor: color === 'transparent' ? '#fff' : color }}
+                style={{ width: 30, height: 30, flex: '0 0 30px' }}
               >
-                {color === 'transparent' && (
-                  <div className="w-full h-full rounded-full bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTYiIGhlaWdodD0iMTYiIHZpZXdCb3g9IjAgMCAxNiAxNiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iOCIgaGVpZ2h0PSI4IiBmaWxsPSIjZTJlOGYwIi8+PHJlY3QgeD0iOCIgeT0iOCIgd2lkdGg9IjgiIGhlaWdodD0iOCIgZmlsbD0iI2UyZThmMCIvPjwvc3ZnPg==')]" />
-                )}
+                {renderSwatchFill(color)}
               </button>
             ))}
           </div>
         </div>
       )}
 
-      {/* Color palette */}
       <div>
-        <label className="text-xs text-slate-500 mb-2 block">Výběr barev</label>
-        
-        {/* Grays row */}
-        <div className="flex gap-1.5 mb-2">
+        <label className="text-[11px] text-slate-500 mb-1 block">Výběr barev</label>
+        <div className="grid gap-1 mb-1" style={{ gridTemplateColumns: 'repeat(9, minmax(0, 1fr))' }}>
+          <button
+            onClick={openAssetPicker}
+            className="relative rounded-full border-2 border-slate-200 transition-all hover:scale-110 shrink-0 flex items-center justify-center text-slate-500 bg-white"
+            style={{ width: 30, height: 30, flex: '0 0 30px' }}
+            title="Nahrát"
+          >
+            <Upload className="w-3.5 h-3.5" />
+          </button>
+          <button
+            onClick={handleCustomColor}
+            className="relative rounded-full border-2 border-slate-200 transition-all hover:scale-110 shrink-0 overflow-hidden"
+            style={{ width: 30, height: 30, flex: '0 0 30px', background: 'conic-gradient(#ef4444, #f59e0b, #eab308, #22c55e, #06b6d4, #3b82f6, #8b5cf6, #ec4899, #ef4444)' }}
+            title="Vlastní barva"
+          />
           {COLOR_PALETTE.grays.map((color, idx) => (
             <button
               key={`gray-${idx}`}
               onClick={() => handleColorSelect(color)}
-              className={`w-8 h-8 rounded-full border-2 transition-all hover:scale-110 ${
+              className={`relative w-9 h-9 rounded-full border-2 transition-all hover:scale-110 shrink-0 ${
                 selectedColor === color ? 'border-indigo-500 ring-2 ring-indigo-200' : 'border-slate-200'
               }`}
-              style={{ backgroundColor: color === 'transparent' ? '#fff' : color }}
+              style={{ width: 30, height: 30, flex: '0 0 30px' }}
             >
-              {color === 'transparent' && (
-                <div className="w-full h-full rounded-full relative overflow-hidden">
-                  <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTYiIGhlaWdodD0iMTYiIHZpZXdCb3g9IjAgMCAxNiAxNiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iOCIgaGVpZ2h0PSI4IiBmaWxsPSIjZTJlOGYwIi8+PHJlY3QgeD0iOCIgeT0iOCIgd2lkdGg9IjgiIGhlaWdodD0iOCIgZmlsbD0iI2UyZThmMCIvPjwvc3ZnPg==')]" />
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <div className="w-6 h-0.5 bg-red-400 rotate-45" />
-                  </div>
-                </div>
-              )}
+              {renderSwatchFill(color)}
             </button>
           ))}
         </div>
 
-        {/* Main color grid */}
-        <div className="grid grid-cols-8 gap-1.5 mb-2">
+        <div className="grid gap-1 mb-0.5" style={{ gridTemplateColumns: 'repeat(9, minmax(0, 1fr))' }}>
           {COLOR_PALETTE.colors.map((color, idx) => (
             <button
               key={`color-${idx}`}
               onClick={() => handleColorSelect(color)}
-              className={`w-8 h-8 rounded-full border-2 transition-all hover:scale-110 ${
+              className={`relative w-9 h-9 rounded-full border-2 transition-all hover:scale-110 shrink-0 ${
                 selectedColor === color ? 'border-indigo-500 ring-2 ring-indigo-200' : 'border-transparent'
               }`}
-              style={{ backgroundColor: color }}
-            />
-          ))}
-        </div>
-
-        {/* Outline colors row */}
-        <div className="flex gap-1.5">
-          {COLOR_PALETTE.outlines.map((outline, idx) => (
-            <button
-              key={`outline-${idx}`}
-              onClick={() => handleColorSelect(outline.stroke)}
-              className={`w-8 h-8 rounded-full border-2 transition-all hover:scale-110 ${
-                selectedColor === outline.stroke ? 'ring-2 ring-indigo-200' : ''
-              }`}
-              style={{ 
-                backgroundColor: outline.fill,
-                borderColor: outline.stroke,
-              }}
+              style={{ backgroundColor: color, width: 30, height: 30, flex: '0 0 30px' }}
             />
           ))}
         </div>

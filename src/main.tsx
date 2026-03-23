@@ -9,7 +9,6 @@ const urlParams = new URLSearchParams(window.location.search);
 const apiKeyParam = urlParams.get('openai_key');
 if (apiKeyParam) {
   setOpenAIKey(apiKeyParam);
-  // Remove key from URL for security
   urlParams.delete('openai_key');
   const newUrl = window.location.pathname + (urlParams.toString() ? '?' + urlParams.toString() : '') + window.location.hash;
   window.history.replaceState({}, '', newUrl);
@@ -30,5 +29,27 @@ cooperFont.load().then((loadedFont) => {
   console.error('Failed to load Cooper Light font:', error);
 });
 
-createRoot(document.getElementById("root")!).render(<App />);
+const root = createRoot(document.getElementById("root")!);
+
+// Browserless PDF export context: render PrintPage directly with MemoryRouter
+// (avoids BrowserRouter which relies on window.location — unusable from about:blank)
+if ((window as any).__BROWSERLESS__ && (window as any).__WORKSHEET_DATA__) {
+  console.log('[Browserless] Direct render mode detected');
+  Promise.all([
+    import('react-router-dom'),
+    import('./components/worksheet-editor-pro/PrintPage'),
+  ]).then(([{ MemoryRouter, Routes, Route }, { PrintPage }]) => {
+    const wsId = ((window as any).__WORKSHEET_DATA__ as any)?.id || 'print';
+    const bleed = Boolean((window as any).__PRINT_BLEED__);
+    root.render(
+      <MemoryRouter initialEntries={[`/print/${wsId}${bleed ? '?bleed=1' : ''}`]}>
+        <Routes>
+          <Route path="/print/:worksheetId" element={<PrintPage />} />
+        </Routes>
+      </MemoryRouter>
+    );
+  });
+} else {
+  root.render(<App />);
+}
   

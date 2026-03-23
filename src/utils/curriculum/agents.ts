@@ -34,8 +34,9 @@ import {
 
 // DataSet imports for new flow
 import { TopicDataSet } from '../../types/topic-dataset';
-import { createDataSetsFromWeeklyPlans, createDataSetsFromRvpTopics } from '../dataset/data-collector';
+import { createDataSetsFromWeeklyPlans, createDataSetsFromRvpTopics, collectTargetGroupInfo, collectMediaInfo } from '../dataset/data-collector';
 import { generateFromDataSet, GenerateResult } from '../dataset/material-generators';
+import { convertLegacyLayoutsToLayoutSections } from '../layout-sections';
 
 // =====================================================
 // CONFIGURATION
@@ -49,14 +50,31 @@ const AI_MODEL_FLASH = 'gemini-3-flash'; // Pro Agent 5, 6 (rychlé)
 
 // Hodinová dotace pro dějepis: 2 hodiny týdně × 40 týdnů = 80 hodin/rok
 const HOURS_PER_WEEK: Record<SubjectCode, number> = {
+  // 2. stupeň
   dejepis: 2,
   zemepis: 2,
-  cj: 4,
-  aj: 3,
+  cestina: 4,
+  anglictina: 3,
+  nemcina: 3,
+  francouzstina: 3,
   matematika: 4,
   prirodopis: 2,
   fyzika: 2,
-  chemie: 2
+  chemie: 2,
+  // 1. stupeň
+  cestina_1st: 8,
+  matematika_1st: 5,
+  anglictina_1st: 3,
+  prvouka: 2,
+  prirodoveda: 2,
+  vlastiveda: 2,
+  hudebni_vychova: 1,
+  vytvarna_vychova: 2,
+  telesna_vychova: 2,
+  pracovni_cinnosti: 1,
+  // legacy aliases (kept for backward compatibility)
+  cj: 4,
+  aj: 3,
 };
 
 // Počet týdnů ve školním roce (září - červen)
@@ -271,10 +289,10 @@ export async function runAgent1(
   for (const g of grades) {
     onProgress?.(`📝 Generuji témata pro ${g}. třídu...`);
     
-    const topics = await generateRvpTopics(subjectCode, g);
+    const topics = await generateRvpTopics(subjectCode, g, onProgress);
     
     for (const topic of topics) {
-      const { error: insertError } = await supabase
+      const { data: inserted, error: insertError } = await supabase
         .from('curriculum_rvp_data')
         .insert({
           subject_code: subjectCode,
@@ -286,11 +304,16 @@ export async function runAgent1(
           recommended_hours: topic.recommendedHours,
           order_index: topic.orderIndex,
           rvp_revision: '2021'
-        });
+        })
+        .select('id')
+        .single();
       
-      if (!insertError) {
+      if (!insertError && inserted) {
         totalAdded++;
-        rvpDataIds.push(topic.id || '');
+        rvpDataIds.push(inserted.id);
+      } else if (insertError) {
+        console.error('[Agent1] Insert error for topic:', topic.topic, insertError.message);
+        onProgress?.(`⚠️ Chyba uložení tématu "${topic.topic}": ${insertError.message}`);
       }
     }
   }
@@ -354,7 +377,8 @@ interface GeneratedRvpTopic {
 
 async function generateRvpTopics(
   subjectCode: SubjectCode,
-  grade: Grade
+  grade: Grade,
+  onProgress?: (msg: string) => void
 ): Promise<GeneratedRvpTopic[]> {
   const prompt = `Vytvoř strukturu učiva pro předmět ${SUBJECT_NAMES[subjectCode]}, ${grade}. třída ZŠ.
 
@@ -382,33 +406,64 @@ Odpověz jako JSON pole:
 Odpovídej POUZE validním JSON polem.`;
 
   try {
+    onProgress?.('🤖 Volám Gemini AI pro generování RVP témat...');
     const response = await callGemini(prompt, systemPrompt);
+    onProgress?.(`📄 AI odpovědělo (${response.length} znaků), parsuju JSON...`);
     const topics = parseJsonFromResponse(response);
     
-    if (Array.isArray(topics)) {
+    if (Array.isArray(topics) && topics.length > 0) {
+      onProgress?.(`✅ AI vygenerovalo ${topics.length} témat`);
       return topics;
+    } else {
+      onProgress?.('⚠️ AI nevrátilo žádná témata (prázdné pole nebo chybný formát)');
+      console.warn('[Agent1] Empty or invalid topics from AI:', topics);
     }
-  } catch (err) {
+  } catch (err: any) {
     console.error('[Agent1] Error generating topics:', err);
+    onProgress?.(`❌ Chyba AI generování: ${err.message}`);
   }
   
   return [];
 }
 
 // =====================================================
-// AGENT 2: PLANNER
+// AGENT 2: PLANNER (s Learning Units + Context Chain)
 // =====================================================
+
+export interface LearningUnit {
+  id: string;
+  rvpDataId: string;
+  orderInTopic: number;
+  orderGlobal: number;
+  title: string;
+  bloomLevel: 'remember' | 'understand' | 'apply' | 'analyze' | 'evaluate' | 'create';
+  materialTypes: string[];
+  weeks: number[];
+  hours: number;
+  newConcepts: string[];
+  prerequisiteConcepts: string[];
+  alreadyCoveredSummary: string;
+  learningGoals: string[];
+  datasetId?: string;
+}
 
 export interface Agent2Result {
   weeklyPlansCreated: number;
   weeklyPlanIds: string[];
   hoursAllocated: number;
+  learningUnitsCreated: number;
+  learningUnitIds: string[];
 }
 
 /**
  * Agent 2: Planner
- * 
- * Vytváří týdenní plány rozložením RVP témat do 40 týdnů školního roku.
+ *
+ * Nová logika:
+ * 1. Pro každé RVP téma AI navrhne learning units (přirozené učební celky)
+ * 2. Každá unit dostane Bloom level + typy materiálů
+ * 3. Postaví context chain – každá unit ví co bylo probráno před ní
+ * 4. Rozloží units do školních týdnů
+ * 5. Uloží learning_units + weekly_plans do DB
  */
 export async function runAgent2(
   subjectCode: SubjectCode,
@@ -416,101 +471,385 @@ export async function runAgent2(
   rvpData: RvpData[],
   onProgress?: (message: string) => void
 ): Promise<Agent2Result> {
-  onProgress?.('📅 Načítám existující týdenní plány...');
-  
+  onProgress?.('📅 Kontroluji existující learning units...');
+
   const schoolYear = generateSchoolYear();
-  
-  // Check for existing plans
-  const { data: existingPlans, error: checkError } = await supabase
-    .from('curriculum_weekly_plans')
-    .select('*')
+
+  // Smazat existující learning units + plány pro tento rok (vždy fresh start)
+  const { data: existingUnits } = await supabase
+    .from('curriculum_learning_units')
+    .select('id')
     .eq('subject_code', subjectCode)
     .eq('grade', grade)
     .eq('school_year', schoolYear);
-  
-  if (checkError) {
-    console.error('[Agent2] Error checking existing plans:', checkError);
-    throw checkError;
-  }
-  
-  if (existingPlans && existingPlans.length >= 35) {
-    onProgress?.(`📅 Již existuje ${existingPlans.length} týdenních plánů pro tento rok`);
-    return {
-      weeklyPlansCreated: existingPlans.length,
-      weeklyPlanIds: existingPlans.map(p => p.id),
-      hoursAllocated: existingPlans.reduce((sum, p) => sum + (p.hours_allocated || 0), 0)
-    };
-  }
-  
-  // Delete partial plans if any
-  if (existingPlans && existingPlans.length > 0) {
-    await supabase
+
+  if (existingUnits && existingUnits.length >= 3) {
+    onProgress?.(`📅 Již existuje ${existingUnits.length} learning units – přeskakuji`);
+    const { data: existingPlans } = await supabase
       .from('curriculum_weekly_plans')
-      .delete()
+      .select('id, hours_allocated')
       .eq('subject_code', subjectCode)
       .eq('grade', grade)
       .eq('school_year', schoolYear);
+    return {
+      weeklyPlansCreated: existingPlans?.length || 0,
+      weeklyPlanIds: (existingPlans || []).map(p => p.id),
+      hoursAllocated: (existingPlans || []).reduce((s, p) => s + (p.hours_allocated || 0), 0),
+      learningUnitsCreated: existingUnits.length,
+      learningUnitIds: existingUnits.map(u => u.id),
+    };
   }
-  
-  onProgress?.('🤖 Generuji rozložení učiva do týdnů...');
-  
-  // Calculate total hours needed
-  const totalHours = rvpData.reduce((sum, r) => sum + (r.recommendedHours || 4), 0);
+
+  // Smazat existující (částečná data)
+  await supabase.from('curriculum_learning_units')
+    .delete().eq('subject_code', subjectCode).eq('grade', grade).eq('school_year', schoolYear);
+  await supabase.from('curriculum_weekly_plans')
+    .delete().eq('subject_code', subjectCode).eq('grade', grade).eq('school_year', schoolYear);
+
   const hoursPerWeek = HOURS_PER_WEEK[subjectCode];
-  
-  onProgress?.(`📊 Celkem ${totalHours} hodin učiva, ${hoursPerWeek} hodiny/týden`);
-  
-  // Generate weekly distribution using AI
-  const weeklyPlans = await generateWeeklyDistribution(
-    subjectCode,
-    grade,
-    rvpData,
-    schoolYear,
-    onProgress
-  );
-  
-  // Insert plans to database
-  const planIds: string[] = [];
-  let totalHoursAllocated = 0;
-  
-  for (const plan of weeklyPlans) {
-    const { data: inserted, error: insertError } = await supabase
-      .from('curriculum_weekly_plans')
+  const totalHours = rvpData.reduce((s, r) => s + (r.recommendedHours || 4), 0);
+  onProgress?.(`📊 ${rvpData.length} RVP témat, ${totalHours} hodin celkem, ${hoursPerWeek} h/týden`);
+
+  // ── FÁZE 1: Pro každé RVP téma AI navrhne learning units ────────────────
+  onProgress?.('🧠 Decomposuji RVP témata na learning units...');
+
+  interface RawUnit {
+    title: string;
+    bloomLevel: string;
+    materialTypes: string[];
+    hours: number;
+    newConcepts: string[];
+    learningGoals: string[];
+  }
+
+  const rvpWithUnits: Array<{ rvp: RvpData; units: RawUnit[] }> = [];
+
+  for (let i = 0; i < rvpData.length; i++) {
+    const rvp = rvpData[i];
+    const stretchFactor = Math.max(1, (SCHOOL_WEEKS * hoursPerWeek) / totalHours);
+    const stretchedHours = Math.round((rvp.recommendedHours || 4) * stretchFactor);
+
+    onProgress?.(`  [${i + 1}/${rvpData.length}] Decomponuji: ${rvp.topic}`);
+
+    const units = await decomposeRvpToLearningUnits(rvp, stretchedHours, hoursPerWeek, subjectCode, grade);
+    rvpWithUnits.push({ rvp, units });
+  }
+
+  // ── FÁZE 2: Sestavit context chain ──────────────────────────────────────
+  onProgress?.('🔗 Stavím context chain...');
+
+  const allUnitsFlat: (RawUnit & { rvpDataId: string; orderInTopic: number })[] = [];
+  for (const { rvp, units } of rvpWithUnits) {
+    units.forEach((u, idx) => allUnitsFlat.push({ ...u, rvpDataId: rvp.id, orderInTopic: idx + 1 }));
+  }
+
+  // Kumulativní seznam konceptů – každá unit dostane co bylo před ní
+  const allLearningUnits: LearningUnit[] = [];
+  const globalCoveredConcepts: string[] = [];
+
+  for (let i = 0; i < allUnitsFlat.length; i++) {
+    const raw = allUnitsFlat[i];
+    const prerequisiteConcepts = [...globalCoveredConcepts];
+
+    let alreadyCoveredSummary = '';
+    if (globalCoveredConcepts.length > 0) {
+      // Kompaktní shrnutí – co bylo probráno (max 150 znaků)
+      const conceptsList = globalCoveredConcepts.slice(-20).join(', ');
+      alreadyCoveredSummary = `Žáci již znají: ${conceptsList}.`;
+    }
+
+    allLearningUnits.push({
+      id: crypto.randomUUID(),
+      rvpDataId: raw.rvpDataId,
+      orderInTopic: raw.orderInTopic,
+      orderGlobal: i + 1,
+      title: raw.title,
+      bloomLevel: (raw.bloomLevel as LearningUnit['bloomLevel']) || 'remember',
+      materialTypes: raw.materialTypes || [],
+      weeks: [], // přiřadíme v Fázi 3
+      hours: raw.hours,
+      newConcepts: raw.newConcepts || [],
+      prerequisiteConcepts,
+      alreadyCoveredSummary,
+      learningGoals: raw.learningGoals || [],
+    });
+
+    // Přidat nové koncepty do globálního seznamu
+    globalCoveredConcepts.push(...(raw.newConcepts || []));
+  }
+
+  // ── FÁZE 3: Přiřadit týdny školního roku ────────────────────────────────
+  onProgress?.('📅 Přiřazuji školní týdny...');
+
+  const REVIEW_WEEKS = new Set([16, 40]);
+  let currentWeek = 1;
+
+  for (const unit of allLearningUnits) {
+    const unitWeeks = Math.max(1, Math.round(unit.hours / hoursPerWeek));
+    const assignedWeeks: number[] = [];
+
+    for (let w = 0; w < unitWeeks && currentWeek <= SCHOOL_WEEKS; w++) {
+      while (REVIEW_WEEKS.has(currentWeek) && currentWeek <= SCHOOL_WEEKS) currentWeek++;
+      if (currentWeek <= SCHOOL_WEEKS) {
+        assignedWeeks.push(currentWeek);
+        currentWeek++;
+      }
+    }
+    unit.weeks = assignedWeeks;
+  }
+
+  // ── FÁZE 4: Uložit learning units do DB ─────────────────────────────────
+  onProgress?.(`💾 Ukládám ${allLearningUnits.length} learning units...`);
+
+  const savedUnitIds: string[] = [];
+
+  for (const unit of allLearningUnits) {
+    const { data: inserted, error } = await supabase
+      .from('curriculum_learning_units')
       .insert({
+        id: unit.id,
+        rvp_data_id: unit.rvpDataId,
         subject_code: subjectCode,
         grade,
         school_year: schoolYear,
-        week_number: plan.weekNumber,
-        month_name: WEEK_TO_MONTH[plan.weekNumber] || 'září',
-        topic_title: plan.topicTitle,
-        topic_description: plan.topicDescription,
-        rvp_data_id: plan.rvpDataId,
-        learning_goals: plan.learningGoals,
-        vocabulary: plan.vocabulary,
-        activities_planned: plan.activitiesPlanned,
-        hours_allocated: plan.hoursAllocated,
-        status: 'draft'
+        order_in_topic: unit.orderInTopic,
+        order_global: unit.orderGlobal,
+        title: unit.title,
+        bloom_level: unit.bloomLevel,
+        material_types: unit.materialTypes,
+        weeks: unit.weeks,
+        hours: unit.hours,
+        new_concepts: unit.newConcepts,
+        prerequisite_concepts: unit.prerequisiteConcepts,
+        already_covered_summary: unit.alreadyCoveredSummary,
+        learning_goals: unit.learningGoals,
       })
-      .select()
+      .select('id')
       .single();
-    
-    if (!insertError && inserted) {
-      planIds.push(inserted.id);
-      totalHoursAllocated += plan.hoursAllocated;
-      
-      if (plan.weekNumber % 10 === 0) {
-        onProgress?.(`📝 Vytvořeno ${plan.weekNumber}/40 týdenních plánů`);
+
+    if (!error && inserted) savedUnitIds.push(inserted.id);
+    else if (error) console.error('[Agent2] Error saving learning unit:', error);
+  }
+
+  // ── FÁZE 5: Uložit weekly plans (1 plan = 1 týden) ──────────────────────
+  onProgress?.('📝 Ukládám týdenní plány...');
+
+  const planIds: string[] = [];
+  let totalHoursAllocated = 0;
+
+  // Opakování týdny
+  for (const reviewWeek of [16, 40]) {
+    await supabase.from('curriculum_weekly_plans').insert({
+      subject_code: subjectCode, grade, school_year: schoolYear,
+      week_number: reviewWeek,
+      month_name: WEEK_TO_MONTH[reviewWeek] || 'prosinec',
+      topic_title: reviewWeek === 16 ? 'Pololetní opakování a test' : 'Závěrečné opakování a test',
+      topic_description: 'Shrnutí učiva, opakování, test',
+      learning_goals: ['Žák zopakuje probrané učivo', 'Žák prokáže znalosti v testu'],
+      hours_allocated: hoursPerWeek,
+      status: 'draft',
+    });
+  }
+
+  // Výukové týdny z learning units
+  for (const unit of allLearningUnits) {
+    for (const weekNum of unit.weeks) {
+      const { data: inserted } = await supabase
+        .from('curriculum_weekly_plans')
+        .insert({
+          subject_code: subjectCode, grade, school_year: schoolYear,
+          week_number: weekNum,
+          month_name: WEEK_TO_MONTH[weekNum] || 'září',
+          topic_title: unit.title,
+          topic_description: unit.alreadyCoveredSummary
+            ? `Bloom: ${unit.bloomLevel}. ${unit.alreadyCoveredSummary}`
+            : `Bloom: ${unit.bloomLevel}`,
+          rvp_data_id: unit.rvpDataId,
+          learning_unit_id: unit.id,
+          learning_goals: unit.learningGoals,
+          hours_allocated: hoursPerWeek,
+          status: 'draft',
+        })
+        .select('id, hours_allocated')
+        .single();
+
+      if (inserted) {
+        planIds.push(inserted.id);
+        totalHoursAllocated += inserted.hours_allocated || hoursPerWeek;
       }
     }
   }
-  
-  onProgress?.(`✅ Agent 2 dokončen: ${planIds.length} týdenních plánů, ${totalHoursAllocated} hodin`);
-  
+
+  onProgress?.(`✅ Planner hotov: ${allLearningUnits.length} learning units, ${planIds.length} týdnů`);
+
   return {
     weeklyPlansCreated: planIds.length,
     weeklyPlanIds: planIds,
-    hoursAllocated: totalHoursAllocated
+    hoursAllocated: totalHoursAllocated,
+    learningUnitsCreated: allLearningUnits.length,
+    learningUnitIds: savedUnitIds,
   };
+}
+
+/**
+ * Pomocná funkce: AI rozloží jedno RVP téma na learning units
+ */
+async function decomposeRvpToLearningUnits(
+  rvp: RvpData,
+  totalHours: number,
+  hoursPerWeek: number,
+  subjectCode: SubjectCode,
+  grade: Grade
+): Promise<Array<{
+  title: string;
+  bloomLevel: string;
+  materialTypes: string[];
+  hours: number;
+  newConcepts: string[];
+  learningGoals: string[];
+}>> {
+  const weeksForTopic = Math.max(1, Math.round(totalHours / hoursPerWeek));
+
+  // Počet units: 1 týden = 1 unit, 2-3 týdny = 2 units, 4-6 = 3, 7+ = 4-5
+  const targetUnits = weeksForTopic <= 1 ? 1
+    : weeksForTopic <= 3 ? 2
+    : weeksForTopic <= 6 ? 3
+    : weeksForTopic <= 9 ? 4
+    : 5;
+
+  const prompt = `Jsi odborník na pedagogiku a tvorbu osnov pro ZŠ v ČR.
+
+Předmět: ${SUBJECT_NAMES[subjectCode] || subjectCode}, ${grade}. třída
+RVP téma: "${rvp.topic}" (tematický celek: ${rvp.thematicArea})
+Očekávané výstupy z RVP: ${(rvp.expectedOutcomes || []).join('; ')}
+Celkový čas: ${totalHours} hodin (${weeksForTopic} týdnů po ${hoursPerWeek} hodině)
+
+Rozlož toto téma na PŘESNĚ ${targetUnits} logických učebních celků (learning units).
+Každý celek musí být smysluplný, didakticky ucelený a stavět na předchozím.
+Postupuj od jednodušších (zapamatování/porozumění) ke složitějším (analýza/hodnocení).
+
+Pro každý celek urči:
+1. title: konkrétní název (ne obecný) – co přesně žáci probírají
+2. bloomLevel: remember | understand | apply | analyze | evaluate | create
+3. materialTypes: pole z: explanation_text | vocabulary_cards | worksheet | quiz | comparison_table | timeline | case_study | project
+4. hours: počet hodin (součet musí být ${totalHours})
+5. newConcepts: 4-8 nových pojmů/faktů zavedených POPRVÉ v této lekci
+6. learningGoals: 2-3 konkrétní výukové cíle (začínají "Žák...")
+
+Odpověz POUZE jako JSON pole (bez markdown):
+[
+  {
+    "title": "...",
+    "bloomLevel": "remember",
+    "materialTypes": ["explanation_text", "vocabulary_cards"],
+    "hours": 2,
+    "newConcepts": ["pojem1", "pojem2", ...],
+    "learningGoals": ["Žák vysvětlí...", "Žák popíše..."]
+  },
+  ...
+]`;
+
+  const systemPrompt = `Jsi expert na tvorbu vzdělávacích osnov pro základní školy v ČR.
+Odpovídej VÝHRADNĚ validním JSON polem bez jakéhokoliv dalšího textu.
+Nezačínaj odpověď slovem "json" ani backticky. Vrať POUZE surové JSON pole.`;
+
+  // Zkusit AI max 2×
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const response = await callGemini(prompt, systemPrompt);
+      console.log(`[Agent2] decompose attempt ${attempt} raw:`, response?.slice(0, 200));
+      const units = parseJsonFromResponse(response);
+
+      if (Array.isArray(units) && units.length > 0) {
+        // Validovat a opravit hodiny
+        const validUnits = units.filter((u: any) => u.title && u.bloomLevel);
+        if (validUnits.length > 0) {
+          const totalGenerated = validUnits.reduce((s: number, u: any) => s + (Number(u.hours) || 2), 0);
+          const scale = totalHours / (totalGenerated || totalHours);
+          validUnits.forEach((u: any) => {
+            u.hours = Math.max(1, Math.round((Number(u.hours) || 2) * scale));
+            u.newConcepts = Array.isArray(u.newConcepts) ? u.newConcepts : [];
+            u.learningGoals = Array.isArray(u.learningGoals) ? u.learningGoals : [];
+            u.materialTypes = Array.isArray(u.materialTypes) ? u.materialTypes : ['explanation_text', 'worksheet'];
+          });
+          console.log(`[Agent2] decompose OK: ${validUnits.length} units for "${rvp.topic}"`);
+          return validUnits;
+        }
+      }
+      console.warn(`[Agent2] decompose attempt ${attempt}: invalid response for "${rvp.topic}"`);
+    } catch (err) {
+      console.error(`[Agent2] decompose attempt ${attempt} error:`, err);
+    }
+  }
+
+  // Chytrý algoritmický fallback – rozdělení podle Bloom pyramidy
+  console.warn(`[Agent2] Using algorithmic fallback for "${rvp.topic}" (${totalHours}h → ${targetUnits} units)`);
+  return buildAlgorithmicUnits(rvp, totalHours, targetUnits);
+}
+
+/**
+ * Algoritmický fallback – vytvoří learning units bez AI podle Bloom pyramidy
+ */
+function buildAlgorithmicUnits(
+  rvp: RvpData,
+  totalHours: number,
+  targetUnits: number
+): Array<{
+  title: string; bloomLevel: string; materialTypes: string[];
+  hours: number; newConcepts: string[]; learningGoals: string[];
+}> {
+  const outcomes = rvp.expectedOutcomes || [];
+  const topic = rvp.topic;
+
+  // Bloom sekvence podle počtu units
+  const bloomSequences: Record<number, string[]> = {
+    1: ['remember'],
+    2: ['remember', 'understand'],
+    3: ['remember', 'understand', 'apply'],
+    4: ['remember', 'understand', 'analyze', 'apply'],
+    5: ['remember', 'understand', 'apply', 'analyze', 'evaluate'],
+  };
+
+  const bloomSeq = bloomSequences[Math.min(targetUnits, 5)] || bloomSequences[3];
+  const hoursPerUnit = Math.max(1, Math.round(totalHours / targetUnits));
+
+  // Tituly podle Bloom úrovně
+  const bloomTitles: Record<string, string> = {
+    remember:  `${topic} – Základní pojmy a fakta`,
+    understand:`${topic} – Porozumění a vztahy`,
+    apply:     `${topic} – Procvičení a aplikace`,
+    analyze:   `${topic} – Analýza a srovnání`,
+    evaluate:  `${topic} – Zhodnocení a projekt`,
+    create:    `${topic} – Tvorba a syntéza`,
+  };
+
+  const bloomMaterials: Record<string, string[]> = {
+    remember:   ['explanation_text', 'vocabulary_cards'],
+    understand: ['explanation_text', 'worksheet'],
+    apply:      ['worksheet', 'quiz'],
+    analyze:    ['comparison_table', 'case_study'],
+    evaluate:   ['project', 'case_study'],
+    create:     ['project'],
+  };
+
+  return bloomSeq.map((bloom, i) => {
+    const startOutcome = Math.floor(i * outcomes.length / bloomSeq.length);
+    const endOutcome = Math.floor((i + 1) * outcomes.length / bloomSeq.length);
+    const unitOutcomes = outcomes.slice(startOutcome, endOutcome);
+
+    return {
+      title: bloomTitles[bloom] || `${topic} (část ${i + 1})`,
+      bloomLevel: bloom,
+      materialTypes: bloomMaterials[bloom] || ['explanation_text', 'worksheet'],
+      hours: i === bloomSeq.length - 1
+        ? totalHours - hoursPerUnit * (bloomSeq.length - 1)
+        : hoursPerUnit,
+      newConcepts: unitOutcomes.slice(0, 5),
+      learningGoals: unitOutcomes.slice(0, 3).map(o =>
+        o.startsWith('Žák') ? o : `Žák ${o}`
+      ),
+    };
+  });
 }
 
 interface GeneratedWeeklyPlan {
@@ -1357,13 +1696,13 @@ Pracovní list má ${questionCount + 2} bloků. Odpověz PŘESNĚ v tomto formá
   "title": "${spec.title}",
   "description": "Pracovní list k tématu",
   "blocks": [
-    {"id": "b1", "type": "heading", "order": 0, "width": "full", "content": {"text": "${spec.title}", "level": "h1"}},
-    {"id": "b2", "type": "paragraph", "order": 1, "width": "full", "content": {"html": "<p>Vyplň následující úlohy:</p>"}},
-    {"id": "b3", "type": "free-answer", "order": 2, "width": "full", "content": {"question": "Otázka 1...", "lines": 3, "sampleAnswer": "Vzorová odpověď..."}},
-    {"id": "b4", "type": "free-answer", "order": 3, "width": "full", "content": {"question": "Otázka 2...", "lines": 3, "sampleAnswer": "Vzorová odpověď..."}},
-    {"id": "b5", "type": "multiple-choice", "order": 4, "width": "full", "content": {"question": "Otázka 3...", "options": [{"id": "a", "text": "Možnost A", "isCorrect": true}, {"id": "b", "text": "Možnost B", "isCorrect": false}]}},
-    {"id": "b6", "type": "free-answer", "order": 5, "width": "full", "content": {"question": "Otázka 4...", "lines": 4, "sampleAnswer": "..."}},
-    {"id": "b7", "type": "paragraph", "order": 6, "width": "full", "content": {"html": "<p><strong>Shrnutí:</strong> Co ses naučil/a?</p>"}}
+    {"id": "b1", "type": "heading", "order": 0, "width": "full", "gridSpan": 12, "content": {"text": "${spec.title}", "level": "h1"}},
+    {"id": "b2", "type": "paragraph", "order": 1, "width": "full", "gridSpan": 12, "content": {"html": "<p>Vyplň následující úlohy:</p>"}},
+    {"id": "b3", "type": "free-answer", "order": 2, "width": "full", "gridSpan": 12, "content": {"question": "Otázka 1...", "lines": 3, "sampleAnswer": "Vzorová odpověď..."}},
+    {"id": "b4", "type": "free-answer", "order": 3, "width": "full", "gridSpan": 12, "content": {"question": "Otázka 2...", "lines": 3, "sampleAnswer": "Vzorová odpověď..."}},
+    {"id": "b5", "type": "multiple-choice", "order": 4, "width": "full", "gridSpan": 12, "content": {"question": "Otázka 3...", "options": [{"id": "a", "text": "Možnost A", "isCorrect": true}, {"id": "b", "text": "Možnost B", "isCorrect": false}]}},
+    {"id": "b6", "type": "free-answer", "order": 5, "width": "full", "gridSpan": 12, "content": {"question": "Otázka 4...", "lines": 4, "sampleAnswer": "..."}},
+    {"id": "b7", "type": "paragraph", "order": 6, "width": "full", "gridSpan": 12, "content": {"html": "<p><strong>Shrnutí:</strong> Co ses naučil/a?</p>"}}
   ]
 }
 
@@ -1372,6 +1711,13 @@ TYPY BLOKŮ:
 - paragraph: {"html": "<p>...</p>"}
 - free-answer: {"question": "...", "lines": 3, "sampleAnswer": "..."}
 - multiple-choice: {"question": "...", "options": [{"id": "a", "text": "...", "isCorrect": true/false}, ...]}
+
+LAYOUT PRAVIDLA:
+- U každého bloku nastav i "gridSpan" (1-12). Celá šířka = 12.
+- Když dávají dva prvky smysl vedle sebe (např. text + obrázek, otázka + box, 2 menší úlohy), použij např. 6+6 nebo 8+4.
+- Když jsou tři menší prvky v jednom řádku, použij např. 4+4+4.
+- Nepoužívej layout-section přímo, stačí správně vyplnit gridSpan; systém z toho vytvoří skupinový layout automaticky.
+- Pokud si nejsi jistý, použij gridSpan: 12.
 
 Téma: ${spec.title}
 Cíle: ${spec.learningObjectives?.join('; ') || 'dle tématu'}
@@ -1382,7 +1728,7 @@ ODPOVĚZ POUZE VALIDNÍM JSON!`;
   const systemPrompt = `Jsi expert na tvorbu pracovních listů pro ZŠ.
 Obsah musí být fakticky správný a přiměřený věku žáků.
 VŽDY použij přesně tu strukturu bloků, která je v zadání.
-Každý blok musí mít id, type, order, width a content.
+Každý blok musí mít id, type, order, width, gridSpan a content.
 Odpovídej POUZE validním JSON bez markdown.`;
 
   try {
@@ -1405,11 +1751,11 @@ Odpovídej POUZE validním JSON bez markdown.`;
       const retryPrompt = `Vytvoř pracovní list "${spec.title}" s 5 bloky.
 Odpověz POUZE tímto JSON (doplň skutečný obsah):
 {"title":"${spec.title}","blocks":[
-{"id":"b1","type":"heading","order":0,"width":"full","content":{"text":"${spec.title}","level":"h1"}},
-{"id":"b2","type":"paragraph","order":1,"width":"full","content":{"html":"<p>Úvodní text...</p>"}},
-{"id":"b3","type":"free-answer","order":2,"width":"full","content":{"question":"Otázka 1?","lines":3,"sampleAnswer":"Odpověď..."}},
-{"id":"b4","type":"free-answer","order":3,"width":"full","content":{"question":"Otázka 2?","lines":3,"sampleAnswer":"Odpověď..."}},
-{"id":"b5","type":"multiple-choice","order":4,"width":"full","content":{"question":"Otázka 3?","options":[{"id":"a","text":"Možnost A","isCorrect":true},{"id":"b","text":"Možnost B","isCorrect":false}]}}
+{"id":"b1","type":"heading","order":0,"width":"full","gridSpan":12,"content":{"text":"${spec.title}","level":"h1"}},
+{"id":"b2","type":"paragraph","order":1,"width":"full","gridSpan":12,"content":{"html":"<p>Úvodní text...</p>"}},
+{"id":"b3","type":"free-answer","order":2,"width":"full","gridSpan":12,"content":{"question":"Otázka 1?","lines":3,"sampleAnswer":"Odpověď..."}},
+{"id":"b4","type":"free-answer","order":3,"width":"full","gridSpan":12,"content":{"question":"Otázka 2?","lines":3,"sampleAnswer":"Odpověď..."}},
+{"id":"b5","type":"multiple-choice","order":4,"width":"full","gridSpan":12,"content":{"question":"Otázka 3?","options":[{"id":"a","text":"Možnost A","isCorrect":true},{"id":"b","text":"Možnost B","isCorrect":false}]}}
 ]}`;
       const retryResponse = await callGemini(retryPrompt, 'Odpověz POUZE validním JSON.');
       const retryContent = parseJsonFromResponse(retryResponse);
@@ -2759,6 +3105,7 @@ async function publishWorksheetToTeacher(
       type: block.type || 'paragraph',
       order: normalizedBlocks.length,
       width: block.width || 'full',
+      gridSpan: typeof block.gridSpan === 'number' ? block.gridSpan : undefined,
       content: normalizedContent
     };
     normalizedBlocks.push(normalizedBlock);
@@ -2770,6 +3117,7 @@ async function publishWorksheetToTeacher(
         type: 'image',
         order: normalizedBlocks.length,
         width: 'half',
+        gridSpan: 6,
         content: {
           src: validImage1.file_url || validImage1.url,
           alt: validImage1.ai_title || spec.title,
@@ -2787,6 +3135,7 @@ async function publishWorksheetToTeacher(
         type: 'image',
         order: normalizedBlocks.length,
         width: 'half',
+        gridSpan: 6,
         content: {
           src: validImage2.file_url || validImage2.url,
           alt: validImage2.ai_title || spec.title,
@@ -2805,6 +3154,7 @@ async function publishWorksheetToTeacher(
       type: 'image',
       order: normalizedBlocks.length,
       width: 'full',
+      gridSpan: 12,
       content: {
         src: validImage1.file_url || validImage1.url,
         alt: validImage1.ai_title || spec.title,
@@ -2814,12 +3164,14 @@ async function publishWorksheetToTeacher(
     console.log('[Agent6] Added fallback image to worksheet:', spec.title);
   }
   
+  const finalBlocks = convertLegacyLayoutsToLayoutSections(normalizedBlocks);
+
   const worksheetId = crypto.randomUUID();
   const worksheetData = {
     id: worksheetId,
     title: content.title || spec.title,
     description: content.description || spec.description || '',
-    blocks: normalizedBlocks,
+    blocks: finalBlocks,
     metadata: {
       subject: subjectCode,
       grade: grade,
@@ -2830,7 +3182,7 @@ async function publishWorksheetToTeacher(
     status: 'draft' as const
   };
   
-  console.log('[Agent6] Worksheet data:', { id: worksheetId, blocks: normalizedBlocks.length });
+  console.log('[Agent6] Worksheet data:', { id: worksheetId, blocks: finalBlocks.length });
   
   // Save to Supabase - content should be just the blocks array!
   const { error } = await supabase
@@ -2841,7 +3193,7 @@ async function publishWorksheetToTeacher(
       name: worksheetData.title,
       source_page_title: `${SUBJECT_NAMES[subjectCode]} - ${grade}. třída`,
       worksheet_type: spec.content_subtype || 'pracovni_list',
-      content: normalizedBlocks, // Just blocks, not the whole object!
+      content: finalBlocks, // Just blocks, not the whole object!
       folder_id: folderId,
       copied_from: 'curriculum-factory'
     });
@@ -2872,7 +3224,7 @@ async function publishWorksheetToTeacher(
           grade: grade,
           createdAt: worksheetData.createdAt,
           updatedAt: worksheetData.updatedAt,
-          blocksCount: normalizedBlocks.length,
+          blocksCount: finalBlocks.length,
           folderId: folderId || null
         });
         localStorage.setItem(WORKSHEETS_KEY, JSON.stringify(list));
@@ -3483,64 +3835,617 @@ export async function runAgent3DataSet(
   weeklyPlans: WeeklyPlan[],
   rvpData: RvpData[],
   onProgress?: (message: string) => void,
-  demoMode: boolean = false
+  demoMode: boolean = false,
+  /** Called immediately after each DataSet is fully created — use to trigger Creator+Publisher per dataset */
+  onDataSetCreated?: (dataSetId: string, topic: string) => Promise<void>
 ): Promise<Agent3DataSetResult> {
-  onProgress?.('📦 Vytvářím DataSety z RVP témat...');
-  
+  onProgress?.('📦 Načítám learning units z Planneru...');
+
+  const schoolYear = generateSchoolYear();
   const dataSetIds: string[] = [];
   let skipped = 0;
-  
-  // Filtrovat RVP data - přeskočit opakování
-  const rvpToProcess = rvpData.filter(rvp => {
-    if (rvp.thematicArea.toLowerCase().includes('opakování')) {
-      skipped++;
-      return false;
+
+  // Načíst learning units z DB (vytvořené Agentem 2)
+  const { data: learningUnitsRaw, error: luError } = await supabase
+    .from('curriculum_learning_units')
+    .select('*')
+    .eq('subject_code', subjectCode)
+    .eq('grade', grade)
+    .eq('school_year', schoolYear)
+    .order('order_global');
+
+  if (luError) {
+    console.error('[Agent3] Error loading learning units:', luError);
+    onProgress?.('⚠️ Learning units nenalezeny – fallback na RVP témata');
+  }
+
+  const learningUnits = learningUnitsRaw || [];
+
+  // Pokud nemáme learning units, použijeme starý fallback (1 DataSet = 1 RVP téma)
+  if (learningUnits.length === 0) {
+    onProgress?.('📦 Fallback: Vytvářím DataSety z RVP témat...');
+    const rvpToProcess = rvpData.filter(rvp => {
+      if (rvp.thematicArea?.toLowerCase().includes('opakování')) { skipped++; return false; }
+      return true;
+    });
+    const finalRvp = demoMode ? rvpToProcess.slice(0, 3) : rvpToProcess;
+    const rvpToWeeklyPlans = new Map<string, WeeklyPlan[]>();
+    for (const plan of weeklyPlans) {
+      if (plan.rvpDataId) {
+        const existing = rvpToWeeklyPlans.get(plan.rvpDataId) || [];
+        existing.push(plan);
+        rvpToWeeklyPlans.set(plan.rvpDataId, existing);
+      }
     }
-    return true;
-  });
-  
-  // V demo módu pouze první 3 RVP témata
-  const finalRvp = demoMode ? rvpToProcess.slice(0, 3) : rvpToProcess;
-  
-  onProgress?.(`📊 Zpracovávám ${finalRvp.length} RVP témat${demoMode ? ' (DEMO)' : ''}`);
-  
-  // Pro každé RVP téma najít související týdenní plány
-  const rvpToWeeklyPlans = new Map<string, WeeklyPlan[]>();
-  for (const plan of weeklyPlans) {
-    if (plan.rvpDataId) {
-      const existing = rvpToWeeklyPlans.get(plan.rvpDataId) || [];
-      existing.push(plan);
-      rvpToWeeklyPlans.set(plan.rvpDataId, existing);
+    try {
+      const dataSets = await createDataSetsFromRvpTopics(finalRvp, rvpToWeeklyPlans, subjectCode, grade, onProgress, true);
+      for (const ds of dataSets) dataSetIds.push(ds.id);
+    } catch (err) {
+      console.error('[Agent3DataSet] Fallback error:', err);
+      onProgress?.(`❌ Chyba: ${err}`);
+    }
+    return { dataSetsCreated: dataSetIds.length, dataSetIds, skipped };
+  }
+
+  // ── Normální tok: 1 Learning Unit = 1 DataSet s context chainem ──────────
+  const unitsToProcess = demoMode ? learningUnits.slice(0, 4) : learningUnits;
+  onProgress?.(`📊 Zpracovávám ${unitsToProcess.length} learning units${demoMode ? ' (DEMO)' : ''}`);
+
+  for (let i = 0; i < unitsToProcess.length; i++) {
+    const unit = unitsToProcess[i];
+
+    onProgress?.(`[${i + 1}/${unitsToProcess.length}] ${unit.title}`);
+
+    try {
+      // Sestavit kontext pro Data Collector
+      const contextInfo = {
+        alreadyCoveredSummary: unit.already_covered_summary || '',
+        newConcepts: unit.new_concepts || [],
+        prerequisiteConcepts: unit.prerequisite_concepts || [],
+        bloomLevel: unit.bloom_level || 'remember',
+        materialTypes: unit.material_types || [],
+        learningGoals: unit.learning_goals || [],
+        weeks: unit.weeks || [],
+        hours: unit.hours || 2,
+        orderGlobal: unit.order_global,
+        totalUnits: unitsToProcess.length,
+      };
+
+      // Najít RVP data pro tento unit
+      const rvp = rvpData.find(r => r.id === unit.rvp_data_id);
+
+      // Vytvořit DataSet s context-aware promptem
+      const dataSet = await createDataSetFromLearningUnit(
+        unit.title,
+        rvp,
+        contextInfo,
+        subjectCode,
+        grade,
+        onProgress
+      );
+
+      if (dataSet) {
+        // Uložit DataSet do DB
+        const { data: saved } = await supabase
+          .from('topic_data_sets')
+          .insert({
+            topic: unit.title,
+            subject_code: subjectCode,
+            grade,
+            status: 'ready',
+            rvp: dataSet.rvp,
+            target_group: dataSet.targetGroup,
+            content: dataSet.content,
+            media: dataSet.media || { images: [], emojis: [], themeColors: [] },
+            generated_materials: [],
+            learning_unit_id: unit.id,
+            bloom_level: unit.bloom_level,
+            context_summary: unit.already_covered_summary,
+          })
+          .select('id')
+          .single();
+
+        if (saved?.id) {
+          dataSetIds.push(saved.id);
+
+          // Zpětně uložit dataset_id do learning_unit
+          await supabase
+            .from('curriculum_learning_units')
+            .update({ dataset_id: saved.id })
+            .eq('id', unit.id);
+
+          onProgress?.(`  ✅ DataSet uložen (ID: ${saved.id.slice(0, 8)}...)`);
+
+          // Automaticky vygenerovat prompty pro ilustrace, fotky a návrhy grafů
+          try {
+            onProgress?.(`  🎨 Generuji média prompty pro "${unit.title}"...`);
+            const { generateIllustrationPrompts, generatePhotoPrompts } = await import('../dataset/material-generators');
+            const { chatWithAIProxy } = await import('../ai-chat-proxy');
+
+            const dataSetObj = {
+              id: saved.id,
+              topic: unit.title,
+              subjectCode,
+              grade,
+              status: 'ready' as const,
+              rvp: dataSet.rvp || {},
+              targetGroup: dataSet.targetGroup || {},
+              content: dataSet.content || {},
+              media: dataSet.media || {},
+              generatedMaterials: [],
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            };
+
+            const [illPrompts, photoPrompts] = await Promise.all([
+              generateIllustrationPrompts(dataSetObj, false).catch(() => []),
+              generatePhotoPrompts(dataSetObj).catch(() => []),
+            ]);
+
+            // Chart suggestions
+            const chartPrompt = `Navrhni 4 konkrétní grafy pro vzdělávací téma "${unit.title}" (${grade}. třída ZŠ, ${subjectCode}). Vrať JSON pole: [{"title":"...","description":"...","chartType":"bar|line|pie|area|timeline","dataHint":"..."}]. POUZE JSON.`;
+            let chartSuggestions: any[] = [];
+            try {
+              const chartResp = await chatWithAIProxy([{ role: 'user', content: chartPrompt }], 'gemini-3-flash');
+              const m = chartResp.match(/\[[\s\S]*\]/);
+              if (m) chartSuggestions = JSON.parse(m[0]);
+            } catch { /* silent */ }
+
+            // Map suggestions
+            const mapPrompt = `Jsi pedagog a kartograf. Pro vzdělávací téma "${unit.title}" (${grade}. třída ZŠ, ${subjectCode}) navrhni 3–5 konkrétních map (informativních nebo jako cvičení).
+Vrať JSON pole (POUZE JSON):
+[{"id":"map1","title":"...","description":"...","region":"world|europe|central-europe|mediterranean|middle-east|africa|asia|americas|czech-republic|italy|greece|france|germany","style":"political|physical|blank|historical","exerciseType":"info|identify|label|color|route","dataHint":"Co by mělo být na mapě zobrazeno"}]`;
+            let mapSuggestions: any[] = [];
+            try {
+              const mapResp = await chatWithAIProxy([{ role: 'user', content: mapPrompt }], 'gemini-3-flash');
+              const mm = mapResp.match(/\[[\s\S]*\]/);
+              if (mm) mapSuggestions = JSON.parse(mm[0]).map((s: any, i: number) => ({ ...s, id: s.id || `map_${i}_${Date.now()}` }));
+            } catch { /* silent */ }
+
+            // Vyhledat obrázky z webu (Wikimedia Commons)
+            let webImages: any[] = [];
+            try {
+              const { searchImagesForTopic } = await import('../dataset/data-collector');
+              webImages = await searchImagesForTopic(unit.title, 12);
+              onProgress?.(`  🖼️ Nalezeno ${webImages.length} obrázků z webu`);
+            } catch { /* silent */ }
+
+            const { stripBase64FromObject } = await import('../supabase/upload-image');
+            const rawMedia = {
+              ...(dataSet.media || {}),
+              illustrationPrompts: illPrompts,
+              photoPrompts,
+              chartSuggestions,
+              mapSuggestions,
+              images: webImages,
+              generatedIllustrations: [],
+              generatedPhotos: [],
+              charts: [],
+              savedMaps: [],
+            };
+            await supabase
+              .from('topic_data_sets')
+              .update({ media: stripBase64FromObject(rawMedia) })
+              .eq('id', saved.id);
+            onProgress?.(`  ✅ Prompty: ${illPrompts.length} ilustrací, ${photoPrompts.length} fotek, ${chartSuggestions.length} grafů, ${mapSuggestions.length} map`);
+          } catch (mediaErr) {
+            onProgress?.(`  ⚠️ Média prompty se nepodařilo vygenerovat: ${mediaErr}`);
+          }
+
+          // Immediately trigger Creator+Publisher for this dataset if callback provided
+          if (onDataSetCreated) {
+            try {
+              onProgress?.(`  🚀 Spouštím Creator+Publisher pro "${unit.title}"...`);
+              await onDataSetCreated(saved.id, unit.title);
+            } catch (cbErr) {
+              onProgress?.(`  ⚠️ Creator/Publisher selhal pro "${unit.title}": ${cbErr}`);
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.error(`[Agent3] Error for unit "${unit.title}":`, err);
+      onProgress?.(`  ❌ Chyba pro "${unit.title}": ${err}`);
     }
   }
-  
-  // Vytvořit DataSety z RVP témat
-  try {
-    const dataSets = await createDataSetsFromRvpTopics(
-      finalRvp,
-      rvpToWeeklyPlans,
-      subjectCode,
-      grade,
-      onProgress,
-      true // saveToDb
-    );
-    
-    for (const ds of dataSets) {
-      dataSetIds.push(ds.id);
+
+  // ── Uzlové body: 1 milestone per thematic area ───────────────────────────
+  if (!demoMode && unitsToProcess.length > 0) {
+    try {
+      const { buildMilestoneData, formatMilestoneTopicName } = await import('./milestone-generator');
+      const subjectName = SUBJECT_NAMES[subjectCode] || subjectCode;
+
+      // Group units by thematic area (via rvpData)
+      const areaMap = new Map<string, { units: typeof unitsToProcess; rvp: RvpData | undefined }>();
+      for (const unit of unitsToProcess) {
+        const rvp = rvpData.find(r => r.id === unit.rvp_data_id);
+        const area = rvp?.thematicArea || 'Obecné';
+        if (!areaMap.has(area)) areaMap.set(area, { units: [], rvp });
+        areaMap.get(area)!.units.push(unit);
+      }
+
+      // Fallback: pokud chybí thematické celky, rozdělit do bloků po 5 lekcích
+      if (areaMap.size === 1 && areaMap.has('Obecné')) {
+        const allUnits = areaMap.get('Obecné')!.units;
+        const BLOCK_SIZE = 5;
+        areaMap.clear();
+        for (let i = 0; i < allUnits.length; i += BLOCK_SIZE) {
+          const block = allUnits.slice(i, i + BLOCK_SIZE);
+          const blockName = block[0].title.split(':')[0].trim();
+          const blockLabel = `${blockName} (${block[0].weeks?.[0] ?? i + 1}–${block[block.length - 1].weeks?.[0] ?? i + BLOCK_SIZE}. týden)`;
+          const rvp = rvpData.find(r => r.id === block[0].rvp_data_id);
+          areaMap.set(blockLabel, { units: block, rvp });
+        }
+      }
+
+      for (const [area, { units: areaUnits, rvp }] of areaMap) {
+
+        const coveredTopics = areaUnits.map(u => u.title);
+        const coveredWeekNumbers = areaUnits.flatMap(u => u.weeks || []).filter(Boolean).sort((a: number, b: number) => a - b);
+        const rvpOutcomes = rvp?.expectedOutcomes || [];
+
+        const milestoneData = await buildMilestoneData(
+          { topicGroupName: area, coveredTopics, coveredWeekNumbers, rvpOutcomes, subjectName, grade },
+          onProgress
+        );
+
+        const milestoneInsert = {
+          topic: formatMilestoneTopicName(area),
+          subject_code: subjectCode,
+          grade,
+          status: 'ready',
+          milestone: true,
+          milestone_data: milestoneData,
+          rvp: {
+            thematicArea: area,
+            expectedOutcomes: rvpOutcomes,
+            competencies: [],
+            hoursAllocated: coveredWeekNumbers.length * 2,
+            crossCurricular: [],
+          },
+          target_group: {
+            ageRange: `${10 + grade}-${11 + grade} let`,
+            gradeLevel: `${grade}. třída ZŠ`,
+            cognitiveLevel: '',
+            priorKnowledge: coveredTopics,
+          },
+          content: {
+            keyTerms: [],
+            keyFacts: [`Uzavření tematického celku: ${area}`, `Probíraná témata: ${coveredTopics.join(', ')}`],
+            modernConnections: [],
+            funFacts: [],
+            sources: [],
+          },
+          media: { images: [], emojis: ['🏁'], themeColors: ['#f59e0b', '#92400e'] },
+          generated_materials: [],
+        };
+
+        const { data: savedMilestone } = await supabase
+          .from('topic_data_sets')
+          .insert(milestoneInsert)
+          .select('id')
+          .single();
+
+        if (savedMilestone?.id) {
+          dataSetIds.push(savedMilestone.id);
+          onProgress?.(`  🏁 Uzlový bod uložen: "${formatMilestoneTopicName(area)}" (ID: ${savedMilestone.id.slice(0, 8)}...)`);
+        }
+      }
+    } catch (milestoneErr) {
+      onProgress?.(`  ⚠️ Uzlové body se nepodařilo vygenerovat: ${milestoneErr}`);
     }
-    
-    onProgress?.(`✅ Agent 3 (DataSet) dokončen: ${dataSetIds.length} DataSetů vytvořeno`);
-    
-  } catch (err) {
-    console.error('[Agent3DataSet] Error:', err);
-    onProgress?.(`❌ Chyba: ${err}`);
   }
-  
+
+  onProgress?.(`✅ Agent 3 (DataSet) dokončen: ${dataSetIds.length} DataSetů vytvořeno`);
+
   return {
     dataSetsCreated: dataSetIds.length,
     dataSetIds,
-    skipped
+    skipped,
   };
+}
+
+/**
+ * Generuje uzlové body (milestones) pro existující datasety daného předmětu/ročníku.
+ * Pracuje přímo s datasety (ne learning units) — seskupuje je podle rvp.thematicArea.
+ * Voláno ručně z UI tlačítkem „Přidat milestony".
+ */
+export async function runMilestonesOnly(
+  subjectCode: SubjectCode,
+  grade: Grade,
+  _rvpData: RvpData[],  // kept for API compat, not used
+  onProgress?: (message: string) => void
+): Promise<{ created: number; milestoneIds: string[] }> {
+  const milestoneIds: string[] = [];
+
+  onProgress?.('🏁 Načítám datasety a RVP strukturu...');
+
+  // Načíst datasety, weekly plans a RVP data paralelně
+  const [{ data: allDatasets }, { data: weeklyPlans }, { data: rvpData }] = await Promise.all([
+    supabase
+      .from('topic_data_sets')
+      .select('id, topic, rvp, content, created_at')
+      .eq('subject_code', subjectCode)
+      .eq('grade', grade)
+      .eq('milestone', false)
+      .order('created_at', { ascending: true }),
+    supabase
+      .from('curriculum_weekly_plans')
+      .select('topic_title, rvp_data_id')
+      .eq('subject_code', subjectCode)
+      .eq('grade', grade),
+    supabase
+      .from('curriculum_rvp_data')
+      .select('id, topic, thematic_area')
+      .eq('subject_code', subjectCode)
+      .eq('grade', grade),
+  ]);
+
+  const datasets = allDatasets || [];
+  if (datasets.length === 0) {
+    onProgress?.('⚠️ Žádné datasety – nejdřív spusť Data Collector');
+    return { created: 0, milestoneIds };
+  }
+
+  onProgress?.(`📦 Načteno ${datasets.length} datasetů`);
+
+  const { buildMilestoneData, formatMilestoneTopicName } = await import('./milestone-generator');
+  const subjectName = SUBJECT_NAMES[subjectCode] || subjectCode;
+
+  // Sestavit mapu: dataset topic → RVP topic (přes weekly plans)
+  const topicToRvpTopic = new Map<string, string>();
+  for (const plan of (weeklyPlans || [])) {
+    const planTopic = plan.topic_title || '';
+    if (!planTopic || !plan.rvp_data_id) continue;
+    const rvpItem = (rvpData || []).find((r: any) => r.id === plan.rvp_data_id);
+    if (rvpItem) topicToRvpTopic.set(planTopic, rvpItem.topic || rvpItem.thematic_area || planTopic);
+  }
+
+  // Seskupit datasety podle RVP tématu (= stejně jako RVP Scout)
+  const areaMap = new Map<string, { datasets: typeof datasets }>();
+  for (const ds of datasets) {
+    const area = topicToRvpTopic.get(ds.topic) || ds.rvp?.thematicArea || 'Obecné';
+    if (!areaMap.has(area)) areaMap.set(area, { datasets: [] });
+    areaMap.get(area)!.datasets.push(ds);
+  }
+
+  // Fallback: pokud jen 1 oblast, rozdělit do bloků po ~5 datasetech
+  const needsSplit = areaMap.size <= 1;
+  if (needsSplit) {
+    const allDs = datasets;
+    const BLOCK_SIZE = 5;
+    areaMap.clear();
+    for (let i = 0; i < allDs.length; i += BLOCK_SIZE) {
+      const block = allDs.slice(i, i + BLOCK_SIZE);
+      const firstTopic = block[0].topic.split(':')[0].trim();
+      const lastTopic = block[block.length - 1].topic.split(':')[0].trim();
+      const blockLabel = firstTopic === lastTopic
+        ? `${firstTopic} (blok ${Math.floor(i / BLOCK_SIZE) + 1})`
+        : `${firstTopic} – ${lastTopic}`;
+      areaMap.set(blockLabel, { datasets: block });
+    }
+    onProgress?.(`📊 Rozděleno do ${areaMap.size} bloků po ${BLOCK_SIZE} datasetech`);
+  } else {
+    onProgress?.(`📊 Nalezeno ${areaMap.size} tematických celků (dle RVP Scout)`);
+  }
+
+  for (const [area, { datasets: areaDs }] of areaMap) {
+    const milestoneTopic = formatMilestoneTopicName(area);
+
+    // Přeskočit pokud milestone pro tuto oblast už existuje
+    const { data: existing } = await supabase
+      .from('topic_data_sets')
+      .select('id')
+      .eq('subject_code', subjectCode)
+      .eq('grade', grade)
+      .eq('milestone', true)
+      .ilike('topic', `%${area.slice(0, 20)}%`)
+      .limit(1);
+
+    if (existing && existing.length > 0) {
+      onProgress?.(`  ⏭️ Milestone pro "${area}" už existuje, přeskakuji`);
+      continue;
+    }
+
+    // Sesbírat obsah ze všech datasetů v této skupině
+    const coveredTopics = areaDs.map(ds => ds.topic);
+    const rvpOutcomes: string[] = [];
+    const keyTerms: { term: string; definition: string }[] = [];
+    const keyFacts: string[] = [];
+
+    for (const ds of areaDs) {
+      if (ds.rvp?.expectedOutcomes) rvpOutcomes.push(...ds.rvp.expectedOutcomes);
+      if (ds.content?.keyTerms) keyTerms.push(...ds.content.keyTerms);
+      if (ds.content?.keyFacts) keyFacts.push(...ds.content.keyFacts);
+    }
+
+    onProgress?.(`  📝 "${area}" — ${areaDs.length} datasetů, ${keyTerms.length} pojmů, ${rvpOutcomes.length} výstupů`);
+
+    const milestoneData = await buildMilestoneData(
+      {
+        topicGroupName: area,
+        coveredTopics,
+        coveredWeekNumbers: [],
+        rvpOutcomes: [...new Set(rvpOutcomes)].slice(0, 10),
+        subjectName,
+        grade,
+        keyTerms: keyTerms.slice(0, 40),
+        keyFacts: [...new Set(keyFacts)].slice(0, 25),
+      },
+      onProgress
+    );
+
+    const { data: saved } = await supabase
+      .from('topic_data_sets')
+      .insert({
+        topic: milestoneTopic,
+        subject_code: subjectCode,
+        grade,
+        status: 'ready',
+        milestone: true,
+        milestone_data: milestoneData,
+        rvp: {
+          thematicArea: area,
+          expectedOutcomes: [...new Set(rvpOutcomes)].slice(0, 10),
+          competencies: [],
+          hoursAllocated: areaDs.length * 2,
+          crossCurricular: [],
+        },
+        target_group: {
+          ageRange: `${10 + grade}-${11 + grade} let`,
+          gradeLevel: `${grade}. třída ZŠ`,
+          cognitiveLevel: '',
+          priorKnowledge: coveredTopics,
+        },
+        content: {
+          keyTerms: keyTerms.slice(0, 20),
+          keyFacts: [`Uzavření: ${area}`, `Témata: ${coveredTopics.join(', ')}`],
+          modernConnections: [],
+          funFacts: [],
+          sources: [],
+        },
+        media: { images: [], emojis: ['🏁'], themeColors: ['#f59e0b', '#92400e'] },
+        generated_materials: [],
+      })
+      .select('id')
+      .single();
+
+    if (saved?.id) {
+      milestoneIds.push(saved.id);
+      onProgress?.(`  ✅ Milestone uložen: "${milestoneTopic}"`);
+    }
+  }
+
+  onProgress?.(`🏁 Hotovo: ${milestoneIds.length} uzlových bodů přidáno`);
+  return { created: milestoneIds.length, milestoneIds };
+}
+
+/**
+ * Vytvoří DataSet pro jednu learning unit s context chainem
+ */
+async function createDataSetFromLearningUnit(
+  unitTitle: string,
+  rvp: RvpData | undefined,
+  context: {
+    alreadyCoveredSummary: string;
+    newConcepts: string[];
+    prerequisiteConcepts: string[];
+    bloomLevel: string;
+    materialTypes: string[];
+    learningGoals: string[];
+    weeks: number[];
+    hours: number;
+    orderGlobal: number;
+    totalUnits: number;
+  },
+  subjectCode: SubjectCode,
+  grade: Grade,
+  onProgress?: (message: string) => void
+): Promise<any | null> {
+  const subjectName = SUBJECT_NAMES[subjectCode] || subjectCode;
+
+  const bloomDescriptions: Record<string, string> = {
+    remember: 'zapamatování – žáci si pamatují a reprodukují základní fakta a pojmy',
+    understand: 'porozumění – žáci vysvětlují vztahy a interpretují informace',
+    apply: 'aplikace – žáci používají znalosti při řešení konkrétních úkolů',
+    analyze: 'analýza – žáci rozkládají téma, hledají příčiny, srovnávají',
+    evaluate: 'hodnocení – žáci posuzují, kriticky myslí, zdůvodňují',
+    create: 'tvorba – žáci vytvářejí vlastní práci, projekt, závěr',
+  };
+
+  const bloomDesc = bloomDescriptions[context.bloomLevel] || context.bloomLevel;
+
+  const prompt = `Jsi expert na tvorbu vzdělávacích materiálů pro ZŠ v ČR.
+
+Předmět: ${subjectName}, ${grade}. třída
+Learning Unit: "${unitTitle}"
+Bloom úroveň: ${context.bloomLevel.toUpperCase()} – ${bloomDesc}
+Týdny: ${context.weeks.join(', ')} | Hodin: ${context.hours}
+Pořadí v celém ročním plánu: ${context.orderGlobal}. lekce z ${context.totalUnits}
+
+${context.alreadyCoveredSummary
+  ? `=== DŮLEŽITÉ: Co žáci JIŽ PROBÍRALI (NEOPAKUJ to jako nové) ===
+${context.alreadyCoveredSummary}
+Pojmy k dispozici (lze na ně odkazovat, ale nevysvětlovat znovu): ${context.prerequisiteConcepts.slice(-15).join(', ')}
+===`
+  : '(Toto je PRVNÍ lekce – žádné předchozí znalosti)'}
+
+=== Co tato lekce NOVĚ zavádí ===
+Nové pojmy: ${context.newConcepts.join(', ')}
+Výukové cíle: ${context.learningGoals.join('; ')}
+
+${rvp ? `RVP kontext (tematický celek): ${rvp.thematicArea}
+RVP očekávané výstupy: ${(rvp.expectedOutcomes || []).join('; ')}` : ''}
+
+Vygeneruj DataSet pro tuto konkrétní learning unit. Obsah musí:
+- Odpovídat Bloom úrovni ${context.bloomLevel.toUpperCase()}
+- Zavádět POUZE nové pojmy (výše uvedené), ostatní lze zmínit ale nevysvětlovat
+- NEOBSAHOVAT pojmy z předchozích lekcí jako nové
+- Být přiměřený věku žáků ${grade}. třídy ZŠ
+
+Odpověz jako JSON:
+{
+  "keyTerms": [{"term": "pojem", "definition": "definice"}],
+  "keyFacts": ["fakt1", "fakt2"],
+  "facts": ["rozšiřující fakt"],
+  "timeline": [{"year": "rok", "event": "událost"}],
+  "personalities": [{"name": "jméno", "role": "role", "significance": "význam"}],
+  "modernConnections": ["vazba na dnešek"],
+  "funFacts": ["zajímavost"],
+  "sources": ["zdroj"]
+}
+
+Pravidla:
+- keyTerms: 4-8 pojmů (POUZE nové z tohoto unit, ne z předchozích)
+- keyFacts: 5-10 faktů odpovídajících Bloom úrovni
+- timeline/personalities: jen pokud jsou relevantní pro toto téma
+- modernConnections: 1-2 vazby na současnost`;
+
+  const systemPrompt = `Jsi odborník na pedagogiku a obsah ZŠ vzdělávání. 
+Generuješ didakticky správný obsah na konkrétní Bloom úrovni.
+Odpovídej POUZE validním JSON objektem.`;
+
+  try {
+    onProgress?.(`  📖 Sbírám obsah pro "${unitTitle}"...`);
+    const response = await callGemini(prompt, systemPrompt);
+    const content = parseJsonFromResponse(response);
+
+    if (!content || typeof content !== 'object') return null;
+
+    // Obrázky
+    onProgress?.(`  🖼️ Hledám obrázky...`);
+    let media = {};
+    try {
+      media = await collectMediaInfo(unitTitle, subjectCode, onProgress);
+    } catch (_) { /* media není kritické */ }
+
+    const targetGroup = await collectTargetGroupInfo(grade);
+
+    return {
+      rvp: {
+        thematicArea: rvp?.thematicArea || unitTitle,
+        expectedOutcomes: context.learningGoals,
+        competencies: rvp?.keyCompetencies || [],
+        hoursAllocated: context.hours,
+        crossCurricular: [],
+      },
+      targetGroup,
+      content: {
+        keyTerms: content.keyTerms || [],
+        keyFacts: content.keyFacts || [],
+        facts: content.facts || [],
+        timeline: content.timeline || [],
+        personalities: content.personalities || [],
+        modernConnections: content.modernConnections || [],
+        funFacts: content.funFacts || [],
+        sources: content.sources || [],
+      },
+      media,
+    };
+  } catch (err) {
+    console.error(`[Agent3] createDataSetFromLearningUnit error:`, err);
+    return null;
+  }
 }
 
 /**
@@ -3572,9 +4477,9 @@ export async function runAgent4DataSet(
   // Načíst DataSety z databáze - preferovat podle ID, fallback na subject/grade
   let dataSets: any[] = [];
   
-  // OPTIMALIZACE: Nenačítat obří base64 obrázky z media sloupce!
-  // Poznámka: feedback sloupec neexistuje v tabulce
-  const SELECT_COLUMNS = 'id, topic, status, grade, subject_code, rvp, content, generated_materials, created_at, updated_at';
+  // Media is saved via stripBase64FromObject — only URLs in DB, safe to load.
+  // We need images/illustrations/photos so the generator can embed them in worksheets.
+  const SELECT_COLUMNS = 'id, topic, status, grade, subject_code, rvp, content, media, generated_materials, created_at, updated_at';
   
   if (dataSetIds && dataSetIds.length > 0) {
     const { data, error } = await supabase
@@ -3748,7 +4653,7 @@ export async function runAgent6DataSet(
   
   // Načíst DataSety s vygenerovanými materiály
   // OPTIMALIZACE: Nenačítat obří base64 obrázky z media sloupce!
-  const SELECT_COLS = 'id, topic, status, grade, subject_code, rvp, content, generated_materials, created_at, updated_at';
+  const SELECT_COLS = 'id, topic, status, grade, subject_code, rvp, content, media, generated_materials, created_at, updated_at';
   let dataSets: any[] = [];
   
   if (dataSetIds && dataSetIds.length > 0) {

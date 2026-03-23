@@ -59,7 +59,7 @@ export function ExampleSlideEditor({ slide, onUpdate, customKeys, onCustomKeysCh
   const handleMathInsert = () => {
     if (!mathValue.trim()) return;
     const mathExpression = `$${mathValue}$`;
-    onUpdate(slide.id, { problem: (slide.problem || '') + mathExpression });
+      onUpdate(slide.id, { problem: (slide.problem || '') + mathExpression });
     setMathValue('');
     setShowMathKeyboard(false);
   };
@@ -191,16 +191,16 @@ export function ExampleSlideEditor({ slide, onUpdate, customKeys, onCustomKeysCh
                 <ImageIcon className="w-3.5 h-3.5" />
               </button>
             </div>
-            <button
-              onClick={() => onUpdate(slide.id, { media: undefined })}
+              <button
+                onClick={() => onUpdate(slide.id, { media: undefined })}
               className="mt-1 p-1.5 rounded-full hover:bg-red-50 text-red-400 hover:text-red-600 transition-colors"
-              title="Smazat obrázek"
-            >
-              <Trash2 className="w-4 h-4" />
-            </button>
+                title="Smazat obrázek"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
           </div>
         ) : (
-          <button
+          <button 
             onClick={() => openAssetPicker('problem')}
             className="mt-2 flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm text-slate-500 hover:bg-slate-100 transition-colors"
           >
@@ -217,7 +217,7 @@ export function ExampleSlideEditor({ slide, onUpdate, customKeys, onCustomKeysCh
           <div className="flex-1 min-w-0">
             <label className="block text-sm font-medium text-slate-700 mb-2">
               Správné odpovědi *
-            </label>
+          </label>
 
             {/* Main answer */}
             <div
@@ -288,8 +288,8 @@ export function ExampleSlideEditor({ slide, onUpdate, customKeys, onCustomKeysCh
             ))}
 
             {/* Add alternative button */}
-            <button
-              onClick={() => {
+          <button
+            onClick={() => {
                 const alts = [...(slide.alternativeAnswers || []), ''];
                 onUpdate(slide.id, { alternativeAnswers: alts });
                 setEditingAnswerIndex(alts.length - 1);
@@ -328,7 +328,7 @@ export function ExampleSlideEditor({ slide, onUpdate, customKeys, onCustomKeysCh
                     title="Nastavení speciálních tlačítek"
                   >
                     <Settings className="w-4.5 h-4.5" />
-                  </button>
+          </button>
                   {showCustomKeysPopup && (
                     <CustomKeysModal
                       customKeys={customKeys}
@@ -340,13 +340,13 @@ export function ExampleSlideEditor({ slide, onUpdate, customKeys, onCustomKeysCh
                   )}
                 </>
               )}
-            </div>
-
+        </div>
+        
             <label className="block text-sm font-medium text-slate-700 mb-2 mt-4">
               Přípona / jednotka
             </label>
-            <input
-              type="text"
+        <input
+          type="text"
               value={slide.answerSuffix || ''}
               onChange={(e) => onUpdate(slide.id, { answerSuffix: e.target.value })}
               placeholder="např. dm², kg, cm, Kč..."
@@ -359,7 +359,7 @@ export function ExampleSlideEditor({ slide, onUpdate, customKeys, onCustomKeysCh
             <p className="mt-3 text-xs text-slate-400">
               Tip: Odpovědi se porovnávají matematicky.
             </p>
-          </div>
+            </div>
 
           {/* Right column: keyboard — edits the currently selected answer */}
           <div className="flex-1 min-w-0 p-4 rounded-xl" style={{ backgroundColor: '#f1f3f8' }}>
@@ -533,7 +533,7 @@ export function ExampleSlideEditor({ slide, onUpdate, customKeys, onCustomKeysCh
           </div>
         )}
       </div>
-      
+
       {/* Asset Picker Modal */}
       <AssetPicker
         isOpen={showAssetPicker}

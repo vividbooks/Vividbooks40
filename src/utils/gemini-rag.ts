@@ -8,12 +8,37 @@
 
 import { GoogleGenAI } from '@google/genai';
 import { chatWithAIProxy } from './ai-chat-proxy'; // Import the proxy
+import { supabase } from './supabase/client';
 
-// API klíč - preferuje environment variable
-const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || ''; // Removed leaked key
+// API klíč je POUZE pro lokální fallback – veškerá produkční volání jdou přes edge function
+// aby klíč nebyl exponován v klientském kódu.
+const GEMINI_API_KEY = ''; // Klíč odstraněn – voláme edge function rag-upload-document
 
-// Inicializace Gemini AI
-const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+// Inicializace Gemini AI (pouze pro případy kde je klíč dostupný lokálně)
+const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY || 'placeholder' });
+
+const SUPABASE_URL = 'https://njbtqmsxbyvpwigfceke.supabase.co';
+const RAG_PROXY_URL = `${SUPABASE_URL}/functions/v1/rag-upload-document`;
+
+/** Zavolá edge function rag-upload-document s daným action a daty */
+async function callRagProxy(action: string, data: Record<string, unknown>): Promise<any> {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const token = sessionData?.session?.access_token;
+  const response = await fetch(RAG_PROXY_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      apikey: import.meta.env.VITE_SUPABASE_ANON_KEY || '',
+    },
+    body: JSON.stringify({ action, ...data }),
+  });
+  if (!response.ok) {
+    const err = await response.text();
+    throw new Error(`RAG proxy error [${action}]: ${err}`);
+  }
+  return response.json();
+}
 
 const STORE_NAME = 'vividbooks-content';
 let storeId: string | null = null;
@@ -484,8 +509,8 @@ STYL:
 
     console.log('Calling Gemini API with file context...');
 
-    // Používáme nejnovější model Gemini 3 Flash pro nejlepší výsledky
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${GEMINI_API_KEY}`, {
+    // Gemini 3.1 Pro – nejlepší reasoning + 1M token kontext
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent?key=${GEMINI_API_KEY}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -593,8 +618,8 @@ ${params.subject ? `Předmět: ${params.subject}` : ''}`;
     
     console.log('Gemini API request being sent...');
     
-    // Používáme nejnovější model Gemini 3 Flash pro nejlepší výsledky
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${GEMINI_API_KEY}`, {
+    // Gemini 3.1 Pro – nejlepší reasoning + 1M token kontext
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent?key=${GEMINI_API_KEY}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

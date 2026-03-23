@@ -1,10 +1,11 @@
 import { useState, useEffect, FormEvent } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Plus, Eye, EyeOff, Loader2, LogOut, Key, User, BookOpen } from 'lucide-react';
 import { supabase } from '../../utils/supabase/client';
 import { useViewMode } from '../../contexts/ViewModeContext';
 import VividLogo from '../../imports/Group70';
 import * as storage from '../../utils/profile-storage';
+import { setAuthReturnTo, authReturnToFromSearchParams } from '../../utils/auth-return-to';
 import { getLegacySchoolWithLicenses, MappedSchoolData } from '../../utils/legacy-api';
 
 const SAVED_SCHOOL_KEY = 'vivid-teacher-school';
@@ -28,6 +29,7 @@ type Step = 'school-code' | 'select-teacher' | 'enter-password' | 'create-profil
 
 export function TeacherLoginPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { setViewMode } = useViewMode();
   
   // State
@@ -503,12 +505,23 @@ export function TeacherLoginPage() {
   };
 
   // Handle Google Sign In (without school context)
+  const rememberOAuthReturnTarget = () => {
+    const fromRouter = searchParams.get('next');
+    if (fromRouter && fromRouter.startsWith('/') && !fromRouter.startsWith('//')) {
+      setAuthReturnTo(fromRouter);
+      return;
+    }
+    const fromWindow = authReturnToFromSearchParams(window.location.search);
+    if (fromWindow) setAuthReturnTo(fromWindow);
+  };
+
   const handleGoogleSignInDirect = async () => {
     console.log('[TeacherLogin] Google Sign In (direct) clicked');
     setIsLoading(true);
     setError('');
     
     try {
+      rememberOAuthReturnTarget();
       // Don't save school context - user will pair later
       localStorage.removeItem('google-oauth-pending-school');
       
@@ -538,6 +551,7 @@ export function TeacherLoginPage() {
     setError('');
     
     try {
+      rememberOAuthReturnTarget();
       // Save school context for AuthCallback to use
       if (school) {
         localStorage.setItem('google-oauth-pending-school', JSON.stringify(school));

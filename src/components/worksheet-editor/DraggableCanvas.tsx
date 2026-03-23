@@ -11,16 +11,15 @@
 
 import { useRef, useState, useEffect, useMemo, useCallback } from 'react';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
-import { WorksheetBlock, BlockType, BlockWidth, GlobalFontSize } from '../../types/worksheet';
+import { WorksheetBlock, BlockType, BlockWidth, GlobalFontSize, PageHeaderConfig, PageFooterConfig } from '../../types/worksheet';
 import { Sparkles, Plus, Scissors, Type, ImageIcon, Info, CheckSquare, PenLine, MessageSquare, PlusCircle, QrCode } from 'lucide-react';
 import { Button } from '../ui/button';
 import { EditableBlock } from './EditableBlock';
+import { getContentHeight, getContentPaddingV, CONTENT_PADDING_H, PAGE_DIMENSIONS } from '../../utils/page-layout';
+import { getHeaderHeight, getFooterHeight } from '../worksheet-editor-pro/PageHeaderFooter';
 
-// A4 dimensions at 96dpi
-const A4_HEIGHT_PX = 1123; // 297mm
-const A4_WIDTH_PX = 794;   // 210mm
-const PADDING_PX = 22;     // ~6mm padding (reduced by 70%)
-const CONTENT_HEIGHT = A4_HEIGHT_PX - (PADDING_PX * 2);
+const A4_HEIGHT_PX = PAGE_DIMENSIONS.a4.height;
+const A4_WIDTH_PX = PAGE_DIMENSIONS.a4.width;
 
 interface DraggableCanvasProps {
   blocks: WorksheetBlock[];
@@ -44,6 +43,8 @@ interface DraggableCanvasProps {
   pendingInsertType?: BlockType | null;
   /** Insert pending block above given block id */
   onInsertBefore?: (targetBlockId: string) => void;
+  pageHeader?: PageHeaderConfig;
+  pageFooter?: PageFooterConfig;
 }
 
 // Quick add bar component - hidden in print
@@ -141,6 +142,29 @@ function PageBreak({ pageNumber }: { pageNumber: number }) {
         <Scissors className="h-4 w-4 text-slate-400 -rotate-90" />
       </div>
     </div>
+  );
+}
+
+function SelectionChrome({
+  isSelected,
+  isHovered,
+}: {
+  isSelected: boolean;
+  isHovered: boolean;
+}) {
+  if (!isSelected && !isHovered) return null;
+
+  return (
+    <>
+      <div
+        className="absolute inset-0 pointer-events-none print:hidden"
+        style={{
+          border: isSelected ? '2px solid #3B82F6' : '2px dashed #93C5FD',
+          borderRadius: '6px',
+          zIndex: 90,
+        }}
+      />
+    </>
   );
 }
 
@@ -283,9 +307,11 @@ export function DraggableCanvas({
   onOpenAddPanel,
   onOpenAI,
   columns = 1,
-  globalFontSize = 'small',
+  globalFontSize = 'normal',
   pendingInsertType,
   onInsertBefore,
+  pageHeader,
+  pageFooter,
 }: DraggableCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLElement>(null);
@@ -353,6 +379,14 @@ export function DraggableCanvas({
     onUpdateBlockWidth(block1Id, 'half', newPercent);
   }, [onUpdateBlockWidth]);
 
+  const contentPaddingV = useMemo(() => getContentPaddingV(pageHeader, pageFooter), [pageHeader, pageFooter]);
+  const contentPaddingTop = contentPaddingV.top + getHeaderHeight(pageHeader);
+  const contentPaddingBottom = contentPaddingV.bottom + getFooterHeight(pageFooter);
+  const paginationContentHeight = useMemo(
+    () => getContentHeight('a4', pageHeader, pageFooter),
+    [pageHeader, pageFooter]
+  );
+
   // Calculate page breaks based on cumulative heights
   const pagesData = useMemo(() => {
     const pages: { blocks: WorksheetBlock[]; pageNumber: number }[] = [];
@@ -380,7 +414,7 @@ export function DraggableCanvas({
       }
 
       // Check if adding this row would exceed page height
-      if (currentHeight + rowHeight > CONTENT_HEIGHT && currentPage.length > 0) {
+      if (currentHeight + rowHeight > paginationContentHeight && currentPage.length > 0) {
         // Start new page
         pages.push({ blocks: currentPage, pageNumber });
         currentPage = [];
@@ -406,7 +440,7 @@ export function DraggableCanvas({
     }
 
     return pages;
-  }, [blocks, blockHeights]);
+  }, [blocks, blockHeights, paginationContentHeight]);
 
   // Measure block heights
   useEffect(() => {
@@ -467,6 +501,10 @@ export function DraggableCanvas({
               data-block-id={block.id}
               onMouseEnter={() => pendingInsertType && setInsertHoverId(block.id)}
             >
+              <SelectionChrome
+                isSelected={selectedBlockId === block.id}
+                isHovered={hoveredBlockId === block.id}
+              />
               {pendingInsertType && insertHoverId === block.id && (
                 <button
                   type="button"
@@ -526,6 +564,10 @@ export function DraggableCanvas({
               data-block-id={nextBlock.id}
               onMouseEnter={() => pendingInsertType && setInsertHoverId(nextBlock.id)}
             >
+              <SelectionChrome
+                isSelected={selectedBlockId === nextBlock.id}
+                isHovered={hoveredBlockId === nextBlock.id}
+              />
               {pendingInsertType && insertHoverId === nextBlock.id && (
                 <button
                   type="button"
@@ -578,6 +620,10 @@ export function DraggableCanvas({
             data-block-id={block.id}
             onMouseEnter={() => pendingInsertType && setInsertHoverId(block.id)}
           >
+            <SelectionChrome
+              isSelected={selectedBlockId === block.id}
+              isHovered={hoveredBlockId === block.id}
+            />
             {pendingInsertType && insertHoverId === block.id && (
               <button
                 type="button"
@@ -660,6 +706,10 @@ export function DraggableCanvas({
               data-block-id={block1.id}
               onMouseEnter={() => pendingInsertType && setInsertHoverId(block1.id)}
             >
+              <SelectionChrome
+                isSelected={selectedBlockId === block1.id}
+                isHovered={hoveredBlockId === block1.id}
+              />
               {pendingInsertType && insertHoverId === block1.id && (
                 <button
                   type="button"
@@ -719,6 +769,10 @@ export function DraggableCanvas({
               data-block-id={block2.id}
               onMouseEnter={() => pendingInsertType && setInsertHoverId(block2.id)}
             >
+              <SelectionChrome
+                isSelected={selectedBlockId === block2.id}
+                isHovered={hoveredBlockId === block2.id}
+              />
               {pendingInsertType && insertHoverId === block2.id && (
                 <button
                   type="button"
@@ -764,7 +818,11 @@ export function DraggableCanvas({
       } else {
         // Single block takes full width
         rows.push(
-          <div key={block1.id} data-block-id={block1.id}>
+          <div key={block1.id} data-block-id={block1.id} className="relative overflow-visible">
+            <SelectionChrome
+              isSelected={selectedBlockId === block1.id}
+              isHovered={hoveredBlockId === block1.id}
+            />
             <EditableBlock
               block={block1}
               isSelected={selectedBlockId === block1.id}
@@ -819,7 +877,10 @@ export function DraggableCanvas({
             className="bg-white shadow-lg rounded-sm relative worksheet-a4-page a4-page print:shadow-none print:rounded-none"
             style={{
               minHeight: A4_HEIGHT_PX,
-              padding: PADDING_PX,
+              paddingLeft: CONTENT_PADDING_H,
+              paddingRight: CONTENT_PADDING_H,
+              paddingTop: contentPaddingTop,
+              paddingBottom: contentPaddingBottom,
             }}
             onClick={(e) => {
               const target = e.target as HTMLElement;
@@ -877,7 +938,10 @@ export function DraggableCanvas({
                   className="bg-white shadow-lg rounded-sm relative mb-0 worksheet-a4-page a4-page print:shadow-none print:rounded-none"
                   style={{
                     minHeight: A4_HEIGHT_PX,
-                    padding: PADDING_PX,
+                    paddingLeft: CONTENT_PADDING_H,
+                    paddingRight: CONTENT_PADDING_H,
+                    paddingTop: contentPaddingTop,
+                    paddingBottom: contentPaddingBottom,
                   }}
                   onClick={(e) => {
                     const target = e.target as HTMLElement;
@@ -907,33 +971,11 @@ export function DraggableCanvas({
                       // 2-column layout with resizers between pairs
                       <div className="flex flex-col" style={{ gap: '8px' }}>
                         {renderTwoColumnLayout(page.blocks)}
-                        
-                        {/* Quick access bar for adding blocks - only on the last page */}
-                        {pageIndex === pagesData.length - 1 && (
-                          <div className="mt-8">
-                            <QuickAddBar 
-                              onAddBlock={onAddBlock}
-                              onSwitchToAI={onSwitchToAI}
-                              onOpenAddPanel={onOpenAddPanel}
-                            />
-                          </div>
-                        )}
                       </div>
                     ) : (
                       // Standard layout with half-width support
                       <div className="flex flex-col" style={{ gap: '8px' }}>
                         {renderBlocksWithLayout(page.blocks)}
-                        
-                        {/* Quick access bar for adding blocks - only on the last page */}
-                        {pageIndex === pagesData.length - 1 && (
-                          <div className="mt-8">
-                            <QuickAddBar 
-                              onAddBlock={onAddBlock}
-                              onSwitchToAI={onSwitchToAI}
-                              onOpenAddPanel={onOpenAddPanel}
-                            />
-                          </div>
-                        )}
                       </div>
                     )}
                   </div>
@@ -946,6 +988,16 @@ export function DraggableCanvas({
               </div>
             ))}
           </SortableContext>
+        )}
+
+        {blocks.length > 0 && (
+          <div className="mt-8 flex justify-center print:hidden" data-print-hide="true">
+            <QuickAddBar
+              onAddBlock={onAddBlock}
+              onSwitchToAI={onSwitchToAI}
+              onOpenAddPanel={onOpenAddPanel}
+            />
+          </div>
         )}
       </div>
     </main>

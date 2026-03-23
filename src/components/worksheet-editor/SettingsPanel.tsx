@@ -99,7 +99,7 @@ export function SettingsPanel({ worksheet, onUpdateWorksheet }: SettingsPanelPro
   const handleConvertToBoard = async () => {
     setIsConverting(true);
     try {
-      const board = worksheetToBoard(worksheet);
+      const { quiz: board } = worksheetToBoard(worksheet);
       saveQuiz(board);
       // Navigate to the new board editor
       navigate(`/quiz/edit/${board.id}`);

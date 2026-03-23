@@ -39,6 +39,7 @@ npm-packages-offline-cache/
 # Temporary files
 .cache/
 tmp/
+.tmp-ecoregions/
 
 
 

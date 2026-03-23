@@ -1575,7 +1575,7 @@ export async function respondToInvitation(
 
 /**
  * Notify all online students in a class about a live session
- * Uses Firebase Realtime Database for reliable notifications
+ * Persists active live session metadata in Supabase
  */
 export async function notifyClassOfLiveSession(
   classId: string,
@@ -1583,26 +1583,9 @@ export async function notifyClassOfLiveSession(
   documentPath: string,
   documentTitle: string
 ): Promise<void> {
-  console.log('[NotifyClass] Sending notification to class via Firebase:', classId);
-  
-  // Import Firebase dynamically
-  const { database } = await import('../firebase-config');
-  const { ref, set } = await import('firebase/database');
+  console.log('[NotifyClass] Sending class notification via Supabase:', classId);
   
   try {
-    // Write notification to Firebase
-    const notificationRef = ref(database, `class-notifications/${classId}`);
-    await set(notificationRef, {
-      sessionId,
-      documentPath,
-      documentTitle,
-      timestamp: new Date().toISOString(),
-      active: true,
-    });
-    
-    console.log('[NotifyClass] Notification sent via Firebase successfully');
-    
-    // Also update class record in Supabase
     await supabase
       .from('classes')
       .update({
@@ -1623,25 +1606,7 @@ export async function notifyClassOfLiveSession(
  */
 export async function endClassLiveSession(classId: string): Promise<void> {
   console.log('[EndSession] Ending session for class:', classId);
-  
-  // Import Firebase dynamically
-  const { database } = await import('../firebase-config');
-  const { ref, set } = await import('firebase/database');
-  
-  try {
-    // Clear notification in Firebase
-    const notificationRef = ref(database, `class-notifications/${classId}`);
-    await set(notificationRef, {
-      active: false,
-      timestamp: new Date().toISOString(),
-    });
-    
-    console.log('[EndSession] Session ended via Firebase');
-  } catch (error) {
-    console.error('[EndSession] Error ending session:', error);
-  }
-  
-  // Clear the active session from the class record
+
   await supabase
     .from('classes')
     .update({

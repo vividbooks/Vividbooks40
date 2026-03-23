@@ -19,6 +19,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { setBoardPublic } from '../../utils/quiz-storage';
+import { boardRoutes } from '../../features/board-v2';
 
 interface ShareEditDialogProps {
   isOpen: boolean;
@@ -39,11 +40,15 @@ export function ShareEditDialog({ isOpen, onClose, boardId, boardTitle }: ShareE
   const baseUrl = window.location.origin + (import.meta.env.BASE_URL || '/');
   
   const getShareUrl = () => {
+    const relativePath = selectedMode === 'login'
+      ? boardRoutes.copy(boardId)
+      : boardRoutes.public(boardId);
+
     if (selectedMode === 'login') {
-      return `${baseUrl}quiz/copy/${boardId}`;
-    } else {
-      return `${baseUrl}quiz/public/${boardId}`;
+      return new URL(relativePath.replace(/^\//, ''), baseUrl).toString();
     }
+
+    return new URL(relativePath.replace(/^\//, ''), baseUrl).toString();
   };
 
   const copyToClipboard = async () => {

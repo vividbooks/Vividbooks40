@@ -1,0 +1,61 @@
+---
+description: ABSOLUTNÍ ZÁKAZ ukládání base64 obrázků do databáze
+alwaysApply: true
+---
+
+# ❌ NIKDY BASE64 DO DATABÁZE – ABSOLUTNÍ PRAVIDLO
+
+## Pravidlo č. 1 projektu Vividbooks
+
+**NIKDY, ZA ŽÁDNÝCH OKOLNOSTÍ neukládej obrázky jako base64 do Supabase databáze.**
+
+Base64 v databázi = Disk IO Budget přetečení = aplikace padá.
+
+## Proč je to kritické
+
+- base64 obrázek = 1–3 MB v DB řádku místo URL = 50 znaků
+- Způsobuje Supabase Disk IO Budget exhaustion
+- Zpomaluje každý SELECT z tabulky
+- Stalo se nám to – museli jsme čistit celou databázi migrací
+
+## Povinný postup před každým save do Supabase
+
+```typescript
+// ✅ SPRÁVNĚ – vždy stripovat base64 před uložením
+import { stripBase64FromObject } from '@/utils/supabase/upload-image';
+
+const safeData = stripBase64FromObject(data);
+await supabase.from('teacher_worksheets').upsert({ content: safeData });
+
+// ❌ ŠPATNĚ – nikdy neukládat data přímo bez stripování
+await supabase.from('teacher_worksheets').upsert({ content: data });
+```
+
+## Při příjmu base64 obrázku – vždy upload do Storage
+
+```typescript
+// ✅ SPRÁVNĚ – upload do Supabase Storage, uložit jen URL
+import { processImageUrl } from '@/utils/supabase/upload-image';
+
+const publicUrl = await processImageUrl(base64String, 'nazev-souboru', 'illustrations');
+// Uložit publicUrl (https://...) do DB, NIKDY base64String
+
+// ❌ ŠPATNĚ
+await supabase.from('...').upsert({ image: base64String }); // TOTO NIKDY!
+```
+
+## Tabulky kde to platí (VŠECHNY)
+
+- `teacher_worksheets.content` (JSONB)
+- `teacher_boards.slides` (JSONB)
+- `topic_data_sets.media` (JSONB)
+- **Jakákoliv jiná tabulka** – pravidlo platí všude
+
+## Utility funkce (vždy použít)
+
+| Funkce | Kde | Použití |
+|---|---|---|
+| `stripBase64FromObject(obj)` | `upload-image.ts` | Před každým DB write |
+| `processImageUrl(base64, name, folder)` | `upload-image.ts` | Převod base64 → Storage URL |
+| `isBase64DataUrl(str)` | `upload-image.ts` | Detekce base64 |
+| `uploadBase64ToStorage(...)` | `upload-image.ts` | Upload do bucketu |

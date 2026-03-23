@@ -142,9 +142,23 @@ export async function generateImageWithImagen(
     referenceImageUrl?: string;
     /** Fallback base64 reference image (without data: prefix). */
     referenceImage?: { base64: string; mimeType: string };
+    /**
+     * Výběr modelu pro generování:
+     *   'pro'   → gemini-3-pro-image-preview   (~$0.13/obr, nejvyšší kvalita)
+     *   'flash' → gemini-3.1-flash-image-preview (~$0.015/obr, rychlý)
+     * Výchozí: 'flash'
+     */
+    model?: 'pro' | 'flash';
+    /** @deprecated use model instead */
+    style?: string;
+    /**
+     * Explicitní rozlišení (jen text-to-image, bez reference image):
+     * '512px' | '1K' (default) | '2K' | '4K'
+     */
+    imageSize?: '512px' | '1K' | '2K' | '4K';
   } = {}
-): Promise<{ success: boolean; images?: { base64: string; mimeType: string }[]; url?: string; error?: string }> {
-  const { aspectRatio = '1:1', numberOfImages = 1, dataSetId, illustrationName, referenceImageUrl, referenceImage } = options;
+): Promise<{ success: boolean; images?: { base64: string; mimeType: string }[]; url?: string; imageUrl?: string; error?: string }> {
+  const { aspectRatio = '1:1', numberOfImages = 1, dataSetId, illustrationName, referenceImageUrl, referenceImage, model = 'flash', imageSize } = options;
 
   try {
     console.log('[Imagen] Generating image...');
@@ -175,6 +189,8 @@ export async function generateImageWithImagen(
         numberOfImages,
         dataSetId,
         illustrationName,
+        model,
+        ...(imageSize ? { imageSize } : {}),
         // Prefer URL over base64 — simpler and no client-side download needed
         ...(referenceImageUrl
           ? { referenceImageUrl }

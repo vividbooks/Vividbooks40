@@ -12,13 +12,14 @@ import {
   Printer,
   Settings,
   Loader2,
+  Scissors,
 } from 'lucide-react';
 import { Worksheet } from '../../types/worksheet';
 import { toast } from 'sonner';
 
 interface ExportPanelProps {
   worksheet: Worksheet;
-  onExportPDF: () => void;
+  onExportPDF: (opts?: { bleed?: boolean }) => void;
   isExporting: boolean;
 }
 
@@ -214,26 +215,68 @@ export function ExportPanel({ worksheet, onExportPDF, isExporting }: ExportPanel
         </div>
       </div>
       
-      {/* Export button */}
-      <div className="px-4 py-4 border-t border-slate-700">
-        <button
-          type="button"
-          onClick={handleExport}
-          disabled={isExporting}
-          className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl font-semibold text-white bg-blue-600 hover:bg-blue-500 transition-colors cursor-pointer border-none disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {isExporting ? (
-            <>
-              <Loader2 size={18} className="animate-spin" />
-              Exportuji...
-            </>
-          ) : (
-            <>
-              <Download size={18} />
-              Exportovat {selectedFormat.toUpperCase()}
-            </>
-          )}
-        </button>
+      {/* Export buttons */}
+      <div className="px-4 py-4 border-t border-slate-700 space-y-2">
+        {selectedFormat === 'pdf' ? (
+          <>
+            <button
+              type="button"
+              onClick={() => onExportPDF()}
+              disabled={isExporting}
+              className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl font-semibold text-white bg-blue-600 hover:bg-blue-500 transition-colors cursor-pointer border-none disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isExporting ? (
+                <>
+                  <Loader2 size={18} className="animate-spin" />
+                  Exportuji...
+                </>
+              ) : (
+                <>
+                  <Download size={18} />
+                  Standardní PDF
+                </>
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={() => onExportPDF({ bleed: true })}
+              disabled={isExporting}
+              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-medium text-slate-200 bg-slate-700 hover:bg-slate-600 transition-colors cursor-pointer border border-slate-600 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isExporting ? (
+                <>
+                  <Loader2 size={16} className="animate-spin" />
+                  Exportuji...
+                </>
+              ) : (
+                <>
+                  <Scissors size={16} />
+                  Tiskové PDF se spadávkami
+                  <span className="text-[10px] text-slate-400 font-normal">+3mm bleed</span>
+                </>
+              )}
+            </button>
+          </>
+        ) : (
+          <button
+            type="button"
+            onClick={handleExport}
+            disabled={isExporting}
+            className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl font-semibold text-white bg-blue-600 hover:bg-blue-500 transition-colors cursor-pointer border-none disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isExporting ? (
+              <>
+                <Loader2 size={18} className="animate-spin" />
+                Exportuji...
+              </>
+            ) : (
+              <>
+                <Download size={18} />
+                Exportovat {selectedFormat.toUpperCase()}
+              </>
+            )}
+          </button>
+        )}
       </div>
     </div>
   );

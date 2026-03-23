@@ -409,6 +409,11 @@ export function HtmlRenderer({ content, readerMode = false, hideMethodology = fa
       });
       
       container.querySelectorAll('img').forEach(el => {
+        // Skip images inside .image-gallery — they have their own inline styles
+        if (el.closest('.image-gallery')) return;
+        // Miniaplikace porovnávání počtů — pevná velikost buněk, bez prose stylů
+        if (el.closest('.vb-miniapp.vb-compare-counts')) return;
+        if (el.closest('.vb-miniapp.vb-pisanka')) return;
         if (!el.classList.contains('max-w-full')) {
           el.classList.add('max-w-full', 'h-auto', 'rounded-lg', 'my-4', 'md:my-6', 'border', 'border-border');
         }

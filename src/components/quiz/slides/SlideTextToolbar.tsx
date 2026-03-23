@@ -99,13 +99,21 @@ export function SlideTextToolbar({
   };
 
   const textColors = [
-    '#000000', '#6b7280', '#dc2626', '#ea580c', '#ca8a04',
+    '#ffffff', '#000000', '#6b7280', '#dc2626', '#ea580c', '#ca8a04',
     '#16a34a', '#0891b2', '#2563eb', '#7c3aed', '#db2777',
   ];
 
-  const highlightColors = [
-    'transparent', '#f3f4f6', '#fef3c7', '#fde68a', '#fef08a',
-    '#bbf7d0', '#bfdbfe', '#c4b5fd', '#fbcfe8', '#fecaca',
+  const highlightOptions = [
+    { color: 'transparent', label: 'Bez podbarvení' },
+    { color: '#f3f4f6', label: 'Svetle seda' },
+    { color: '#fef3c7', label: 'Kremova' },
+    { color: '#fde68a', label: 'Jantarova' },
+    { color: '#fef08a', label: 'Zluta' },
+    { color: '#bbf7d0', label: 'Zelena' },
+    { color: '#bfdbfe', label: 'Modra' },
+    { color: '#c4b5fd', label: 'Fialova' },
+    { color: '#fbcfe8', label: 'Ruzova' },
+    { color: '#fecaca', label: 'Cervena' },
   ];
 
   // Superscript/subscript Unicode mappings
@@ -321,7 +329,8 @@ export function SlideTextToolbar({
             <div 
               className="w-5 h-5 rounded flex items-center justify-center text-xs font-bold"
               style={{ 
-                backgroundColor: highlightColor === 'transparent' ? '#fef08a' : highlightColor,
+                backgroundColor: highlightColor === 'transparent' ? '#ffffff' : highlightColor,
+                border: highlightColor === 'transparent' ? '1px solid #e2e8f0' : '1px solid transparent',
                 color: textColor || '#000000'
               }}
             >
@@ -333,33 +342,69 @@ export function SlideTextToolbar({
           {showColorDropdown && (
             <>
               <div className="fixed inset-0 z-40" onClick={() => setShowColorDropdown(false)} />
-              <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-xl border border-slate-200 p-3 z-50 min-w-[200px]">
+              <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-xl border border-slate-200 p-3 z-50 min-w-[260px]">
                 <p className="text-xs font-medium text-slate-600 mb-2">Barva textu</p>
-                <div className="grid grid-cols-5 gap-1.5 mb-3">
+                <div className="grid gap-2 mb-3" style={{ gridTemplateColumns: 'repeat(4, minmax(0, 1fr))' }}>
                   {textColors.map((color) => (
                     <button
                       key={color}
                       onClick={() => onTextColorChange?.(color)}
-                      className="w-7 h-7 rounded-full flex items-center justify-center hover:scale-110 transition-transform"
-                      style={{ backgroundColor: `${color}20` }}
+                      className="w-9 h-9 rounded-full flex items-center justify-center hover:scale-110 transition-transform border border-slate-200"
+                      style={{
+                        backgroundColor: color === '#ffffff' ? '#ffffff' : `${color}20`,
+                        borderColor: color === '#ffffff' ? '#cbd5e1' : undefined,
+                        boxShadow: textColor === color ? '0 0 0 2px #c7d2fe' : undefined,
+                      }}
+                      title={color}
                     >
                       <span style={{ color, fontWeight: 'bold', fontSize: '12px' }}>A</span>
                     </button>
                   ))}
                 </div>
                 
-                <p className="text-xs font-medium text-slate-600 mb-2">Zvýraznění</p>
-                <div className="grid grid-cols-5 gap-1.5">
-                  {highlightColors.map((color) => (
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-xs font-medium text-slate-600">Zvýraznění</p>
+                  <div
+                    className="px-2 py-1 rounded-lg text-[10px] font-medium text-slate-500 border border-slate-200"
+                    style={{ backgroundColor: highlightColor === 'transparent' ? '#ffffff' : highlightColor }}
+                  >
+                    Aktivní
+                  </div>
+                </div>
+                <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(4, minmax(0, 1fr))' }}>
+                  {highlightOptions.map(({ color, label }) => (
                     <button
                       key={color}
                       onClick={() => onHighlightColorChange?.(color)}
-                      className="w-7 h-7 rounded-full hover:scale-110 transition-transform"
-                      style={{ 
-                        backgroundColor: color === 'transparent' ? 'white' : color,
-                        border: color === 'transparent' ? '2px solid #e2e8f0' : '2px solid transparent'
+                      className="w-9 h-9 rounded-full border border-slate-200 hover:border-slate-300 hover:scale-110 transition-all relative overflow-hidden flex items-center justify-center"
+                      style={{
+                        backgroundColor: color === 'transparent' ? '#ffffff' : color,
+                        boxShadow: highlightColor === color ? '0 0 0 2px #c7d2fe' : undefined,
                       }}
-                    />
+                      title={label}
+                    >
+                      <span
+                        className="relative w-5 h-5 rounded-full flex items-center justify-center text-[11px] font-bold shrink-0"
+                        style={{
+                          backgroundColor: color === 'transparent' ? '#ffffff' : `${color}cc`,
+                          color: textColor || '#111827',
+                          border: color === 'transparent' ? '1px solid #e2e8f0' : '1px solid transparent',
+                        }}
+                      >
+                        A
+                        {color === 'transparent' && (
+                          <span
+                            className="absolute left-1/2 top-1/2"
+                            style={{
+                              width: 14,
+                              height: 2,
+                              backgroundColor: '#f87171',
+                              transform: 'translate(-50%, -50%) rotate(45deg)',
+                            }}
+                          />
+                        )}
+                      </span>
+                    </button>
                   ))}
                 </div>
               </div>

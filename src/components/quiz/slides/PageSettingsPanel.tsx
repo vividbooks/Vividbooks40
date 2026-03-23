@@ -6,10 +6,9 @@ import {
   FileText,
   SlidersHorizontal,
   Palette,
-  Bookmark,
+  Menu,
   MessageSquare,
   Zap,
-  Info,
   HelpCircle,
   User,
   Trash2,
@@ -27,6 +26,7 @@ import {
 import { SLIDE_TYPES, SlideTypeOption } from '../slide-types';
 import { BackgroundPicker } from './BackgroundPicker';
 import { getContrastColor } from '../../../utils/color-utils';
+import { NoteIcon } from '../editor/NoteIcon';
 
 const ColorIcon = ({ className = "w-5 h-5 text-slate-500" }: { className?: string }) => (
   <svg width="21" height="19" viewBox="0 0 21 19" fill="none" xmlns="http://www.w3.org/2000/svg" className={className}>
@@ -35,27 +35,6 @@ const ColorIcon = ({ className = "w-5 h-5 text-slate-500" }: { className?: strin
       <path d="M16.6899 0L14.1076 5.99902C14.1076 5.99902 14.1646 5.99902 14.2025 5.99902C15.8734 5.99902 17.3544 6.70479 18.3987 7.80059L20.981 1.78299L16.6709 0.0185728L16.6899 0Z" fill="currentColor"/>
       <path d="M14.2025 7.52197C11.8861 7.52197 10.0063 9.36068 10.0063 11.6266C10.0063 14.3939 9.91138 17.4027 6.70252 17.4213C6.2848 17.4213 5.94302 17.7556 5.94302 18.1828C5.94302 18.6099 6.2848 18.9257 6.70252 18.9443C15.8544 18.9443 18.3987 13.911 18.3987 11.6451C18.3987 9.37925 16.519 7.54055 14.2025 7.54055V7.52197Z" fill="currentColor"/>
     </g>
-  </svg>
-);
-
-const NoteIcon = ({ size = 20, className = "" }: { size?: number, className?: string }) => (
-  <svg 
-    width={size} 
-    height={size * (13/6)} 
-    viewBox="0 0 6 13" 
-    fill="none" 
-    xmlns="http://www.w3.org/2000/svg"
-    className={className}
-    style={{ height: size }}
-  >
-    <g clipPath="url(#clip0_note_icon_preview)">
-      <path d="M1.91903 5.57928C1.91903 5.19451 1.80615 5.06625 1.5965 5.05021C1.43524 5.05021 1.27398 5.08228 1.11272 5.21054C0.886947 5.40293 0.677305 5.70754 0.661179 5.89993C0.645052 6.09232 0.661179 6.34884 0.596673 6.50916C0.532168 6.62139 0.43541 6.63742 0.354779 6.63742C0.12901 6.62139 0 6.46107 0 6.18852C0 5.06625 0.935326 4.29669 1.8384 3.96001C2.25768 3.79969 2.69309 3.71952 2.96724 3.71952C3.41878 3.71952 3.77356 4.18446 3.77356 4.66544C3.77356 5.17847 3.6768 5.46706 3.30589 7.87192C3.14463 8.898 2.93499 10.0042 2.93499 10.5814C2.93499 10.9501 3.08012 11.1746 3.48328 11.1746C4.01545 11.1746 4.40248 10.3409 4.43473 9.9882C4.46699 9.73168 4.56374 9.58739 4.74113 9.58739C4.93465 9.58739 5.14429 9.76375 5.14429 10.0042C5.14429 10.405 4.88627 11.2227 4.07996 11.848C3.69292 12.1526 3.17688 12.4251 2.54796 12.4251C1.64488 12.4251 1.08046 11.8159 1.08046 11.0143C1.08046 10.2768 1.19335 9.57136 1.532 8.00018C1.79002 6.84585 1.9029 6.02819 1.9029 5.61135L1.91903 5.57928ZM3.30589 0C3.91869 0 4.30572 0.368746 4.30572 0.945913C4.30572 1.65134 3.61229 2.18041 2.88661 2.18041C2.24156 2.18041 1.85453 1.79563 1.85453 1.25053C1.85453 0.480973 2.61246 0 3.28977 0L3.30589 0Z" fill="currentColor"/>
-    </g>
-    <defs>
-      <clipPath id="clip0_note_icon_preview">
-        <rect width="5.12817" height="12.3931" fill="white"/>
-      </clipPath>
-    </defs>
   </svg>
 );
 
@@ -117,6 +96,23 @@ function AccordionSection({ id, icon: Icon, title, value, children, isExpanded, 
       )}
     </div>
   );
+}
+
+function getSidebarOptionButtonClass(active: boolean, layout: 'row' | 'tile' = 'row') {
+  const base =
+    layout === 'row'
+      ? 'w-full flex items-center gap-3 p-3 rounded-2xl transition-all'
+      : 'p-3 rounded-2xl flex flex-col items-center transition-all';
+
+  return `${base} ${
+    active
+      ? 'text-white shadow-sm'
+      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+  }`;
+}
+
+function getSidebarOptionButtonStyle(active: boolean): React.CSSProperties | undefined {
+  return active ? { backgroundColor: '#59627B' } : undefined;
 }
 
 // SVG Layout Icons
@@ -295,11 +291,24 @@ export function PageSettingsPanel({ slide, onClose, onUpdate, onTypeChange, init
       return (
         <span 
           className="inline-block w-4 h-4 rounded-full border border-slate-300"
-          style={{ backgroundColor: bg.color }}
+          style={{
+            backgroundColor: bg.color,
+            ...(bg.strokeColor && (bg.strokeWidth ?? 0) > 0 ? { boxShadow: `0 0 0 ${Math.max(bg.strokeWidth, 1)}px ${bg.strokeColor}` } : {}),
+          }}
         />
       );
     }
-    if (bg.type === 'image') return 'Obrázek';
+    if (bg.type === 'image' && bg.imageUrl) {
+      return (
+        <span
+          className="inline-block w-4 h-4 rounded-full border border-slate-300 bg-center bg-cover"
+          style={{
+            backgroundImage: `url(${bg.imageUrl})`,
+            ...(bg.strokeColor && (bg.strokeWidth ?? 0) > 0 ? { boxShadow: `0 0 0 ${Math.max(bg.strokeWidth, 1)}px ${bg.strokeColor}` } : {}),
+          }}
+        />
+      );
+    }
     return 'Bílá';
   };
 
@@ -349,48 +358,48 @@ export function PageSettingsPanel({ slide, onClose, onUpdate, onTypeChange, init
                     const infoType = SLIDE_TYPES.find(t => t.id === 'info');
                     if (infoType && onTypeChange) onTypeChange(infoType);
                   }}
-                  className={`w-full flex items-center gap-3 p-3 rounded-xl border-2 transition-all ${
-                    slide.type === 'info'
-                      ? 'border-[#4E5871] bg-slate-50'
-                      : 'border-slate-200 hover:border-slate-300 hover:bg-white'
-                  }`}
+                  className={getSidebarOptionButtonClass(slide.type === 'info')}
+                  style={getSidebarOptionButtonStyle(slide.type === 'info')}
                 >
                   <div 
                     className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0"
-                    style={{ backgroundColor: slide.type === 'info' ? '#4E587125' : '#4E587115', color: '#4E5871' }}
+                    style={{
+                      backgroundColor: slide.type === 'info' ? 'rgba(255,255,255,0.14)' : '#4E587115',
+                      color: slide.type === 'info' ? '#ffffff' : '#4E5871',
+                    }}
                   >
                     {SLIDE_TYPES.find(t => t.id === 'info')?.icon}
                   </div>
                   <div className="text-left flex-1">
-                    <div className={`font-semibold ${slide.type === 'info' ? 'text-slate-900' : 'text-slate-700'}`}>
+                    <div className={`font-semibold ${slide.type === 'info' ? 'text-white' : 'text-slate-700'}`}>
                       Informace
                     </div>
-                    <div className="text-xs text-slate-500">Text, obrázky, video</div>
+                    <div className={`text-xs ${slide.type === 'info' ? 'text-white/75' : 'text-slate-500'}`}>Text, obrázky, video</div>
                   </div>
                 </button>
 
                 {/* Aktivity - opens list */}
                 <button
                   onClick={() => setShowActivitiesList(true)}
-                  className={`w-full flex items-center gap-3 p-3 rounded-xl border-2 transition-all ${
-                    slide.type === 'activity'
-                      ? 'border-[#03CA90] bg-emerald-50'
-                      : 'border-slate-200 hover:border-slate-300 hover:bg-white'
-                  }`}
+                  className={getSidebarOptionButtonClass(slide.type === 'activity')}
+                  style={getSidebarOptionButtonStyle(slide.type === 'activity')}
                 >
                   <div 
                     className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0"
-                    style={{ backgroundColor: slide.type === 'activity' ? '#03CA9025' : '#03CA9015', color: '#03CA90' }}
+                    style={{
+                      backgroundColor: slide.type === 'activity' ? 'rgba(255,255,255,0.14)' : '#03CA9015',
+                      color: slide.type === 'activity' ? '#ffffff' : '#03CA90',
+                    }}
                   >
                     {SLIDE_TYPES.find(t => t.type === 'activity')?.icon}
                   </div>
                   <div className="text-left flex-1">
-                    <div className={`font-semibold ${slide.type === 'activity' ? 'text-emerald-700' : 'text-slate-700'}`}>
+                    <div className={`font-semibold ${slide.type === 'activity' ? 'text-white' : 'text-slate-700'}`}>
                       Aktivita
                     </div>
-                    <div className="text-xs text-slate-500">Interaktivní úkoly</div>
+                    <div className={`text-xs ${slide.type === 'activity' ? 'text-white/75' : 'text-slate-500'}`}>Interaktivní úkoly</div>
                   </div>
-                  <ChevronRight className="w-4 h-4 text-slate-400" />
+                  <ChevronRight className={`w-4 h-4 ${slide.type === 'activity' ? 'text-white/70' : 'text-slate-400'}`} />
                 </button>
 
                 {/* Nástroje */}
@@ -399,23 +408,23 @@ export function PageSettingsPanel({ slide, onClose, onUpdate, onTypeChange, init
                     const toolType = SLIDE_TYPES.find(t => t.type === 'tools');
                     if (toolType && onTypeChange) onTypeChange(toolType);
                   }}
-                  className={`w-full flex items-center gap-3 p-3 rounded-xl border-2 transition-all ${
-                    slide.type === 'tools'
-                      ? 'border-[#FF8158] bg-orange-50'
-                      : 'border-slate-200 hover:border-slate-300 hover:bg-white'
-                  }`}
+                  className={getSidebarOptionButtonClass(slide.type === 'tools')}
+                  style={getSidebarOptionButtonStyle(slide.type === 'tools')}
                 >
                   <div 
                     className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0"
-                    style={{ backgroundColor: slide.type === 'tools' ? '#FF815825' : '#FF815815', color: '#FF8158' }}
+                    style={{
+                      backgroundColor: slide.type === 'tools' ? 'rgba(255,255,255,0.14)' : '#FF815815',
+                      color: slide.type === 'tools' ? '#ffffff' : '#FF8158',
+                    }}
                   >
                     {SLIDE_TYPES.find(t => t.type === 'tools')?.icon}
                   </div>
                   <div className="text-left flex-1">
-                    <div className={`font-semibold ${slide.type === 'tools' ? 'text-orange-700' : 'text-slate-700'}`}>
+                    <div className={`font-semibold ${slide.type === 'tools' ? 'text-white' : 'text-slate-700'}`}>
                       Nástroje
                     </div>
-                    <div className="text-xs text-slate-500">Kalkulačka, grafy, stopky</div>
+                    <div className={`text-xs ${slide.type === 'tools' ? 'text-white/75' : 'text-slate-500'}`}>Kalkulačka, grafy, stopky</div>
                   </div>
                 </button>
               </>
@@ -613,14 +622,21 @@ export function PageSettingsPanel({ slide, onClose, onUpdate, onTypeChange, init
                         savedBlocks: newSavedBlocks.length > 0 ? newSavedBlocks : undefined
                       } as any);
                     }}
-                    className={`p-2 rounded-lg border-2 flex flex-col items-center transition-all ${
-                      (slide as InfoSlide).layout?.type === layoutOption.id
-                        ? 'border-indigo-500 bg-indigo-50'
-                        : 'border-slate-200 hover:border-slate-300 hover:bg-white'
-                    }`}
+                    className={getSidebarOptionButtonClass((slide as InfoSlide).layout?.type === layoutOption.id, 'tile')}
+                    style={getSidebarOptionButtonStyle((slide as InfoSlide).layout?.type === layoutOption.id)}
                   >
-                    <LayoutIcon type={layoutOption.id} />
-                    <span className="text-[13px] font-medium text-[#4E5871] mt-1.5 text-center leading-tight px-1">
+                    <div
+                      className={`rounded-2xl px-2 py-1.5 mb-1.5 ${
+                        (slide as InfoSlide).layout?.type === layoutOption.id ? 'bg-white/14' : 'bg-white/80'
+                      }`}
+                    >
+                      <LayoutIcon type={layoutOption.id} />
+                    </div>
+                    <span
+                      className={`text-[13px] font-medium mt-1 text-center leading-tight px-1 ${
+                        (slide as InfoSlide).layout?.type === layoutOption.id ? 'text-white' : 'text-[#4E5871]'
+                      }`}
+                    >
                       {layoutOption.label}
                     </span>
                   </button>
@@ -709,7 +725,7 @@ export function PageSettingsPanel({ slide, onClose, onUpdate, onTypeChange, init
               }}
               onClose={() => {}}
               showUpload={true}
-              showOpacity={true}
+              showOpacity={false}
               showBlur={false}
               inline={true}
             />
@@ -741,7 +757,7 @@ export function PageSettingsPanel({ slide, onClose, onUpdate, onTypeChange, init
         {/* 5. Jméno kapitoly */}
         <AccordionSection 
           id="chapter" 
-          icon={Bookmark} 
+          icon={Menu} 
           title="Jméno kapitoly" 
           value={(slide as any).chapterName || '-'}
           isExpanded={expandedSection === 'chapter'}

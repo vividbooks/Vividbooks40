@@ -515,7 +515,7 @@ export function StudentContentLayout({ theme, toggleTheme }: StudentContentLayou
     setMyContent(getStudentContent(student.id));
     syncStudentContentToCloud(student.id);
     
-    navigate(`/library/quiz-editor/${boardId}?studentMode=true`);
+    navigate(`/quiz/edit/${boardId}?studentMode=true`);
   }, [student, openFolder, navigate]);
 
   // Create folder

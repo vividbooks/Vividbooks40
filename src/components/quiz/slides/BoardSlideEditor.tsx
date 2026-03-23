@@ -8,6 +8,7 @@ import React, { useState } from 'react';
 import {
   MessageSquare,
   Image as ImageIcon,
+  Upload,
   Trash2,
   Users,
   Heart,
@@ -16,18 +17,33 @@ import {
   FileText,
   Presentation,
   Scale,
+  Columns2,
 } from 'lucide-react';
 import { BoardActivitySlide, BoardType } from '../../../types/quiz';
 import { getContrastColor } from '../../../utils/color-utils';
+import { AssetPicker } from '../../shared/AssetPicker';
+import type { AssetPickerResult } from '../../../types/assets';
 
 interface BoardSlideEditorProps {
   slide: BoardActivitySlide;
   onUpdate: (id: string, updates: Partial<BoardActivitySlide>) => void;
 }
 
+function getBoardTypeButtonStyle(active: boolean): React.CSSProperties {
+  return active
+    ? {
+        backgroundColor: '#59627B',
+        color: '#ffffff',
+        boxShadow: '0 6px 16px rgba(89, 98, 123, 0.18)',
+      }
+    : {
+        backgroundColor: '#f8fafc',
+        color: '#64748b',
+      };
+}
+
 export function BoardSlideEditor({ slide, onUpdate }: BoardSlideEditorProps) {
-  const [showImageInput, setShowImageInput] = useState(false);
-  const [imageUrl, setImageUrl] = useState(slide.questionImage || '');
+  const [showAssetPicker, setShowAssetPicker] = useState(false);
   const [editingQuestion, setEditingQuestion] = useState(false);
 
   // Determine current board type
@@ -49,6 +65,11 @@ export function BoardSlideEditor({ slide, onUpdate }: BoardSlideEditorProps) {
     
     onUpdate(slide.id, updates);
   };
+
+  const handleAssetSelect = (result: AssetPickerResult) => {
+    onUpdate(slide.id, { questionImage: result.url });
+    setShowAssetPicker(false);
+  };
   
   // Get background color and contrast color for text
   const bgColor = (slide as any).slideBackground?.color || '#ffffff';
@@ -65,128 +86,9 @@ export function BoardSlideEditor({ slide, onUpdate }: BoardSlideEditorProps) {
         <h2 className="font-bold text-lg">Žáci sdílí příspěvky</h2>
       </div>
 
-      {/* Board Type Selector */}
-      <div className="p-6 border-b border-slate-100">
-        <label className="block text-sm font-medium text-slate-700 mb-3">
-          Typ nástěnky
-        </label>
-        <div className="grid grid-cols-3 gap-3">
-          {/* Text posts option */}
-          <button
-            onClick={() => handleBoardTypeChange('text')}
-            className="relative p-4 rounded-xl border-2 transition-all text-left"
-            style={{
-              borderColor: currentBoardType === 'text' ? '#ec4899' : '#e2e8f0',
-              backgroundColor: currentBoardType === 'text' ? '#fdf2f8' : '#ffffff',
-            }}
-          >
-            <div className="flex flex-col items-center gap-2 text-center">
-              <div 
-                className="w-12 h-12 rounded-xl flex items-center justify-center"
-                style={{ 
-                  background: currentBoardType === 'text' 
-                    ? 'linear-gradient(135deg, #ec4899, #f43f5e)' 
-                    : '#f1f5f9' 
-                }}
-              >
-                <FileText className={`w-6 h-6 ${currentBoardType === 'text' ? 'text-white' : 'text-slate-400'}`} />
-              </div>
-              <div>
-                <h4 className="font-semibold text-slate-800 text-sm">Textové příspěvky</h4>
-                <p className="text-xs text-slate-500">Jednoduché odpovědi</p>
-              </div>
-            </div>
-            {currentBoardType === 'text' && (
-              <div 
-                className="absolute top-2 right-2 w-5 h-5 rounded-full flex items-center justify-center"
-                style={{ background: 'linear-gradient(135deg, #ec4899, #f43f5e)' }}
-              >
-                <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                </svg>
-              </div>
-            )}
-          </button>
-
-          {/* Presentation option */}
-          <button
-            onClick={() => handleBoardTypeChange('presentation')}
-            className="relative p-4 rounded-xl border-2 transition-all text-left"
-            style={{
-              borderColor: currentBoardType === 'presentation' ? '#ec4899' : '#e2e8f0',
-              backgroundColor: currentBoardType === 'presentation' ? '#fdf2f8' : '#ffffff',
-            }}
-          >
-            <div className="flex flex-col items-center gap-2 text-center">
-              <div 
-                className="w-12 h-12 rounded-xl flex items-center justify-center"
-                style={{ 
-                  background: currentBoardType === 'presentation' 
-                    ? 'linear-gradient(135deg, #ec4899, #f43f5e)' 
-                    : '#f1f5f9' 
-                }}
-              >
-                <Presentation className={`w-6 h-6 ${currentBoardType === 'presentation' ? 'text-white' : 'text-slate-400'}`} />
-              </div>
-              <div>
-                <h4 className="font-semibold text-slate-800 text-sm">Společná prezentace</h4>
-                <p className="text-xs text-slate-500">S obrázky a videi</p>
-              </div>
-            </div>
-            {currentBoardType === 'presentation' && (
-              <div 
-                className="absolute top-2 right-2 w-5 h-5 rounded-full flex items-center justify-center"
-                style={{ background: 'linear-gradient(135deg, #ec4899, #f43f5e)' }}
-              >
-                <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                </svg>
-              </div>
-            )}
-          </button>
-
-          {/* Pros and Cons option */}
-          <button
-            onClick={() => handleBoardTypeChange('pros-cons')}
-            className="relative p-4 rounded-xl border-2 transition-all text-left"
-            style={{
-              borderColor: currentBoardType === 'pros-cons' ? '#ec4899' : '#e2e8f0',
-              backgroundColor: currentBoardType === 'pros-cons' ? '#fdf2f8' : '#ffffff',
-            }}
-          >
-            <div className="flex flex-col items-center gap-2 text-center">
-              <div 
-                className="w-12 h-12 rounded-xl flex items-center justify-center"
-                style={{ 
-                  background: currentBoardType === 'pros-cons' 
-                    ? 'linear-gradient(135deg, #ec4899, #f43f5e)' 
-                    : '#f1f5f9' 
-                }}
-              >
-                <Scale className={`w-6 h-6 ${currentBoardType === 'pros-cons' ? 'text-white' : 'text-slate-400'}`} />
-              </div>
-              <div>
-                <h4 className="font-semibold text-slate-800 text-sm">Pro a proti</h4>
-                <p className="text-xs text-slate-500">Dva sloupce</p>
-              </div>
-            </div>
-            {currentBoardType === 'pros-cons' && (
-              <div 
-                className="absolute top-2 right-2 w-5 h-5 rounded-full flex items-center justify-center"
-                style={{ background: 'linear-gradient(135deg, #ec4899, #f43f5e)' }}
-              >
-                <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                </svg>
-              </div>
-            )}
-          </button>
-        </div>
-      </div>
-
       {/* Column Labels for Pros-Cons */}
       {currentBoardType === 'pros-cons' && (
-        <div className="p-6 border-b border-slate-100 bg-gradient-to-r from-green-50 to-red-50">
+        <div className="px-6 pb-6 border-b border-slate-100">
           <label className="block text-sm font-medium text-slate-700 mb-3">
             Názvy sloupců
           </label>
@@ -214,7 +116,66 @@ export function BoardSlideEditor({ slide, onUpdate }: BoardSlideEditorProps) {
           </div>
         </div>
       )}
-      
+
+      {/* Board Type Selector */}
+      <div className="p-6 border-b border-slate-100">
+        <label className="block text-sm font-medium text-slate-700 mb-3">
+          Typ nástěnky
+        </label>
+        <div className="flex gap-3">
+          <button
+            onClick={() => handleBoardTypeChange('text')}
+            className="flex-1 min-w-0 flex flex-col items-center gap-2 px-2.5 py-3 rounded-2xl transition-all text-center"
+            style={getBoardTypeButtonStyle(currentBoardType === 'text')}
+          >
+            <div
+              className="w-11 h-11 rounded-2xl flex items-center justify-center"
+              style={{ backgroundColor: currentBoardType === 'text' ? 'rgba(255,255,255,0.14)' : '#ffffff' }}
+            >
+              <FileText className={`w-5 h-5 ${currentBoardType === 'text' ? 'text-white' : 'text-slate-500'}`} />
+            </div>
+            <div>
+              <h4 className={`font-semibold text-sm leading-tight ${currentBoardType === 'text' ? 'text-white' : 'text-slate-700'}`}>Textové příspěvky</h4>
+              <p className={`text-[11px] leading-tight mt-1 ${currentBoardType === 'text' ? 'text-white/75' : 'text-slate-500'}`}>Jednoduché odpovědi</p>
+            </div>
+          </button>
+
+          <button
+            onClick={() => handleBoardTypeChange('presentation')}
+            className="flex-1 min-w-0 flex flex-col items-center gap-2 px-2.5 py-3 rounded-2xl transition-all text-center"
+            style={getBoardTypeButtonStyle(currentBoardType === 'presentation')}
+          >
+            <div
+              className="w-11 h-11 rounded-2xl flex items-center justify-center"
+              style={{ backgroundColor: currentBoardType === 'presentation' ? 'rgba(255,255,255,0.14)' : '#ffffff' }}
+            >
+              <Presentation className={`w-5 h-5 ${currentBoardType === 'presentation' ? 'text-white' : 'text-slate-500'}`} />
+            </div>
+            <div>
+              <h4 className={`font-semibold text-sm leading-tight ${currentBoardType === 'presentation' ? 'text-white' : 'text-slate-700'}`}>Prezentace</h4>
+              <p className={`text-[11px] leading-tight mt-1 ${currentBoardType === 'presentation' ? 'text-white/75' : 'text-slate-500'}`}>Obrázky a videa</p>
+            </div>
+          </button>
+
+          <button
+            onClick={() => handleBoardTypeChange('pros-cons')}
+            className="flex-1 min-w-0 flex flex-col items-center gap-2 px-2.5 py-3 rounded-2xl transition-all text-center"
+            style={getBoardTypeButtonStyle(currentBoardType === 'pros-cons')}
+          >
+            <div
+              className="w-11 h-11 rounded-2xl flex items-center justify-center"
+              style={{ backgroundColor: currentBoardType === 'pros-cons' ? 'rgba(255,255,255,0.14)' : '#ffffff' }}
+            >
+              <Columns2 className={`w-5 h-5 ${currentBoardType === 'pros-cons' ? 'text-white' : 'text-slate-500'}`} />
+            </div>
+            <div>
+              <h4 className={`font-semibold text-sm leading-tight ${currentBoardType === 'pros-cons' ? 'text-white' : 'text-slate-700'}`}>Pro a proti</h4>
+              <p className={`text-[11px] leading-tight mt-1 ${currentBoardType === 'pros-cons' ? 'text-white/75' : 'text-slate-500'}`}>Dva sloupce</p>
+            </div>
+          </button>
+        </div>
+      </div>
+
       {/* Question input */}
       <div className="p-6 border-b border-slate-100">
         <label className="block text-sm font-medium text-slate-700 mb-2">
@@ -245,63 +206,46 @@ export function BoardSlideEditor({ slide, onUpdate }: BoardSlideEditorProps) {
         
         {/* Image section - only for text and presentation types */}
         {currentBoardType !== 'pros-cons' && (
-          <>
+          <div className="mt-4">
             {slide.questionImage ? (
-              <div className="mt-4 relative">
-                <img 
-                  src={slide.questionImage} 
-                  alt="Obrázek k tématu"
-                  className="max-w-full max-h-48 rounded-lg border border-slate-200"
-                />
-                <button
-                  onClick={() => onUpdate(slide.id, { questionImage: undefined })}
-                  className="absolute top-2 right-2 p-1.5 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors"
+              <div className="space-y-2">
+                <div
+                  className="relative rounded-xl border border-slate-200 overflow-hidden bg-slate-50"
+                  style={{ width: '250px', height: '250px' }}
                 >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              </div>
-            ) : showImageInput ? (
-              <div className="mt-4 space-y-2">
-                <input
-                  type="text"
-                  value={imageUrl}
-                  onChange={(e) => setImageUrl(e.target.value)}
-                  placeholder="URL obrázku (např. https://example.com/obrazek.jpg)"
-                  className="w-full px-4 py-2 rounded-lg border border-slate-200 focus:border-pink-500 focus:ring-2 focus:ring-pink-500/20 outline-none text-sm"
-                />
+                  <img 
+                    src={slide.questionImage} 
+                    alt="Obrázek k tématu"
+                    className="w-full h-full object-cover"
+                  />
+                </div>
                 <div className="flex gap-2">
                   <button
-                    onClick={() => {
-                      if (imageUrl.trim()) {
-                        onUpdate(slide.id, { questionImage: imageUrl.trim() });
-                      }
-                      setShowImageInput(false);
-                    }}
-                    className="px-3 py-1.5 bg-pink-500 text-white rounded-lg text-sm hover:bg-pink-600 transition-colors"
+                    onClick={() => setShowAssetPicker(true)}
+                    className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors"
                   >
-                    Uložit
+                    <Upload className="w-4 h-4" />
+                    <span>Nahradit obrázek</span>
                   </button>
                   <button
-                    onClick={() => {
-                      setShowImageInput(false);
-                      setImageUrl('');
-                    }}
-                    className="px-3 py-1.5 bg-slate-200 text-slate-600 rounded-lg text-sm hover:bg-slate-300 transition-colors"
+                    onClick={() => onUpdate(slide.id, { questionImage: undefined })}
+                    className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm text-red-600 bg-red-50 hover:bg-red-100 transition-colors"
                   >
-                    Zrušit
+                    <Trash2 className="w-4 h-4" />
+                    <span>Smazat</span>
                   </button>
                 </div>
               </div>
             ) : (
               <button 
-                onClick={() => setShowImageInput(true)}
-                className="mt-2 flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm text-slate-500 hover:bg-slate-100 transition-colors"
+                onClick={() => setShowAssetPicker(true)}
+                className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors"
               >
-                <ImageIcon className="w-4 h-4" />
-                Přidat obrázek k tématu
+                <Upload className="w-4 h-4" />
+                <span>Přidat obrázek k tématu</span>
               </button>
             )}
-          </>
+          </div>
         )}
       </div>
       
@@ -373,46 +317,13 @@ export function BoardSlideEditor({ slide, onUpdate }: BoardSlideEditorProps) {
         </div>
       </div>
       
-      {/* Preview hint */}
-      <div className="px-6 pb-6">
-        <div className="bg-pink-50 border border-pink-200 rounded-xl p-4">
-          <div className="flex items-start gap-3">
-            <div className="p-2 bg-pink-100 rounded-lg">
-              <Users className="w-5 h-5 text-pink-600" />
-            </div>
-            <div>
-              <h4 className="font-medium text-pink-900">
-                {currentBoardType === 'text' && 'Textové příspěvky'}
-                {currentBoardType === 'presentation' && 'Společná prezentace'}
-                {currentBoardType === 'pros-cons' && 'Pro a proti'}
-              </h4>
-              <p className="text-sm text-pink-700 mt-1">
-                {currentBoardType === 'text' && 'Žáci odpovídají krátkými textovými příspěvky. Všechny příspěvky se zobrazí v seznamu.'}
-                {currentBoardType === 'presentation' && 'Žáci vytvoří prezentaci společně. Každý příspěvek je jeden slide s textem a médiem.'}
-                {currentBoardType === 'pros-cons' && `Žáci přidávají argumenty do dvou sloupců: "${slide.leftColumnLabel || 'Pro'}" a "${slide.rightColumnLabel || 'Proti'}".`}
-              </p>
-              <div className="flex items-center gap-4 mt-3 text-xs text-pink-600">
-                <span className="flex items-center gap-1">
-                  <MessageSquare className="w-3 h-3" /> Příspěvky
-                </span>
-                <span className="flex items-center gap-1">
-                  <Heart className="w-3 h-3" /> Lajky
-                </span>
-                {currentBoardType === 'presentation' && (
-                  <span className="flex items-center gap-1">
-                    <ImageIcon className="w-3 h-3" /> Média
-                  </span>
-                )}
-                {currentBoardType === 'pros-cons' && (
-                  <span className="flex items-center gap-1">
-                    <Scale className="w-3 h-3" /> Dva sloupce
-                  </span>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+      <AssetPicker
+        isOpen={showAssetPicker}
+        onClose={() => setShowAssetPicker(false)}
+        onSelect={handleAssetSelect}
+        title="Vybrat obrázek k tématu"
+        allowMultiple={false}
+      />
     </div>
   );
 }

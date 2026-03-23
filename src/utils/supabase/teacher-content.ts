@@ -12,6 +12,7 @@
 
 import { supabase } from './client';
 import { Quiz } from '../../types/quiz';
+import { stripBase64FromObject } from './upload-image';
 
 // =============================================
 // TYPES
@@ -287,10 +288,13 @@ export async function saveBoard(board: Partial<TeacherBoard>): Promise<TeacherBo
 
   const slidesCount = Array.isArray(board.slides) ? board.slides.length : 0;
 
+  // ❌ NIKDY neukládat base64 do DB! Vždy stripovat před uložením.
+  const safeBoard = stripBase64FromObject(board) as Partial<TeacherBoard>;
+
   const { data, error } = await supabase
     .from('teacher_boards')
     .upsert({
-      ...board,
+      ...safeBoard,
       teacher_id: userId,
       slides_count: slidesCount,
       updated_at: new Date().toISOString(),
@@ -375,10 +379,13 @@ export async function saveWorksheet(worksheet: Partial<TeacherWorksheet>): Promi
   const userId = await getCurrentUserId();
   if (!userId) return null;
 
+  // ❌ NIKDY neukládat base64 do DB! Vždy stripovat před uložením.
+  const safeWorksheet = stripBase64FromObject(worksheet) as Partial<TeacherWorksheet>;
+
   const { data, error } = await supabase
     .from('teacher_worksheets')
     .upsert({
-      ...worksheet,
+      ...safeWorksheet,
       teacher_id: userId,
       updated_at: new Date().toISOString(),
     }, { onConflict: 'id' })

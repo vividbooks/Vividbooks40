@@ -195,7 +195,7 @@ export function WorksheetView({ title, data, onPrev, onNext, prevPageNumber, nex
         <div>
           <h3 className="text-[#4E5871] font-bold text-lg mb-4">Další možnosti:</h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
-            {data.pdfUrl && (
+            {data.pdfUrl ? (
               <a 
                 href={data.pdfUrl} 
                 target="_blank" 
@@ -205,6 +205,14 @@ export function WorksheetView({ title, data, onPrev, onNext, prevPageNumber, nex
                 <Printer className="h-6 w-6" />
                 <span className="font-medium">Otevřít PDF</span>
               </a>
+            ) : (
+              <button
+                onClick={() => window.print()}
+                className="flex items-center gap-3 p-4 rounded-lg transition-colors bg-[#4F46E5] text-white hover:bg-[#4338CA]"
+              >
+                <Printer className="h-6 w-6" />
+                <span className="font-medium">Stáhnout PDF</span>
+              </button>
             )}
 
             {/* Interactive Worksheet - Primary action if available */}

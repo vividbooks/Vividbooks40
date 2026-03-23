@@ -1,7 +1,7 @@
 /**
  * Quiz Live Session
  * 
- * Manages live quiz sessions via Firebase
+ * Manages live quiz sessions via Supabase
  * - Teacher starts session, gets code
  * - Students join with code
  * - Real-time sync of answers
@@ -9,8 +9,6 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ref, set, onValue, off, update } from 'firebase/database';
-import { database } from '../../utils/firebase-config';
 import {
   Play,
   Users,
@@ -34,16 +32,13 @@ import {
   SlideResponse,
   LiveQuizSession,
 } from '../../types/quiz';
-
-// ============================================
-// FIREBASE PATHS
-// ============================================
-
-const QUIZ_SESSIONS_PATH = 'quiz_sessions';
-
-function getSessionPath(sessionId: string) {
-  return `${QUIZ_SESSIONS_PATH}/${sessionId}`;
-}
+import {
+  createLiveSessionRecord,
+  getPreferredSessionBackend,
+  subscribeLiveSession,
+  updateLiveSessionRecord,
+} from '../../utils/live-session-repository';
+import { boardRoutes } from '../../features/board-v2';
 
 // ============================================
 // GENERATE SESSION CODE
@@ -107,29 +102,27 @@ export function TeacherSession({ quiz, teacherId, teacherName, onClose }: Teache
     };
     
     try {
-      // Save session data
-      await set(ref(database, getSessionPath(newSessionId)), sessionData);
-      
-      // Optimize quiz data for students - remove unnecessary fields to reduce bandwidth
-      const optimizedSlides = quiz.slides.map(slide => {
-        // Remove teacher-only fields like notes, edit history, etc.
-        const { ...slideData } = slide;
-        // Remove any large unnecessary data from slide content
-        if ('notes' in slideData) delete (slideData as any).notes;
-        if ('teacherNotes' in slideData) delete (slideData as any).teacherNotes;
-        if ('editHistory' in slideData) delete (slideData as any).editHistory;
-        return slideData;
+      await createLiveSessionRecord({
+        quiz: {
+          ...quiz,
+          slides: quiz.slides.map(slide => {
+            const { ...slideData } = slide;
+            if ('notes' in slideData) delete (slideData as any).notes;
+            if ('teacherNotes' in slideData) delete (slideData as any).teacherNotes;
+            if ('editHistory' in slideData) delete (slideData as any).editHistory;
+            return slideData;
+          }),
+        },
+        session: {
+          ...sessionData,
+          code,
+          quizData: {
+            id: quiz.id,
+            title: quiz.title,
+            slides: quiz.slides,
+          },
+        },
       });
-      
-      // Save optimized quiz data so students can load it
-      await set(ref(database, `${QUIZ_SESSIONS_PATH}/${newSessionId}/quizData`), {
-        id: quiz.id,
-        title: quiz.title,
-        slides: optimizedSlides,
-      });
-      
-      // Create lookup table entry for fast session lookup by code
-      await set(ref(database, `session_codes/${code}`), newSessionId);
       
       console.log('Session started successfully:', newSessionId);
       setSessionId(newSessionId);
@@ -144,23 +137,17 @@ export function TeacherSession({ quiz, teacherId, teacherName, onClose }: Teache
   // Listen to session updates
   useEffect(() => {
     if (!sessionId) return;
-    
-    const sessionRef = ref(database, getSessionPath(sessionId));
-    const unsubscribe = onValue(sessionRef, (snapshot) => {
-      const data = snapshot.val();
-      if (data) {
-        setSession(data as LiveQuizSession);
-      }
+
+    return subscribeLiveSession(getPreferredSessionBackend(), sessionId, (data) => {
+      setSession(data);
     });
-    
-    return () => off(sessionRef);
   }, [sessionId]);
   
   // Update session state
   const updateSession = useCallback(async (updates: Partial<LiveQuizSession>) => {
     if (!sessionId) return;
     try {
-      await update(ref(database, getSessionPath(sessionId)), updates);
+      await updateLiveSessionRecord(getPreferredSessionBackend(), sessionId, updates);
     } catch (error) {
       console.error('Failed to update session:', error);
     }
@@ -216,7 +203,7 @@ export function TeacherSession({ quiz, teacherId, teacherName, onClose }: Teache
       }
       
       if (viewResults) {
-        navigate(`/quiz/results/${sessionId}`);
+        navigate(boardRoutes.results(sessionId));
         return;
       }
     }

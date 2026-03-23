@@ -5,22 +5,17 @@
  * Based on Vividboard design from screenshot
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useParams, useNavigate, useSearchParams, type NavigateFunction } from 'react-router-dom';
 import {
   X,
-  Menu,
   ChevronLeft,
   ChevronRight,
   Users,
-  Edit3,
-  BarChart2,
-  Printer,
-  Share2,
-  ExternalLink,
   HelpCircle,
   Lightbulb,
   CheckCircle,
+  XCircle,
   Play,
   ArrowRight,
   ArrowLeft,
@@ -31,17 +26,15 @@ import {
   PanelLeft,
   PanelLeftClose,
   Copy,
-  QrCode,
-  StopCircle,
   RefreshCw,
   Lock,
   Unlock,
   AlertTriangle,
   MessageSquare,
   Vote,
-  Monitor,
   Swords,
   Crosshair,
+  Settings,
 } from 'lucide-react';
 import { useDeviceDetect } from '../../hooks/useDeviceDetect';
 import { Quiz, QuizSlide, ABCActivitySlide, OpenActivitySlide, ExampleActivitySlide, BoardActivitySlide, VotingActivitySlide, ConnectPairsActivitySlide, FillBlanksActivitySlide, ImageHotspotsActivitySlide, VideoQuizActivitySlide, InfoSlide, LiveQuizSession, SlideResponse, ToolsSlide } from '../../types/quiz';
@@ -53,6 +46,7 @@ import { ImageHotspotsView } from './slides/ImageHotspotsView';
 import { VideoQuizView } from './slides/VideoQuizView';
 import { FormView } from './slides/FormView';
 import { CertificateView } from './slides/CertificateView';
+import { FlashcardSlideView } from './slides/FlashcardSlideView';
 import { useBoardPosts } from '../../hooks/useBoardPosts';
 import { ShareEditDialog } from './ShareEditDialog';
 import ClassroomDashboard from './ClassroomDashboard';
@@ -63,17 +57,72 @@ import TacticalCompetitionView from './TacticalCompetitionView';
 import { useVoting } from '../../hooks/useVoting';
 import { getQuiz, saveQuiz, duplicateQuiz, moveQuizToFolder } from '../../utils/quiz-storage';
 import * as storage from '../../utils/profile-storage';
-import { database } from '../../utils/firebase-config';
-import { ref, set, onValue, off, update } from 'firebase/database';
 import { boardToWorksheet, getConversionSummary } from '../../utils/content-converter';
 import { saveWorksheet } from '../../utils/worksheet-storage';
 import { MathText } from '../math/MathText';
 import { ExampleActivityView } from './ExampleActivityView';
 import { AutoScaleQuestion } from './AutoScaleQuestion';
 import { QRCodeSVG } from 'qrcode.react';
-import { BlockLayoutView } from './QuizPreview';
+import { BlockLayoutView } from './BlockLayoutView';
 import { getClasses, ClassGroup } from '../../utils/supabase/classes';
 import { supabase } from '../../utils/supabase/client';
+import { projectId } from '../../utils/supabase/info';
+import { OsnovaPanel, OsnovaIcon } from './OsnovaPanel';
+import { NoteIcon } from './editor/NoteIcon';
+import { ABCSlideView } from './slides/ABCSlideView';
+import { OpenSlideView } from './slides/OpenSlideView';
+import { evaluateABCAnswer } from '../../utils/abc-evaluation';
+import { TeacherExampleView } from './slides/TeacherExampleView';
+import { InfoSlideView } from './slides/InfoSlideView';
+import {
+  getPreferredSessionBackend,
+  SessionBackend,
+  subscribeLiveSession,
+  updateLiveStudentRecord,
+} from '../../utils/live-session-repository';
+import { boardRoutes } from '../../features/board-v2';
+import type { BoardViewEntryFlags } from '../../features/board-v2/components/views/board-view';
+import { PresentationAnnotationsLayer } from '../../features/board-v2/annotations/PresentationAnnotationsLayer';
+import { usePresentationAnnotations } from '../../features/board-v2/annotations/annotation-session-store';
+import {
+  BoardViewEndSessionDialog,
+  BoardViewLiveEvaluateControls,
+  BoardViewRightPanel,
+  beginBoardClassroomShare,
+  buildCompetitionBoardSession,
+  buildBoardClassroomShareSession,
+  buildBoardShareLink,
+  buildBoardShareSession,
+  buildLiveBoardSession,
+  closeBoardEndDialog,
+  closeBoardLiveSettings,
+  closeBoardQrPopup,
+  closeBoardShareSettings,
+  closeBoardStudentOptions,
+  clearBoardClassroomUnsubscribe,
+  copyBoardText,
+  createBoardSessionId,
+  createBoardShareId,
+  createBoardShareSessionRecord,
+  finishBoardLiveSession,
+  generateBoardSessionCode,
+  getBoardTeacherIdentity,
+  loadBoardViewQuiz,
+  navigateToBoardLibrary,
+  openBoardEndDialog,
+  openBoardLiveSettings,
+  openBoardQrPopup,
+  openBoardShareSettings,
+  openBoardShareEditDialog,
+  openBoardStudentOptions,
+  patchBoardLiveSession,
+  printBoardWorksheet,
+  storeBoardClassroomUnsubscribe,
+  startBoardLiveSession,
+  subscribeToBoardClassroomShare,
+  toggleBoardOsnovaPanel,
+  toggleBoardRightPanel,
+} from '../../features/board-v2/components/views/board-view';
 
 // Toggle switch component - simple working version
 const ToggleSwitch = ({ enabled, onChange, label }: { enabled: boolean; onChange: (v: boolean) => void; label: string }) => {
@@ -111,13 +160,6 @@ const ToggleSwitch = ({ enabled, onChange, label }: { enabled: boolean; onChange
   );
 };
 
-// Firebase paths
-const QUIZ_SESSIONS_PATH = 'quiz_sessions';
-
-function getSessionPath(sessionId: string) {
-  return `${QUIZ_SESSIONS_PATH}/${sessionId}`;
-}
-
 function generateSessionCode(): string {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   let code = '';
@@ -128,461 +170,62 @@ function generateSessionCode(): string {
 }
 
 // ============================================
-// SLIDE RENDERERS
-// ============================================
-
-interface SlideViewProps {
-  slide: QuizSlide;
-  showHint: boolean;
-  showSolution: boolean;
-  selectedAnswer?: string;
-  onSelectAnswer?: (answerId: string) => void;
-}
-
-function ABCSlideView({ slide, showHint, showSolution, selectedAnswer, onSelectAnswer }: SlideViewProps & { slide: ABCActivitySlide }) {
-  const hasImage = !!slide.media?.url;
-  const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
-  const answerType = (slide as any).answerType;
-  const isBubblesMode = answerType === 'bubbles' || answerType === 'squares';
-  const isSquaresStyle = answerType === 'squares';
-  const isSquareMode = answerType === 'image' || answerType === 'emoji';
-  const optionCount = slide.options.length;
-  const bubbleColors = ['#93C5FD', '#7DD3FC', '#A5B4FC', '#BAE6FD', '#C7D2FE', '#E0F2FE'];
-  
-  const getSquareSize = () => {
-    if (isMobile) return optionCount <= 2 ? '168px' : '120px';
-    if (optionCount <= 2) return '240px';
-    if (optionCount <= 3) return '192px';
-    return '168px';
-  };
-
-  const seeded = (i: number, salt: number) => {
-    const x = Math.sin(i * 127.1 + salt * 311.7) * 43758.5453;
-    return x - Math.floor(x);
-  };
-
-  const renderBubbleOption = (option: any, idx: number) => {
-    const isSelected = selectedAnswer === option.id;
-    const isCorrect = showSolution && option.isCorrect;
-    const isWrong = showSolution && isSelected && !option.isCorrect;
-    const color = bubbleColors[idx % bubbleColors.length];
-    const size = isMobile ? 130 : optionCount <= 3 ? 220 : 180;
-    const rotation = (seeded(idx, 1) - 0.5) * (isMobile ? 14 : 28);
-    const offsetX = (seeded(idx, 2) - 0.5) * (isMobile ? 10 : 40);
-    const offsetY = (seeded(idx, 3) - 0.5) * (isMobile ? 10 : 40);
-    const scaleJitter = 0.95 + seeded(idx, 4) * 0.10;
-    return (
-      <button
-        key={option.id}
-        onClick={() => onSelectAnswer?.(option.id)}
-        disabled={showSolution}
-        className="flex items-center justify-center font-bold transition-all"
-        style={{
-          width: size, height: size,
-          borderRadius: isSquaresStyle ? (isMobile ? 20 : 28) : '50%',
-          backgroundColor: isCorrect ? '#10B981' : isWrong ? '#EF4444' : color,
-          color: (isCorrect || isWrong) ? '#fff' : '#1e3a5f',
-          fontSize: isMobile ? 18 : size > 180 ? 32 : 26,
-          border: isSelected && !showSolution ? '4px solid #1e40af' : isCorrect ? '4px solid #059669' : isWrong ? '4px solid #DC2626' : '4px solid transparent',
-          boxShadow: isSelected ? '0 6px 24px rgba(59,130,246,0.3)' : '0 3px 12px rgba(59,130,246,0.15)',
-          transform: `translate(${offsetX}px, ${offsetY}px) rotate(${isSelected ? 0 : rotation}deg) scale(${isSelected ? 1.1 : scaleJitter})`,
-          lineHeight: 1.2, textAlign: 'center', padding: isMobile ? 10 : 12,
-        }}
-      >
-        <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, transform: isSquaresStyle ? undefined : `rotate(${isSelected ? 0 : -rotation}deg)` }}>
-          <span style={{ fontSize: isMobile ? 11 : 13, fontWeight: 800, opacity: 0.5, letterSpacing: 1 }}>{String.fromCharCode(65 + idx)}</span>
-          <MathText>{option.textContent || option.content || option.label}</MathText>
-          {(isCorrect || isWrong) && <span style={{ fontSize: isMobile ? 18 : 24 }}>{isCorrect ? '✓' : '✗'}</span>}
-        </span>
-      </button>
-    );
-  };
-  
-  const renderOption = (option: any) => {
-    const isSelected = selectedAnswer === option.id;
-    const isCorrect = showSolution && option.isCorrect;
-    const isWrong = showSolution && isSelected && !option.isCorrect;
-    
-    return (
-      <button
-        key={option.id}
-        onClick={() => onSelectAnswer?.(option.id)}
-        disabled={showSolution}
-        className={`
-          relative p-3 md:p-4 rounded-2xl text-left transition-all border-2 
-          ${isSquareMode ? 'flex flex-col items-center justify-center' : 'flex items-center gap-3 md:gap-4'}
-          ${isCorrect ? 'bg-green-50 border-green-500' : ''}
-          ${isWrong ? 'bg-red-50 border-red-500' : ''}
-          ${!showSolution && isSelected ? 'border-indigo-500 bg-indigo-50' : ''}
-          ${!showSolution && !isSelected ? 'bg-white border-slate-100 hover:border-indigo-200 hover:shadow-md' : ''}
-          ${!isCorrect && !isWrong && !isSelected && showSolution ? 'bg-white border-slate-100 opacity-50' : ''}
-        `}
-        style={isSquareMode ? { width: getSquareSize(), height: getSquareSize() } : {}}
-      >
-        {/* Label */}
-        <span 
-          style={{
-            width: isMobile ? '28px' : '36px',
-            height: isMobile ? '28px' : '36px',
-            borderRadius: '8px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontWeight: 'bold',
-            fontSize: isMobile ? '12px' : '14px',
-            flexShrink: 0,
-            transition: 'all 0.2s',
-            backgroundColor: isCorrect ? '#bbf7d0' : isWrong ? '#fecaca' : (!showSolution && isSelected) ? '#c7d2fe' : '#cbd5e1',
-            color: isCorrect ? '#166534' : isWrong ? '#991b1b' : (!showSolution && isSelected) ? '#3730a3' : '#475569',
-            position: isSquareMode ? 'absolute' : 'relative',
-            top: isSquareMode ? '6px' : 'auto',
-            left: isSquareMode ? '6px' : 'auto',
-          }}
-        >
-          {option.label || option.id?.toUpperCase() || '?'}
-        </span>
-        
-        {/* Content based on answer type - strictly separated */}
-        {answerType === 'image' ? (
-          // IMAGE MODE - show image or placeholder
-          option.imageUrl ? (
-            <img 
-              src={option.imageUrl} 
-              alt={option.label}
-              className="w-full h-full object-cover rounded-xl"
-            />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center text-slate-300">
-              <span className="text-4xl">🖼️</span>
-            </div>
-          )
-        ) : answerType === 'emoji' ? (
-          // EMOJI MODE - show emoji only
-          <span 
-            className="text-center"
-            style={{ 
-              fontSize: isMobile ? '40px' : optionCount <= 2 ? '72px' : '56px',
-              fontFamily: 'Apple Color Emoji, Segoe UI Emoji, sans-serif' 
-            }}
-          >
-            {option.emojiContent || '😊'}
-          </span>
-        ) : (
-          // TEXT MODE - show text only
-          <span className="text-base md:text-xl font-medium text-[#4E5871] flex-1">
-            <MathText>{option.textContent || option.content || ''}</MathText>
-          </span>
-        )}
-        
-        {/* Correct/Wrong indicators */}
-        {isCorrect && (
-          <CheckCircle className={`w-5 h-5 md:w-6 md:h-6 text-green-600 ${isSquareMode ? 'absolute bottom-2 right-2' : ''}`} />
-        )}
-        {isWrong && (
-          <XCircle className={`w-5 h-5 md:w-6 md:h-6 text-red-500 ${isSquareMode ? 'absolute bottom-2 right-2' : ''}`} />
-        )}
-      </button>
-    );
-  };
-
-  // Bubbles layout - two-column (question left, bubbles right)
-  if (isBubblesMode) {
-    return (
-      <div className={isMobile ? "flex flex-col h-full p-4 overflow-auto" : "flex h-full p-6 gap-6"}>
-        {/* Left/Top: Question + Image (identical to regular ABC) */}
-        {isMobile ? (
-          <>
-            <div className="flex-1 flex items-center justify-center py-6 px-2">
-              <h1 className="text-2xl font-bold leading-relaxed text-center" style={{ color: 'inherit' }}>
-                <MathText>{slide.question || ''}</MathText>
-              </h1>
-            </div>
-            {hasImage && (
-              <div className="flex justify-center py-4">
-                <img src={slide.media!.url} alt="" className="max-w-full max-h-40 object-contain" />
-              </div>
-            )}
-          </>
-        ) : hasImage ? (
-          <div className="flex-1 flex flex-col">
-            <div className="flex items-center justify-center p-4" style={{ height: '50%' }}>
-              <h1 className="text-3xl md:text-4xl font-bold text-center leading-tight" style={{ color: 'inherit' }}>
-                <MathText>{slide.question || ''}</MathText>
-              </h1>
-            </div>
-            <div className="flex items-center justify-center" style={{ height: '50%' }}>
-              <img src={slide.media!.url} alt="" className="max-w-full max-h-full object-contain" />
-            </div>
-          </div>
-        ) : (
-          <div className="flex-1 flex items-center justify-center p-6">
-            <AutoScaleQuestion targetFill={0.85} maxFontSize={150}>{slide.question || ''}</AutoScaleQuestion>
-          </div>
-        )}
-        {/* Right/Bottom: Bubbles */}
-        <div
-          className="flex flex-col items-center justify-center"
-          style={{
-            flex: isMobile ? undefined : '0 0 45%',
-            minHeight: isMobile ? undefined : '100%',
-            gap: isMobile ? 6 : 20,
-            padding: isMobile ? '4px 8px 16px' : 24,
-          }}
-        >
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(auto-fill, minmax(180px, 1fr))',
-              gap: isMobile ? 8 : 20,
-              width: '100%',
-              justifyItems: 'center',
-              overflow: 'visible',
-            }}
-          >
-            {slide.options.map((opt, i) => renderBubbleOption(opt, i))}
-          </div>
-        </div>
-        {showSolution && slide.explanation && (
-          <div className="absolute bottom-4 left-4 right-4 p-3 rounded-xl bg-blue-50 border border-blue-200">
-            <p className="text-sm text-blue-800"><MathText>{slide.explanation}</MathText></p>
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  // Mobile layout - always vertical
-  if (isMobile) {
-    return (
-      <div className="flex flex-col h-full p-4 overflow-auto">
-        {/* Question - more space around it */}
-        <div className="flex-1 flex items-center justify-center py-6 px-2">
-          <h1 className="text-2xl font-bold leading-relaxed text-center" style={{ color: 'inherit' }}>
-            <MathText>{slide.question || ''}</MathText>
-          </h1>
-        </div>
-        
-        {/* Image if present */}
-        {hasImage && (
-          <div className="flex justify-center py-4">
-            <img 
-              src={slide.media!.url} 
-              alt="Obrázek k otázce"
-              className="max-w-full max-h-40 object-contain"
-              onError={(e) => {
-                // Hide broken images
-                (e.target as HTMLImageElement).style.display = 'none';
-              }}
-            />
-          </div>
-        )}
-        
-        {/* Options */}
-        <div className={isSquareMode ? 'grid grid-cols-2 gap-2 pb-4' : 'flex flex-col gap-2 pb-4'}>
-          {slide.options.map(renderOption)}
-        </div>
-        
-        {/* Explanation */}
-        {showSolution && slide.explanation && (
-          <div className="p-3 rounded-xl bg-blue-50 border border-blue-200 mb-4">
-            <p className="text-sm text-blue-800"><MathText>{slide.explanation}</MathText></p>
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  // Desktop layout WITH image: Left side (question + image) | Right side (options)
-  if (hasImage) {
-    return (
-      <div className="flex h-full p-6 gap-6">
-        {/* Left side - Question and Image */}
-        <div className="flex-1 flex flex-col">
-          {/* Question - 50% height */}
-          <div className="flex items-center justify-center p-4" style={{ height: '50%' }}>
-            <h1 className="text-3xl md:text-4xl font-bold text-center leading-tight" style={{ color: 'inherit' }}>
-              <MathText>{slide.question || ''}</MathText>
-            </h1>
-          </div>
-          
-          {/* Image - 50% height */}
-          <div className="flex items-center justify-center" style={{ height: '50%' }}>
-            <img 
-              src={slide.media!.url} 
-              alt="Obrázek k otázce"
-              className="max-w-full max-h-full object-contain"
-              onError={(e) => {
-                (e.target as HTMLImageElement).style.display = 'none';
-              }}
-            />
-          </div>
-        </div>
-        
-        {/* Right side - Options */}
-        <div className={isSquareMode
-          ? 'flex-shrink-0 flex flex-wrap gap-3 justify-center items-center'
-          : 'w-80 flex-shrink-0 flex flex-col gap-3 justify-center'
-        }>
-          {slide.options.map(renderOption)}
-        </div>
-        
-        {/* Explanation */}
-        {showSolution && slide.explanation && (
-          <div className="absolute bottom-4 left-6 right-6 p-4 rounded-xl bg-blue-50 border border-blue-200">
-            <p className="text-blue-800"><MathText>{slide.explanation}</MathText></p>
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  // Desktop layout WITHOUT image
-  return (
-    <div className="flex flex-col h-full">
-      <div className="flex items-center justify-center p-6" style={{ height: '65%' }}>
-        <AutoScaleQuestion targetFill={0.85} maxFontSize={150}>{slide.question || ''}</AutoScaleQuestion>
-      </div>
-      
-      <div className="flex-1 flex items-end pb-6">
-        <div className={isSquareMode
-          ? 'flex gap-4 px-6 justify-center mx-auto'
-          : 'grid grid-cols-2 gap-4 px-6 max-w-4xl mx-auto w-full'
-        }>
-          {slide.options.map(renderOption)}
-        </div>
-      </div>
-      
-      {/* Explanation */}
-      {showSolution && slide.explanation && (
-        <div className="mx-6 mb-6 p-4 rounded-xl bg-blue-50 border border-blue-200">
-          <p className="text-blue-800"><MathText>{slide.explanation}</MathText></p>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function OpenSlideView({ slide }: { slide: OpenActivitySlide }) {
-  return (
-    <div className="flex flex-col h-full items-center justify-center p-8">
-      <h1 
-        className="text-4xl md:text-5xl font-bold text-center leading-tight mb-8"
-        style={{ overflowWrap: 'normal', wordBreak: 'normal', hyphens: 'none', color: '#4E5871' }}
-      >
-        <MathText>{slide.question || 'Otevřená otázka...'}</MathText>
-      </h1>
-      
-      {/* Question image */}
-      {slide.media?.url && slide.media?.type === 'image' && (
-        <img 
-          src={slide.media.url} 
-          alt="Obrázek k otázce"
-          className="mb-6 max-w-full max-h-48 md:max-h-64 object-contain"
-          onError={(e) => {
-            (e.target as HTMLImageElement).style.display = 'none';
-          }}
-        />
-      )}
-      
-      <div className="w-full max-w-2xl">
-        <textarea 
-          className="w-full h-40 p-4 rounded-xl border-2 border-slate-200 focus:border-indigo-400 focus:ring-0 text-lg resize-none"
-          placeholder="Napište svou odpověď..."
-        />
-      </div>
-    </div>
-  );
-}
-
-/** Teacher-facing wrapper for ExampleActivityView with local answer state */
-function TeacherExampleView({ slide, customKeys, extraKeys }: { slide: ExampleActivitySlide; customKeys?: [import('../../types/quiz').CustomKeyboardKey | null, import('../../types/quiz').CustomKeyboardKey | null, import('../../types/quiz').CustomKeyboardKey | null]; extraKeys?: [import('../../types/quiz').CustomKeyboardKey | null, import('../../types/quiz').CustomKeyboardKey | null, import('../../types/quiz').CustomKeyboardKey | null] }) {
-  const [textAnswer, setTextAnswer] = useState('');
-  const [hasAnswered, setHasAnswered] = useState(false);
-  const [response, setResponse] = useState<SlideResponse | null>(null);
-
-  const handleSubmit = useCallback(() => {
-    const studentAns = textAnswer.trim().toLowerCase();
-    const allCorrect = [
-      ...(slide.finalAnswer ? [slide.finalAnswer] : []),
-      ...((slide as any).alternativeAnswers || []).filter(Boolean),
-    ];
-    const isCorrect = allCorrect.length > 0
-      ? allCorrect.some((a: string) => a.trim().toLowerCase() === studentAns)
-      : false;
-    setResponse({
-      visitorId: 'teacher',
-      visitorName: 'Učitel',
-      slideId: slide.id,
-      answer: textAnswer,
-      isCorrect,
-      timestamp: Date.now(),
-    });
-    setHasAnswered(true);
-  }, [textAnswer, slide]);
-
-  return (
-    <ExampleActivityView
-      slide={slide}
-      textAnswer={textAnswer}
-      setTextAnswer={setTextAnswer}
-      hasAnswered={hasAnswered}
-      response={response}
-      showResults={hasAnswered}
-      showExplanation={true}
-      onSubmit={handleSubmit}
-      customKeys={customKeys}
-      extraKeys={extraKeys}
-    />
-  );
-}
-
-function InfoSlideView({ slide }: { slide: InfoSlide }) {
-  // If slide has new block-based layout, render it
-  if (slide.layout && slide.layout.blocks.length > 0) {
-    return (
-      <div className="flex-1 h-full">
-        <BlockLayoutView slide={slide} />
-      </div>
-    );
-  }
-
-  // Fallback to legacy format
-  return (
-    <div className="flex flex-col flex-1 h-full p-8">
-      {slide.title && (
-        <h1 className="text-3xl md:text-4xl font-bold mb-6" style={{ color: '#4E5871' }}>
-          <MathText>{slide.title}</MathText>
-        </h1>
-      )}
-      {slide.content && (
-        <div 
-          className="prose prose-lg max-w-none flex-1"
-          dangerouslySetInnerHTML={{ __html: slide.content }}
-        />
-      )}
-      {slide.media && (
-        <div className="mt-8">
-          {slide.media.type === 'image' && (
-            <img src={slide.media.url} alt={slide.media.caption || ''} className="max-h-96 object-contain" />
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ============================================
 // MAIN COMPONENT
 // ============================================
 
-export function QuizViewPage() {
-  const { id } = useParams<{ id: string }>();
-  const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+interface QuizViewPageProps {
+  boardId?: string;
+  queryParams?: URLSearchParams;
+  navigateOverride?: NavigateFunction;
+  entryFlags?: BoardViewEntryFlags;
+  persistence?: {
+    loadBoardLocal: (boardId: string) => Quiz | null;
+    loadBoardAsync: (boardId: string) => Promise<Quiz | null>;
+    saveBoard: (quiz: Quiz) => void;
+  };
+  routes?: Pick<typeof boardRoutes, 'edit' | 'present' | 'results' | 'student'>;
+}
+
+const TEACHER_EVALUATABLE_ACTIVITY_TYPES = new Set([
+  'abc',
+  'example',
+  'true-false',
+  'trueFalse',
+  'connect-pairs',
+  'fill-blanks',
+  'image-hotspots',
+  'video-quiz',
+]);
+
+export function QuizViewPage({
+  boardId,
+  queryParams,
+  navigateOverride,
+  entryFlags,
+  persistence,
+  routes = boardRoutes,
+}: QuizViewPageProps = {}) {
+  const { id: routedId } = useParams<{ id: string }>();
+  const navigateFromRouter = useNavigate();
+  const [searchParamsFromRouter] = useSearchParams();
+  const id = boardId ?? routedId;
+  const navigate = navigateOverride ?? navigateFromRouter;
+  const searchParams = queryParams ?? searchParamsFromRouter;
   
   // Topic and subject from URL params (for folder structure when copying)
-  const topicSlug = searchParams.get('topic') || '';
-  const subjectSlug = searchParams.get('subject') || 'fyzika';
+  const resolvedEntryFlags = entryFlags ?? {
+    topicSlug: searchParams.get('topic') || '',
+    subjectSlug: searchParams.get('subject') || 'fyzika',
+  };
+  const topicSlug = resolvedEntryFlags.topicSlug;
+  const subjectSlug = resolvedEntryFlags.subjectSlug;
+  const viewPersistence = useMemo(() => (
+    persistence ?? {
+      loadBoardLocal: getQuiz,
+      loadBoardAsync: async (boardId: string) => getQuiz(boardId),
+      saveBoard: saveQuiz,
+    }
+  ), [persistence]);
   
   // State
   const [quiz, setQuiz] = useState<Quiz | null>(null);
@@ -590,21 +233,36 @@ export function QuizViewPage() {
   const [prevSlideIndex, setPrevSlideIndex] = useState(0);
   const [showMenu, setShowMenu] = useState(false);
   const [showStudentOptions, setShowStudentOptions] = useState(false);
+  const [hoveredStudentOption, setHoveredStudentOption] = useState<string | null>(null);
   const [showCompetitionPicker, setShowCompetitionPicker] = useState(false);
   const [showShareSettings, setShowShareSettings] = useState(false);
   const [loading, setLoading] = useState(true);
   const [isAnimating, setIsAnimating] = useState(false);
   const [showRightPanel, setShowRightPanel] = useState(true);
-  const [showMobileMenu, setShowMobileMenu] = useState(false);
+  const [showOsnovaPanel, setShowOsnovaPanel] = useState(false);
+  const [showNotePanel, setShowNotePanel] = useState(false);
+  const [osnovaWidth, setOsnovaWidth] = useState(300);
+  const [isDesktopViewport, setIsDesktopViewport] = useState(() => (
+    typeof window === 'undefined' ? true : window.innerWidth >= 1024
+  ));
+  const osnovaSidebarRef = React.useRef<HTMLDivElement>(null);
   
   // Device detection
   const { isMobile, isTablet, isTouchDevice } = useDeviceDetect();
   const isMobileOrTablet = isMobile || isTablet;
   
+  useEffect(() => {
+    const handleResize = () => setIsDesktopViewport(window.innerWidth >= 1024);
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+  
   // Live session state
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [sessionCode, setSessionCode] = useState<string | null>(null);
   const [session, setSession] = useState<LiveQuizSession | null>(null);
+  const [sessionBackend, setSessionBackend] = useState<SessionBackend>(getPreferredSessionBackend());
   const [isStartingSession, setIsStartingSession] = useState(false);
   const [copied, setCopied] = useState(false);
   const [showEndDialog, setShowEndDialog] = useState(false);
@@ -636,6 +294,7 @@ export function QuizViewPage() {
   const [classroomShareLink, setClassroomShareLink] = useState<string | null>(null);
   const [classroomStudents, setClassroomStudents] = useState<Record<string, any>>({});
   const [classroomStarted, setClassroomStarted] = useState(false);
+  const [classroomShareBackend, setClassroomShareBackend] = useState<SessionBackend>(getPreferredSessionBackend());
   
   // Competition mode
   const [competitionActive, setCompetitionActive] = useState(false);
@@ -645,9 +304,13 @@ export function QuizViewPage() {
   
   // Share edit dialog
   const [showShareEditDialog, setShowShareEditDialog] = useState(false);
+  const annotations = usePresentationAnnotations();
+  const annotationDockHeight = annotations.toolbarOpen && isDesktopViewport ? 60 : 0;
   
   // Get current user
   const profile = storage.getCurrentUserProfile();
+  const currentUserId = profile?.userId || profile?.id;
+  const currentUserName = (profile as any)?.firstName || profile?.name;
   
   // Check ownership - user owns the board if they created it OR if it's a system board (no createdBy)
   // System boards (from library) should show "Copy and Edit" for all users
@@ -663,19 +326,35 @@ export function QuizViewPage() {
   const boardPosts = useBoardPosts({
     sessionId: sessionId,
     slideId: currentSlideForBoard?.id || '',
-    currentUserId: profile?.id,
-    currentUserName: profile?.name,
+    currentUserId,
+    currentUserName,
+    sessionType: 'live',
+    backend: sessionBackend,
   });
   
   // Voting for current slide (if it's a voting activity)
   const voting = useVoting({
     sessionId: sessionId,
     slideId: currentSlideForBoard?.id || '',
-    currentUserId: profile?.id,
-    currentUserName: profile?.name,
+    currentUserId,
+    currentUserName,
+    sessionType: 'live',
+    backend: sessionBackend,
   });
   
   // Load quiz
+  // Re-read quiz from localStorage when thumbnails are updated in the background
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ quizId: string }>).detail;
+      if (detail?.quizId !== id) return;
+      const fresh = viewPersistence.loadBoardLocal(id);
+      if (fresh) setQuiz(fresh);
+    };
+    window.addEventListener('quiz-thumbnails-updated', handler);
+    return () => window.removeEventListener('quiz-thumbnails-updated', handler);
+  }, [id, viewPersistence]);
+
   useEffect(() => {
     if (!id) {
       console.log('[QuizViewPage] No ID provided');
@@ -683,111 +362,17 @@ export function QuizViewPage() {
       return;
     }
     
-    console.log(`[QuizViewPage] Loading quiz with ID: ${id}`);
-    
-    // Debug: check localStorage directly
-    const storageKey = `vividbooks_quiz_${id}`;
-    const rawData = localStorage.getItem(storageKey);
-    console.log(`[QuizViewPage] Direct localStorage check for ${storageKey}: ${rawData ? 'EXISTS (' + rawData.length + ' bytes)' : 'NOT FOUND'}`);
-    
-    // Debug: list all quiz keys in localStorage
-    const allQuizKeys = Object.keys(localStorage).filter(k => k.startsWith('vividbooks_quiz'));
-    console.log('[QuizViewPage] All quiz keys in localStorage:', allQuizKeys);
-    
-    // First try localStorage
-    const loadedQuiz = getQuiz(id);
-    console.log(`[QuizViewPage] getQuiz result:`, loadedQuiz ? { id: loadedQuiz.id, title: loadedQuiz.title, slides: loadedQuiz.slides?.length } : 'NULL');
-    
-    if (loadedQuiz && loadedQuiz.slides && loadedQuiz.slides.length > 0) {
-      setQuiz(loadedQuiz);
-      setLoading(false);
-      return;
-    }
-    
-    // If not in localStorage, try to fetch from Supabase pages API
-    console.log(`[QuizViewPage] Not in localStorage (or empty), trying Supabase...`);
-    const boardSlug = `board-${id}`;
-    
     const fetchFromSupabase = async () => {
       try {
-        // Try all categories - knihovna-vividbooks first (where auto-saved boards go)
-        const categories = ['knihovna-vividbooks', 'matematika', 'fyzika', 'chemie', 'prirodopis'];
-        
-        for (const category of categories) {
-          const url = `https://njbtqmsxbyvpwigfceke.supabase.co/functions/v1/make-server-46c8107b/pages/${boardSlug}?category=${category}`;
-          console.log(`[QuizViewPage] Trying: ${url}`);
-          
-          const response = await fetch(url);
-          
-          if (response.ok) {
-            const data = await response.json();
-            console.log(`[QuizViewPage] Found in category ${category}:`, data);
-            
-            // Check if it has worksheetData (board content)
-            const pageData = data.page || data;
-            if (pageData.worksheetData) {
-              const quizData = pageData.worksheetData as Quiz;
-              console.log(`[QuizViewPage] Loaded quiz from Supabase:`, { id: quizData.id, slides: quizData.slides?.length });
-              
-              // Save to localStorage for next time
-              saveQuiz(quizData);
-              
-              setQuiz(quizData);
-              setLoading(false);
-              return;
-            }
-          }
-        }
-        
-        // Try teacher_boards table (where the editor saves quizzes)
-        console.log(`[QuizViewPage] Trying teacher_boards table...`);
-        try {
-          const { data: boardData, error: boardError } = await supabase
-            .from('teacher_boards')
-            .select('*')
-            .eq('id', id)
-            .maybeSingle(); // Use maybeSingle to avoid error when not found
-          
-          if (boardData && !boardError) {
-            console.log(`[QuizViewPage] Found in teacher_boards:`, { id: boardData.id, slides: boardData.slides?.length });
-            const quizFromTeacher: Quiz = {
-              id: boardData.id,
-              title: boardData.title || 'Board',
-              slides: boardData.slides || [],
-              createdAt: boardData.created_at,
-              updatedAt: boardData.updated_at,
-            };
-            
-            // Save to localStorage for next time
-            saveQuiz(quizFromTeacher);
-            
-            setQuiz(quizFromTeacher);
-            setLoading(false);
-            return;
-          } else {
-            console.log(`[QuizViewPage] Not found in teacher_boards:`, boardError?.message || 'no record');
-          }
-        } catch (tbError) {
-          console.error(`[QuizViewPage] Error fetching from teacher_boards:`, tbError);
-        }
-        
-        // Last resort: if raw localStorage data exists but getQuiz failed, try parsing directly
-        if (rawData) {
-          console.log(`[QuizViewPage] Trying direct parse of localStorage...`);
-          try {
-            const directQuiz = JSON.parse(rawData) as Quiz;
-            if (directQuiz && directQuiz.slides) {
-              console.log(`[QuizViewPage] Direct parse successful:`, { id: directQuiz.id, slides: directQuiz.slides.length });
-              setQuiz(directQuiz);
-              setLoading(false);
-              return;
-            }
-          } catch (parseErr) {
-            console.error(`[QuizViewPage] Direct parse failed:`, parseErr);
-          }
-        }
-        
-        console.log(`[QuizViewPage] Board not found anywhere`);
+        const result = await loadBoardViewQuiz({
+          boardId: id,
+          persistence: viewPersistence,
+          supabase,
+          storage: typeof window !== 'undefined' ? window.localStorage : undefined,
+          projectId,
+        });
+
+        setQuiz(result.quiz);
         setLoading(false);
       } catch (err) {
         console.error(`[QuizViewPage] Error fetching from Supabase:`, err);
@@ -796,7 +381,7 @@ export function QuizViewPage() {
     };
     
     fetchFromSupabase();
-  }, [id]);
+  }, [id, viewPersistence]);
   
   // Keyboard navigation
   useEffect(() => {
@@ -817,6 +402,20 @@ export function QuizViewPage() {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [currentSlideIndex, quiz, showStudentOptions]);
+
+  // Re-read quiz from localStorage when thumbnails are updated in the background
+  useEffect(() => {
+    const handleThumbnailsUpdated = (e: Event) => {
+      const detail = (e as CustomEvent<{ quizId: string }>).detail;
+      if (!quiz || detail?.quizId !== quiz.id) return;
+      const fresh = viewPersistence.loadBoardLocal(quiz.id);
+      if (fresh?.worksheetMap) {
+        setQuiz((prev) => prev ? { ...prev, worksheetMap: fresh.worksheetMap } : prev);
+      }
+    };
+    window.addEventListener('quiz-thumbnails-updated', handleThumbnailsUpdated);
+    return () => window.removeEventListener('quiz-thumbnails-updated', handleThumbnailsUpdated);
+  }, [quiz?.id, viewPersistence]);
   
   const goToNextSlide = useCallback(() => {
     if (quiz && currentSlideIndex < quiz.slides.length - 1 && !isAnimating) {
@@ -845,38 +444,20 @@ export function QuizViewPage() {
     if (isStartingSession || !quiz) return;
     setIsStartingSession(true);
     
-    const code = generateSessionCode();
-    const newSessionId = `quiz_${code}_${Date.now()}`;
-    
-    const sessionData: LiveQuizSession = {
-      id: newSessionId,
-      quizId: quiz.id,
-      code: code, // IMPORTANT: Store code so students can find the session!
-      teacherId: profile?.userId || 'anonymous',
-      teacherName: (profile as any)?.firstName || profile?.name || 'Učitel',
-      isActive: true,
-      currentSlideIndex: currentSlideIndex,
-      isPaused: false,
-      showResults: false,
-      isLocked: true, // Default: students follow teacher
-      students: {},
-      createdAt: new Date().toISOString(),
-      settings: {
-        showSolutionHints: liveShowSolutionHints,
-      },
-    };
+    const code = generateBoardSessionCode();
+    const newSessionId = createBoardSessionId(code);
+    const sessionData = buildLiveBoardSession({
+      quiz,
+      code,
+      sessionId: newSessionId,
+      teacher: getBoardTeacherIdentity(profile),
+      currentSlideIndex,
+      showSolutionHints: liveShowSolutionHints,
+    });
     
     try {
-      await set(ref(database, getSessionPath(newSessionId)), sessionData);
-      await set(ref(database, `${QUIZ_SESSIONS_PATH}/${newSessionId}/quizData`), {
-        id: quiz.id,
-        title: quiz.title,
-        slides: quiz.slides,
-      });
-      
-      // Create lookup table entry for fast session lookup by code
-      await set(ref(database, `session_codes/${code}`), newSessionId);
-      
+      const backend = await startBoardLiveSession({ quiz, session: sessionData });
+      setSessionBackend(backend);
       setSessionId(newSessionId);
       setSessionCode(code);
       setSession(sessionData);
@@ -893,46 +474,19 @@ export function QuizViewPage() {
     if (isStartingSession || !quiz) return;
     setIsStartingSession(true);
     
-    const code = generateSessionCode();
-    const newSessionId = `quiz_${code}_${Date.now()}`;
-    
-    const sessionData: LiveQuizSession = {
-      id: newSessionId,
-      quizId: quiz.id,
-      code: code,
-      teacherId: profile?.userId || 'anonymous',
-      teacherName: (profile as any)?.firstName || profile?.name || 'Učitel',
-      isActive: true,
-      currentSlideIndex: 0,
+    const code = generateBoardSessionCode();
+    const newSessionId = createBoardSessionId(code);
+    const sessionData = buildCompetitionBoardSession({
+      quiz,
+      code,
+      sessionId: newSessionId,
+      teacher: getBoardTeacherIdentity(profile),
       mode: 'competition',
-      isPaused: false,
-      showResults: false,
-      isLocked: true,
-      competitionPhase: 'lobby',
-      competitionData: {
-        currentQuestionIndex: 0,
-        questionSlideIds: quiz.slides.filter(s => s.type === 'activity').map(s => s.id),
-        timerDuration: 45,
-        timerPaused: false,
-        evaluated: false,
-        scores: {},
-      },
-      students: {},
-      createdAt: new Date().toISOString(),
-      settings: {
-        showSolutionHints: false,
-      },
-    };
+    });
     
     try {
-      await set(ref(database, getSessionPath(newSessionId)), sessionData);
-      await set(ref(database, `${QUIZ_SESSIONS_PATH}/${newSessionId}/quizData`), {
-        id: quiz.id,
-        title: quiz.title,
-        slides: quiz.slides,
-      });
-      await set(ref(database, `session_codes/${code}`), newSessionId);
-      
+      const backend = await startBoardLiveSession({ quiz, session: sessionData });
+      setSessionBackend(backend);
       setSessionId(newSessionId);
       setSessionCode(code);
       setSession(sessionData);
@@ -948,44 +502,34 @@ export function QuizViewPage() {
   // End competition
   const endCompetition = useCallback(() => {
     if (sessionId) {
-      update(ref(database, getSessionPath(sessionId)), { isActive: false, endedAt: new Date().toISOString() });
+      finishBoardLiveSession({ backend: sessionBackend, sessionId });
     }
     setCompetitionActive(false);
     setSessionId(null);
     setSessionCode(null);
     setSession(null);
-  }, [sessionId]);
+  }, [sessionBackend, sessionId]);
 
   // Start team competition session
   const startTeamCompetition = useCallback(async () => {
     if (isStartingSession || !quiz) return;
     setIsStartingSession(true);
 
-    const code = generateSessionCode();
-    const newSessionId = `quiz_${code}_${Date.now()}`;
-
-    const sessionData: LiveQuizSession = {
-      id: newSessionId,
-      quizId: quiz.id,
-      code: code,
-      teacherId: profile?.userId || 'anonymous',
-      teacherName: (profile as any)?.firstName || profile?.name || 'Učitel',
-      isActive: true,
-      currentSlideIndex: 0,
+    const code = generateBoardSessionCode();
+    const newSessionId = createBoardSessionId(code);
+    const sessionData = buildCompetitionBoardSession({
+      quiz,
+      code,
+      sessionId: newSessionId,
+      teacher: getBoardTeacherIdentity(profile),
       mode: 'team-competition',
-      competitionPhase: 'lobby',
-      isPaused: false,
-      showResults: false,
-      isLocked: true,
-      quizData: { id: quiz.id, title: quiz.title, slides: quiz.slides },
-      createdAt: new Date().toISOString(),
-    };
+    });
 
-    await set(ref(database, getSessionPath(newSessionId)), sessionData);
-    await set(ref(database, `session_codes/${code}`), newSessionId);
-
+    const backend = await startBoardLiveSession({ quiz, session: sessionData });
+    setSessionBackend(backend);
     setSessionId(newSessionId);
     setSessionCode(code);
+    setSession(sessionData);
     setTeamCompetitionActive(true);
     setIsStartingSession(false);
   }, [quiz, profile, isStartingSession]);
@@ -993,44 +537,34 @@ export function QuizViewPage() {
   // End team competition
   const endTeamCompetition = useCallback(() => {
     if (sessionId) {
-      update(ref(database, getSessionPath(sessionId)), { isActive: false, endedAt: new Date().toISOString() });
+      finishBoardLiveSession({ backend: sessionBackend, sessionId });
     }
     setTeamCompetitionActive(false);
     setSessionId(null);
     setSessionCode(null);
     setSession(null);
-  }, [sessionId]);
+  }, [sessionBackend, sessionId]);
 
   // Start duel competition
   const startDuelCompetition = useCallback(async () => {
     if (isStartingSession || !quiz) return;
     setIsStartingSession(true);
 
-    const code = generateSessionCode();
-    const newSessionId = `quiz_${code}_${Date.now()}`;
-
-    const sessionData: LiveQuizSession = {
-      id: newSessionId,
-      quizId: quiz.id,
-      code: code,
-      teacherId: profile?.userId || 'anonymous',
-      teacherName: (profile as any)?.firstName || profile?.name || 'Učitel',
-      isActive: true,
-      currentSlideIndex: 0,
+    const code = generateBoardSessionCode();
+    const newSessionId = createBoardSessionId(code);
+    const sessionData = buildCompetitionBoardSession({
+      quiz,
+      code,
+      sessionId: newSessionId,
+      teacher: getBoardTeacherIdentity(profile),
       mode: 'duel-competition',
-      competitionPhase: 'lobby',
-      isPaused: false,
-      showResults: false,
-      isLocked: true,
-      quizData: { id: quiz.id, title: quiz.title, slides: quiz.slides },
-      createdAt: new Date().toISOString(),
-    };
+    });
 
-    await set(ref(database, getSessionPath(newSessionId)), sessionData);
-    await set(ref(database, `session_codes/${code}`), newSessionId);
-
+    const backend = await startBoardLiveSession({ quiz, session: sessionData });
+    setSessionBackend(backend);
     setSessionId(newSessionId);
     setSessionCode(code);
+    setSession(sessionData);
     setDuelCompetitionActive(true);
     setIsStartingSession(false);
   }, [quiz, profile, isStartingSession]);
@@ -1038,44 +572,34 @@ export function QuizViewPage() {
   // End duel competition
   const endDuelCompetition = useCallback(() => {
     if (sessionId) {
-      update(ref(database, getSessionPath(sessionId)), { isActive: false, endedAt: new Date().toISOString() });
+      finishBoardLiveSession({ backend: sessionBackend, sessionId });
     }
     setDuelCompetitionActive(false);
     setSessionId(null);
     setSessionCode(null);
     setSession(null);
-  }, [sessionId]);
+  }, [sessionBackend, sessionId]);
 
   // Start tactical competition
   const startTacticalCompetition = useCallback(async () => {
     if (isStartingSession || !quiz) return;
     setIsStartingSession(true);
 
-    const code = generateSessionCode();
-    const newSessionId = `quiz_${code}_${Date.now()}`;
-
-    const sessionData: LiveQuizSession = {
-      id: newSessionId,
-      quizId: quiz.id,
-      code: code,
-      teacherId: profile?.userId || 'anonymous',
-      teacherName: (profile as any)?.firstName || profile?.name || 'Učitel',
-      isActive: true,
-      currentSlideIndex: 0,
+    const code = generateBoardSessionCode();
+    const newSessionId = createBoardSessionId(code);
+    const sessionData = buildCompetitionBoardSession({
+      quiz,
+      code,
+      sessionId: newSessionId,
+      teacher: getBoardTeacherIdentity(profile),
       mode: 'tactical-competition',
-      competitionPhase: 'lobby',
-      isPaused: false,
-      showResults: false,
-      isLocked: true,
-      quizData: { id: quiz.id, title: quiz.title, slides: quiz.slides },
-      createdAt: new Date().toISOString(),
-    };
+    });
 
-    await set(ref(database, getSessionPath(newSessionId)), sessionData);
-    await set(ref(database, `session_codes/${code}`), newSessionId);
-
+    const backend = await startBoardLiveSession({ quiz, session: sessionData });
+    setSessionBackend(backend);
     setSessionId(newSessionId);
     setSessionCode(code);
+    setSession(sessionData);
     setTacticalCompetitionActive(true);
     setIsStartingSession(false);
   }, [quiz, profile, isStartingSession]);
@@ -1083,38 +607,38 @@ export function QuizViewPage() {
   // End tactical competition
   const endTacticalCompetition = useCallback(() => {
     if (sessionId) {
-      update(ref(database, getSessionPath(sessionId)), { isActive: false, endedAt: new Date().toISOString() });
+      finishBoardLiveSession({ backend: sessionBackend, sessionId });
     }
     setTacticalCompetitionActive(false);
     setSessionId(null);
     setSessionCode(null);
     setSession(null);
-  }, [sessionId]);
+  }, [sessionBackend, sessionId]);
   
   // Listen to session updates
   useEffect(() => {
     if (!sessionId) return;
-    
-    const sessionRef = ref(database, getSessionPath(sessionId));
-    const unsubscribe = onValue(sessionRef, (snapshot) => {
-      const data = snapshot.val();
-      if (data) {
-        setSession(data as LiveQuizSession);
-      }
+
+    const unsubscribe = subscribeLiveSession(sessionBackend, sessionId, (data) => {
+      setSession(data as LiveQuizSession);
     });
-    
-    return () => off(sessionRef);
-  }, [sessionId]);
+
+    return () => unsubscribe();
+  }, [sessionBackend, sessionId]);
   
   // Sync slide index to session and reset showResults for new slide
   useEffect(() => {
     if (sessionId && session?.isActive) {
-      update(ref(database, getSessionPath(sessionId)), { 
+      patchBoardLiveSession({
+        backend: sessionBackend,
+        sessionId,
+        updates: {
         currentSlideIndex,
         showResults: false // Reset so students don't see results until teacher evaluates
+        },
       });
     }
-  }, [sessionId, currentSlideIndex, session?.isActive]);
+  }, [sessionBackend, sessionId, currentSlideIndex, session?.isActive]);
   
   // Load available classes when live settings panel opens
   useEffect(() => {
@@ -1136,13 +660,10 @@ export function QuizViewPage() {
   // End session
   const endLiveSession = async (viewResults: boolean = false) => {
     if (sessionId) {
-      await update(ref(database, getSessionPath(sessionId)), { 
-        isActive: false, 
-        endedAt: new Date().toISOString() 
-      });
+      await finishBoardLiveSession({ backend: sessionBackend, sessionId });
       
       if (viewResults) {
-        navigate(`/quiz/results/${sessionId}`);
+        navigate(routes.results(sessionId));
         return;
       }
     }
@@ -1155,51 +676,35 @@ export function QuizViewPage() {
   // Copy session code
   const copySessionCode = () => {
     if (sessionCode) {
-      navigator.clipboard.writeText(sessionCode);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      copyToClipboard(sessionCode);
     }
   };
   
   // Update live session
   const updateLiveSession = async (updates: Partial<LiveQuizSession>) => {
     if (sessionId) {
-      await update(ref(database, getSessionPath(sessionId)), updates);
+      await patchBoardLiveSession({
+        backend: sessionBackend,
+        sessionId,
+        updates,
+      });
     }
   };
   
   // Get student stats
   const students = session?.students ? Object.entries(session.students) : [];
   const onlineStudents = students.filter(([_, s]) => s.isOnline);
-  
-  // Loading state
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-screen bg-slate-100">
-        <div className="animate-spin rounded-full h-8 w-8 border-2 border-indigo-600 border-t-transparent" />
-      </div>
-    );
-  }
-  
-  // No quiz found
-  if (!quiz) {
-    return (
-      <div className="flex flex-col items-center justify-center h-screen bg-slate-100">
-        <HelpCircle className="w-16 h-16 text-slate-300 mb-4" />
-        <h1 className="text-xl font-bold text-slate-600 mb-2">Board nenalezen</h1>
-        <p className="text-slate-500 mb-6">Tento board neexistuje nebo byl smazán.</p>
-        <button
-          onClick={() => navigate('/library/my-content')}
-          className="px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700"
-        >
-          Zpět do knihovny
-        </button>
-      </div>
-    );
-  }
-  
-  const currentSlide = quiz.slides[currentSlideIndex];
-  const progress = quiz.slides.length > 0 ? ((currentSlideIndex + 1) / quiz.slides.length) * 100 : 0;
+
+  const currentSlide = quiz?.slides[currentSlideIndex];
+  const progress = quiz && quiz.slides.length > 0
+    ? ((currentSlideIndex + 1) / quiz.slides.length) * 100
+    : 0;
+
+  useEffect(() => {
+    if (showNotePanel && !String((currentSlide as any)?.note || '').trim()) {
+      setShowNotePanel(false);
+    }
+  }, [currentSlide, showNotePanel]);
   
   const getSlideBackground = (slide: QuizSlide) => {
     return slide?.backgroundColor || '#ffffff';
@@ -1207,10 +712,12 @@ export function QuizViewPage() {
   
   // Convert to worksheet and open print
   const handlePrint = () => {
-    const worksheet = boardToWorksheet(quiz);
-    saveWorksheet(worksheet);
-    // Navigate to worksheet editor with print mode
-    navigate(`/worksheet/edit/${worksheet.id}?print=true`);
+    printBoardWorksheet({
+      quiz,
+      createWorksheetFromBoard: boardToWorksheet,
+      saveWorksheet,
+      navigate,
+    });
   };
 
   // Generate share code (similar to session code)
@@ -1226,15 +733,12 @@ export function QuizViewPage() {
   // Generate share link
   const handleStartSharing = async () => {
     const shareCode = generateShareCode();
-    const shareId = `share_${shareCode}_${Date.now()}`;
-    
-    // Store share settings in Firebase
-    const shareData = {
-      id: shareId,
-      quizId: quiz.id,
-      quizData: quiz,
-      sessionName,
+    const shareId = createBoardShareId(shareCode);
+    const shareData = buildBoardShareSession({
+      shareId,
       shareCode,
+      quiz,
+      sessionName,
       settings: {
         anonymousAccess,
         showSolutionHints,
@@ -1242,18 +746,20 @@ export function QuizViewPage() {
         requireAnswerToProgress,
         showNotes,
       },
-      createdAt: new Date().toISOString(),
       createdBy: profile?.userId || 'anonymous',
-      responses: {}, // Will store student responses
-    };
+    });
     
     try {
-      const shareRef = ref(database, `quiz_shares/${shareId}`);
-      await set(shareRef, shareData);
+      const backend = await createBoardShareSessionRecord(shareData);
+      setClassroomShareBackend(backend);
       
-      // Use BASE_URL for correct path on GitHub Pages
       const baseUrl = import.meta.env.BASE_URL || '/';
-      const link = `${window.location.origin}${baseUrl}quiz/student/${shareId}`;
+      const link = buildBoardShareLink({
+        shareId,
+        studentRoute: routes.student,
+        baseUrl,
+        origin: window.location.origin,
+      });
       setShareLink(link);
     } catch (error) {
       console.error('Error creating share session:', error);
@@ -1263,34 +769,26 @@ export function QuizViewPage() {
   // Start classroom session (Zadat ve výuce)
   const startClassroomSession = async () => {
     const shareCode = generateShareCode();
-    const shareId = `share_${shareCode}_${Date.now()}`;
-    
-    const shareData = {
-      id: shareId,
-      quizId: quiz.id,
-      quizData: quiz,
-      sessionName: quiz.title || 'Výuka',
+    const shareId = createBoardShareId(shareCode);
+    const shareData = buildBoardClassroomShareSession({
+      shareId,
       shareCode,
-      mode: 'classroom',
-      settings: {
-        anonymousAccess: false,
-        showSolutionHints: true,
-        showActivityResults: true,
-        requireAnswerToProgress: false,
-        showNotes: false,
-      },
-      createdAt: new Date().toISOString(),
+      quiz,
       createdBy: profile?.userId || 'anonymous',
-      responses: {},
-    };
+    });
     
     try {
-      const shareRef = ref(database, `quiz_shares/${shareId}`);
-      await set(shareRef, shareData);
+      const backend = await createBoardShareSessionRecord(shareData);
       
       const baseUrl = import.meta.env.BASE_URL || '/';
-      const link = `${window.location.origin}${baseUrl}quiz/student/${shareId}`;
+      const link = buildBoardShareLink({
+        shareId,
+        studentRoute: routes.student,
+        baseUrl,
+        origin: window.location.origin,
+      });
       
+      setClassroomShareBackend(backend);
       setClassroomShareId(shareId);
       setClassroomShareCode(shareCode);
       setClassroomShareLink(link);
@@ -1298,11 +796,14 @@ export function QuizViewPage() {
       setShowRightPanel(true);
       
       // Subscribe to student updates in real-time
-      const responsesRef = ref(database, `quiz_shares/${shareId}/responses`);
-      onValue(responsesRef, (snapshot) => {
-        const data = snapshot.val();
-        setClassroomStudents(data || {});
+      const unsubscribe = subscribeToBoardClassroomShare({
+        backend,
+        shareId,
+        onResponses: (responses) => {
+          setClassroomStudents(responses);
+        },
       });
+      storeBoardClassroomUnsubscribe(unsubscribe);
     } catch (error) {
       console.error('Error creating classroom session:', error);
     }
@@ -1312,8 +813,9 @@ export function QuizViewPage() {
   const beginClassroom = async () => {
     if (!classroomShareId) return;
     try {
-      await update(ref(database, `quiz_shares/${classroomShareId}`), {
-        startedAt: new Date().toISOString(),
+      await beginBoardClassroomShare({
+        backend: classroomShareBackend,
+        shareId: classroomShareId,
       });
       setClassroomStarted(true);
     } catch (error) {
@@ -1322,1235 +824,582 @@ export function QuizViewPage() {
   };
   
   // End classroom session
-  const endClassroomSession = () => {
-    if (classroomShareId) {
-      const responsesRef = ref(database, `quiz_shares/${classroomShareId}/responses`);
-      off(responsesRef);
-    }
+  const endClassroomSession = (showResults = false) => {
+    const endedClassroomShareId = classroomShareId;
+    clearBoardClassroomUnsubscribe();
     setClassroomShareId(null);
     setClassroomShareCode(null);
     setClassroomShareLink(null);
     setClassroomStudents({});
     setClassroomStarted(false);
+    closeBoardEndDialog(setShowEndDialog);
+
+    if (showResults && endedClassroomShareId) {
+      navigate(routes.results(endedClassroomShareId, { type: 'shared' }));
+    }
   };
+
+  const copyToClipboard = useCallback(async (text: string) => {
+    try {
+      await copyBoardText({
+        text,
+        onCopied: setCopied,
+      });
+    } catch (error) {
+      console.error('Clipboard copy failed:', error);
+    }
+  }, []);
+
+  const handleToggleOsnovaPanel = useCallback(() => {
+    toggleBoardOsnovaPanel({
+      showOsnovaPanel,
+      setShowOsnovaPanel,
+      setShowRightPanel,
+    });
+  }, [showOsnovaPanel]);
+
+  const handleToggleRightPanel = useCallback(() => {
+    toggleBoardRightPanel({
+      showRightPanel,
+      setShowRightPanel,
+      setShowOsnovaPanel,
+    });
+    if (!showRightPanel) {
+      setShowNotePanel(false);
+    }
+  }, [showRightPanel]);
+
+  const handleOpenEndDialog = useCallback(() => {
+    openBoardEndDialog(setShowEndDialog);
+  }, []);
+
+  const handleCloseEndDialog = useCallback(() => {
+    closeBoardEndDialog(setShowEndDialog);
+  }, []);
+
+  const handleCloseShareSettings = useCallback(() => {
+    closeBoardShareSettings({
+      setShowShareSettings,
+      setShareLink,
+    });
+  }, []);
+
+  const handleOpenShareSettings = useCallback(() => {
+    openBoardShareSettings(setShowShareSettings);
+  }, []);
+
+  const handleOpenStudentOptions = useCallback(() => {
+    openBoardStudentOptions(setShowStudentOptions);
+  }, []);
+
+  const handleCloseStudentOptions = useCallback(() => {
+    closeBoardStudentOptions(setShowStudentOptions);
+  }, []);
+
+  const handleOpenLiveSettings = useCallback(() => {
+    openBoardLiveSettings(setShowLiveSettings);
+  }, []);
+
+  const handleCloseLiveSettings = useCallback(() => {
+    closeBoardLiveSettings(setShowLiveSettings);
+  }, []);
+
+  const handleCloseQrPopup = useCallback(() => {
+    closeBoardQrPopup(setShowQRPopup);
+  }, []);
+
+  const handleOpenQrPopup = useCallback((mode: 'qr' | 'code') => {
+    openBoardQrPopup({
+      mode,
+      setShowQRPopup,
+    });
+  }, []);
+
+  const handleOpenShareEditDialog = useCallback(() => {
+    openBoardShareEditDialog(setShowShareEditDialog);
+  }, []);
+
+  const handleEditBoard = useCallback(() => {
+    if (!quiz) return;
+    navigate(routes.edit(quiz.id));
+  }, [navigate, quiz, routes]);
+
+  const handleOpenBoardResults = useCallback(() => {
+    if (!quiz) return;
+    navigate(routes.edit(quiz.id, { tab: 'results' }));
+  }, [navigate, quiz, routes]);
+
+  const handleCopyAndEditBoard = useCallback(() => {
+    if (!quiz) return;
+    const boardTitle = quiz.title || 'Board';
+
+    const newQuizId = crypto.randomUUID();
+    const newQuiz = {
+      ...quiz,
+      id: newQuizId,
+      title: boardTitle,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      createdBy: profile?.userId,
+    };
+    saveQuiz(newQuiz);
+
+    const FOLDER_COLORS = ['#bbf7d0', '#bfdbfe', '#fde68a', '#fecaca', '#e9d5ff', '#99f6e4', '#fed7aa', '#fca5a5'];
+
+    const subjectMap: { [key: string]: string } = {
+      fyzika: 'Fyzika',
+      chemie: 'Chemie',
+      prirodopis: 'Přírodopis',
+      matematika: 'Matematika',
+    };
+    const subjectId = subjectSlug || quiz.subject || 'fyzika';
+    const categoryLabel = subjectMap[subjectId] || subjectMap.fyzika;
+
+    const topicLabelMap: { [key: string]: string } = {
+      zaklady: 'Základy',
+      sily: 'Síly',
+      'kapaliny-a-plyny': 'Kapaliny a plyny',
+      optika: 'Optika',
+      energie: 'Energie',
+      akustika: 'Akustika',
+      'elektrina-a-magnetismus': 'Elektřina a magnetismus',
+      'fyzika-mikrosveta': 'Fyzika mikrosvěta',
+      vesmir: 'Vesmír',
+    };
+    const bookLabel = topicSlug ? (topicLabelMap[topicSlug] || topicSlug.charAt(0).toUpperCase() + topicSlug.slice(1)) : 'Základy';
+
+    const existingFoldersJson = localStorage.getItem('vivid-my-folders');
+    let existingFolders: any[] = [];
+    if (existingFoldersJson) {
+      try {
+        existingFolders = JSON.parse(existingFoldersJson);
+      } catch (error) {
+        console.error('Failed to parse existing folders', error);
+      }
+    }
+
+    let subjectFolder = existingFolders.find(f => f.name === categoryLabel && f.copiedFrom === 'vividbooks-category');
+    if (!subjectFolder) {
+      const randomColor = FOLDER_COLORS[Math.floor(Math.random() * FOLDER_COLORS.length)];
+      subjectFolder = {
+        id: `folder-vb-${subjectId}-${Date.now()}`,
+        name: categoryLabel,
+        type: 'folder',
+        color: randomColor,
+        copiedFrom: 'vividbooks-category',
+        children: [],
+      };
+      existingFolders.push(subjectFolder);
+    }
+
+    subjectFolder.children = subjectFolder.children || [];
+    let bookFolder = subjectFolder.children.find((f: any) => f.name === bookLabel && f.type === 'folder');
+    if (!bookFolder) {
+      bookFolder = {
+        id: `folder-vb-book-${Date.now()}`,
+        name: bookLabel,
+        type: 'folder',
+        color: '#4eebc0',
+        copiedFrom: 'vividbooks-book',
+        children: [],
+      };
+      subjectFolder.children.push(bookFolder);
+    }
+
+    const newItem = {
+      id: newQuizId,
+      name: boardTitle,
+      type: 'board',
+      copiedFrom: 'vividbooks',
+      originalId: quiz.id,
+      createdAt: new Date().toISOString(),
+    };
+
+    bookFolder.children = bookFolder.children || [];
+    bookFolder.children.push(newItem);
+
+    const updatedFolders = existingFolders.map(f => (
+      f.id === subjectFolder.id ? subjectFolder : f
+    ));
+    localStorage.setItem('vivid-my-folders', JSON.stringify(updatedFolders));
+
+    moveQuizToFolder(newQuizId, bookFolder.id);
+
+    sessionStorage.setItem('copied-doc-toast', JSON.stringify({
+      title: boardTitle,
+      path: `Můj obsah → Zkopírováno z VividBooks → ${categoryLabel} → ${bookLabel}`,
+    }));
+
+    navigate(routes.edit(newQuiz.id));
+  }, [navigate, profile?.userId, quiz, routes, subjectSlug, topicSlug]);
+
+  const handleEvaluateCurrentLiveSlide = useCallback(async () => {
+    if (!sessionId || !quiz) return;
+
+    const currentSlideData = quiz.slides[currentSlideIndex];
+    const slide = currentSlideData as any;
+    if (currentSlideData.type !== 'activity' || !TEACHER_EVALUATABLE_ACTIVITY_TYPES.has(slide.activityType)) {
+      return;
+    }
+
+    const exampleCorrectAnswers = slide.activityType === 'example'
+      ? [
+          ...(slide.finalAnswer ? [slide.finalAnswer] : []),
+          ...((slide.alternativeAnswers || []).filter(Boolean)),
+        ]
+      : [];
+    const trueFalseCorrectAnswer = slide.activityType === 'true-false' || slide.activityType === 'trueFalse'
+      ? String(slide.correctAnswer)
+      : null;
+
+    for (const [studentId, student] of students) {
+      const responses = student.responses || [];
+      const responseIndex = responses.findIndex(r => r.slideId === currentSlideData.id);
+
+      if (responseIndex >= 0) {
+        const response = responses[responseIndex];
+        let isCorrect = false;
+
+        if (slide.activityType === 'abc') {
+          isCorrect = evaluateABCAnswer(slide, response.answer);
+        } else if (slide.activityType === 'example') {
+          const studentAnswer = String(response.answer).trim().toLowerCase();
+          isCorrect = exampleCorrectAnswers.some((answer: string) => answer.trim().toLowerCase() === studentAnswer);
+        } else if (slide.activityType === 'true-false' || slide.activityType === 'trueFalse') {
+          isCorrect = String(response.answer) === trueFalseCorrectAnswer;
+        } else if (slide.activityType === 'connect-pairs') {
+          const answerMap = typeof response.answer === 'object' && !Array.isArray(response.answer) ? response.answer : {};
+          const totalPairs = Array.isArray(slide.pairs) ? slide.pairs.length : 0;
+          const correctPairs = (slide.pairs || []).filter((pair: any) => answerMap[pair.left.id] === pair.right.id).length;
+          isCorrect = totalPairs > 0 && correctPairs === totalPairs;
+        } else if (slide.activityType === 'fill-blanks') {
+          const answerMap = typeof response.answer === 'object' && !Array.isArray(response.answer) ? response.answer : {};
+          const blanks = (slide.sentences || []).flatMap((sentence: any) => sentence.blanks || []);
+          const totalBlanks = blanks.length;
+          const correctBlanks = blanks.filter((blank: any) =>
+            String(answerMap[blank.id] || '').trim().toLowerCase() === String(blank.text || '').trim().toLowerCase()
+          ).length;
+          isCorrect = totalBlanks > 0 && correctBlanks === totalBlanks;
+        } else if (slide.activityType === 'image-hotspots') {
+          const answerMap = typeof response.answer === 'object' && !Array.isArray(response.answer) ? response.answer : {};
+          const totalHotspots = Array.isArray(slide.hotspots) ? slide.hotspots.length : 0;
+          const correctHotspots = Object.values(answerMap).filter((value) => value === 'correct').length;
+          isCorrect = totalHotspots > 0 && correctHotspots === totalHotspots;
+        } else if (slide.activityType === 'video-quiz') {
+          const answerMap = typeof response.answer === 'object' && !Array.isArray(response.answer) ? response.answer : {};
+          const totalQuestions = Array.isArray(slide.questions) ? slide.questions.length : 0;
+          const correctQuestions = (slide.questions || []).filter((question: any) => {
+            const correctOption = (question.options || []).find((option: any) => option.isCorrect);
+            return answerMap[question.id] === correctOption?.id;
+          }).length;
+          isCorrect = totalQuestions > 0 && correctQuestions === totalQuestions;
+        }
+
+        let points = isCorrect ? (slide.points || 1) : 0;
+        if (slide.activityType === 'connect-pairs' && slide.countAsMultiple) {
+          const answerMap = typeof response.answer === 'object' && !Array.isArray(response.answer) ? response.answer : {};
+          points = (slide.pairs || []).filter((pair: any) => answerMap[pair.left.id] === pair.right.id).length;
+        } else if (slide.activityType === 'fill-blanks' && slide.countAsMultiple) {
+          const answerMap = typeof response.answer === 'object' && !Array.isArray(response.answer) ? response.answer : {};
+          const blanks = (slide.sentences || []).flatMap((sentence: any) => sentence.blanks || []);
+          points = blanks.filter((blank: any) =>
+            String(answerMap[blank.id] || '').trim().toLowerCase() === String(blank.text || '').trim().toLowerCase()
+          ).length;
+        } else if (slide.activityType === 'image-hotspots' && slide.countAsMultiple) {
+          const answerMap = typeof response.answer === 'object' && !Array.isArray(response.answer) ? response.answer : {};
+          points = Object.values(answerMap).filter((value) => value === 'correct').length;
+        } else if (slide.activityType === 'video-quiz' && slide.countAsMultiple) {
+          const answerMap = typeof response.answer === 'object' && !Array.isArray(response.answer) ? response.answer : {};
+          points = (slide.questions || []).filter((question: any) => {
+            const correctOption = (question.options || []).find((option: any) => option.isCorrect);
+            return answerMap[question.id] === correctOption?.id;
+          }).length;
+        }
+
+        const updatedResponses = [...responses];
+        updatedResponses[responseIndex] = {
+          ...response,
+          isCorrect,
+          points,
+        };
+
+        await updateLiveStudentRecord(sessionBackend, sessionId, studentId, {
+          responses: updatedResponses,
+        });
+      }
+    }
+
+    await patchBoardLiveSession({
+      backend: sessionBackend,
+      sessionId,
+      updates: {
+        showResults: true,
+      },
+    });
+  }, [currentSlideIndex, quiz, sessionBackend, sessionId, students]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-slate-100">
+        <div className="animate-spin rounded-full h-8 w-8 border-2 border-indigo-600 border-t-transparent" />
+      </div>
+    );
+  }
+
+  if (!quiz || !currentSlide) {
+    return (
+      <div className="flex flex-col items-center justify-center h-screen bg-slate-100">
+        <HelpCircle className="w-16 h-16 text-slate-300 mb-4" />
+        <h1 className="text-xl font-bold text-slate-600 mb-2">Board nenalezen</h1>
+        <p className="text-slate-500 mb-6">Tento board neexistuje nebo byl smazán.</p>
+        <button
+          onClick={() => navigateToBoardLibrary(navigate)}
+          className="px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700"
+        >
+          Zpět do knihovny
+        </button>
+      </div>
+    );
+  }
   
   
+  // Student connection options (defined at component level so overlay can access it)
+  const STUDENT_OPTIONS = [
+    {
+      key: 'projection',
+      label: 'Připojit do promítání',
+      section: 'together',
+      accent: '#4eebc0',
+      desc: 'Studenti odpovídají na svých zařízeních, ty vidíš výsledky živě.',
+      icon: (
+        <svg viewBox="0 0 24 24" fill="none" className="w-9 h-9">
+          <rect x="2" y="3" width="20" height="13" rx="2" stroke="#4eebc0" strokeWidth="1.8"/>
+          <path d="M8 21h8M12 16v5" stroke="#4eebc0" strokeWidth="1.8" strokeLinecap="round"/>
+          <circle cx="8" cy="9.5" r="2" fill="#4eebc0" opacity="0.7"/>
+          <path d="M13 8.5l3 2-3 2V8.5Z" fill="#4eebc0"/>
+        </svg>
+      ),
+    },
+    {
+      key: 'competition',
+      label: 'Zahájit soutěž',
+      section: 'together',
+      accent: '#fbbf24',
+      desc: 'Rychlá soutěž o body a pořadí v reálném čase.',
+      icon: (
+        <svg viewBox="0 0 24 24" fill="none" className="w-9 h-9">
+          <path d="M12 2l2.4 6.4H21l-5.4 4 2.1 6.6L12 15l-5.7 4 2.1-6.6L3 8.4h6.6L12 2Z" fill="#fbbf24" opacity="0.9"/>
+        </svg>
+      ),
+    },
+    {
+      key: 'present',
+      label: 'Promítání bez studentů',
+      section: 'together',
+      accent: '#818cf8',
+      desc: 'Klasická prezentace bez připojených studentů.',
+      icon: (
+        <svg viewBox="0 0 24 24" fill="none" className="w-9 h-9">
+          <rect x="2" y="3" width="20" height="13" rx="2" stroke="#818cf8" strokeWidth="1.8"/>
+          <path d="M8 21h8M12 16v5" stroke="#818cf8" strokeWidth="1.8" strokeLinecap="round"/>
+          <path d="M10 8.5l5 3-5 3V8.5Z" fill="#818cf8" opacity="0.9"/>
+        </svg>
+      ),
+    },
+    {
+      key: 'classroom',
+      label: 'Zadat ve výuce',
+      section: 'solo',
+      accent: '#f87171',
+      desc: 'Zadání do třídy s průběžným přehledem práce žáků.',
+      icon: (
+        <svg viewBox="0 0 24 24" fill="none" className="w-9 h-9">
+          <rect x="4" y="3" width="16" height="18" rx="2" stroke="#f87171" strokeWidth="1.8"/>
+          <path d="M8 8h8M8 12h8M8 16h5" stroke="#f87171" strokeWidth="1.6" strokeLinecap="round"/>
+        </svg>
+      ),
+    },
+    {
+      key: 'share',
+      label: 'Sdílet obsah',
+      section: 'solo',
+      accent: '#60a5fa',
+      desc: 'Pošli odkaz a studenti mohou pracovat samostatně kdykoli.',
+      icon: (
+        <svg viewBox="0 0 24 24" fill="none" className="w-9 h-9">
+          <path d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2" stroke="#60a5fa" strokeWidth="1.8" strokeLinecap="round"/>
+          <path d="M12 3v12M8 7l4-4 4 4" stroke="#60a5fa" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+      ),
+    },
+  ];
+
   // Render the right panel content
   const renderRightPanel = () => {
-    // Active classroom session panel
-    if (classroomShareId) {
-      const classroomOnline = Object.values(classroomStudents).filter((s: any) => s.isOnline);
-      const classroomCompleted = Object.values(classroomStudents).filter((s: any) => s.completedAt);
-      const classroomDistracted = Object.values(classroomStudents).filter((s: any) => s.isOnline && s.isFocused === false);
-      const classroomTotal = Object.keys(classroomStudents).length;
-      const classroomJoinLink = classroomShareLink || '';
-      
-      // --- LOBBY (before teacher starts) ---
-      if (!classroomStarted) {
-        return (
-          <div className="flex flex-col h-full text-white" style={{ backgroundColor: '#1e2533' }}>
-            {/* Header */}
-            <div className="px-4 py-3" style={{ borderBottom: '1px solid #334155' }}>
-              <div className="flex items-center gap-3 p-3 rounded-xl" style={{ backgroundColor: '#334155' }}>
-                <Users className="w-5 h-5" style={{ color: '#94a3b8' }} />
-                <div className="text-left">
-                  <p className="text-xs" style={{ color: '#64748b' }}>Režim:</p>
-                  <p className="text-sm font-medium" style={{ color: '#ffffff' }}>Zadáno ve výuce</p>
-                </div>
-              </div>
-            </div>
-            
-            {/* Joining students list — only content in lobby panel */}
-            <div className="flex-1 overflow-y-auto p-4">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2" style={{ color: '#94a3b8' }}>
-                  <Users className="w-4 h-4" />
-                  <span className="text-sm">Připojení studenti</span>
-                </div>
-                <span className="font-bold" style={{ color: '#ffffff' }}>{classroomTotal}</span>
-              </div>
-              
-              {classroomTotal === 0 ? (
-                <div className="text-center py-8" style={{ color: '#64748b' }}>
-                  <Users className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                  <p className="text-sm">Čekám na studenty...</p>
-                </div>
-              ) : (
-                <div className="space-y-1.5">
-                  {Object.values(classroomStudents).map((s: any, i: number) => (
-                    <div key={i} className="flex items-center gap-2 px-3 py-2 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}>
-                      <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 flex-shrink-0" />
-                      <span className="text-sm text-white truncate">{s.studentName || 'Student'}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-            
-            {/* Cancel only */}
-            <div className="p-4" style={{ borderTop: '1px solid #334155' }}>
-              <button
-                onClick={endClassroomSession}
-                className="w-full py-2 rounded-xl text-sm text-red-300 hover:bg-red-500/20 hover:text-red-200 transition-colors"
-              >
-                Zrušit
-              </button>
-            </div>
-          </div>
-        );
-      }
-      
-      // --- STARTED (dashboard mode) ---
-      return (
-        <div className="flex flex-col h-full text-white" style={{ backgroundColor: '#1e2533' }}>
-          {/* Header */}
-          <div className="px-4 py-3" style={{ borderBottom: '1px solid #334155' }}>
-            <div className="flex items-center gap-3 p-3 rounded-xl" style={{ backgroundColor: '#334155' }}>
-              <Users className="w-5 h-5" style={{ color: '#94a3b8' }} />
-              <div className="text-left">
-                <p className="text-xs" style={{ color: '#64748b' }}>Režim:</p>
-                <p className="text-sm font-medium" style={{ color: '#ffffff' }}>Zadáno ve výuce</p>
-              </div>
-            </div>
-          </div>
-          
-          {/* Code + QR */}
-          <div className="p-4" style={{ borderBottom: '1px solid #334155' }}>
-            <div className="text-center mb-3">
-              <span className="text-white/70 text-xl">Kód: </span>
-              <span className="text-yellow-400 text-xl font-bold tracking-wider">{classroomShareCode}</span>
-            </div>
-            <div 
-              className="flex justify-center mb-3 cursor-pointer transition-all group"
-              onClick={() => setShowQRPopup('qr')}
-            >
-              <div className="bg-white p-3 rounded-xl transition-all group-hover:ring-4 group-hover:ring-orange-400">
-                <QRCodeSVG value={classroomJoinLink} size={180} level="M" />
-              </div>
-            </div>
-            <div className="flex justify-center">
-              <button
-                onClick={() => {
-                  navigator.clipboard.writeText(classroomJoinLink);
-                  setCopied(true);
-                  setTimeout(() => setCopied(false), 2000);
-                }}
-                className="py-2 px-3 rounded-lg transition-colors flex items-center justify-center gap-2 text-sm font-medium hover:opacity-90"
-                style={{ backgroundColor: '#f59e0b', color: '#1e293b', width: '206px' }}
-              >
-                {copied ? (
-                  <><CheckCircle className="w-4 h-4" /><span>Zkopírováno!</span></>
-                ) : (
-                  <><Copy className="w-4 h-4" /><span>Kopírovat odkaz</span></>
-                )}
-              </button>
-            </div>
-          </div>
-          
-          {/* Stats summary */}
-          <div className="p-4 flex-1">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2" style={{ color: '#94a3b8' }}>
-                <Users className="w-4 h-4" />
-                <span className="text-sm">Připojení studenti</span>
-              </div>
-              <span className="font-bold" style={{ color: '#ffffff' }}>{classroomTotal}</span>
-            </div>
-            
-            <div className="rounded-xl p-3" style={{ backgroundColor: '#334155' }}>
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="text-xs flex items-center gap-1.5" style={{ color: '#94a3b8' }}>
-                  <div className="w-2 h-2 rounded-full bg-emerald-400" />
-                  Online
-                </span>
-                <span className="text-xs font-bold text-emerald-400">{classroomOnline.length}</span>
-              </div>
-              {classroomDistracted.length > 0 && (
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-xs flex items-center gap-1.5" style={{ color: '#94a3b8' }}>
-                    <div className="w-2 h-2 rounded-full bg-amber-400" />
-                    Rozptýlení
-                  </span>
-                  <span className="text-xs font-bold text-amber-400">{classroomDistracted.length}</span>
-                </div>
-              )}
-              <div className="flex items-center justify-between">
-                <span className="text-xs flex items-center gap-1.5" style={{ color: '#94a3b8' }}>
-                  <div className="w-2 h-2 rounded-full bg-blue-400" />
-                  Dokončili
-                </span>
-                <span className="text-xs font-bold text-blue-400">{classroomCompleted.length}</span>
-              </div>
-            </div>
-          </div>
-          
-          {/* End button */}
-          <div className="p-4" style={{ borderTop: '1px solid #334155' }}>
-            <button
-              onClick={endClassroomSession}
-              className="w-full py-3 rounded-xl font-semibold text-red-300 hover:bg-red-500/20 hover:text-red-200 transition-colors border border-red-500/30"
-            >
-              Ukončit výuku
-            </button>
-          </div>
-        </div>
-      );
-    }
-    
-    // Active live session panel
-    if (sessionId && sessionCode) {
-      return (
-        <div className="flex flex-col h-full text-white" style={{ backgroundColor: '#1e2533' }}>
-          {/* Presentation mode dropdown - AT TOP */}
-          <div className="px-4 py-3" style={{ borderBottom: '1px solid #334155' }}>
-            <div className="relative">
-              <button
-                onClick={() => setShowModeDropdown(!showModeDropdown)}
-                className="w-full flex items-center justify-between p-3 rounded-xl transition-colors"
-                style={{ backgroundColor: '#334155' }}
-              >
-                <div className="flex items-center gap-3">
-                  {(session?.isLocked ?? true) ? (
-                    <Lock className="w-5 h-5" style={{ color: '#94a3b8' }} />
-                  ) : (
-                    <Unlock className="w-5 h-5" style={{ color: '#4ade80' }} />
-                  )}
-                  <div className="text-left">
-                    <p className="text-xs" style={{ color: '#64748b' }}>Promítat:</p>
-                    <p className="text-sm font-medium" style={{ color: '#ffffff' }}>
-                      {(session?.isLocked ?? true) ? 'Učitel prezentuje' : 'Studenti sami'}
-                    </p>
-                  </div>
-                </div>
-                <ChevronDown 
-                  className={`w-5 h-5 transition-transform ${showModeDropdown ? 'rotate-180' : ''}`} 
-                  style={{ color: '#94a3b8' }} 
-                />
-              </button>
-              
-              {/* Dropdown menu */}
-              {showModeDropdown && (
-                <div 
-                  className="absolute top-full left-0 right-0 mt-1 rounded-xl overflow-hidden z-10 shadow-lg"
-                  style={{ backgroundColor: '#334155' }}
-                >
-                  <button
-                    onClick={() => {
-                      updateLiveSession({ isLocked: true });
-                      setShowModeDropdown(false);
-                    }}
-                    className={`w-full flex items-center gap-3 p-3 text-left hover:bg-slate-600/50 transition-colors ${(session?.isLocked ?? true) ? 'bg-slate-600/30' : ''}`}
-                  >
-                    <Lock className="w-4 h-4" style={{ color: '#94a3b8' }} />
-                    <span className="text-sm text-white">Učitel prezentuje</span>
-                    {(session?.isLocked ?? true) && <CheckCircle className="w-4 h-4 ml-auto" style={{ color: '#4ade80' }} />}
-                  </button>
-                  <button
-                    onClick={() => {
-                      updateLiveSession({ isLocked: false });
-                      setShowModeDropdown(false);
-                    }}
-                    className={`w-full flex items-center gap-3 p-3 text-left hover:bg-slate-600/50 transition-colors ${!(session?.isLocked ?? true) ? 'bg-slate-600/30' : ''}`}
-                  >
-                    <Unlock className="w-4 h-4" style={{ color: '#94a3b8' }} />
-                    <span className="text-sm text-white">Studenti sami</span>
-                    {!(session?.isLocked ?? true) && <CheckCircle className="w-4 h-4 ml-auto" style={{ color: '#4ade80' }} />}
-                  </button>
-                  <button
-                    onClick={() => {
-                      startCompetition();
-                      setShowModeDropdown(false);
-                    }}
-                    className="w-full flex items-center gap-3 p-3 text-left hover:bg-slate-600/50 transition-colors"
-                  >
-                    <BarChart2 className="w-4 h-4" style={{ color: '#94a3b8' }} />
-                    <span className="text-sm text-white">Soutěž</span>
-                  </button>
-                  <button
-                    onClick={() => {
-                      startTeamCompetition();
-                      setShowModeDropdown(false);
-                    }}
-                    className="w-full flex items-center gap-3 p-3 text-left hover:bg-slate-600/50 transition-colors"
-                  >
-                    <Users className="w-4 h-4" style={{ color: '#94a3b8' }} />
-                    <span className="text-sm text-white">Týmová soutěž</span>
-                  </button>
-                  <button
-                    onClick={() => {
-                      startDuelCompetition();
-                      setShowModeDropdown(false);
-                    }}
-                    className="w-full flex items-center gap-3 p-3 text-left hover:bg-slate-600/50 transition-colors"
-                  >
-                    <Swords className="w-4 h-4" style={{ color: '#94a3b8' }} />
-                    <span className="text-sm text-white">Duely</span>
-                  </button>
-                  <button
-                    onClick={() => {
-                      startTacticalCompetition();
-                      setShowModeDropdown(false);
-                    }}
-                    className="w-full flex items-center gap-3 p-3 text-left hover:bg-slate-600/50 transition-colors"
-                  >
-                    <Crosshair className="w-4 h-4" style={{ color: '#94a3b8' }} />
-                    <span className="text-sm text-white">Taktik</span>
-                  </button>
-                  <button
-                    onClick={() => {
-                      // TODO: Share link only mode
-                      setShowModeDropdown(false);
-                    }}
-                    className="w-full flex items-center gap-3 p-3 text-left hover:bg-slate-600/50 transition-colors"
-                  >
-                    <Share2 className="w-4 h-4" style={{ color: '#94a3b8' }} />
-                    <span className="text-sm text-white">Sdílet odkaz</span>
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-          
-          {/* Session code and QR - styled like design */}
-          <div className="p-4" style={{ borderBottom: '1px solid #334155' }}>
-            {/* Top: "Připojte se na..." with actual URL */}
-            <p className="text-center text-white/80 text-sm mb-2">
-              Připojte se na <span className="font-medium text-white">{window.location.host}{import.meta.env.BASE_URL || ''}/go</span>
-            </p>
-            
-            {/* Code display */}
-            <div 
-              className="text-center mb-3 cursor-pointer hover:opacity-80 transition-opacity"
-              onClick={() => setShowQRPopup('code')}
-              title="Zobrazit kód přes celou obrazovku"
-            >
-              <span className="text-white/70 text-xl">Kód: </span>
-              <span className="text-yellow-400 text-xl font-bold tracking-wider">{sessionCode}</span>
-            </div>
-            
-            {/* QR Code - clickable for fullscreen QR */}
-            <div 
-              className="flex justify-center mb-3 cursor-pointer transition-all group"
-              onClick={() => setShowQRPopup('qr')}
-              title="Zobrazit QR kód přes celou obrazovku"
-            >
-              <div className="bg-white p-3 rounded-xl transition-all group-hover:ring-4 group-hover:ring-orange-400">
-                <QRCodeSVG 
-                  value={`${window.location.origin}${import.meta.env.BASE_URL || '/'}go/${sessionCode}`}
-                  size={180}
-                  level="M"
-                />
-              </div>
-            </div>
-            
-            {/* Copy button - same width as QR (180 + 24px padding = 204px) */}
-            <div className="flex justify-center">
-              <button
-                onClick={() => {
-                  const fullLink = `${window.location.origin}${import.meta.env.BASE_URL || '/'}go/${sessionCode}`;
-                  navigator.clipboard.writeText(fullLink);
-                  setCopied(true);
-                  setTimeout(() => setCopied(false), 2000);
-                }}
-                className="py-2 px-3 rounded-lg transition-colors flex items-center justify-center gap-2 text-sm font-medium hover:opacity-90"
-                style={{ backgroundColor: '#f59e0b', color: '#1e293b', width: '206px' }}
-              >
-                {copied ? (
-                  <>
-                    <CheckCircle className="w-4 h-4" />
-                    <span>Zkopírováno!</span>
-                  </>
-                ) : (
-                  <>
-                    <Copy className="w-4 h-4" />
-                    <span>Kopírovat odkaz</span>
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-          
-          {/* Students list */}
-          <div className="flex-1 overflow-y-auto p-4">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2" style={{ color: '#94a3b8' }}>
-                <Users className="w-4 h-4" />
-                <span className="text-sm">Připojení studenti</span>
-              </div>
-              <span className="font-bold" style={{ color: '#ffffff' }}>{onlineStudents.length}</span>
-            </div>
-            
-            {students.length === 0 ? (
-              <div className="text-center py-8" style={{ color: '#64748b' }}>
-                <Users className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                <p className="text-sm">Čekám na studenty...</p>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {students.map(([id, student]) => {
-                  const totalSlides = quiz?.slides.length || 1;
-                  const studentSlide = student.currentSlide || 0;
-                  const progressPercent = ((studentSlide + 1) / totalSlides) * 100;
-                  const studentResponses = student.responses || [];
-                  const correctCount = studentResponses.filter(r => r.isCorrect).length;
-                  const wrongCount = studentResponses.filter(r => !r.isCorrect).length;
-                  const hasFinished = studentResponses.length >= (quiz?.slides.filter(s => s.type === 'activity').length || 0);
-                  const isDistracted = student.isOnline && student.isFocused === false;
-                  
-                  // Get student's answer for current slide (in locked mode)
-                  const currentSlideData = quiz?.slides[currentSlideIndex];
-                  const currentSlideResponse = studentResponses.find(r => r.slideId === currentSlideData?.id);
-                  let answerLabel = '';
-                  let answerColor = '#7C3AED'; // default purple
-                  
-                  if (currentSlideData?.type === 'activity') {
-                    const activityType = (currentSlideData as any).activityType;
-                    
-                    if (activityType === 'abc' && currentSlideResponse) {
-                      // Find the option label (A, B, C, D)
-                      const optionIndex = (currentSlideData as any).options?.findIndex((o: any) => o.id === currentSlideResponse.answer);
-                      if (optionIndex >= 0) {
-                        answerLabel = String.fromCharCode(65 + optionIndex); // A, B, C, D...
-                      }
-                    } else if (activityType === 'open' && currentSlideResponse) {
-                      answerLabel = String(currentSlideResponse.answer).substring(0, 10) + (String(currentSlideResponse.answer).length > 10 ? '...' : '');
-                    } else if (activityType === 'voting') {
-                      // Check voting data for this student
-                      const studentVote = voting.votes[id];
-                      if (studentVote && studentVote.selectedOptions?.length > 0) {
-                        // Find option labels
-                        const votedOptions = studentVote.selectedOptions.map(optId => {
-                          const optIndex = (currentSlideData as any).options?.findIndex((o: any) => o.id === optId);
-                          return optIndex >= 0 ? String.fromCharCode(65 + optIndex) : '?';
-                        });
-                        answerLabel = votedOptions.join(', ');
-                        answerColor = '#0ea5e9'; // sky blue for voting
-                      }
-                    } else if (activityType === 'board') {
-                      // Count posts from this student
-                      const studentPosts = boardPosts.posts.filter(p => p.authorId === id);
-                      if (studentPosts.length > 0) {
-                        const lastPost = studentPosts[studentPosts.length - 1];
-                        // Show post count and preview
-                        answerLabel = `${studentPosts.length}× ${lastPost.text?.substring(0, 8) || ''}${(lastPost.text?.length || 0) > 8 ? '...' : ''}`;
-                        answerColor = '#10b981'; // green for board posts
-                      }
-                    }
-                  }
-                  
-                  return (
-                    <div
-                      key={id}
-                      className="flex items-center gap-3 p-3 rounded-lg transition-colors"
-                      style={{ 
-                        backgroundColor: isDistracted ? 'rgba(251, 146, 60, 0.2)' : 'rgba(51, 65, 85, 0.5)',
-                        borderLeft: isDistracted ? '3px solid #fb923c' : '3px solid transparent'
-                      }}
-                    >
-                      {/* Online/Focus indicator */}
-                      {isDistracted ? (
-                        <AlertTriangle className="w-4 h-4 flex-shrink-0" style={{ color: '#fb923c' }} />
-                      ) : (
-                        <div 
-                          className="w-2 h-2 rounded-full flex-shrink-0"
-                          style={{ backgroundColor: student.isOnline ? '#4ade80' : '#64748b' }}
-                        />
-                      )}
-                      
-                      {/* Name */}
-                      <span 
-                        className="text-sm flex-1 truncate" 
-                        style={{ color: isDistracted ? '#fb923c' : '#ffffff' }}
-                      >
-                        {student.name}
-                      </span>
-                      
-                      {/* Show answer in locked mode, or progress in unlocked mode */}
-                      {(session?.isLocked ?? true) && currentSlideData?.type === 'activity' ? (
-                        // Show student's answer for current slide
-                        answerLabel ? (
-                          <div 
-                            className="px-2 py-1 rounded text-xs font-bold flex-shrink-0 max-w-[120px] truncate flex items-center gap-1"
-                            style={{ 
-                              backgroundColor: currentSlideResponse?.isCorrect === true ? '#4ade80' : 
-                                             currentSlideResponse?.isCorrect === false ? '#f87171' : answerColor,
-                              color: '#ffffff'
-                            }}
-                            title={answerLabel}
-                          >
-                            {(currentSlideData as any).activityType === 'voting' && <Vote className="w-3 h-3" />}
-                            {(currentSlideData as any).activityType === 'board' && <MessageSquare className="w-3 h-3" />}
-                            <span className="truncate">{answerLabel}</span>
-                          </div>
-                        ) : (
-                          <span className="text-xs flex-shrink-0" style={{ color: '#64748b' }}>—</span>
-                        )
-                      ) : hasFinished ? (
-                        <div className="flex items-center gap-2 flex-shrink-0">
-                          <span className="text-xs font-medium" style={{ color: '#4ade80' }}>{correctCount}✓</span>
-                          <span className="text-xs font-medium" style={{ color: '#f87171' }}>{wrongCount}✗</span>
-                        </div>
-                      ) : (session?.isLocked === false) ? (
-                        <div 
-                          className="w-20 h-2 rounded-full overflow-hidden flex-shrink-0"
-                          style={{ backgroundColor: '#1e2533' }}
-                        >
-                          <div 
-                            className="h-full rounded-full transition-all duration-300"
-                            style={{ 
-                              width: `${progressPercent}%`,
-                              backgroundColor: isDistracted ? '#fb923c' : (studentSlide === currentSlideIndex ? '#7C3AED' : '#475569')
-                            }}
-                          />
-                        </div>
-                      ) : null}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-          
-          {/* Controls */}
-          <div className="p-4 space-y-2" style={{ borderTop: '1px solid #334155' }}>
-            {/* Evaluate button - show in locked mode when students have answered */}
-            {(session?.isLocked ?? true) && quiz?.slides[currentSlideIndex]?.type === 'activity' && (() => {
-              const currentSlideData = quiz.slides[currentSlideIndex];
-              const studentsWithAnswer = students.filter(([_, student]) => {
-                const responses = student.responses || [];
-                return responses.some(r => r.slideId === currentSlideData.id);
-              });
-              const hasUnevaluatedAnswers = studentsWithAnswer.some(([_, student]) => {
-                const responses = student.responses || [];
-                const response = responses.find(r => r.slideId === currentSlideData.id);
-                // Check for null or undefined (Firebase strips undefined, so we use null)
-                return response && (response.isCorrect === undefined || response.isCorrect === null);
-              });
-              
-              if (studentsWithAnswer.length > 0) {
-                return (
-                  <button
-                    onClick={async () => {
-                      // Evaluate all student answers for current slide
-                      if (!sessionId || !quiz) return;
-                      
-                      const slide = currentSlideData as any;
-                      const correctOptionId = slide.activityType === 'abc' 
-                        ? slide.options?.find((o: any) => o.isCorrect)?.id
-                        : null;
-                      const correctAnswers = slide.activityType === 'open'
-                        ? slide.correctAnswers || []
-                        : [];
-                      
-                      for (const [studentId, student] of students) {
-                        const responses = student.responses || [];
-                        const responseIndex = responses.findIndex(r => r.slideId === currentSlideData.id);
-                        
-                        if (responseIndex >= 0) {
-                          const response = responses[responseIndex];
-                          let isCorrect = false;
-                          
-                          if (slide.activityType === 'abc') {
-                            isCorrect = response.answer === correctOptionId;
-                          } else if (slide.activityType === 'open') {
-                            const studentAnswer = String(response.answer).trim().toLowerCase();
-                            isCorrect = correctAnswers.some((a: string) => 
-                              a.trim().toLowerCase() === studentAnswer
-                            );
-                          }
-                          
-                          // Update the response in Firebase
-                          const updatedResponses = [...responses];
-                          updatedResponses[responseIndex] = {
-                            ...response,
-                            isCorrect,
-                            points: isCorrect ? (slide.points || 1) : 0
-                          };
-                          
-                          await update(ref(database, `${getSessionPath(sessionId)}/students/${studentId}`), {
-                            responses: updatedResponses
-                          });
-                        }
-                      }
-                      
-                      // Set showResults to true so students can see correct/incorrect
-                      await update(ref(database, getSessionPath(sessionId)), {
-                        showResults: true
-                      });
-                    }}
-                    className="w-full py-3 rounded-lg text-white text-sm font-bold flex items-center justify-center gap-2 transition-colors"
-                    style={{ backgroundColor: hasUnevaluatedAnswers ? '#7C3AED' : '#4ade80' }}
-                  >
-                    <CheckCircle className="w-4 h-4" />
-                    {hasUnevaluatedAnswers ? `Vyhodnotit (${studentsWithAnswer.length})` : `Vyhodnoceno ✓`}
-                  </button>
-                );
-              }
-              return null;
-            })()}
-            
-            <div className="flex gap-2">
-              <button
-                className="flex-1 py-2 rounded-lg text-white text-sm flex items-center justify-center gap-1"
-                style={{ backgroundColor: '#334155' }}
-              >
-                <BarChart2 className="w-4 h-4" />
-                Výsledky
-              </button>
-              <button
-                onClick={() => setShowEndDialog(true)}
-                className="flex-1 py-2 rounded-lg text-white text-sm flex items-center justify-center gap-1"
-                style={{ backgroundColor: '#dc2626' }}
-              >
-                <StopCircle className="w-4 h-4" />
-                Ukončit
-              </button>
-            </div>
-          </div>
-          
-          {/* End session dialog */}
-          {showEndDialog && (
-            <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-50">
-              <div className="bg-white rounded-2xl p-6 max-w-sm w-full mx-4 shadow-2xl">
-                <h3 className="text-lg font-bold text-slate-800 mb-2">Ukončit session?</h3>
-                <p className="text-slate-500 text-sm mb-6">
-                  Session bude ukončena a studenti budou odpojeni.
-                </p>
-                <div className="space-y-2">
-                  <button
-                    onClick={() => endLiveSession(true)}
-                    className="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-medium flex items-center justify-center gap-2"
-                  >
-                    <BarChart2 className="w-4 h-4" />
-                    Ukončit a zobrazit výsledky
-                  </button>
-                  <button
-                    onClick={() => endLiveSession(false)}
-                    className="w-full py-3 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-700 font-medium"
-                  >
-                    Ukončit bez výsledků
-                  </button>
-                  <button
-                    onClick={() => setShowEndDialog(false)}
-                    className="w-full py-2 text-slate-500 hover:text-slate-700 text-sm"
-                  >
-                    Zrušit
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      );
-    }
-    
-    // Live session settings panel
-    if (showLiveSettings) {
-      return (
-        <div className="flex flex-col h-full" style={{ backgroundColor: '#4a5568' }}>
-          {/* Header */}
-          <div className="p-4">
-            <button 
-              onClick={() => setShowLiveSettings(false)}
-              className="flex items-center gap-2 text-white/70 hover:text-white mb-4"
-            >
-              <ArrowLeft className="w-5 h-5" />
-            </button>
-            <h2 className="text-2xl font-bold text-white text-center mb-2">Živé promítání</h2>
-            <p className="text-white/60 text-center text-sm">Nastavení relace</p>
-          </div>
-          
-          {/* Settings form */}
-          <div className="flex-1 px-6 flex flex-col overflow-y-auto">
-            {/* Class selector */}
-            <div className="mt-4">
-              <label className="text-white font-medium block mb-2">
-                <Users className="w-4 h-4 inline-block mr-2" />
-                Připojit třídu (volitelné)
-              </label>
-              {loadingClasses ? (
-                <div className="text-white/50 text-sm py-3">Načítám třídy...</div>
-              ) : availableClasses.length === 0 ? (
-                <div className="text-white/50 text-sm py-3">Žádné třídy k dispozici</div>
-              ) : (
-                <select
-                  value={selectedClassId || ''}
-                  onChange={(e) => setSelectedClassId(e.target.value || null)}
-                  className="w-full px-4 py-3 rounded-xl bg-white/10 text-white border border-white/20 focus:border-white/40 outline-none"
-                >
-                  <option value="" className="text-slate-800">Bez třídy (veřejná relace)</option>
-                  {availableClasses.map(cls => (
-                    <option key={cls.id} value={cls.id} className="text-slate-800">
-                      {cls.name}
-                    </option>
-                  ))}
-                </select>
-              )}
-              <p className="text-white/50 text-xs pl-1 pt-2 pb-3">
-                Připojením třídy budou výsledky automaticky přiřazeny studentům.
-              </p>
-            </div>
-            
-            {/* Toggle settings */}
-            <div className="space-y-1 mt-4">
-              <ToggleSwitch
-                enabled={liveShowSolutionHints}
-                onChange={setLiveShowSolutionHints}
-                label="Zobrazit řešení a nápovědu"
-              />
-              <p className="text-white/50 text-xs pl-1 pb-3">
-                Při špatné odpovědi se ukáže správná odpověď. Pokud má otázka nápovědu, zobrazí se tlačítko.
-              </p>
-            </div>
-            
-            {/* Start button */}
-            <div className="mt-auto pb-6">
-              <button
-                onClick={() => {
-                  setShowLiveSettings(false);
-                  startLiveSession();
-                }}
-                disabled={isStartingSession}
-                className="w-full py-5 rounded-xl font-bold text-xl transition-colors disabled:opacity-50"
-                style={{ backgroundColor: '#e8f84a', color: '#1e293b' }}
-              >
-                {isStartingSession ? 'Spouštím...' : 'Spustit promítání'}
-              </button>
-            </div>
-          </div>
-        </div>
-      );
-    }
-    
-    // Share settings panel
-    if (showShareSettings) {
-      return (
-        <div className="flex flex-col h-full" style={{ backgroundColor: '#4a5568' }}>
-          {/* Header */}
-          <div className="p-4">
-            <button 
-              onClick={() => {
-                setShowShareSettings(false);
-                setShareLink(null);
-              }}
-              className="flex items-center gap-2 text-white/70 hover:text-white mb-4"
-            >
-              <ArrowLeft className="w-5 h-5" />
-            </button>
-            <h2 className="text-2xl font-bold text-white text-center mb-6">Nastavení</h2>
-          </div>
-          
-          {shareLink ? (
-            // Show generated link
-            <div className="flex-1 px-6 flex flex-col">
-              <div className="bg-white/10 rounded-xl p-4 mb-4">
-                <p className="text-sm text-slate-300 mb-2">Odkaz pro studenty:</p>
-                <p className="text-white font-mono text-sm break-all">{shareLink}</p>
-              </div>
-              <button
-                onClick={() => {
-                  navigator.clipboard.writeText(shareLink);
-                }}
-                className="w-full py-4 rounded-xl bg-emerald-400 text-slate-900 font-bold text-lg hover:bg-emerald-300 transition-colors mb-4"
-              >
-                Kopírovat odkaz
-              </button>
-              <button
-                onClick={() => setShareLink(null)}
-                className="w-full py-3 rounded-xl bg-white/10 text-white font-medium hover:bg-white/20 transition-colors"
-              >
-                Upravit nastavení
-              </button>
-            </div>
-          ) : (
-            // Show settings form
-            <div className="flex-1 px-6 flex flex-col">
-              {/* Session name */}
-              <div className="mb-6">
-                <label className="text-white font-medium mb-2 block">Jméno relace</label>
-                <input
-                  type="text"
-                  value={sessionName}
-                  onChange={(e) => setSessionName(e.target.value)}
-                  className="w-full px-4 py-3 rounded-xl bg-white/10 border border-white/20 text-white placeholder-white/50 focus:outline-none focus:border-emerald-400"
-                  placeholder="Nová relace"
-                />
-              </div>
-              
-              {/* Toggle settings */}
-              <div className="space-y-1">
-                <ToggleSwitch
-                  enabled={anonymousAccess}
-                  onChange={setAnonymousAccess}
-                  label="Anonymní přístup (bez jména)"
-                />
-                <ToggleSwitch
-                  enabled={showSolutionHints}
-                  onChange={setShowSolutionHints}
-                  label="Ověřit řešení a zobrazit nápovědu"
-                />
-                <ToggleSwitch
-                  enabled={showActivityResults}
-                  onChange={setShowActivityResults}
-                  label="Zobrazovat vyhodnocení aktivit"
-                />
-                <ToggleSwitch
-                  enabled={requireAnswerToProgress}
-                  onChange={setRequireAnswerToProgress}
-                  label="Vyžadovat odpověď pro posunutí"
-                />
-                <ToggleSwitch
-                  enabled={showNotes}
-                  onChange={setShowNotes}
-                  label="Zobrazit poznámky"
-                />
-              </div>
-              
-              {/* Start sharing button */}
-              <div className="mt-auto pb-6">
-                <button
-                  onClick={handleStartSharing}
-                  className="w-full py-5 rounded-xl bg-emerald-400 text-slate-900 font-bold text-xl hover:bg-emerald-300 transition-colors"
-                >
-                  Zahájit sdílení
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-      );
-    }
-    
-    // Competition mode picker panel
-    if (showCompetitionPicker) {
-      return (
-        <div className="flex flex-col h-full text-white" style={{ backgroundColor: '#1e2533' }}>
-          <div className="p-6">
-            <button 
-              onClick={() => setShowCompetitionPicker(false)}
-              className="flex items-center gap-2 text-white/70 hover:text-white mb-4"
-            >
-              <ArrowLeft className="w-5 h-5" />
-            </button>
-            <h2 className="text-xl font-bold text-white text-center leading-snug">
-              Vyberte soutěžní mód:
-            </h2>
-          </div>
-          
-          <div className="flex-1 px-5">
-            <div className="grid grid-cols-1 gap-3">
-              {/* Classic competition */}
-              <button 
-                onClick={() => {
-                  setShowCompetitionPicker(false);
-                  startCompetition();
-                }}
-                className="flex items-center gap-4 p-5 rounded-2xl transition-all hover:scale-[1.02] active:scale-[0.98]"
-                style={{ backgroundColor: '#4eebc0' }}
-              >
-                <div className="w-14 h-14 flex items-center justify-center flex-shrink-0">
-                  <svg viewBox="0 0 64 64" className="w-full h-full">
-                    <polygon points="32,8 38,24 56,24 42,34 47,50 32,40 17,50 22,34 8,24 26,24" fill="#4E5871" opacity="0.8" />
-                  </svg>
-                </div>
-                <div className="text-left">
-                  <span className="text-lg font-bold text-slate-800 block">Soutěž</span>
-                  <span className="text-sm text-slate-600">Každý sám za sebe</span>
-                </div>
-              </button>
-
-              {/* Team competition */}
-              <button 
-                onClick={() => {
-                  setShowCompetitionPicker(false);
-                  startTeamCompetition();
-                }}
-                className="flex items-center gap-4 p-5 rounded-2xl transition-all hover:scale-[1.02] active:scale-[0.98]"
-                style={{ backgroundColor: '#a78bfa' }}
-              >
-                <div className="w-14 h-14 flex items-center justify-center flex-shrink-0">
-                  <svg viewBox="0 0 64 64" className="w-full h-full">
-                    <circle cx="20" cy="20" r="8" fill="#fff" opacity="0.8" />
-                    <circle cx="44" cy="20" r="8" fill="#fff" opacity="0.8" />
-                    <circle cx="20" cy="44" r="8" fill="#fff" opacity="0.8" />
-                    <circle cx="44" cy="44" r="8" fill="#fff" opacity="0.8" />
-                  </svg>
-                </div>
-                <div className="text-left">
-                  <span className="text-lg font-bold text-white block">Týmová soutěž</span>
-                  <span className="text-sm text-white/70">Hráči v týmech proti sobě</span>
-                </div>
-              </button>
-
-              {/* Duel competition */}
-              <button 
-                onClick={() => {
-                  setShowCompetitionPicker(false);
-                  startDuelCompetition();
-                }}
-                className="flex items-center gap-4 p-5 rounded-2xl transition-all hover:scale-[1.02] active:scale-[0.98]"
-                style={{ backgroundColor: '#FF6B35' }}
-              >
-                <div className="w-14 h-14 flex items-center justify-center flex-shrink-0">
-                  <Swords className="w-10 h-10" style={{ color: '#fff' }} />
-                </div>
-                <div className="text-left">
-                  <span className="text-lg font-bold text-white block">Duely</span>
-                  <span className="text-sm text-white/70">1 vs 1 souboje ve dvojicích</span>
-                </div>
-              </button>
-
-              {/* Tactical competition */}
-              <button 
-                onClick={() => {
-                  setShowCompetitionPicker(false);
-                  startTacticalCompetition();
-                }}
-                className="flex items-center gap-4 p-5 rounded-2xl transition-all hover:scale-[1.02] active:scale-[0.98]"
-                style={{ backgroundColor: '#10B981' }}
-              >
-                <div className="w-14 h-14 flex items-center justify-center flex-shrink-0">
-                  <Crosshair className="w-10 h-10" style={{ color: '#fff' }} />
-                </div>
-                <div className="text-left">
-                  <span className="text-lg font-bold text-white block">Taktik</span>
-                  <span className="text-sm text-white/70">Body nebo truhly s power-upy</span>
-                </div>
-              </button>
-            </div>
-          </div>
-        </div>
-      );
-    }
-
-    // Student connection options panel
-    if (showStudentOptions) {
-      return (
-        <div className="flex flex-col h-full text-white" style={{ backgroundColor: '#1e2533' }}>
-          {/* Back button and title */}
-          <div className="p-6">
-            <button 
-              onClick={() => setShowStudentOptions(false)}
-              className="flex items-center gap-2 text-white/70 hover:text-white mb-4"
-            >
-              <ArrowLeft className="w-5 h-5" />
-            </button>
-            <h2 className="text-xl font-bold text-white text-center leading-snug">
-              Vyberte, jakým způsobem<br />zapojit studenty:
-            </h2>
-          </div>
-          
-          {/* Together section */}
-          <div className="flex-1 px-5">
-            <p className="text-center text-sm font-semibold text-slate-400 uppercase tracking-wide mb-3">Společně:</p>
-            <div className="grid grid-cols-2 gap-3 mb-6">
-              {/* Live projection */}
-              <button 
-                onClick={() => setShowLiveSettings(true)}
-                className="flex flex-col items-center justify-center p-4 rounded-2xl transition-all hover:scale-[1.03] active:scale-[0.97]"
-                style={{ backgroundColor: '#e8f84a', aspectRatio: '1', minHeight: 130 }}
-              >
-                <div className="w-16 h-16 flex items-center justify-center mb-2">
-                  <svg viewBox="0 0 64 64" className="w-full h-full">
-                    <circle cx="32" cy="20" r="10" fill="#4E5871" opacity="0.3" />
-                    <circle cx="18" cy="38" r="8" fill="#4E5871" opacity="0.5" />
-                    <circle cx="46" cy="38" r="8" fill="#4E5871" opacity="0.5" />
-                    <circle cx="32" cy="48" r="8" fill="#4E5871" />
-                    <rect x="26" y="10" width="12" height="10" rx="2" fill="#4E5871" />
-                    <polygon points="32,6 38,12 26,12" fill="#4E5871" />
-                  </svg>
-                </div>
-                <span className="text-sm font-bold text-slate-700 text-center leading-tight">Připojit do promítání</span>
-              </button>
-              
-              {/* Competition / Contest — opens mode picker */}
-              <button 
-                onClick={() => setShowCompetitionPicker(true)}
-                className="flex flex-col items-center justify-center p-4 rounded-2xl transition-all hover:scale-[1.03] active:scale-[0.97]"
-                style={{ backgroundColor: '#4eebc0', aspectRatio: '1', minHeight: 130 }}
-              >
-                <div className="w-16 h-16 flex items-center justify-center mb-2">
-                  <svg viewBox="0 0 64 64" className="w-full h-full">
-                    <polygon points="32,8 38,24 56,24 42,34 47,50 32,40 17,50 22,34 8,24 26,24" fill="#4E5871" opacity="0.8" />
-                    <rect x="20" y="42" width="24" height="14" rx="3" fill="#4E5871" opacity="0.5" />
-                    <rect x="24" y="46" width="16" height="6" rx="2" fill="#4E5871" opacity="0.3" />
-                  </svg>
-                </div>
-                <span className="text-sm font-bold text-slate-700 text-center leading-tight">Zahájit soutěž</span>
-              </button>
-            </div>
-            
-            {/* Solo section */}
-            <p className="text-center text-sm font-semibold text-slate-400 uppercase tracking-wide mb-3">Každý sám:</p>
-            <div className="grid grid-cols-2 gap-3">
-              {/* Assign in class */}
-              <button 
-                onClick={startClassroomSession}
-                className="flex flex-col items-center justify-center p-4 rounded-2xl transition-all hover:scale-[1.03] active:scale-[0.97]"
-                style={{ backgroundColor: '#fecaca', aspectRatio: '1', minHeight: 130 }}
-              >
-                <div className="w-16 h-16 flex items-center justify-center mb-2">
-                  <svg viewBox="0 0 64 64" className="w-full h-full">
-                    <rect x="12" y="8" width="20" height="28" rx="3" fill="#4E5871" opacity="0.6" transform="rotate(-8 22 22)" />
-                    <rect x="32" y="8" width="20" height="28" rx="3" fill="#4E5871" opacity="0.4" transform="rotate(8 42 22)" />
-                    <circle cx="22" cy="44" r="6" fill="#4E5871" opacity="0.3" />
-                    <polygon points="22,38 26,42 18,42" fill="#4E5871" opacity="0.5" />
-                    <circle cx="42" cy="44" r="6" fill="#4E5871" opacity="0.3" />
-                    <polygon points="42,38 46,42 38,42" fill="#4E5871" opacity="0.5" />
-                  </svg>
-                </div>
-                <span className="text-sm font-bold text-slate-700 text-center leading-tight">Zadat ve výuce</span>
-              </button>
-              
-              {/* Share content */}
-              <button 
-                onClick={() => setShowShareSettings(true)}
-                className="flex flex-col items-center justify-center p-4 rounded-2xl transition-all hover:scale-[1.03] active:scale-[0.97]"
-                style={{ backgroundColor: '#bfdbfe', aspectRatio: '1', minHeight: 130 }}
-              >
-                <div className="w-16 h-16 flex items-center justify-center mb-2">
-                  <svg viewBox="0 0 64 64" className="w-full h-full">
-                    <rect x="16" y="20" width="32" height="24" rx="4" fill="#4E5871" opacity="0.3" />
-                    <path d="M32 18 L32 8 L40 16 L36 16 L36 26 L28 26 L28 16 L24 16 Z" fill="#4E5871" opacity="0.7" />
-                  </svg>
-                </div>
-                <span className="text-sm font-bold text-slate-700 text-center leading-tight">Sdílet obsah</span>
-              </button>
-            </div>
-          </div>
-          
-          {/* Cancel / Skip button */}
-          <div className="p-5">
-            <button 
-              onClick={() => setShowStudentOptions(false)}
-              className="w-full py-3.5 rounded-xl font-semibold transition-colors"
-              style={{ backgroundColor: '#1a2236', color: '#cbd5e1', border: '1px solid rgba(255,255,255,0.1)' }}
-            >
-              Nezapojovat studenty
-            </button>
-          </div>
-        </div>
-      );
-    }
-    
-    // Default panel - main actions
     return (
-      <div className="flex flex-col h-full text-white" style={{ backgroundColor: '#1e2533' }}>
-        {/* Header */}
-        <div className="p-6 text-center border-b border-white/10">
-          <span className="text-xs text-slate-400 uppercase tracking-wide">Procvičování</span>
-          <h2 className="text-xl font-bold mt-1 truncate text-white">{quiz.title || 'bez názvu'}</h2>
-        </div>
-        
-        {/* Main actions */}
-        <div className="flex-1 p-4 flex flex-col">
-          {/* Connect students - primary */}
-          <button 
-            onClick={() => setShowStudentOptions(true)}
-            className="w-full flex items-center gap-4 px-5 py-4 rounded-xl font-semibold hover:opacity-90 transition-colors mb-3"
-            style={{ backgroundColor: '#4eebc0', color: '#4E5871' }}
-          >
-            <div className="w-12 h-12 flex items-center justify-center">
-              <svg viewBox="0 0 48 48" className="w-full h-full">
-                <circle cx="24" cy="14" r="8" fill="currentColor" opacity="0.3" />
-                <circle cx="12" cy="26" r="6" fill="currentColor" opacity="0.5" />
-                <circle cx="36" cy="26" r="6" fill="currentColor" opacity="0.5" />
-                <circle cx="24" cy="34" r="6" fill="currentColor" />
-                <rect x="20" y="6" width="8" height="8" rx="2" fill="currentColor" />
-                <polygon points="24,4 28,8 20,8" fill="currentColor" />
-              </svg>
-            </div>
-            <span>Připojit studenty</span>
-          </button>
-          
-          {/* Edit OR Copy and Edit - depending on ownership */}
-          {canDirectEdit ? (
-          <button 
-            onClick={() => navigate(`/quiz/edit/${quiz.id}`)}
-            className="w-full flex items-center gap-4 px-5 py-4 rounded-xl text-white font-medium hover:bg-white/20 transition-colors mb-3"
-            style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}
-          >
-            <Edit3 className="w-6 h-6 text-slate-400" />
-            <span>Upravit</span>
-          </button>
-          ) : (
-            <button 
-              onClick={() => {
-                if (!quiz) return;
-                
-                const boardTitle = quiz.title || 'Board';
-                
-                // Create a duplicate with new ID and mark as owned by current user
-                const newQuizId = crypto.randomUUID();
-                const newQuiz = {
-                  ...quiz,
-                  id: newQuizId,
-                  title: boardTitle,
-                  createdAt: new Date().toISOString(),
-                  updatedAt: new Date().toISOString(),
-                  createdBy: profile?.userId,
-                };
-                saveQuiz(newQuiz);
-                
-                // === Add to "Zkopírováno z VividBooks" folder structure ===
-                const FOLDER_COLORS = ['#bbf7d0', '#bfdbfe', '#fde68a', '#fecaca', '#e9d5ff', '#99f6e4', '#fed7aa', '#fca5a5'];
-                
-                // Get subject label from URL params or quiz.subject
-                const subjectMap: { [key: string]: string } = {
-                  'fyzika': 'Fyzika',
-                  'chemie': 'Chemie',
-                  'prirodopis': 'Přírodopis',
-                  'matematika': 'Matematika',
-                };
-                const subjectId = subjectSlug || quiz.subject || 'fyzika';
-                const categoryLabel = subjectMap[subjectId] || subjectMap['fyzika'];
-                
-                // Map topic slugs to human-readable labels
-                const topicLabelMap: { [key: string]: string } = {
-                  'zaklady': 'Základy',
-                  'sily': 'Síly',
-                  'kapaliny-a-plyny': 'Kapaliny a plyny',
-                  'optika': 'Optika',
-                  'energie': 'Energie',
-                  'akustika': 'Akustika',
-                  'elektrina-a-magnetismus': 'Elektřina a magnetismus',
-                  'fyzika-mikrosveta': 'Fyzika mikrosvěta',
-                  'vesmir': 'Vesmír',
-                };
-                
-                // Use topic from URL or default to "Základy"
-                const bookLabel = topicSlug ? (topicLabelMap[topicSlug] || topicSlug.charAt(0).toUpperCase() + topicSlug.slice(1)) : 'Základy';
-                
-                // Get existing folders
-                const existingFoldersJson = localStorage.getItem('vivid-my-folders');
-                let existingFolders: any[] = [];
-                if (existingFoldersJson) {
-                  try {
-                    existingFolders = JSON.parse(existingFoldersJson);
-                  } catch (e) {
-                    console.error("Failed to parse existing folders", e);
-                  }
-                }
-                
-                // Find or create SUBJECT folder (e.g. "Fyzika") with copiedFrom: 'vividbooks-category'
-                let subjectFolder = existingFolders.find(f => f.name === categoryLabel && f.copiedFrom === 'vividbooks-category');
-                
-                if (!subjectFolder) {
-                  const randomColor = FOLDER_COLORS[Math.floor(Math.random() * FOLDER_COLORS.length)];
-                  subjectFolder = {
-                    id: `folder-vb-${subjectId}-${Date.now()}`,
-                    name: categoryLabel,
-                    type: 'folder',
-                    color: randomColor,
-                    copiedFrom: 'vividbooks-category',
-                    children: []
-                  };
-                  existingFolders.push(subjectFolder);
-                }
-                
-                // Find or create BOOK folder inside subject (e.g. "Procvičování")
-                subjectFolder.children = subjectFolder.children || [];
-                let bookFolder = subjectFolder.children.find((f: any) => f.name === bookLabel && f.type === 'folder');
-                
-                if (!bookFolder) {
-                  bookFolder = {
-                    id: `folder-vb-book-${Date.now()}`,
-                    name: bookLabel,
-                    type: 'folder',
-                    color: '#4eebc0',
-                    copiedFrom: 'vividbooks-book',
-                    children: []
-                  };
-                  subjectFolder.children.push(bookFolder);
-                }
-                
-                // Create new board item - IMPORTANT: type must be 'board' and name must be set
-                const newItem = {
-                  id: newQuizId,
-                  name: boardTitle,
-                  type: 'board',
-                  copiedFrom: 'vividbooks',
-                  originalId: quiz.id,
-                  createdAt: new Date().toISOString(),
-                };
-                
-                bookFolder.children = bookFolder.children || [];
-                bookFolder.children.push(newItem);
-                
-                // Update folders in localStorage (need to update the reference in existingFolders)
-                const updatedFolders = existingFolders.map(f => 
-                  f.id === subjectFolder.id ? subjectFolder : f
-                );
-                localStorage.setItem('vivid-my-folders', JSON.stringify(updatedFolders));
-                
-                // Mark quiz as belonging to this folder so it doesn't show in root "Moje soubory"
-                // Use bookFolder.id to prevent duplicate display
-                moveQuizToFolder(newQuizId, bookFolder.id);
-                
-                // Store toast message for display after navigation
-                sessionStorage.setItem('copied-doc-toast', JSON.stringify({
-                  title: boardTitle,
-                  path: `Můj obsah → Zkopírováno z VividBooks → ${categoryLabel} → ${bookLabel}`
-                }));
-                
-                // Navigate to the new board in editor
-                navigate(`/quiz/edit/${newQuiz.id}`);
-              }}
-              className="w-full flex items-center gap-4 px-5 py-4 rounded-xl font-medium mb-3"
-              style={{ backgroundColor: '#4eebc0', color: '#1e293b' }}
-            >
-              <Copy className="w-6 h-6" />
-              <span>Kopírovat a upravit</span>
-            </button>
-          )}
-          
-          {/* Results - only show for own boards */}
-          {canDirectEdit && (
-          <button 
-            onClick={() => navigate(`/quiz/edit/${quiz.id}?tab=results`)}
-            className="w-full flex items-center gap-4 px-5 py-4 rounded-xl text-white font-medium hover:bg-white/20 transition-colors mb-3"
-            style={{ backgroundColor: 'rgba(255,255,255,0.1)' }}
-          >
-            <BarChart2 className="w-6 h-6 text-slate-400" />
-            <span>Výsledky</span>
-          </button>
-          )}
-          
-          {/* Copy to my content removed - "Kopírovat a upravit" already shows for non-owners */}
-          
-          {/* Spacer */}
-          <div className="flex-1" />
-          
-          {/* Secondary actions */}
-          <div className="grid grid-cols-2 gap-3 pt-4">
-            <button 
-              onClick={handlePrint}
-              className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-slate-300 font-medium hover:bg-slate-600/50 transition-colors"
-              style={{ backgroundColor: 'rgba(71,85,105,0.5)' }}
-            >
-              <Printer className="w-4 h-4" />
-              <span className="text-sm">Tisknout</span>
-            </button>
-            <button 
-              className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-slate-300 font-medium hover:bg-slate-600/50 transition-colors"
-              style={{ backgroundColor: 'rgba(71,85,105,0.5)' }}
-            >
-              <Share2 className="w-4 h-4" />
-              <span className="text-sm">Sdílet</span>
-            </button>
-          </div>
-          
-          {/* Share edit link */}
-          <button 
-            onClick={() => setShowShareEditDialog(true)}
-            className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-slate-300 font-medium hover:bg-slate-600/50 transition-colors mt-3"
-            style={{ backgroundColor: 'rgba(71,85,105,0.5)' }}
-          >
-            <ExternalLink className="w-4 h-4" />
-            <span className="text-sm">Sdílet odkaz pro úpravu</span>
-          </button>
-        </div>
-      </div>
+      <BoardViewRightPanel
+        classroomShareId={classroomShareId}
+        classroomPanelProps={{
+          classroomStarted,
+          classroomStudents: classroomStudents as Record<string, { studentName?: string; isOnline?: boolean; isFocused?: boolean; completedAt?: string }>,
+          classroomShareCode,
+          classroomShareLink,
+          copied,
+          onOpenQrPopup: handleOpenQrPopup,
+          onCopyLink: copyToClipboard,
+          onOpenEndDialog: handleOpenEndDialog,
+          showEndDialog,
+          endDialog: (
+            <BoardViewEndSessionDialog
+              onEndAndShowResults={() => endClassroomSession(true)}
+              onEndWithoutResults={() => endClassroomSession(false)}
+              onCancel={handleCloseEndDialog}
+            />
+          ),
+        }}
+        sessionId={sessionId}
+        sessionCode={sessionCode}
+        liveSessionPanelProps={{
+          session,
+          sessionCode: sessionCode || '',
+          showModeDropdown,
+          onToggleModeDropdown: () => setShowModeDropdown(!showModeDropdown),
+          onCloseModeDropdown: () => setShowModeDropdown(false),
+          onSelectTeacherPresent: () => {
+            updateLiveSession({ isLocked: true });
+            setShowModeDropdown(false);
+          },
+          onSelectStudentsSelf: () => {
+            updateLiveSession({ isLocked: false });
+            setShowModeDropdown(false);
+          },
+          onStartCompetition: () => {
+            startCompetition();
+            setShowModeDropdown(false);
+          },
+          onStartTeamCompetition: () => {
+            startTeamCompetition();
+            setShowModeDropdown(false);
+          },
+          onStartDuelCompetition: () => {
+            startDuelCompetition();
+            setShowModeDropdown(false);
+          },
+          onStartTacticalCompetition: () => {
+            startTacticalCompetition();
+            setShowModeDropdown(false);
+          },
+          onOpenQrPopup: handleOpenQrPopup,
+          onCopyLink: copyToClipboard,
+          copied,
+          students,
+          onlineStudentsCount: onlineStudents.length,
+          quiz,
+          currentSlideIndex,
+          votingVotes: voting.votes,
+          boardPosts: boardPosts.posts,
+          evaluateControls: (
+            <BoardViewLiveEvaluateControls
+              sessionLocked={session?.isLocked ?? true}
+              quiz={quiz}
+              currentSlideIndex={currentSlideIndex}
+              students={students}
+              onEvaluate={handleEvaluateCurrentLiveSlide}
+            />
+          ),
+          onViewResults: () => {
+            if (sessionId) navigate(routes.results(sessionId, { type: 'live' }));
+          },
+          onOpenEndDialog: handleOpenEndDialog,
+          showEndDialog,
+          endDialog: (
+            <BoardViewEndSessionDialog
+              onEndAndShowResults={() => endLiveSession(true)}
+              onEndWithoutResults={() => endLiveSession(false)}
+              onCancel={handleCloseEndDialog}
+            />
+          ),
+        }}
+        showLiveSettings={showLiveSettings}
+        liveSettingsPanelProps={{
+          loadingClasses,
+          availableClasses,
+          selectedClassId,
+          onSelectedClassChange: setSelectedClassId,
+          liveShowSolutionHints,
+          onLiveShowSolutionHintsChange: setLiveShowSolutionHints,
+          isStartingSession,
+          onClose: handleCloseLiveSettings,
+          onStart: () => {
+            handleCloseLiveSettings();
+            startLiveSession();
+          },
+          ToggleSwitchComponent: ToggleSwitch,
+        }}
+        showShareSettings={showShareSettings}
+        shareSettingsPanelProps={{
+          shareLink,
+          sessionName,
+          anonymousAccess,
+          showSolutionHints,
+          showActivityResults,
+          requireAnswerToProgress,
+          showNotes,
+          onClose: handleCloseShareSettings,
+          onCopyLink: () => shareLink && copyToClipboard(shareLink),
+          onResetShareLink: () => setShareLink(null),
+          onSessionNameChange: setSessionName,
+          onAnonymousAccessChange: setAnonymousAccess,
+          onShowSolutionHintsChange: setShowSolutionHints,
+          onShowActivityResultsChange: setShowActivityResults,
+          onRequireAnswerToProgressChange: setRequireAnswerToProgress,
+          onShowNotesChange: setShowNotes,
+          onStartSharing: handleStartSharing,
+          ToggleSwitchComponent: ToggleSwitch,
+        }}
+        showCompetitionPicker={showCompetitionPicker}
+        competitionPickerPanelProps={{
+          onClose: () => setShowCompetitionPicker(false),
+          onStartCompetition: () => {
+            setShowCompetitionPicker(false);
+            startCompetition();
+          },
+          onStartTeamCompetition: () => {
+            setShowCompetitionPicker(false);
+            startTeamCompetition();
+          },
+          onStartDuelCompetition: () => {
+            setShowCompetitionPicker(false);
+            startDuelCompetition();
+          },
+          onStartTacticalCompetition: () => {
+            setShowCompetitionPicker(false);
+            startTacticalCompetition();
+          },
+        }}
+        showStudentOptions={showStudentOptions}
+        studentOptionsPanelProps={{
+          studentOptions: STUDENT_OPTIONS,
+          hoveredStudentOption,
+          setHoveredStudentOption,
+          onClose: handleCloseStudentOptions,
+          onProjection: handleOpenLiveSettings,
+          onCompetition: () => setShowCompetitionPicker(true),
+          onPresent: () => navigate(routes.present(quiz?.id || '')),
+          onClassroom: startClassroomSession,
+          onShare: handleOpenShareSettings,
+        }}
+        defaultPanelProps={{
+          title: quiz.title || 'bez názvu',
+          canDirectEdit,
+          onOpenStudentOptions: handleOpenStudentOptions,
+          onEdit: handleEditBoard,
+          onCopyAndEdit: handleCopyAndEditBoard,
+          onResults: handleOpenBoardResults,
+          onPrint: handlePrint,
+          onOpenShareEditDialog: handleOpenShareEditDialog,
+        }}
+      />
     );
   };
   
@@ -2695,8 +1544,8 @@ export function QuizViewPage() {
               <BoardSlideView 
                 slide={slide as BoardActivitySlide}
                 posts={boardPosts.posts}
-                currentUserId={profile?.id}
-                currentUserName={profile?.name}
+                currentUserId={currentUserId}
+                currentUserName={currentUserName}
                 isTeacher={true}
                 onDeletePost={boardPosts.deletePost}
                 readOnly={false}
@@ -2753,6 +1602,12 @@ export function QuizViewPage() {
                 isReadOnly={false}
               />
             );
+          case 'flashcard':
+            return (
+              <div className="w-full h-full">
+                <FlashcardSlideView slide={slide as any} />
+              </div>
+            );
           default:
             return <div className="text-slate-500 text-center">Nepodporovaný typ aktivity</div>;
         }
@@ -2778,6 +1633,7 @@ export function QuizViewPage() {
   // Background color based on session state
   const bgColor = sessionId ? '#1e2533' : '#F0F1F8';
   const isDarkMode = !!sessionId;
+  const showLeftChrome = !classroomShareId;
   
   // ============================================
   // RENDER: COMPETITION MODE (full-screen takeover)
@@ -2788,6 +1644,7 @@ export function QuizViewPage() {
         <CompetitionView
           session={session}
           sessionId={sessionId}
+          sessionBackend={sessionBackend}
           quiz={quiz}
           sessionCode={sessionCode}
           onEnd={endCompetition}
@@ -2806,6 +1663,7 @@ export function QuizViewPage() {
         <TeamCompetitionView
           session={session}
           sessionId={sessionId}
+          sessionBackend={sessionBackend}
           quiz={quiz}
           sessionCode={sessionCode}
           onEnd={endTeamCompetition}
@@ -2824,6 +1682,7 @@ export function QuizViewPage() {
         <DuelCompetitionView
           session={session}
           sessionId={sessionId}
+          sessionBackend={sessionBackend}
           quiz={quiz}
           sessionCode={sessionCode}
           onEnd={endDuelCompetition}
@@ -2842,6 +1701,7 @@ export function QuizViewPage() {
         <TacticalCompetitionView
           session={session}
           sessionId={sessionId}
+          sessionBackend={sessionBackend}
           quiz={quiz}
           sessionCode={sessionCode}
           onEnd={endTacticalCompetition}
@@ -2851,8 +1711,13 @@ export function QuizViewPage() {
     );
   }
   
+  const hasOsnova = !!(quiz.worksheetMap && quiz.worksheetMap.pages.length > 0);
+  const hasCurrentSlideNote = !!String((currentSlide as any)?.note || '').trim();
+  const hasLeftPanelContent = hasOsnova || hasCurrentSlideNote;
+  const isLeftPanelOpen = showOsnovaPanel || showNotePanel;
+  
   return (
-    <div className="flex h-screen overflow-hidden" style={{ backgroundColor: bgColor }}>
+    <div className="flex h-screen overflow-hidden relative" style={{ backgroundColor: bgColor }}>
       {/* QR/Code Popup - displays over entire presentation area */}
       {showQRPopup && (sessionCode || classroomShareId) && (() => {
         const isClassroom = !!classroomShareId;
@@ -2871,7 +1736,7 @@ export function QuizViewPage() {
           }}
         >
           <button
-            onClick={() => setShowQRPopup(null)}
+            onClick={handleCloseQrPopup}
             className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full transition-colors z-10"
           >
             <X className="w-8 h-8" />
@@ -2886,11 +1751,7 @@ export function QuizViewPage() {
                   level="M"
                 />
                 <button
-                  onClick={() => {
-                    navigator.clipboard.writeText(popupLink);
-                    setCopied(true);
-                    setTimeout(() => setCopied(false), 2000);
-                  }}
+                  onClick={() => copyToClipboard(popupLink)}
                   className="mt-8 px-6 py-3 rounded-xl font-medium transition-colors flex items-center gap-2"
                   style={{ backgroundColor: '#f59e0b', color: 'white' }}
                 >
@@ -2921,11 +1782,7 @@ export function QuizViewPage() {
                 </div>
                 
                 <button
-                  onClick={() => {
-                    navigator.clipboard.writeText(popupLink);
-                    setCopied(true);
-                    setTimeout(() => setCopied(false), 2000);
-                  }}
+                  onClick={() => copyToClipboard(popupLink)}
                   className="mt-8 px-6 py-3 rounded-xl font-medium transition-colors flex items-center gap-2"
                   style={{ backgroundColor: '#f59e0b', color: 'white' }}
                 >
@@ -2948,34 +1805,166 @@ export function QuizViewPage() {
         );
       })()}
       
-      {/* Main content area */}
-      <div className="flex-1 flex flex-col relative">
-        {/* Desktop: Top bar with X and panel toggle */}
-        <div className="hidden lg:flex absolute top-0 left-0 right-0 z-20 items-center justify-between px-4 py-3">
+      {/* Left sidebar - Osnova (desktop only) */}
+      {showLeftChrome && isLeftPanelOpen && (
+        <div className="hidden lg:flex h-full flex-shrink-0 relative">
+          <div
+            ref={osnovaSidebarRef}
+            className="flex flex-col flex-shrink-0 bg-white/95 backdrop-blur-sm z-30 border-r border-slate-100"
+            style={{ width: osnovaWidth, minWidth: 240, maxWidth: 600 }}
+          >
+            {showOsnovaPanel && hasOsnova ? (
+              <OsnovaPanel
+                worksheetMap={quiz.worksheetMap!}
+                slides={quiz.slides}
+                selectedSlideId={quiz.slides[currentSlideIndex]?.id ?? null}
+                onSlideSelect={(id) => {
+                  const idx = quiz.slides.findIndex(s => s.id === id);
+                  if (idx >= 0) setCurrentSlideIndex(idx);
+                }}
+                headerPaddingTop={16}
+              />
+            ) : showNotePanel && hasCurrentSlideNote ? (
+              <div className="flex-1 overflow-y-auto px-5 py-10" style={{ paddingTop: 100 }}>
+                <div className="flex flex-col gap-4">
+                  <h3 className="text-slate-400 text-[10px] uppercase tracking-widest font-bold mb-2">Poznamka:</h3>
+                  <p className="text-[#4E5871] text-lg font-medium leading-relaxed">
+                    {(currentSlide as any).note}
+                  </p>
+                </div>
+              </div>
+            ) : null}
+          </div>
+          {/* Subtle edge line only */}
+          <div className="absolute top-0 right-0 h-full w-px bg-slate-200 z-30" style={{ right: -1 }} />
+        </div>
+      )}
+
+      {/* Left control column - desktop only */}
+      <div className={`${showLeftChrome ? 'hidden lg:flex' : 'hidden'} flex-col items-center flex-shrink-0 h-full relative`} style={{ width: 64, paddingTop: 20, gap: 0 }}>
+        {/* Buttons group at top */}
+        <div className="flex flex-col items-center gap-3">
           {/* Close button */}
           <button
             onClick={() => navigate(-1)}
-            className={`w-10 h-10 rounded-full backdrop-blur shadow-sm flex items-center justify-center transition-colors ${
-              isDarkMode 
-                ? 'bg-white/10 text-white/70 hover:bg-white/20 hover:text-white' 
-                : 'bg-white/80 text-slate-500 hover:bg-white hover:text-slate-700'
-            }`}
+            className="w-10 h-10 rounded-full backdrop-blur shadow-sm flex items-center justify-center transition-colors"
+            style={{ backgroundColor: 'rgba(255,255,255,0.8)', color: '#64748b', border: 'none' }}
+            title="Zavřít"
           >
             <X className="w-5 h-5" />
           </button>
           
-          {/* Toggle panel button */}
-          <button
-            onClick={() => setShowRightPanel(!showRightPanel)}
-            className={`w-10 h-10 rounded-full backdrop-blur shadow-sm flex items-center justify-center transition-colors ${
-              isDarkMode 
-                ? 'bg-white/10 text-white/70 hover:bg-white/20 hover:text-white' 
-                : 'bg-white/80 text-slate-500 hover:bg-white hover:text-slate-700'
-            }`}
+          {/* Left panel toggle — hidden when board has no outline and no note */}
+          {hasLeftPanelContent && (
+            <button
+              onClick={() => {
+                if (isLeftPanelOpen) {
+                  setShowOsnovaPanel(false);
+                  setShowNotePanel(false);
+                  return;
+                }
+
+                if (hasOsnova) {
+                  handleToggleOsnovaPanel();
+                  return;
+                }
+
+                if (hasCurrentSlideNote) {
+                  setShowRightPanel(false);
+                  setShowOsnovaPanel(false);
+                  setShowNotePanel(true);
+                }
+              }}
+              className="w-10 h-10 rounded-full backdrop-blur shadow-sm flex items-center justify-center transition-colors"
+              style={{ backgroundColor: isLeftPanelOpen ? '#334155' : 'rgba(255,255,255,0.8)', color: isLeftPanelOpen ? 'white' : '#64748b', border: 'none' }}
+              title={isLeftPanelOpen ? 'Zavřít panel' : 'Otevřít panel'}
+            >
+              {isLeftPanelOpen ? <PanelLeftClose className="w-5 h-5" /> : <PanelLeft className="w-5 h-5" />}
+            </button>
+          )}
+
+          {/* Osnova icon button */}
+          {hasOsnova && (
+            <button
+              onClick={() => {
+                setShowNotePanel(false);
+                handleToggleOsnovaPanel();
+              }}
+              className="w-10 h-10 rounded-full backdrop-blur shadow-sm flex items-center justify-center transition-colors"
+              style={{ backgroundColor: showOsnovaPanel ? '#334155' : 'rgba(255,255,255,0.8)', border: 'none' }}
+              title="Osnova pracovního listu"
+            >
+              <OsnovaIcon active={showOsnovaPanel} />
+            </button>
+          )}
+
+          {hasCurrentSlideNote && (
+            <button
+              onClick={() => {
+                setShowOsnovaPanel(false);
+                setShowRightPanel(false);
+                setShowNotePanel((value) => !value);
+              }}
+              className="w-10 h-10 rounded-full backdrop-blur shadow-sm flex items-center justify-center transition-colors"
+              style={{ backgroundColor: showNotePanel ? '#334155' : 'rgba(255,255,255,0.8)', color: showNotePanel ? 'white' : '#64748b', border: 'none' }}
+              title="Poznámka"
+            >
+              <NoteIcon size={20} />
+            </button>
+          )}
+
+        </div>
+        
+        {/* Resize grip — visible only when osnova panel is open */}
+        {isLeftPanelOpen && (
+          <div
+            className="absolute left-1/2 -translate-x-1/2 flex flex-col items-center gap-1.5 cursor-col-resize group z-50"
+            style={{ top: '70%', transform: 'translate(-50%, -50%)' }}
+            title="Přetáhnout pro změnu šířky"
+            onMouseDown={(e) => {
+              e.preventDefault();
+              const sidebar = osnovaSidebarRef.current;
+              if (!sidebar) return;
+              const startX = e.clientX;
+              const startW = sidebar.getBoundingClientRect().width;
+              const onMove = (mv: MouseEvent) => {
+                const newW = Math.min(600, Math.max(240, startW + mv.clientX - startX));
+                sidebar.style.width = `${newW}px`;
+              };
+              const onUp = (mv: MouseEvent) => {
+                const newW = Math.min(600, Math.max(240, startW + mv.clientX - startX));
+                setOsnovaWidth(newW);
+                document.removeEventListener('mousemove', onMove);
+                document.removeEventListener('mouseup', onUp);
+              };
+              document.addEventListener('mousemove', onMove);
+              document.addEventListener('mouseup', onUp);
+            }}
           >
-            {showRightPanel ? <PanelLeftClose className="w-5 h-5" /> : <PanelLeft className="w-5 h-5" />}
+            {[0,1,2,3,4].map(i => (
+              <div
+                key={i}
+                className="rounded-full transition-colors group-hover:bg-indigo-400"
+                style={{ width: 5, height: 5, backgroundColor: '#94a3b8' }}
+              />
+            ))}
+          </div>
+        )}
+
+        {/* Arrow - absolutely centered in the column */}
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
+          <button
+            onClick={goToPrevSlide}
+            disabled={currentSlideIndex === 0}
+            className={`w-12 h-12 rounded-full flex items-center justify-center transition-all duration-300 ease-out ${currentSlideIndex === 0 ? 'opacity-30 cursor-not-allowed' : 'hover:h-28'} ${isDarkMode ? 'bg-white/10 text-white/70' : 'bg-[#CBD5E1] text-slate-600'}`}
+          >
+            <ArrowLeft className="w-5 h-5" />
           </button>
         </div>
+      </div>
+
+      {/* Main content area */}
+      <div className="flex-1 flex flex-col relative">
         
         {/* Mobile: Top navigation - exact same as QuizStudentView (hidden in classroom mode) */}
         <div className={`${classroomShareId ? 'hidden' : 'flex'} lg:hidden items-center gap-3 px-4 py-4`} style={{ backgroundColor: '#F0F1F8' }}>
@@ -3003,13 +1992,6 @@ export function QuizViewPage() {
             <ArrowRight className="w-5 h-5" />
           </button>
           
-          {/* Menu button */}
-          <button
-            onClick={() => setShowMobileMenu(true)}
-            className="w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 bg-[#CBD5E1] text-slate-600"
-          >
-            <Menu className="w-5 h-5" />
-          </button>
         </div>
         
         {/* Main content area */}
@@ -3021,7 +2003,7 @@ export function QuizViewPage() {
                 quiz={quiz}
                 sessionCode={classroomShareCode || ''}
                 shareLink={classroomShareLink || ''}
-                onEnd={endClassroomSession}
+                onEnd={handleOpenEndDialog}
               />
             </div>
           ) : (
@@ -3034,18 +2016,14 @@ export function QuizViewPage() {
                 {/* QR code */}
                 <div 
                   className="bg-white p-4 rounded-2xl shadow-xl cursor-pointer transition-all group"
-                  onClick={() => setShowQRPopup('qr')}
+                  onClick={() => handleOpenQrPopup('qr')}
                 >
                   <QRCodeSVG value={classroomShareLink || ''} size={Math.min(280, window.innerWidth * 0.35)} level="M" />
                 </div>
                 
                 {/* Copy link */}
                 <button
-                  onClick={() => {
-                    navigator.clipboard.writeText(classroomShareLink || '');
-                    setCopied(true);
-                    setTimeout(() => setCopied(false), 2000);
-                  }}
+                  onClick={() => copyToClipboard(classroomShareLink || '')}
                   className="py-2.5 px-5 rounded-xl transition-colors flex items-center gap-2 text-sm font-medium hover:opacity-90"
                   style={{ backgroundColor: '#f59e0b', color: '#1e293b' }}
                 >
@@ -3086,16 +2064,21 @@ export function QuizViewPage() {
           )
         ) : (
         <div 
-          className="flex-1 flex flex-col overflow-hidden" 
+          className="flex-1 flex flex-col overflow-hidden transition-all duration-300 ease-out" 
           style={{ 
             backgroundColor: bgColor,
             minHeight: 0,
+            paddingBottom: annotationDockHeight,
           }}
         >
           {/* Desktop: Segmented progress bar - above slide, within 40px top margin */}
           <div 
-            className="hidden lg:flex items-end justify-center flex-shrink-0"
-            style={{ height: 40, paddingBottom: 8 }}
+            className="hidden lg:flex items-end justify-center flex-shrink-0 overflow-hidden transition-all duration-300 ease-out"
+            style={{
+              height: annotations.toolbarOpen ? 0 : 40,
+              paddingBottom: annotations.toolbarOpen ? 0 : 8,
+              opacity: annotations.toolbarOpen ? 0 : 1,
+            }}
           >
             <div className="w-1/2 max-w-xl flex items-center gap-1.5">
               {renderProgressBar()}
@@ -3103,23 +2086,10 @@ export function QuizViewPage() {
           </div>
           
           {/* Content with arrows - with bottom padding */}
-          <div className="flex-1 flex items-stretch overflow-hidden" style={{ minHeight: 0, paddingBottom: 5 }}>
-          {/* Desktop: Left arrow */}
-          <div className="hidden lg:flex flex-shrink-0 items-center justify-center" style={{ width: 65 }}>
-            <button
-              onClick={goToPrevSlide}
-              disabled={currentSlideIndex === 0}
-              className={`
-                w-12 h-12 rounded-full flex items-center justify-center
-                transition-all duration-300 ease-out
-                ${currentSlideIndex === 0 ? 'opacity-30 cursor-not-allowed' : 'hover:h-28 hover:rounded-full'}
-                ${isDarkMode ? 'bg-white/10 text-white/70' : 'bg-[#CBD5E1] text-slate-600'}
-              `}
-              style={{ transitionProperty: 'height, background-color' }}
-            >
-              <ArrowLeft className="w-5 h-5" />
-            </button>
-          </div>
+          <div
+            className="flex-1 flex items-stretch overflow-hidden transition-all duration-300 ease-out"
+            style={{ minHeight: 0, paddingBottom: 5 }}
+          >
           
           {/* Slide content - fills remaining space */}
           <div 
@@ -3131,8 +2101,9 @@ export function QuizViewPage() {
             }}
           >
             <div 
+              data-annotation-capture-slide-id={currentSlide.id}
               className={`
-                w-full h-full rounded-3xl shadow-md overflow-hidden flex flex-col
+                w-full h-full rounded-3xl shadow-md overflow-hidden flex flex-col relative
                 ${currentSlide?.type !== 'info' ? 'max-w-5xl mx-auto' : ''}
                 ${currentSlideIndex > prevSlideIndex && isAnimating ? 'animate-slide-in' : ''}
                 ${currentSlideIndex < prevSlideIndex && isAnimating ? 'animate-slide-in-left' : ''}
@@ -3145,33 +2116,45 @@ export function QuizViewPage() {
               key={currentSlideIndex}
             >
               {currentSlide ? (
-                <div className="flex-1 flex flex-col" style={{ minHeight: 0 }}>
-                  {renderSlideView(currentSlide)}
-                  
-                  {/* Submit button for form activity */}
-                  {currentSlide.type === 'activity' && (currentSlide as any).activityType === 'form' && (
-                    <div className="p-6 flex justify-center border-t border-slate-100">
-                      <button
-                        onClick={() => {
-                          // In teacher view, just reset the form for testing
-                          setFormPreviewAnswer({});
-                        }}
-                        disabled={
-                          ((currentSlide as any).fields || []).some((field: any) => 
-                            field.required && (
-                              !formPreviewAnswer[field.id] || 
-                              (Array.isArray(formPreviewAnswer[field.id]) && (formPreviewAnswer[field.id] as string[]).length === 0) ||
-                              (typeof formPreviewAnswer[field.id] === 'string' && !(formPreviewAnswer[field.id] as string).trim())
+                <>
+                  <div
+                    className="flex-1 flex flex-col"
+                    style={{
+                      minHeight: 0,
+                      pointerEvents: annotations.toolbarOpen ? 'none' : 'auto',
+                      userSelect: annotations.toolbarOpen ? 'none' : 'auto',
+                    }}
+                  >
+                    {renderSlideView(currentSlide)}
+                    
+                    {/* Submit button for form activity */}
+                    {currentSlide.type === 'activity' && (currentSlide as any).activityType === 'form' && (
+                      <div className="p-6 flex justify-center border-t border-slate-100">
+                        <button
+                          onClick={() => {
+                            // In teacher view, just reset the form for testing
+                            setFormPreviewAnswer({});
+                          }}
+                          disabled={
+                            ((currentSlide as any).fields || []).some((field: any) => 
+                              field.required && (
+                                !formPreviewAnswer[field.id] || 
+                                (Array.isArray(formPreviewAnswer[field.id]) && (formPreviewAnswer[field.id] as string[]).length === 0) ||
+                                (typeof formPreviewAnswer[field.id] === 'string' && !(formPreviewAnswer[field.id] as string).trim())
+                              )
                             )
-                          )
-                        }
-                        className="px-8 py-3 rounded-xl font-medium transition-colors bg-indigo-600 hover:bg-indigo-700 text-white disabled:bg-slate-300 disabled:cursor-not-allowed"
-                      >
-                        Odeslat formulář
-                      </button>
-                    </div>
+                          }
+                          className="px-8 py-3 rounded-xl font-medium transition-colors bg-indigo-600 hover:bg-indigo-700 text-white disabled:bg-slate-300 disabled:cursor-not-allowed"
+                        >
+                          Odeslat formulář
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                  {isDesktopViewport && (
+                    <PresentationAnnotationsLayer slideId={currentSlide.id} controller={annotations} renderToolbar={false} />
                   )}
-                </div>
+                </>
               ) : (
                 <div className="flex items-center justify-center h-full text-white/70">
                   <p className="text-xl">Žádné slidy</p>
@@ -3207,11 +2190,35 @@ export function QuizViewPage() {
         </div>
         )}
       </div>
+
+      {!classroomShareId && currentSlide && isDesktopViewport && (
+        <PresentationAnnotationsLayer
+          slideId={currentSlide.id}
+          controller={annotations}
+          renderCanvas={false}
+          toolbarPlacement="screen-corner"
+          toolbarRightOffset={showRightPanel ? 336 : 18}
+        />
+      )}
+      
+      {/* Right panel toggle button - circle at top right edge */}
+      <div className="hidden lg:block flex-shrink-0 relative" style={{ width: 0 }}>
+        <button
+          onClick={handleToggleRightPanel}
+          className="absolute w-10 h-10 rounded-full flex items-center justify-center transition-colors shadow-lg"
+          style={{ top: 20, right: 20, backgroundColor: '#1e2533', color: 'rgba(255,255,255,0.7)' }}
+          title={showRightPanel ? 'Zavřít panel' : 'Otevřít panel'}
+          onMouseEnter={e => (e.currentTarget.style.color = 'white')}
+          onMouseLeave={e => (e.currentTarget.style.color = 'rgba(255,255,255,0.7)')}
+        >
+          <Settings className="w-5 h-5" />
+        </button>
+      </div>
       
       {/* Right panel - dark background */}
       <div 
         className={`
-          hidden lg:flex text-white flex-col transition-all duration-300 ease-out
+          hidden lg:flex text-white flex-col transition-all duration-300 ease-out overflow-hidden
           ${showRightPanel ? 'w-80' : 'w-0'}
         `}
         style={{ backgroundColor: '#1e2533' }}
@@ -3229,142 +2236,6 @@ export function QuizViewPage() {
         />
       )}
       
-      {/* Mobile Menu Panel - slides from right */}
-      {showMobileMenu && (
-        <div className="lg:hidden fixed inset-0 z-50 flex">
-          {/* Backdrop */}
-          <div 
-            className="flex-1 bg-black/30"
-            onClick={() => setShowMobileMenu(false)}
-          />
-          
-          {/* Menu panel */}
-          <div className="w-72 bg-white h-full flex flex-col shadow-xl">
-            {/* Header */}
-            <div className="flex items-center gap-3 p-4 border-b border-slate-100">
-              <button
-                onClick={() => setShowMobileMenu(false)}
-                className="w-9 h-9 rounded-full flex items-center justify-center bg-slate-100 text-slate-500"
-              >
-                <X className="w-5 h-5" />
-              </button>
-              <span className="font-semibold text-slate-700 truncate flex-1">{quiz?.title || 'Board'}</span>
-            </div>
-            
-            {/* Menu items */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-2">
-              {/* Edit button - disabled on mobile */}
-              <button 
-                onClick={() => {
-                  // Show message that editing is not available on mobile
-                }}
-                className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-slate-50 text-slate-400"
-                disabled
-              >
-                <Edit3 className="w-5 h-5" />
-                <div className="flex-1 text-left">
-                  <span className="block font-medium">Upravit</span>
-                  <span className="text-xs text-slate-400">Pouze na počítači</span>
-                </div>
-                <Monitor className="w-4 h-4" />
-              </button>
-              
-              {/* Start presentation */}
-              {!sessionId ? (
-                <button 
-                  onClick={() => {
-                    setShowMobileMenu(false);
-                    startLiveSession();
-                  }}
-                  disabled={isStartingSession}
-                  className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-indigo-500 text-white font-medium"
-                >
-                  <Play className="w-5 h-5" />
-                  <span>{isStartingSession ? 'Spouštím...' : 'Spustit promítání'}</span>
-                </button>
-              ) : (
-                <button 
-                  onClick={() => {
-                    setShowMobileMenu(false);
-                    setShowEndDialog(true);
-                  }}
-                  className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-red-500 text-white font-medium"
-                >
-                  <StopCircle className="w-5 h-5" />
-                  <span>Ukončit promítání</span>
-                </button>
-              )}
-              
-              {/* Show QR code - only during session */}
-              {sessionId && sessionCode && (
-                <>
-                  <button 
-                    onClick={() => {
-                      setShowMobileMenu(false);
-                      setShowQRPopup('qr');
-                    }}
-                    className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-slate-100 text-slate-700 font-medium"
-                  >
-                    <QrCode className="w-5 h-5" />
-                    <span>Zobrazit QR kód</span>
-                  </button>
-                  
-                  <button 
-                    onClick={() => {
-                      setShowMobileMenu(false);
-                      setShowQRPopup('code');
-                    }}
-                    className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-slate-100 text-slate-700 font-medium"
-                  >
-                    <span className="w-5 h-5 flex items-center justify-center font-mono font-bold text-sm">123</span>
-                    <span>Zobrazit kód</span>
-                  </button>
-                </>
-              )}
-              
-              {/* Share link */}
-              <button 
-                onClick={() => {
-                  setShowMobileMenu(false);
-                  setShowShareEditDialog(true);
-                }}
-                className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-slate-100 text-slate-700 font-medium"
-              >
-                <Share2 className="w-5 h-5" />
-                <span>Sdílet board</span>
-              </button>
-              
-              {/* Results */}
-              {quiz?.id && (
-                <button 
-                  onClick={() => {
-                    setShowMobileMenu(false);
-                    navigate(`/quiz/results/${quiz.id}`);
-                  }}
-                  className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-slate-100 text-slate-700 font-medium"
-                >
-                  <BarChart2 className="w-5 h-5" />
-                  <span>Výsledky</span>
-                </button>
-              )}
-            </div>
-            
-            {/* Footer - close */}
-            <div className="p-4 border-t border-slate-100">
-              <button 
-                onClick={() => {
-                  setShowMobileMenu(false);
-                  navigate(-1);
-                }}
-                className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-slate-100 text-slate-600 font-medium"
-              >
-                <X className="w-5 h-5" />
-                <span>Zavřít</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

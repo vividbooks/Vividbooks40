@@ -10,8 +10,6 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams } from 'react-router-dom';
-import { ref, onValue, off, update, set, get } from 'firebase/database';
-import { database } from '../../utils/firebase-config';
 import {
   CheckCircle,
   HelpCircle,
@@ -47,7 +45,7 @@ import {
   InfoSlide,
   ToolsSlide,
 } from '../../types/quiz';
-import { BlockLayoutView } from './QuizPreview';
+import { BlockLayoutView } from './BlockLayoutView';
 import { BoardSlideView } from './slides/BoardSlideView';
 import { VotingSlideView } from './slides/VotingSlideView';
 import { ConnectPairsView } from './slides/ConnectPairsView';
@@ -55,11 +53,27 @@ import { FillBlanksView } from './slides/FillBlanksView';
 import { ImageHotspotsView } from './slides/ImageHotspotsView';
 import { VideoQuizView } from './slides/VideoQuizView';
 import { FormView } from './slides/FormView';
+import { evaluateABCAnswer, getABCSelectedAnswerIds } from '../../utils/abc-evaluation';
 import { CertificateView } from './slides/CertificateView';
 import { useBoardPosts } from '../../hooks/useBoardPosts';
 import { useVoting } from '../../hooks/useVoting';
 import { checkMathAnswer } from '../../utils/math-compare';
 import Lottie from 'lottie-react';
+import {
+  getDeviceId,
+  getStudentIdentity,
+  matchesStudentIdentity,
+  retryOperation,
+} from '../../utils/student-session';
+import {
+  loadShareSession,
+  SessionBackend,
+  ShareSessionRecord,
+  ShareStudentRecord,
+  subscribeShareSession,
+  updateShareStudentRecord,
+  upsertShareStudentRecord,
+} from '../../utils/live-session-repository';
 
 // ============================================
 // CONSTANTS
@@ -67,48 +81,14 @@ import Lottie from 'lottie-react';
 
 const DRUM_LOTTIE_URL = 'https://njbtqmsxbyvpwigfceke.supabase.co/storage/v1/object/public/competition_files/Drum.json';
 
-const QUIZ_SHARES_PATH = 'quiz_shares';
 const STUDENT_SHARE_KEY = 'vivid-share-session';
-const STUDENT_IDENTITY_KEY = 'vivid-student-identity';
 
 // ============================================
 // TYPES
 // ============================================
 
-interface ShareData {
-  quizId: string;
-  quizData: Quiz;
-  sessionName: string;
-  shareCode: string;
-  mode?: string;
-  startedAt?: string;
-  settings: {
-    anonymousAccess: boolean;
-    showSolutionHints: boolean;
-    showActivityResults: boolean;
-    requireAnswerToProgress: boolean;
-    showNotes: boolean;
-  };
-  createdAt: string;
-  createdBy: string;
-}
-
-interface StudentShareData {
-  studentId: string;
-  studentName: string;
-  schoolName?: string;
-  joinedAt: string;
-  lastActiveAt: string;
-  currentSlide: number;
-  isOnline: boolean;
-  isFocused?: boolean;
-  completedAt?: string;
-  responses: Record<string, SlideResponse>;
-  deviceId: string;
-  // Time tracking
-  startTime?: string;
-  totalTimeMs?: number;
-}
+type ShareData = ShareSessionRecord;
+type StudentShareData = ShareStudentRecord;
 
 interface SavedShareSession {
   shareId: string;
@@ -117,44 +97,9 @@ interface SavedShareSession {
   joinedAt: string;
 }
 
-interface StudentIdentity {
-  id: string;
-  name: string;
-  createdAt: string;
-}
-
 // ============================================
 // HELPER FUNCTIONS
 // ============================================
-
-function getDeviceId(): string {
-  let deviceId = localStorage.getItem('vivid-device-id');
-  if (!deviceId) {
-    deviceId = `device_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    localStorage.setItem('vivid-device-id', deviceId);
-  }
-  return deviceId;
-}
-
-function getStudentIdentity(name?: string): StudentIdentity {
-  const saved = localStorage.getItem(STUDENT_IDENTITY_KEY);
-  if (saved) {
-    const identity = JSON.parse(saved) as StudentIdentity;
-    if (name && name !== identity.name) {
-      identity.name = name;
-      localStorage.setItem(STUDENT_IDENTITY_KEY, JSON.stringify(identity));
-    }
-    return identity;
-  }
-  
-  const newIdentity: StudentIdentity = {
-    id: `student_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-    name: name || '',
-    createdAt: new Date().toISOString(),
-  };
-  localStorage.setItem(STUDENT_IDENTITY_KEY, JSON.stringify(newIdentity));
-  return newIdentity;
-}
 
 function getSavedShareSession(shareId: string): SavedShareSession | null {
   const saved = localStorage.getItem(`${STUDENT_SHARE_KEY}_${shareId}`);
@@ -167,28 +112,6 @@ function saveShareSession(shareId: string, session: SavedShareSession): void {
 
 function clearShareSession(shareId: string): void {
   localStorage.removeItem(`${STUDENT_SHARE_KEY}_${shareId}`);
-}
-
-async function retryOperation<T>(
-  operation: () => Promise<T>,
-  maxRetries: number = 3,
-  delayMs: number = 1000
-): Promise<T> {
-  let lastError: Error | null = null;
-  
-  for (let attempt = 0; attempt < maxRetries; attempt++) {
-    try {
-      return await operation();
-    } catch (error) {
-      lastError = error as Error;
-      console.warn(`Operation failed (attempt ${attempt + 1}/${maxRetries}):`, error);
-      if (attempt < maxRetries - 1) {
-        await new Promise(resolve => setTimeout(resolve, delayMs * (attempt + 1)));
-      }
-    }
-  }
-  
-  throw lastError;
 }
 
 // ============================================
@@ -228,6 +151,7 @@ export function QuizStudentView() {
   // Loading state
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [shareBackend, setShareBackend] = useState<SessionBackend>('supabase');
   
   // Session state
   const [shareData, setShareData] = useState<ShareData | null>(null);
@@ -243,7 +167,7 @@ export function QuizStudentView() {
   const [prevSlideIndex, setPrevSlideIndex] = useState(0);
   const [isAnimating, setIsAnimating] = useState(false);
   const [responses, setResponses] = useState<Record<string, SlideResponse>>({});
-  const [selectedOption, setSelectedOption] = useState<string | null>(null);
+  const [selectedOption, setSelectedOption] = useState<string | string[] | null>(null);
   const [textAnswer, setTextAnswer] = useState('');
   const [formAnswer, setFormAnswer] = useState<Record<string, string | string[]>>({});
   const [showMathKeyboard, setShowMathKeyboard] = useState(false);
@@ -303,19 +227,19 @@ export function QuizStudentView() {
       setStudentName(identity.name);
     }
     
-    // Load share data from Firebase
+    // Load share data
     const loadShareData = async () => {
       try {
-        const shareRef = ref(database, `${QUIZ_SHARES_PATH}/${shareId}`);
-        const snapshot = await get(shareRef);
-        
-        if (!snapshot.exists()) {
+        const result = await loadShareSession(shareId);
+
+        if (!result) {
           setError('Kvíz nenalezen nebo odkaz vypršel');
           setLoading(false);
           return;
         }
-        
-        const data = snapshot.val() as ShareData;
+
+        const data = result.share as ShareData;
+        setShareBackend(result.backend);
         setShareData(data);
         setQuiz(data.quizData);
         
@@ -345,30 +269,24 @@ export function QuizStudentView() {
     loadShareData();
     
     // Listen for real-time updates
-    const shareRef = ref(database, `${QUIZ_SHARES_PATH}/${shareId}`);
-    const unsubscribe = onValue(shareRef, (snapshot) => {
-      const data = snapshot.val();
-      if (data) {
-        setShareData(data as ShareData);
-        if (data.quizData) {
-          setQuiz(data.quizData);
-        }
+    const unsubscribe = subscribeShareSession(shareBackend, shareId, (data) => {
+      setShareData(data as ShareData);
+      if (data.quizData) {
+        setQuiz(data.quizData);
       }
     });
     
-    return () => off(shareRef);
-  }, [shareId]);
+    return () => unsubscribe();
+  }, [shareBackend, shareId]);
 
   // Attempt reconnect to saved session
   const attemptReconnect = async (shareData: ShareData, savedSession: SavedShareSession) => {
     setIsReconnecting(true);
     
     try {
-      const studentRef = ref(database, `${QUIZ_SHARES_PATH}/${shareId}/responses/${savedSession.studentId}`);
-      const snapshot = await get(studentRef);
+      const studentData = shareData.responses?.[savedSession.studentId];
       
-      if (snapshot.exists()) {
-        const studentData = snapshot.val() as StudentShareData;
+      if (studentData) {
         
         // Restore state
         setStudentId(savedSession.studentId);
@@ -383,7 +301,7 @@ export function QuizStudentView() {
         }
         
         // Update online status
-        await update(studentRef, {
+        await updateShareStudentRecord(shareBackend, shareId!, savedSession.studentId, {
           isOnline: true,
           lastActiveAt: new Date().toISOString(),
           deviceId: getDeviceId(),
@@ -403,7 +321,7 @@ export function QuizStudentView() {
   };
 
   // Register new student
-  const registerStudent = async (newStudentId: string, name: string, school?: string) => {
+  const registerStudent = async (newStudentId: string, name: string, school?: string, backendOverride?: SessionBackend) => {
     if (!shareId) return;
     
     const studentData: StudentShareData = {
@@ -420,11 +338,12 @@ export function QuizStudentView() {
       // Time tracking
       startTime: new Date().toISOString(),
       totalTimeMs: 0,
+      clientIdentityId: newStudentId,
     };
     
     try {
       await retryOperation(() =>
-        set(ref(database, `${QUIZ_SHARES_PATH}/${shareId}/responses/${newStudentId}`), studentData)
+        upsertShareStudentRecord(backendOverride || shareBackend, shareId, newStudentId, studentData)
       );
       
       // Save to localStorage
@@ -449,7 +368,7 @@ export function QuizStudentView() {
     
     const updateHeartbeat = async () => {
       try {
-        await update(ref(database, `${QUIZ_SHARES_PATH}/${shareId}/responses/${studentId}`), {
+        await updateShareStudentRecord(shareBackend, shareId, studentId, {
           lastActiveAt: new Date().toISOString(),
           isOnline: true,
           currentSlide: currentSlideIndex,
@@ -468,7 +387,7 @@ export function QuizStudentView() {
         clearInterval(heartbeatInterval.current);
       }
     };
-  }, [shareId, studentId, hasStarted, currentSlideIndex]);
+  }, [shareBackend, shareId, studentId, hasStarted, currentSlideIndex]);
 
   // ============================================
   // ONLINE STATUS
@@ -478,7 +397,7 @@ export function QuizStudentView() {
     if (!shareId || !studentId) return;
     
     const handleBeforeUnload = () => {
-      update(ref(database, `${QUIZ_SHARES_PATH}/${shareId}/responses/${studentId}`), { 
+      updateShareStudentRecord(shareBackend, shareId, studentId, { 
         isOnline: false 
       });
     };
@@ -487,11 +406,11 @@ export function QuizStudentView() {
     
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
-      update(ref(database, `${QUIZ_SHARES_PATH}/${shareId}/responses/${studentId}`), { 
+      updateShareStudentRecord(shareBackend, shareId, studentId, { 
         isOnline: false 
       });
     };
-  }, [shareId, studentId]);
+  }, [shareBackend, shareId, studentId]);
 
   // ============================================
   // FOCUS TRACKING (visibility API)
@@ -499,20 +418,18 @@ export function QuizStudentView() {
   
   useEffect(() => {
     if (!shareId || !studentId || !hasStarted) return;
-    
-    const studentRef = ref(database, `${QUIZ_SHARES_PATH}/${shareId}/responses/${studentId}`);
-    
+
     const handleVisibilityChange = () => {
       const focused = document.visibilityState === 'visible';
-      update(studentRef, { isFocused: focused, lastActiveAt: new Date().toISOString() });
+      updateShareStudentRecord(shareBackend, shareId, studentId, { isFocused: focused, lastActiveAt: new Date().toISOString() });
     };
     
     const handleBlur = () => {
-      update(studentRef, { isFocused: false, lastActiveAt: new Date().toISOString() });
+      updateShareStudentRecord(shareBackend, shareId, studentId, { isFocused: false, lastActiveAt: new Date().toISOString() });
     };
     
     const handleFocus = () => {
-      update(studentRef, { isFocused: true, lastActiveAt: new Date().toISOString() });
+      updateShareStudentRecord(shareBackend, shareId, studentId, { isFocused: true, lastActiveAt: new Date().toISOString() });
     };
     
     document.addEventListener('visibilitychange', handleVisibilityChange);
@@ -524,7 +441,7 @@ export function QuizStudentView() {
       window.removeEventListener('blur', handleBlur);
       window.removeEventListener('focus', handleFocus);
     };
-  }, [shareId, studentId, hasStarted]);
+  }, [shareBackend, shareId, studentId, hasStarted]);
 
   // ============================================
   // START SESSION
@@ -534,30 +451,29 @@ export function QuizStudentView() {
     if (!studentName.trim() || !shareId) return;
     
     const identity = getStudentIdentity(studentName);
+    const deviceId = getDeviceId();
     
-    // Check if student with same name already exists
     try {
-      const responsesRef = ref(database, `${QUIZ_SHARES_PATH}/${shareId}/responses`);
-      const snapshot = await get(responsesRef);
-      
+      const latestShare = await loadShareSession(shareId);
+      if (!latestShare) throw new Error('Share session not found');
+
+      setShareBackend(latestShare.backend);
+      const participantMap = latestShare.share.responses || {};
       let existingStudentId: string | null = null;
-      
-      if (snapshot.exists()) {
-        const responses = snapshot.val();
-        const existing = Object.entries(responses).find(
-          ([_, data]: [string, any]) => data.studentName?.toLowerCase() === studentName.toLowerCase()
-        );
-        if (existing) {
-          existingStudentId = existing[0];
-          console.log('Found existing student by name:', existingStudentId);
-        }
+
+      const existing = Object.entries(participantMap).find(
+        ([_, data]) => matchesStudentIdentity(data, identity, deviceId, studentName)
+      );
+      if (existing) {
+        existingStudentId = existing[0];
+        console.log('Found existing student by identity:', existingStudentId);
       }
       
       const finalStudentId = existingStudentId || identity.id;
       
       if (existingStudentId) {
         // Reconnect to existing record
-        const studentData = snapshot.val()[existingStudentId] as StudentShareData;
+        const studentData = participantMap[existingStudentId] as StudentShareData;
         setStudentId(finalStudentId);
         setResponses(studentData.responses || {});
         setCurrentSlideIndex(studentData.currentSlide || 0);
@@ -566,15 +482,16 @@ export function QuizStudentView() {
           setIsCompleted(true);
         }
         
-        await update(ref(database, `${QUIZ_SHARES_PATH}/${shareId}/responses/${finalStudentId}`), {
+        await updateShareStudentRecord(latestShare.backend, shareId, finalStudentId, {
+          studentName,
           isOnline: true,
           lastActiveAt: new Date().toISOString(),
-          deviceId: getDeviceId(),
+          deviceId,
         });
       } else {
         // Create new record
         setStudentId(finalStudentId);
-        await registerStudent(finalStudentId, studentName, schoolName);
+        await registerStudent(finalStudentId, studentName, schoolName, latestShare.backend);
       }
       
       // Save session
@@ -606,13 +523,13 @@ export function QuizStudentView() {
     if (responses[currentSlide.id]) return;
     
     let isCorrect = false;
-    let answer: string = '';
+    let answer: string | string[] = '';
     
     if ((currentSlide as any).activityType === 'abc') {
       const abcSlide = currentSlide as ABCActivitySlide;
-      const correctOption = abcSlide.options.find(o => o.isCorrect);
-      isCorrect = selectedOption === correctOption?.id;
-      answer = selectedOption || '';
+      isCorrect = evaluateABCAnswer(abcSlide, selectedOption);
+      const selectedIds = getABCSelectedAnswerIds(selectedOption);
+      answer = abcSlide.allowMultipleCorrect ? selectedIds : (selectedIds[0] || '');
     } else if ((currentSlide as any).activityType === 'open') {
       const openSlide = currentSlide as OpenActivitySlide;
       // Use mathematical comparison for numeric answers
@@ -655,7 +572,7 @@ export function QuizStudentView() {
     // Save to Firebase
     try {
       await retryOperation(() =>
-        update(ref(database, `${QUIZ_SHARES_PATH}/${shareId}/responses/${studentId}`), {
+        updateShareStudentRecord(shareBackend, shareId, studentId, {
           responses: newResponses,
           currentSlide: currentSlideIndex,
           lastActiveAt: new Date().toISOString(),
@@ -717,14 +634,14 @@ export function QuizStudentView() {
       }
       
       // Update progress
-      await update(ref(database, `${QUIZ_SHARES_PATH}/${shareId}/responses/${studentId}`), {
+      await updateShareStudentRecord(shareBackend, shareId, studentId, {
         currentSlide: currentSlideIndex + 1,
         lastActiveAt: new Date().toISOString(),
       });
     } else {
       // Complete the quiz - save final total time
       const totalTimeMs = Date.now() - sessionStartTime;
-      await update(ref(database, `${QUIZ_SHARES_PATH}/${shareId}/responses/${studentId}`), {
+      await updateShareStudentRecord(shareBackend, shareId, studentId, {
         completedAt: new Date().toISOString(),
         isOnline: false,
         totalTimeMs,
@@ -786,6 +703,8 @@ export function QuizStudentView() {
     slideId: currentSlide?.id || '',
     currentUserId: studentId || undefined,
     currentUserName: studentName || undefined,
+    sessionType: 'share',
+    backend: shareBackend,
   });
   
   // Voting for current slide (if it's a voting activity)
@@ -794,6 +713,8 @@ export function QuizStudentView() {
     slideId: currentSlide?.id || '',
     currentUserId: studentId || undefined,
     currentUserName: studentName || undefined,
+    sessionType: 'share',
+    backend: shareBackend,
   });
   
   const responsesArray = responses ? Object.values(responses) : [];
@@ -1273,10 +1194,10 @@ export function QuizStudentView() {
                         {(currentSlide as ABCActivitySlide).options.map((option, idx) => {
                           const bubbleColors = ['#93C5FD', '#7DD3FC', '#A5B4FC', '#BAE6FD', '#C7D2FE', '#E0F2FE'];
                           const color = bubbleColors[idx % bubbleColors.length];
-                          const isSelected = selectedOption === option.id;
+                          const isSelected = getABCSelectedAnswerIds(selectedOption).includes(option.id);
                           const showResult = hasAnswered && shareData.settings.showActivityResults;
                           const isCorrect = showResult && option.isCorrect;
-                          const wasSelected = currentResponse?.answer === option.id;
+                          const wasSelected = getABCSelectedAnswerIds(currentResponse?.answer as string | string[] | undefined).includes(option.id);
                           const isWrong = showResult && wasSelected && !option.isCorrect;
                           const optCount = (currentSlide as ABCActivitySlide).options.length;
                           const size = isMobile ? 130 : (optCount <= 3 ? 180 : 150);
@@ -1288,7 +1209,15 @@ export function QuizStudentView() {
                           return (
                             <button
                               key={option.id}
-                              onClick={() => !hasAnswered && setSelectedOption(option.id)}
+                              onClick={() => !hasAnswered && setSelectedOption((prev) => {
+                                const selectedIds = getABCSelectedAnswerIds(prev);
+                                if ((currentSlide as ABCActivitySlide).allowMultipleCorrect) {
+                                  return selectedIds.includes(option.id)
+                                    ? selectedIds.filter((id) => id !== option.id)
+                                    : [...selectedIds, option.id];
+                                }
+                                return option.id;
+                              })}
                               disabled={hasAnswered}
                               className="flex items-center justify-center font-bold transition-all"
                               style={{
@@ -1315,7 +1244,7 @@ export function QuizStudentView() {
                         {!hasAnswered && (
                           <button
                             onClick={submitAnswer}
-                            disabled={!selectedOption}
+                            disabled={getABCSelectedAnswerIds(selectedOption).length === 0}
                             className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-white font-semibold disabled:opacity-40 disabled:cursor-not-allowed transition-all"
                             style={{ backgroundColor: '#4F46E5', boxShadow: '0 6px 12px rgba(99,102,241,0.25)', fontSize: isMobile ? 15 : 18 }}
                           >
@@ -1328,16 +1257,24 @@ export function QuizStudentView() {
                   ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4 p-4 md:p-6 max-w-4xl mx-auto w-full">
                     {(currentSlide as ABCActivitySlide).options.map((option) => {
-                      const isSelected = selectedOption === option.id;
+                      const isSelected = getABCSelectedAnswerIds(selectedOption).includes(option.id);
                       const showResult = hasAnswered && shareData.settings.showActivityResults;
                       const isCorrect = showResult && option.isCorrect;
-                      const wasSelected = currentResponse?.answer === option.id;
+                      const wasSelected = getABCSelectedAnswerIds(currentResponse?.answer as string | string[] | undefined).includes(option.id);
                       const isWrong = showResult && wasSelected && !option.isCorrect;
                       
                       return (
                         <button
                           key={option.id}
-                          onClick={() => !hasAnswered && setSelectedOption(option.id)}
+                          onClick={() => !hasAnswered && setSelectedOption((prev) => {
+                            const selectedIds = getABCSelectedAnswerIds(prev);
+                            if ((currentSlide as ABCActivitySlide).allowMultipleCorrect) {
+                              return selectedIds.includes(option.id)
+                                ? selectedIds.filter((id) => id !== option.id)
+                                : [...selectedIds, option.id];
+                            }
+                            return option.id;
+                          })}
                           disabled={hasAnswered}
                           className={`
                             relative p-3 lg:p-4 rounded-2xl text-left transition-all border-2 flex items-center gap-3 lg:gap-4
@@ -1597,7 +1534,7 @@ export function QuizStudentView() {
                     ref={answerButtonRef}
                     onClick={submitAnswer}
                     disabled={
-                      ((currentSlide as any).activityType === 'abc' && !selectedOption) ||
+                      ((currentSlide as any).activityType === 'abc' && getABCSelectedAnswerIds(selectedOption).length === 0) ||
                       ((currentSlide as any).activityType === 'open' && !textAnswer.trim()) ||
                       ((currentSlide as any).activityType === 'example' && !textAnswer.trim()) ||
                       // Form: disabled if required fields are not filled

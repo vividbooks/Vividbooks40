@@ -8,9 +8,21 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import { ref, onValue, off, get } from 'firebase/database';
-import { database } from '../../utils/firebase-config';
+import {
+  useParams,
+  useNavigate,
+  useSearchParams,
+  type NavigateFunction,
+  type SetURLSearchParams,
+} from 'react-router-dom';
+import { useDeleteDialog } from '../../hooks/quiz/useDeleteDialog';
+import { useClassSync } from '../../hooks/quiz/useClassSync';
+import { useClassRecommendation } from '../../hooks/quiz/useClassRecommendation';
+import { useFormativeAssessment } from '../../hooks/quiz/useFormativeAssessment';
+import { FirstTimeSetupDialog } from './results/FirstTimeSetupDialog';
+import { SyncToClassDialog } from './results/SyncToClassDialog';
+import { DeleteResultsDialog } from './results/DeleteResultsDialog';
+import { getABCSelectedAnswerIds } from '../../utils/abc-evaluation';
 import {
   ArrowLeft,
   RefreshCw,
@@ -47,23 +59,19 @@ import {
   LiveQuizSession,
 } from '../../types/quiz';
 import { MathText } from '../math/MathText';
-import { 
-  getClasses, 
-  ClassGroup, 
-  syncQuizResultsToClass, 
-  QuizSessionResult,
-  saveFormativeAssessment,
-  shareFormativeAssessment,
-  getResultByStudentAndSession,
-} from '../../utils/supabase/classes';
-import { supabase } from '../../utils/supabase/client';
 import { toast } from 'sonner';
-import { 
-  generateFormativeAssessment, 
-} from '../../utils/ai-formative-assessment';
-
-const QUIZ_SESSIONS_PATH = 'quiz_sessions';
-const QUIZ_SHARES_PATH = 'quiz_shares';
+import { boardRoutes } from '../../features/board-v2';
+import { SessionBackend } from '../../utils/live-session-repository';
+import { supabase } from '../../utils/supabase/client';
+import {
+  defaultResultsSessions,
+  loadBoardPostsForSlides,
+  loadIndividualResultsSnapshot,
+  loadPaperTestResultsSnapshot,
+  loadVotingResultsForSlides,
+  subscribeToResultsSession,
+  type ResultsSessionsApi,
+} from '../../features/board-v2/components/views/board-view';
 
 interface StudentResult {
   id: string;
@@ -84,16 +92,37 @@ interface QuestionStats {
   options?: { id: string; label: string; content: string; isCorrect: boolean }[];
   answerCounts: Record<string, number>;
   correctAnswer?: string;
+  correctResponses: number;
   totalResponses: number;
   averageTime: number;
 }
 
 // Removed tabs - now using two-column layout
 
-export function QuizResultsPage() {
-  const { sessionId } = useParams<{ sessionId: string }>();
-  const [searchParams, setSearchParams] = useSearchParams();
-  const navigate = useNavigate();
+interface QuizResultsPageProps {
+  sessionId?: string;
+  queryParams?: URLSearchParams;
+  setQueryParams?: SetURLSearchParams;
+  navigateOverride?: NavigateFunction;
+  routes?: Pick<typeof boardRoutes, 'edit'>;
+  sessions?: ResultsSessionsApi;
+}
+
+export function QuizResultsPage({
+  sessionId: sessionIdOverride,
+  queryParams,
+  setQueryParams,
+  navigateOverride,
+  routes = boardRoutes,
+  sessions = defaultResultsSessions,
+}: QuizResultsPageProps = {}) {
+  const { sessionId: routedSessionId } = useParams<{ sessionId: string }>();
+  const [routerSearchParams, routerSetSearchParams] = useSearchParams();
+  const routerNavigate = useNavigate();
+  const sessionId = sessionIdOverride ?? routedSessionId;
+  const searchParams = queryParams ?? routerSearchParams;
+  const setSearchParams = setQueryParams ?? routerSetSearchParams;
+  const navigate = navigateOverride ?? routerNavigate;
   
   const sessionType = searchParams.get('type') || 'live';
   const studentFilter = searchParams.get('studentFilter'); // Filter to show only specific student
@@ -102,6 +131,7 @@ export function QuizResultsPage() {
   const isStudentView = viewMode === 'student';
   
   const [session, setSession] = useState<LiveQuizSession | null>(null);
+  const [sessionBackend, setSessionBackend] = useState<SessionBackend>('supabase');
   const [quiz, setQuiz] = useState<Quiz | null>(null);
   const [loading, setLoading] = useState(true);
   const [expandedActivities, setExpandedActivities] = useState<Set<string>>(new Set());
@@ -111,1069 +141,205 @@ export function QuizResultsPage() {
   const [votingResults, setVotingResults] = useState<Record<string, Record<string, { selectedOptions: string[]; voterName?: string }>>>({});
   const [boardPosts, setBoardPosts] = useState<Record<string, BoardPost[]>>({});
   
-  // Sync to class state
-  const [showSyncDialog, setShowSyncDialog] = useState(false);
-  const [availableClasses, setAvailableClasses] = useState<ClassGroup[]>([]);
-  const [selectedClassId, setSelectedClassId] = useState('');
-  const [selectedSubject, setSelectedSubject] = useState('Matematika');
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [syncSuccess, setSyncSuccess] = useState(false);
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
-  
-  // First-time setup dialog state
-  const [showFirstTimeSetup, setShowFirstTimeSetup] = useState(false);
-  const [setupClassId, setSetupClassId] = useState('');
-  const [setupSubject, setSetupSubject] = useState('');
-  const [suggestedClassName, setSuggestedClassName] = useState('');
-  const [hasCheckedSync, setHasCheckedSync] = useState(false);
-  
+
   // Settings dropdown state
   const [showSettingsMenu, setShowSettingsMenu] = useState(false);
-  
-  // Delete results state
-  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
-  const [deleteMode, setDeleteMode] = useState<'all' | 'student'>('all');
-  const [studentToDelete, setStudentToDelete] = useState<string | null>(null);
-  const [isDeleting, setIsDeleting] = useState(false);
-  
+
   // Activity sorting state
   const [activitySort, setActivitySort] = useState<'default' | 'easiest' | 'hardest'>('default');
-  
-  // AI Recommendations state
-  const [classRecommendation, setClassRecommendation] = useState('');
-  const [isGeneratingRecommendation, setIsGeneratingRecommendation] = useState(false);
-  const [recommendationSaved, setRecommendationSaved] = useState(false);
-  
+
   // Left column tabs state - start on 'students' tab if in student view
   const [leftTab, setLeftTab] = useState<'class' | 'students'>(isStudentView ? 'students' : 'class');
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null); // Will be set by useEffect for student view
-  
-  // Formative assessment state
-  const [showEvaluationPanel, setShowEvaluationPanel] = useState(false);
-  const [teacherNotes, setTeacherNotes] = useState('');
-  const [generatedAssessment, setGeneratedAssessment] = useState('');
-  const [isGeneratingAssessment, setIsGeneratingAssessment] = useState(false);
-  const [currentResultId, setCurrentResultId] = useState<string | null>(null); // Supabase result ID
-  const [isEvaluationSaved, setIsEvaluationSaved] = useState(false);
-  const [isEvaluationShared, setIsEvaluationShared] = useState(false);
-  const [isEditing, setIsEditing] = useState(false);
-  const [editedAssessment, setEditedAssessment] = useState('');
-  
-  // Ref to track last loaded student to prevent unnecessary reloads
-  const lastLoadedStudentRef = React.useRef<string | null>(null);
-  // Ref to protect against overwriting freshly saved assessment
-  const justSavedRef = React.useRef(false);
-  
-  // Load available classes for sync
-  useEffect(() => {
-    async function loadClasses() {
-      try {
-        const classes = await getClasses();
-        setAvailableClasses(classes);
-      } catch (error) {
-        console.error('Failed to load classes:', error);
-      }
-    }
-    loadClasses();
-  }, []);
-  
-  // Check if results need to be synced (first time setup) - skip for student view
-  useEffect(() => {
-    async function checkIfNeedsSync() {
-      // Early exit conditions
-      if (isStudentView || !sessionId) return;
-      
-      // Check localStorage FIRST - before any other checks
-      const dismissedKey = `quiz_setup_dismissed_${sessionId}`;
-      const wasDismissed = localStorage.getItem(dismissedKey);
-      if (wasDismissed) {
-        console.log('[FirstTimeSetup] User dismissed dialog previously, skipping');
-        return;
-      }
-      
-      // Only proceed if we have all data
-      if (hasCheckedSync || !session?.students || availableClasses.length === 0) return;
-      
-      setHasCheckedSync(true);
-      
-      // Check if assignment already exists for this session
-      const projectId = 'njbtqmsxbyvpwigfceke';
-      const apiKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5qYnRxbXN4Ynl2cHdpZ2ZjZWtlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI4MzczODksImV4cCI6MjA3ODQxMzM4OX0.nY0THq2YU9wrjYsPoxYwXRXczE3Vh7cB1opzAV8c50g';
-      
-      try {
-        const res = await fetch(`https://${projectId}.supabase.co/rest/v1/assignments?session_id=eq.${sessionId}&select=id,class_recommendation`, {
-          headers: { 'apikey': apiKey, 'Authorization': `Bearer ${apiKey}` }
-        });
-        
-        if (res.ok) {
-          const assignments = await res.json();
-          if (assignments.length > 0) {
-            console.log('[FirstTimeSetup] Results already synced, skipping dialog');
-            
-            // Load saved recommendation if exists
-            if (assignments[0].class_recommendation) {
-              setClassRecommendation(assignments[0].class_recommendation);
-              setRecommendationSaved(true);
-              console.log('[Recommendation] Loaded saved recommendation');
-            }
-            
-            return; // Already synced
-          }
-        }
-        
-        // Not synced - try to detect class from students
-        const students = Object.values(session.students);
-        const studentClassIds = students
-          .map((s: any) => s.classId)
-          .filter(Boolean);
-        
-        // Find most common class
-        const classCount: Record<string, number> = {};
-        studentClassIds.forEach((cid: string) => {
-          classCount[cid] = (classCount[cid] || 0) + 1;
-        });
-        
-        let suggestedClass = '';
-        let maxCount = 0;
-        Object.entries(classCount).forEach(([cid, count]) => {
-          if (count > maxCount) {
-            maxCount = count;
-            suggestedClass = cid;
-          }
-        });
-        
-        // Get subject from quiz
-        const detectedSubject = quiz?.subject || 'Matematika';
-        
-        // Find class name
-        const matchedClass = availableClasses.find(c => c.id === suggestedClass);
-        
-        console.log('[FirstTimeSetup] Showing dialog, suggested class:', matchedClass?.name, 'subject:', detectedSubject);
-        
-        setSetupClassId(suggestedClass);
-        setSetupSubject(detectedSubject);
-        setSuggestedClassName(matchedClass?.name || '');
-        setShowFirstTimeSetup(true);
-        
-      } catch (error) {
-        console.error('[FirstTimeSetup] Error checking sync status:', error);
-      }
-    }
-    
-    checkIfNeedsSync();
-  }, [sessionId, session, quiz, availableClasses, hasCheckedSync]);
-  
-  // Handle first time setup confirmation
-  const handleFirstTimeSetupConfirm = async () => {
-    if (!setupClassId || !session?.students || !quiz || !sessionId) return;
-    
-    setIsSyncing(true);
-    
-    // Build student results
-    const results: QuizSessionResult[] = Object.entries(session.students).map(([_, student]) => {
-      const responses = student.responses || [];
-      const totalCorrect = responses.filter(r => r.isCorrect === true).length;
-      const totalQuestions = responses.length;
-      const timeSpentMs = responses.reduce((sum, r) => sum + (r.timeSpentMs || 0), 0);
-      
-      return {
-        studentName: student.name,
-        studentId: (student as any).studentDbId,
-        responses: responses.map(r => ({
-          slideId: r.slideId,
-          answer: r.answer,
-          isCorrect: r.isCorrect,
-        })),
-        totalCorrect,
-        totalQuestions,
-        timeSpentMs,
-      };
-    });
-    
-    const syncResult = await syncQuizResultsToClass(
-      setupClassId,
-      quiz.id,
-      quiz.title,
-      sessionId,
-      results,
-      setupSubject
-    );
-    
-    setIsSyncing(false);
-    
-    if (syncResult.success) {
-      console.log('[FirstTimeSetup] Sync successful');
-      setShowFirstTimeSetup(false);
-      setSyncSuccess(true);
-      setSelectedClassId(setupClassId);
-    } else {
-      alert('Nepodařilo se uložit výsledky: ' + syncResult.error);
-    }
-  };
-  
-  // Generate formative assessment
-  const handleGenerateAssessment = async () => {
-    // Use selectedStudent (local state) instead of filteredStudent (URL param)
-    const targetStudent = selectedStudent || filteredStudent;
-    if (!targetStudent || !quiz) return;
-    
-    // Protect against reload during and after generation
-    justSavedRef.current = true;
-    setIsGeneratingAssessment(true);
-    
-    // Build questions data
-    const questions = questionStats.map(stat => {
-      const response = targetStudent.responses.find(r => r.slideId === stat.slideId);
-      return {
-        question: stat.question,
-        studentAnswer: response ? String(response.answer) : 'Bez odpovědi',
-        correctAnswer: stat.correctAnswer,
-        isCorrect: response?.isCorrect || false,
-        type: stat.activityType || 'unknown',
-      };
-    });
-    
-    const result = await generateFormativeAssessment({
-      quizTitle: quiz.title,
-      subjectName: 'Kvíz', // Could be improved with actual subject
-      studentPerformance: {
-        studentName: targetStudent.name,
-        totalCorrect: targetStudent.correctCount,
-        totalQuestions: targetStudent.totalAnswered,
-        successRate: targetStudent.successRate,
-        totalTimeSeconds: targetStudent.totalTime,
-        questions,
-      },
-      teacherNotes: teacherNotes || undefined,
-    });
-    
-    setIsGeneratingAssessment(false);
-    
-    if (result.success && result.assessment) {
-      setGeneratedAssessment(result.assessment);
-      setEditedAssessment(result.assessment);
-    } else {
-      alert(result.error || 'Nepodařilo se vygenerovat hodnocení');
-    }
-  };
-  
-  // Save assessment to Supabase
-  const handleSaveAssessment = async () => {
-    if (!currentResultId || !generatedAssessment) {
-      console.log('[Save] No result ID or assessment to save');
-      return;
-    }
-    
-    const assessmentText = isEditing ? editedAssessment : generatedAssessment;
-    
-    console.log('[Save] Saving to Supabase, resultId:', currentResultId);
-    
-    // Set protection flag to prevent useEffect from overwriting
-    justSavedRef.current = true;
-    
-    const result = await saveFormativeAssessment(currentResultId, assessmentText, teacherNotes);
-    
-    if (result.success) {
-      console.log('[Save] ✅ Saved successfully');
-      setIsEvaluationSaved(true);
-      setGeneratedAssessment(assessmentText);
-      setIsEditing(false);
-      
-      // Keep protection for 3 seconds to allow Supabase to propagate
-      setTimeout(() => {
-        justSavedRef.current = false;
-      }, 3000);
-    } else {
-      console.error('[Save] ❌ Failed:', result.error);
-      justSavedRef.current = false;
-      alert('Nepodařilo se uložit hodnocení: ' + result.error);
-    }
-  };
-  
-  // Delete results - all or for specific student
-  const handleDeleteResults = async () => {
-    setIsDeleting(true);
-    try {
-      const classIdParam = searchParams.get('classId');
-      
-      if (deleteMode === 'all') {
-        // Delete all results for this assignment/session
-        if (sessionType === 'paper_test') {
-          // Paper test - delete from results table
-          const { error } = await supabase
-            .from('results')
-            .delete()
-            .eq('assignment_id', sessionId);
-          
-          if (error) throw error;
-          
-          // Also delete the assignment itself
-          const { error: assignmentError } = await supabase
-            .from('assignments')
-            .delete()
-            .eq('id', sessionId);
-          
-          if (assignmentError) console.error('Error deleting assignment:', assignmentError);
-          
-          toast.success('Výsledky a test byly smazány');
-          
-          // Navigate back to class or home
-          if (classIdParam) {
-            navigate(`/library/my-classes?classId=${classIdParam}`);
-          } else {
-            navigate('/library/my-classes');
-          }
-        } else {
-          // Live session - delete from session history
-          // Note: This may require additional implementation for Firebase sessions
-          toast.info('Pro živé session použijte Firebase konzoli');
-        }
-      } else if (deleteMode === 'student' && studentToDelete) {
-        // Delete results for specific student
-        if (sessionType === 'paper_test') {
-          const { error } = await supabase
-            .from('results')
-            .delete()
-            .eq('assignment_id', sessionId)
-            .eq('student_id', studentToDelete);
-          
-          if (error) throw error;
-          
-          // Also clear localStorage answers
-          localStorage.removeItem(`paper-test-answers-${sessionId}-${studentToDelete}`);
-          
-          toast.success('Výsledky žáka byly smazány');
-          
-          // Reload page to refresh data
-          window.location.reload();
-        } else {
-          toast.info('Mazání jednotlivých výsledků z živé session není podporováno');
-        }
-      }
-    } catch (error: any) {
-      console.error('Error deleting results:', error);
-      toast.error(`Chyba při mazání: ${error.message}`);
-    } finally {
-      setIsDeleting(false);
-      setShowDeleteDialog(false);
-      setStudentToDelete(null);
-    }
-  };
-  
-  // Open delete dialog for specific student
-  const openDeleteStudentDialog = (studentId: string) => {
-    setDeleteMode('student');
-    setStudentToDelete(studentId);
-    setShowDeleteDialog(true);
-  };
-  
-  // Share with student via Supabase
-  const handleShareWithStudent = async () => {
-    if (!currentResultId) {
-      console.log('[Share] No result ID');
-      return;
-    }
-    
-    // Save first if not saved
-    if (!isEvaluationSaved && generatedAssessment) {
-      await handleSaveAssessment();
-    }
-    
-    console.log('[Share] Sharing with student, resultId:', currentResultId);
-    
-    const result = await shareFormativeAssessment(currentResultId);
-    
-    if (result.success) {
-      console.log('[Share] ✅ Shared successfully');
-      setIsEvaluationShared(true);
-      alert('Hodnocení bylo sdíleno se studentem!');
-    } else {
-      console.error('[Share] ❌ Failed:', result.error);
-      alert('Nepodařilo se sdílet hodnocení: ' + result.error);
-    }
-  };
-  
-  // Generate class recommendations using AI
-  const handleGenerateClassRecommendation = async () => {
-    if (!quiz || !session?.students || studentResults.length === 0) return;
-    
-    setIsGeneratingRecommendation(true);
-    
-    try {
-      // Build comprehensive data for AI analysis
-      const classData = {
-        quizTitle: quiz.title,
-        totalStudents: studentResults.length,
-        averageSuccessRate: overallStats.avgSuccessRate,
-        questions: questionStats.map(stat => {
-          const correctCount = stat.correctAnswer ? (stat.answerCounts[stat.correctAnswer] || 0) : 0;
-          const successRate = stat.totalResponses > 0 ? Math.round((correctCount / stat.totalResponses) * 100) : 0;
-          return {
-            question: stat.question,
-            type: stat.activityType,
-            successRate,
-            totalResponses: stat.totalResponses,
-            correctAnswer: stat.correctAnswer,
-            answerDistribution: stat.answerCounts,
-          };
-        }),
-        students: studentResults.map(s => ({
-          name: s.name,
-          correctCount: s.correctCount,
-          totalAnswered: s.totalAnswered,
-          successRate: s.successRate,
-          timeSpent: s.totalTime,
-          answers: s.responses.map(r => ({
-            slideId: r.slideId,
-            answer: r.answer,
-            isCorrect: r.isCorrect,
-          })),
-        })),
-      };
-      
-      // Check for similar answers (potential cheating)
-      const answerPatterns: Record<string, string[]> = {};
-      studentResults.forEach(student => {
-        const pattern = student.responses.map(r => String(r.answer)).join('|');
-        if (!answerPatterns[pattern]) {
-          answerPatterns[pattern] = [];
-        }
-        answerPatterns[pattern].push(student.name);
-      });
-      
-      const suspiciousPairs = Object.entries(answerPatterns)
-        .filter(([_, names]) => names.length > 1)
-        .map(([_, names]) => names);
-      
-      const prompt = `Jsi učitel analyzující výsledky testu "${quiz.title}".
 
-SHRNUTÍ TESTU:
-- Počet studentů: ${classData.totalStudents}
-- Průměrná úspěšnost: ${Math.round(classData.averageSuccessRate)}%
+  // ── Custom hooks ──────────────────────────────────────────────────────────
 
-OTÁZKY A ÚSPĚŠNOST:
-${classData.questions.map((q, i) => `${i + 1}. "${q.question}" - úspěšnost: ${q.successRate}% (${q.totalResponses} odpovědí)`).join('\n')}
+  const {
+    showDeleteDialog, setShowDeleteDialog,
+    deleteMode, setDeleteMode,
+    studentToDelete, setStudentToDelete,
+    isDeleting,
+    handleDeleteResults,
+    openDeleteStudentDialog,
+  } = useDeleteDialog({ sessionId, sessionType });
 
-VÝSLEDKY STUDENTŮ:
-${classData.students.map(s => `- ${s.name}: ${s.successRate}% (${s.correctCount}/${s.totalAnswered})`).join('\n')}
-
-${suspiciousPairs.length > 0 ? `UPOZORNĚNÍ - Studenti se stejnými odpověďmi:\n${suspiciousPairs.map(pair => `- ${pair.join(', ')}`).join('\n')}` : ''}
-
-Na základě těchto dat prosím poskytni učiteli:
-1. Hlavní závěry z testu (co třída zvládla, co ne)
-2. Konkrétní doporučení na co se zaměřit
-3. Upozornění na jednotlivé studenty, kteří potřebují pozornost
-4. Případná podezření nebo zajímavé vzorce v datech
-
-Piš stručně, prakticky a v češtině. Formátuj přehledně s odrážkami.`;
-
-      const { chatWithAIProxy } = await import('../../utils/ai-chat-proxy');
-      
-      const recommendation = await chatWithAIProxy(
-        [
-          { role: 'system', content: 'Jsi zkušený učitel, který analyzuje výsledky testů a dává praktická doporučení.' },
-          { role: 'user', content: prompt }
-        ],
-        'gpt-4o-mini',
-        { max_tokens: 1000, temperature: 0.7 }
-      );
-      
-      setClassRecommendation(recommendation);
-      setRecommendationSaved(false);
-      
-    } catch (error) {
-      console.error('[Recommendation] Error:', error);
-      alert('Nepodařilo se vygenerovat doporučení');
-    } finally {
-      setIsGeneratingRecommendation(false);
-    }
-  };
-  
-  // Save class recommendation to Supabase
-  const handleSaveRecommendation = async () => {
-    if (!classRecommendation || !sessionId) return;
-    
-    try {
-      const projectId = 'njbtqmsxbyvpwigfceke';
-      const apiKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5qYnRxbXN4Ynl2cHdpZ2ZjZWtlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI4MzczODksImV4cCI6MjA3ODQxMzM4OX0.nY0THq2YU9wrjYsPoxYwXRXczE3Vh7cB1opzAV8c50g';
-      
-      // Find assignment for this session
-      const assignmentRes = await fetch(
-        `https://${projectId}.supabase.co/rest/v1/assignments?session_id=eq.${sessionId}&select=id`,
-        { headers: { 'apikey': apiKey, 'Authorization': `Bearer ${apiKey}` } }
-      );
-      
-      if (assignmentRes.ok) {
-        const assignments = await assignmentRes.json();
-        if (assignments.length > 0) {
-          // Update assignment with recommendation
-          const updateRes = await fetch(
-            `https://${projectId}.supabase.co/rest/v1/assignments?id=eq.${assignments[0].id}`,
-            {
-              method: 'PATCH',
-              headers: {
-                'apikey': apiKey,
-                'Authorization': `Bearer ${apiKey}`,
-                'Content-Type': 'application/json',
-                'Prefer': 'return=minimal',
-              },
-              body: JSON.stringify({ class_recommendation: classRecommendation }),
-            }
-          );
-          
-          if (updateRes.ok) {
-            setRecommendationSaved(true);
-            console.log('[Recommendation] Saved successfully');
-          }
-        }
-      }
-    } catch (error) {
-      console.error('[Recommendation] Save error:', error);
-    }
-  };
-  
-  // Sync results to class
-  const handleSyncToClass = async () => {
-    if (!selectedClassId || !session?.students || !quiz || !sessionId) return;
-    
-    setIsSyncing(true);
-    setSyncSuccess(false);
-    
-    // Convert students to QuizSessionResult format
-    const studentResults: QuizSessionResult[] = Object.entries(session.students).map(([_, student]) => {
-      const responses = student.responses || [];
-      const totalCorrect = responses.filter(r => r.isCorrect === true).length;
-      const totalQuestions = responses.length;
-      const timeSpentMs = responses.reduce((sum, r) => sum + (r.timeSpentMs || 0), 0);
-      
-      return {
-        studentName: student.name,
-        studentId: (student as any).studentDbId,
-        responses: responses.map(r => ({
-          slideId: r.slideId,
-          answer: r.answer,
-          isCorrect: r.isCorrect,
-          timeSpentMs: r.timeSpentMs,
-        })),
-        totalCorrect,
-        totalQuestions,
-        timeSpentMs,
-      };
-    });
-    
-    const result = await syncQuizResultsToClass(
-      selectedClassId,
-      quiz.id,
-      quiz.title,
-      sessionId,
-      studentResults,
-      selectedSubject || quiz.subject || 'Kvíz'
-    );
-    
-    setIsSyncing(false);
-    
-    if (result.success) {
-      setSyncSuccess(true);
-      setTimeout(() => {
-        setShowSyncDialog(false);
-        setSyncSuccess(false);
-      }, 2000);
-    } else {
-      alert('Nepodařilo se uložit výsledky: ' + result.error);
-    }
-  };
+  const {
+    availableClasses,
+    showSyncDialog, setShowSyncDialog,
+    selectedClassId, setSelectedClassId,
+    selectedSubject, setSelectedSubject,
+    isSyncing,
+    syncSuccess,
+    showFirstTimeSetup, setShowFirstTimeSetup,
+    setupClassId, setSetupClassId,
+    setupSubject, setSetupSubject,
+    suggestedClassName,
+    handleFirstTimeSetupConfirm,
+    handleSyncToClass,
+  } = useClassSync({
+    isStudentView,
+    sessionId,
+    session,
+    quiz,
+    onRecommendationLoaded: (rec) => {
+      setClassRecommendation(rec);
+      setRecommendationSaved(true);
+    },
+  });
   
   // Load session data based on type
   useEffect(() => {
     if (!sessionId) return;
-    
+
     const isIndividual = searchParams.get('individual') === 'true';
     const isPaperTest = sessionType === 'paper_test';
-    
-    // For paper tests, load directly from Supabase
-    if (isPaperTest) {
-      const loadPaperTestResults = async () => {
-        try {
-          const classIdParam = searchParams.get('classId');
-          console.log('[QuizResults] Loading paper test results, assignmentId:', sessionId, 'classId:', classIdParam);
-          
-          const projectId = 'njbtqmsxbyvpwigfceke';
-          const apiKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5qYnRxbXN4Ynl2cHdpZ2ZjZWtlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI4MzczODksImV4cCI6MjA3ODQxMzM4OX0.nY0THq2YU9wrjYsPoxYwXRXczE3Vh7cB1opzAV8c50g';
-          
-          // Get assignment
-          const assignmentRes = await fetch(`https://${projectId}.supabase.co/rest/v1/assignments?id=eq.${sessionId}&select=*`, {
-            headers: { 'apikey': apiKey, 'Authorization': `Bearer ${apiKey}` }
-          });
-          const [assignment] = await assignmentRes.json();
-          
-          if (!assignment) {
-            console.error('[QuizResults] Assignment not found:', sessionId);
-            setLoading(false);
-            return;
-          }
-          
-          console.log('[QuizResults] Assignment loaded:', assignment);
-          
-          // Get results for this assignment
-          const resultsRes = await fetch(`https://${projectId}.supabase.co/rest/v1/results?assignment_id=eq.${sessionId}&select=*`, {
-            headers: { 'apikey': apiKey, 'Authorization': `Bearer ${apiKey}` }
-          });
-          const results = await resultsRes.json();
-          console.log('[QuizResults] Results loaded:', results.length);
-          
-          // Get students
-          const studentsRes = await fetch(`https://${projectId}.supabase.co/rest/v1/students?class_id=eq.${assignment.class_id}&select=*`, {
-            headers: { 'apikey': apiKey, 'Authorization': `Bearer ${apiKey}` }
-          });
-          const students = await studentsRes.json();
-          console.log('[QuizResults] Students loaded:', students.length);
-          
-          // Build session-like structure for display
-          const convertedStudents: Record<string, any> = {};
-          students.forEach((student: any) => {
-            const result = results.find((r: any) => r.student_id === student.id);
-            
-            // Load answers from Supabase result (answers column should exist after migration)
-            let answers: any[] = result?.answers || [];
-            
-            // Fallback to localStorage if no answers in Supabase
-            if (answers.length === 0) {
-              const answersKey = `paper-test-answers-${sessionId}-${student.id}`;
-              try {
-                const storedAnswers = localStorage.getItem(answersKey);
-                if (storedAnswers) {
-                  answers = JSON.parse(storedAnswers);
-                  console.log('[QuizResults] Loaded answers from localStorage for', student.name, ':', answers.length, 'answers');
-                }
-              } catch (e) {
-                console.error('[QuizResults] Error loading answers from localStorage:', e);
-              }
-            } else {
-              console.log('[QuizResults] Loaded answers from Supabase for', student.name, ':', answers.length, 'answers');
-            }
-            
-            // Convert answers to responses format for display
-            const responses = answers.map((answer: any, idx: number) => ({
-              slideId: `question-${answer.questionNumber || idx + 1}`,
-              answer: answer.answer || '',
-              isCorrect: answer.isCorrect ?? (answer.points > 0),
-              timeSpent: 0,
-              points: answer.points || 0,
-              maxPoints: answer.maxPoints || 1,
-              questionType: answer.questionType || 'abc',
-              feedback: answer.feedback || '',
-            }));
-            
-            convertedStudents[student.id] = {
-              name: student.name,
-              studentDbId: student.id,
-              responses, // Now populated from answers
-              joinedAt: result?.created_at || assignment.created_at,
-              isOnline: false,
-              totalTimeMs: 0,
-              completedAt: result?.created_at,
-              score: result?.score ?? null,
-              maxScore: result?.max_score || 10,
-              percentage: result?.percentage ?? null,
-              teacherComment: result?.teacher_comment,
-              paperTestAnswers: answers, // Keep original format too
-            };
-          });
-          
-          setSession({
-            id: sessionId,
-            quizId: assignment.id,
-            sessionName: assignment.title,
-            createdAt: assignment.created_at,
-            students: convertedStudents,
-            isPaperTest: true,
-          } as any);
-          
-          // Build quiz-like structure from assignment.questions (stored in Supabase)
-          let worksheetContent: any = null;
-          
-          // First, try to load from assignment.questions (stored when assignment was created)
-          if ((assignment as any).questions && (assignment as any).questions.length > 0) {
-            worksheetContent = { questions: (assignment as any).questions };
-            console.log('[QuizResults] Loaded questions from assignment:', worksheetContent.questions.length);
-          }
-          
-          // Fallback to paper-test-content localStorage
-          if (!worksheetContent) {
-            const storedKeys = Object.keys(localStorage).filter(k => k.startsWith('paper-test-content-'));
-            for (const key of storedKeys) {
-              try {
-                const stored = JSON.parse(localStorage.getItem(key) || '{}');
-                if (stored.questions && stored.questions.length > 0) {
-                  worksheetContent = stored;
-                  console.log('[QuizResults] Using stored paper-test content from:', key);
-                  break;
-                }
-              } catch (e) {
-                // Ignore parse errors
-              }
-            }
-          }
-          
-          // If no worksheet_content, try to load from worksheet_id or localStorage
-          if (!worksheetContent && (assignment as any).worksheet_id) {
-            console.log('[QuizResults] Loading worksheet from worksheet_id:', (assignment as any).worksheet_id);
-            // Try localStorage first
-            const storedWorksheets = localStorage.getItem('vivid-worksheets');
-            if (storedWorksheets) {
-              const worksheets = JSON.parse(storedWorksheets);
-              const worksheet = worksheets.find((w: any) => w.id === (assignment as any).worksheet_id);
-              if (worksheet?.content) {
-                worksheetContent = {
-                  questions: worksheet.content.map((item: any, idx: number) => ({
-                    number: idx + 1,
-                    type: item.type || 'abc',
-                    question: item.question || item.text || '',
-                    correctAnswer: item.correctAnswer || item.correct || null,
-                    options: item.options || null,
-                    maxPoints: item.points || (item.type === 'open' ? 2 : 1),
-                  })),
-                  totalQuestions: worksheet.content.length,
-                };
-              }
-            }
-          }
-          
-          // If still no content, try to fetch worksheet from Supabase
-          if (!worksheetContent && (assignment as any).worksheet_id) {
-            try {
-              const wsRes = await fetch(`https://${projectId}.supabase.co/rest/v1/teacher_worksheets?id=eq.${(assignment as any).worksheet_id}&select=*`, {
-                headers: { 'apikey': apiKey, 'Authorization': `Bearer ${apiKey}` }
-              });
-              const [worksheet] = await wsRes.json();
-              if (worksheet?.content) {
-                const content = typeof worksheet.content === 'string' ? JSON.parse(worksheet.content) : worksheet.content;
-                worksheetContent = {
-                  questions: content.map((item: any, idx: number) => ({
-                    number: idx + 1,
-                    type: item.type || 'abc',
-                    question: item.question || item.text || '',
-                    correctAnswer: item.correctAnswer || item.correct || null,
-                    options: item.options || null,
-                    maxPoints: item.points || (item.type === 'open' ? 2 : 1),
-                  })),
-                  totalQuestions: content.length,
-                };
-              }
-            } catch (e) {
-              console.error('[QuizResults] Error loading worksheet:', e);
-            }
-          }
-          
-          console.log('[QuizResults] Worksheet content:', worksheetContent);
-          
-          let slides: any[] = [];
-          
-          // First, try to create slides from worksheet content
-          if (worksheetContent?.questions?.length > 0) {
-            slides = worksheetContent.questions.map((q: any, idx: number) => ({
-              id: `question-${idx + 1}`,
-              type: 'activity',
-              activityType: q.type === 'open' ? 'open' : 'abc',
-              question: q.question || `Otázka ${idx + 1}`,
-              correctAnswer: q.correctAnswer,
-              // Map options to expected format with 'content' instead of 'text'
-              options: q.options?.map((opt: any) => ({
-                id: opt.label || opt.id,
-                label: opt.label,
-                content: opt.text || opt.content || '',
-                isCorrect: opt.label === q.correctAnswer,
-              })),
-              maxPoints: q.maxPoints || 1,
-            }));
-          }
-          
-          // If no worksheet content, try to create slides from the first result's answers
-          if (slides.length === 0 && results.length > 0) {
-            const firstResultWithAnswers = results.find((r: any) => r.answers?.length > 0);
-            if (firstResultWithAnswers?.answers) {
-              slides = firstResultWithAnswers.answers.map((answer: any, idx: number) => ({
-                id: `question-${answer.questionNumber || idx + 1}`,
-                type: 'activity',
-                activityType: answer.questionType === 'open' ? 'open' : 'abc',
-                question: `Otázka ${answer.questionNumber || idx + 1}`,
-                correctAnswer: answer.correctAnswer,
-                maxPoints: answer.maxPoints || 1,
-              }));
-              console.log('[QuizResults] Generated slides from answers:', slides.length);
-            }
-          }
-          
-          console.log('[QuizResults] Generated slides:', slides.length);
-          
-          // If no slides from worksheet or answers, create a single summary slide for paper test
-          const finalSlides = slides.length > 0 ? slides : [{
-            id: 'paper-test-summary',
-            type: 'activity',
-            activityType: 'abc',
-            question: 'Papírový test - hodnocení',
-            isPaperTestSummary: true,
-          }];
-          
-          setQuiz({
-            id: assignment.id,
-            title: assignment.title,
-            slides: finalSlides,
-            isPaperTest: true,
-            totalQuestions: worksheetContent?.totalQuestions || finalSlides.length,
-          } as any);
-          
-          setLoading(false);
-        } catch (error) {
-          console.error('[QuizResults] Error loading paper test results:', error);
-          setLoading(false);
-        }
-      };
-      
-      loadPaperTestResults();
-      return;
-    }
-    
-    // For individual work, try to find Firebase session first
-    if (isIndividual) {
-      const loadIndividualResults = async () => {
-        try {
-          const classIdParam = searchParams.get('classId');
-          const titleParam = searchParams.get('title');
-          
-          console.log('[QuizResults] Loading individual work, classId:', classIdParam, 'title:', titleParam);
-          
-          // Try to find Firebase session by searching quiz_shares
-          if (classIdParam) {
-            // Get all quiz_shares and find matching session by classId
-            const sharesRef = ref(database, 'quiz_shares');
-            const sharesSnapshot = await get(sharesRef);
-            
-            if (sharesSnapshot.exists()) {
-              const allShares = sharesSnapshot.val();
-              
-              // Find session that matches classId and title
-              for (const [shareId, shareData] of Object.entries(allShares) as [string, any][]) {
-                const matchesClass = shareData.classId === classIdParam || shareId.includes(classIdParam);
-                const matchesTitle = titleParam && shareData.sessionName && 
-                  shareData.sessionName.toLowerCase().includes(titleParam.toLowerCase());
-                
-                if (matchesClass || matchesTitle) {
-                  console.log('[QuizResults] Found matching Firebase session:', shareId);
-                  
-                  // Convert responses format
-                  const convertedStudents: Record<string, any> = {};
-                  if (shareData.responses) {
-                    Object.entries(shareData.responses).forEach(([studentId, studentData]: [string, any]) => {
-                      convertedStudents[studentId] = {
-                        name: studentData.studentName || 'Anonymní',
-                        studentDbId: studentId,
-                        responses: studentData.responses ? Object.values(studentData.responses) : [],
-                        joinedAt: studentData.joinedAt || shareData.createdAt,
-                        isOnline: false,
-                        totalTimeMs: studentData.totalTimeMs || 0,
-                        startTime: studentData.startTime,
-                        completedAt: studentData.completedAt,
-                      };
-                    });
-                  }
-                  
-                  setSession({
-                    ...shareData,
-                    students: convertedStudents,
-                  } as any);
-                  
-                  if (shareData.quizData) {
-                    setQuiz(shareData.quizData as Quiz);
-                  }
-                  
-                  setLoading(false);
-                  return;
-                }
-              }
-            }
-          }
-          
-          // Fallback to Supabase if no Firebase session found
-          console.log('[QuizResults] No Firebase session found, loading from Supabase');
-          
-          const projectId = 'njbtqmsxbyvpwigfceke';
-          const apiKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5qYnRxbXN4Ynl2cHdpZ2ZjZWtlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI4MzczODksImV4cCI6MjA3ODQxMzM4OX0.nY0THq2YU9wrjYsPoxYwXRXczE3Vh7cB1opzAV8c50g';
-          
-          // Get assignment
-          const assignmentRes = await fetch(`https://${projectId}.supabase.co/rest/v1/assignments?id=eq.${sessionId}&select=*`, {
-            headers: { 'apikey': apiKey, 'Authorization': `Bearer ${apiKey}` }
-          });
-          const [assignment] = await assignmentRes.json();
-          
-          if (!assignment) {
-            setLoading(false);
-            return;
-          }
-          
-          // Get results for this assignment
-          const resultsRes = await fetch(`https://${projectId}.supabase.co/rest/v1/results?assignment_id=eq.${sessionId}&select=*`, {
-            headers: { 'apikey': apiKey, 'Authorization': `Bearer ${apiKey}` }
-          });
-          const results = await resultsRes.json();
-          
-          // Get students
-          const studentsRes = await fetch(`https://${projectId}.supabase.co/rest/v1/students?class_id=eq.${assignment.class_id}&select=*`, {
-            headers: { 'apikey': apiKey, 'Authorization': `Bearer ${apiKey}` }
-          });
-          const students = await studentsRes.json();
-          
-          // Build session-like structure for display
-          const convertedStudents: Record<string, any> = {};
-          results.forEach((result: any) => {
-            const student = students.find((s: any) => s.id === result.student_id);
-            if (student) {
-              convertedStudents[student.id] = {
-                name: student.name,
-                studentDbId: student.id,
-                responses: [],
-                joinedAt: result.created_at,
-                isOnline: false,
-                totalTimeMs: result.time_spent_ms || 0,
-                completedAt: result.completed_at,
-                score: result.score,
-                maxScore: result.max_score,
-                percentage: result.percentage,
-              };
-            }
-          });
-          
-          setSession({
-            id: sessionId,
-            quizId: assignment.id,
-            sessionName: assignment.title,
-            createdAt: assignment.created_at,
-            students: convertedStudents,
-          } as any);
-          
-          setQuiz({
-            id: assignment.id,
-            title: assignment.title.replace(' - ind.', ''),
-            slides: [],
-          } as any);
-          
-          setLoading(false);
-        } catch (error) {
-          console.error('[QuizResults] Error loading individual results:', error);
-          setLoading(false);
-        }
-      };
-      
-      loadIndividualResults();
-      return;
-    }
-    
-    // For live/shared sessions, load from Firebase
-    const path = sessionType === 'shared' ? QUIZ_SHARES_PATH : QUIZ_SESSIONS_PATH;
-    const sessionRef = ref(database, `${path}/${sessionId}`);
-    
-    const unsubscribe = onValue(sessionRef, (snapshot) => {
-      const data = snapshot.val();
-      if (data) {
-        // For shared sessions, convert the responses format to match LiveQuizSession structure
-        if (sessionType === 'shared' && data.responses) {
-          const convertedStudents: Record<string, any> = {};
-          Object.entries(data.responses).forEach(([studentId, studentData]: [string, any]) => {
-            convertedStudents[studentId] = {
-              name: studentData.studentName || 'Anonymní',
-              responses: studentData.responses ? Object.values(studentData.responses) : [],
-              joinedAt: studentData.joinedAt || data.createdAt,
-              isOnline: false,
-              // Include time tracking data
-              totalTimeMs: studentData.totalTimeMs || 0,
-              startTime: studentData.startTime,
-              completedAt: studentData.completedAt,
-            };
-          });
-          
-          setSession({
-            ...data,
-            students: convertedStudents,
-          } as LiveQuizSession);
-        } else {
-          setSession(data as LiveQuizSession);
-        }
-        
-        if (data.quizData) {
-          setQuiz(data.quizData as Quiz);
-        }
+
+    const applySnapshot = (snapshot: { session: LiveQuizSession; quiz: Quiz | null }) => {
+      setSession(snapshot.session);
+      if (snapshot.quiz) {
+        setQuiz(snapshot.quiz);
       }
       setLoading(false);
-    });
-    
-    return () => off(sessionRef);
+    };
+
+    if (isPaperTest) {
+      console.log(
+        '[QuizResults] Loading paper test results, assignmentId:',
+        sessionId,
+        'classId:',
+        searchParams.get('classId'),
+      );
+
+      loadPaperTestResultsSnapshot(sessionId)
+        .then((snapshot) => {
+          if (!snapshot) {
+            setLoading(false);
+            return;
+          }
+          applySnapshot(snapshot);
+        })
+        .catch((error) => {
+          console.error('[QuizResults] Error loading paper test results:', error);
+          setLoading(false);
+        });
+
+      return;
+    }
+
+    if (isIndividual) {
+      console.log(
+        '[QuizResults] Loading individual work, classId:',
+        searchParams.get('classId'),
+        'title:',
+        searchParams.get('title'),
+      );
+
+      loadIndividualResultsSnapshot({ sessionId, sessions })
+        .then((snapshot) => {
+          if (!snapshot) {
+            setLoading(false);
+            return;
+          }
+          applySnapshot(snapshot);
+        })
+        .catch((error) => {
+          console.error('[QuizResults] Error loading individual results:', error);
+          setLoading(false);
+        });
+
+      return;
+    }
+
+    let unsubscribe: (() => void) | null = null;
+
+    subscribeToResultsSession({
+      sessionId,
+      sessionType,
+      sessions,
+      onBackend: setSessionBackend,
+      onData: applySnapshot,
+    })
+      .then((nextUnsubscribe) => {
+        unsubscribe = nextUnsubscribe;
+        if (!nextUnsubscribe) {
+          setLoading(false);
+        }
+      })
+      .catch((error) => {
+        console.error('[QuizResults] Failed to load session:', error);
+        setLoading(false);
+      });
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
   }, [sessionId, sessionType, searchParams]);
   
   // Load voting results for all voting slides
   useEffect(() => {
     if (!sessionId || !quiz) return;
-    
-    const votingSlides = quiz.slides.filter(s => s.type === 'activity' && s.activityType === 'voting');
-    if (votingSlides.length === 0) return;
-    
-    const path = sessionType === 'shared' ? QUIZ_SHARES_PATH : QUIZ_SESSIONS_PATH;
-    
-    votingSlides.forEach(slide => {
-      const votesRef = ref(database, `${path}/${sessionId}/votes/${slide.id}`);
-      onValue(votesRef, (snapshot) => {
-        const data = snapshot.val();
-        if (data) {
-          setVotingResults(prev => ({ ...prev, [slide.id]: data }));
-        }
+
+    const loadVotes = async () => {
+      const results = await loadVotingResultsForSlides({
+        quiz,
+        sessionBackend,
+        sessionId,
+        sessionType,
+        sessions,
       });
-    });
-    
-    return () => {
-      votingSlides.forEach(slide => {
-        const votesRef = ref(database, `${path}/${sessionId}/votes/${slide.id}`);
-        off(votesRef);
-      });
+      if (results) {
+        setVotingResults(results);
+      }
     };
-  }, [sessionId, sessionType, quiz]);
+
+    const channel = supabase
+      .channel(`results-votes:${sessionId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'live_session_votes', filter: `session_public_id=eq.${sessionId}` }, () => {
+        loadVotes().catch(console.error);
+      })
+      .subscribe();
+
+    loadVotes().catch(console.error);
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [sessionBackend, sessionId, sessionType, quiz]);
   
   // Load board posts for all board slides
   useEffect(() => {
     if (!sessionId || !quiz) return;
-    
-    const boardSlides = quiz.slides.filter(s => s.type === 'activity' && s.activityType === 'board');
-    if (boardSlides.length === 0) return;
-    
-    const path = sessionType === 'shared' ? QUIZ_SHARES_PATH : QUIZ_SESSIONS_PATH;
-    
-    boardSlides.forEach(slide => {
-      const postsRef = ref(database, `${path}/${sessionId}/boardPosts/${slide.id}`);
-      onValue(postsRef, (snapshot) => {
-        const data = snapshot.val();
-        if (data) {
-          const postsArray = Object.entries(data).map(([key, post]: [string, any]) => ({
-            id: key,
-            text: post.text || '',
-            mediaUrl: post.mediaUrl,
-            mediaType: post.mediaType,
-            authorName: post.authorName || 'Anonymní',
-            authorId: post.authorId || '',
-            likes: Array.isArray(post.likes) ? post.likes : Object.keys(post.likes || {}),
-            createdAt: post.createdAt || Date.now(),
-            backgroundColor: post.backgroundColor,
-            column: post.column,
-          }));
-          setBoardPosts(prev => ({ ...prev, [slide.id]: postsArray }));
-        }
+
+    const loadPosts = async () => {
+      const results = await loadBoardPostsForSlides({
+        quiz,
+        sessionBackend,
+        sessionId,
+        sessionType,
+        sessions,
       });
-    });
-    
-    return () => {
-      boardSlides.forEach(slide => {
-        const postsRef = ref(database, `${path}/${sessionId}/boardPosts/${slide.id}`);
-        off(postsRef);
-      });
+      if (results) {
+        setBoardPosts(results);
+      }
     };
-  }, [sessionId, sessionType, quiz]);
+
+    const channel = supabase
+      .channel(`results-posts:${sessionId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'live_session_posts', filter: `session_public_id=eq.${sessionId}` }, () => {
+        loadPosts().catch(console.error);
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'live_session_post_likes', filter: `session_public_id=eq.${sessionId}` }, () => {
+        loadPosts().catch(console.error);
+      })
+      .subscribe();
+
+    loadPosts().catch(console.error);
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [sessionBackend, sessionId, sessionType, quiz]);
   
   // Calculate student results
   const studentResults: StudentResult[] = React.useMemo(() => {
@@ -1253,71 +419,6 @@ Piš stručně, prakticky a v češtině. Formátuj přehledně s odrážkami.`;
     });
   }, [session, quiz, studentFilter]);
   
-  // Load existing evaluation for selected student from Supabase
-  useEffect(() => {
-    async function loadExistingEvaluation() {
-      if (!selectedStudentId || !sessionId) {
-        // Clear when no student selected
-        setCurrentResultId(null);
-        setIsEvaluationSaved(false);
-        setIsEvaluationShared(false);
-        setGeneratedAssessment('');
-        setTeacherNotes('');
-        lastLoadedStudentRef.current = null;
-        return;
-      }
-      
-      // Skip if we just saved (protect against overwriting with stale data)
-      if (justSavedRef.current) {
-        console.log('[Evaluation] Skipping load - just saved, waiting for propagation');
-        return;
-      }
-      
-      // Skip if we already loaded for this student
-      if (lastLoadedStudentRef.current === selectedStudentId) {
-        console.log('[Evaluation] Skipping load - already loaded for this student');
-        return;
-      }
-      
-      const student = studentResults.find(s => s.id === selectedStudentId);
-      const studentDbId = student?.studentDbId || null;
-      const studentName = student?.name;
-      
-      console.log('[Evaluation] Loading from Supabase for student:', studentDbId, 'name:', studentName, 'session:', sessionId);
-      
-      // Try to find by ID first, fallback to name
-      const result = await getResultByStudentAndSession(studentDbId, sessionId, studentName);
-      
-      if (result) {
-        console.log('[Evaluation] Found result:', result.id, 'has assessment:', !!result.formative_assessment);
-        setCurrentResultId(result.id);
-        lastLoadedStudentRef.current = selectedStudentId;
-        
-        if (result.formative_assessment) {
-          setGeneratedAssessment(result.formative_assessment);
-          setTeacherNotes(result.teacher_notes || '');
-          setIsEvaluationSaved(true);
-          setIsEvaluationShared(result.shared_with_student || false);
-        } else {
-          setGeneratedAssessment('');
-          setTeacherNotes('');
-          setIsEvaluationSaved(false);
-          setIsEvaluationShared(false);
-        }
-      } else {
-        console.log('[Evaluation] No result found in Supabase');
-        setCurrentResultId(null);
-        setIsEvaluationSaved(false);
-        setIsEvaluationShared(false);
-        setGeneratedAssessment('');
-        setTeacherNotes('');
-      }
-    }
-    
-    loadExistingEvaluation();
-    // Note: studentResults is needed for lookup but we use refs to prevent unnecessary reloads
-  }, [selectedStudentId, sessionId, studentResults]);
-  
   // Calculate question stats
   const questionStats: QuestionStats[] = React.useMemo(() => {
     if (!quiz || !session?.students) return [];
@@ -1330,6 +431,7 @@ Piš stručně, prakticky a v češtině. Formátuj přehledně s odrážkami.`;
         const answerCounts: Record<string, number> = {};
         let totalTime = 0;
         let responseCount = 0;
+        let correctResponses = 0;
         
         // Get correct answer for ABC
         let correctAnswer: string | undefined;
@@ -1345,20 +447,34 @@ Piš stručně, prakticky a v češtině. Formátuj přehledně s odrážkami.`;
         Object.values(session.students || {}).forEach(student => {
           const response = student.responses?.find((r: any) => r.slideId === slide.id);
           if (response) {
-            let answer = String(response.answer);
-            
-            // For paper tests, answer is a letter (A, B, C, D) - map to option id
-            if (isPaperTest && options && answer.match(/^[A-Z]$/)) {
-              const optionIndex = answer.charCodeAt(0) - 65; // A=0, B=1, etc
-              const option = options[optionIndex];
-              if (option) {
-                answer = option.id || option.label || answer;
+            const rawAnswer = response.answer;
+            const abcSelectedIds = slide.activityType === 'abc'
+              ? getABCSelectedAnswerIds(rawAnswer as string | string[] | undefined)
+              : [];
+
+            if (slide.activityType === 'abc' && abcSelectedIds.length > 0) {
+              abcSelectedIds.forEach((answerId) => {
+                answerCounts[answerId] = (answerCounts[answerId] || 0) + 1;
+              });
+            } else {
+              let answer = String(rawAnswer);
+
+              // For paper tests, answer is a letter (A, B, C, D) - map to option id
+              if (isPaperTest && options && answer.match(/^[A-Z]$/)) {
+                const optionIndex = answer.charCodeAt(0) - 65; // A=0, B=1, etc
+                const option = options[optionIndex];
+                if (option) {
+                  answer = option.id || option.label || answer;
+                }
               }
+
+              answerCounts[answer] = (answerCounts[answer] || 0) + 1;
             }
-            
-            answerCounts[answer] = (answerCounts[answer] || 0) + 1;
             totalTime += response.timeSpent || 0;
             responseCount++;
+            if (response.isCorrect === true) {
+              correctResponses++;
+            }
           }
         });
         
@@ -1370,6 +486,7 @@ Piš stručně, prakticky a v češtině. Formátuj přehledně s odrážkami.`;
           options,
           answerCounts,
           correctAnswer,
+          correctResponses,
           totalResponses: responseCount,
           averageTime: responseCount > 0 ? totalTime / responseCount : 0,
         };
@@ -1408,7 +525,45 @@ Piš stručně, prakticky a v češtině. Formátuj přehledně s odrážkami.`;
       distribution,
     };
   }, [questionStats, studentResults]);
-  
+
+  // ── Hooks that depend on computed data ────────────────────────────────────
+
+  const {
+    classRecommendation, setClassRecommendation,
+    isGeneratingRecommendation,
+    recommendationSaved, setRecommendationSaved,
+    handleGenerateClassRecommendation,
+    handleSaveRecommendation,
+  } = useClassRecommendation({
+    quiz,
+    session,
+    sessionId,
+    studentResults,
+    questionStats,
+    overallStats,
+  });
+
+  const {
+    showEvaluationPanel, setShowEvaluationPanel,
+    teacherNotes, setTeacherNotes,
+    generatedAssessment, setGeneratedAssessment,
+    isGeneratingAssessment,
+    currentResultId,
+    isEvaluationSaved,
+    isEvaluationShared,
+    isEditing, setIsEditing,
+    editedAssessment, setEditedAssessment,
+    handleGenerateAssessment,
+    handleSaveAssessment,
+    handleShareWithStudent,
+  } = useFormativeAssessment({
+    selectedStudentId,
+    sessionId,
+    quiz,
+    studentResults,
+    questionStats,
+  });
+
   // Format time
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -1439,10 +594,8 @@ Piš stručně, prakticky a v češtině. Formátuj přehledně s odrážkami.`;
     
     return [...questionStats].sort((a, b) => {
       // Calculate success rate for each activity
-      const aCorrectCount = a.correctAnswer ? (a.answerCounts[a.correctAnswer] || 0) : 0;
-      const bCorrectCount = b.correctAnswer ? (b.answerCounts[b.correctAnswer] || 0) : 0;
-      const aSuccessRate = a.totalResponses > 0 ? aCorrectCount / a.totalResponses : 0;
-      const bSuccessRate = b.totalResponses > 0 ? bCorrectCount / b.totalResponses : 0;
+      const aSuccessRate = a.totalResponses > 0 ? a.correctResponses / a.totalResponses : 0;
+      const bSuccessRate = b.totalResponses > 0 ? b.correctResponses / b.totalResponses : 0;
       
       if (activitySort === 'easiest') {
         return bSuccessRate - aSuccessRate; // Highest success rate first
@@ -1549,243 +702,35 @@ Piš stručně, prakticky a v češtině. Formátuj přehledně s odrážkami.`;
     <div className="min-h-screen bg-slate-100">
       {/* First Time Setup Dialog */}
       {showFirstTimeSetup && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-2xl p-6 max-w-md w-full mx-4 shadow-2xl">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
-                <Users className="w-6 h-6 text-white" />
-              </div>
-              <div>
-                <h3 className="text-lg font-bold text-slate-800">Kam uložit výsledky?</h3>
-                <p className="text-slate-500 text-sm">
-                  {Object.keys(session?.students || {}).length} studentů dokončilo kvíz
-                </p>
-              </div>
-            </div>
-            
-            <div className="space-y-4 mb-6">
-              {/* Class selection */}
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">
-                  Třída
-                </label>
-                <select
-                  value={setupClassId}
-                  onChange={(e) => setSetupClassId(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '12px',
-                    borderRadius: '12px',
-                    border: '2px solid #e2e8f0',
-                    fontSize: '14px',
-                    backgroundColor: '#ffffff',
-                    color: '#1f2937',
-                  }}
-                >
-                  <option value="">-- Vyberte třídu --</option>
-                  {availableClasses.map(c => (
-                    <option key={c.id} value={c.id}>
-                      {c.name} {c.id === setupClassId && suggestedClassName ? '(doporučeno)' : ''}
-                    </option>
-                  ))}
-                </select>
-                {suggestedClassName && setupClassId && (
-                  <p className="text-xs text-emerald-600 mt-1 flex items-center gap-1">
-                    <CheckCircle className="w-3 h-3" />
-                    Detekováno podle připojených studentů
-                  </p>
-                )}
-              </div>
-              
-              {/* Subject confirmation */}
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">
-                  Předmět
-                </label>
-                <div className="flex gap-2">
-                  {['Matematika', 'Fyzika', 'Chemie', 'Přírodopis', 'Jiný'].map(subject => (
-                    <button
-                      key={subject}
-                      onClick={() => setSetupSubject(subject)}
-                      style={{
-                        padding: '8px 16px',
-                        borderRadius: '20px',
-                        fontSize: '13px',
-                        fontWeight: 500,
-                        border: setupSubject === subject ? '2px solid #6366f1' : '2px solid #e2e8f0',
-                        backgroundColor: setupSubject === subject ? '#eef2ff' : '#ffffff',
-                        color: setupSubject === subject ? '#4f46e5' : '#64748b',
-                        cursor: 'pointer',
-                      }}
-                    >
-                      {subject}
-                    </button>
-                  ))}
-                </div>
-                {setupSubject && (
-                  <p className="text-xs text-slate-500 mt-2">
-                    Předmět "{setupSubject}" bude přiřazen k výsledkům
-                  </p>
-                )}
-              </div>
-            </div>
-            
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '20px' }}>
-              <button
-                onClick={handleFirstTimeSetupConfirm}
-                disabled={!setupClassId || isSyncing}
-                style={{
-                  width: '100%',
-                  padding: '14px 20px',
-                  borderRadius: '12px',
-                  background: (!setupClassId || isSyncing) ? '#94a3b8' : 'linear-gradient(135deg, #6366f1, #8b5cf6)',
-                  color: 'white',
-                  fontWeight: 600,
-                  fontSize: '15px',
-                  border: 'none',
-                  cursor: (!setupClassId || isSyncing) ? 'not-allowed' : 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '8px',
-                }}
-              >
-                {isSyncing ? (
-                  <>
-                    <RefreshCw style={{ width: '18px', height: '18px', animation: 'spin 1s linear infinite' }} />
-                    Ukládám...
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle style={{ width: '18px', height: '18px' }} />
-                    Uložit do třídy
-                  </>
-                )}
-              </button>
-              <button
-                onClick={() => {
-                  // Remember that user dismissed this dialog
-                  if (sessionId) {
-                    localStorage.setItem(`quiz_setup_dismissed_${sessionId}`, 'true');
-                  }
-                  setShowFirstTimeSetup(false);
-                }}
-                style={{
-                  width: '100%',
-                  padding: '10px',
-                  background: 'none',
-                  border: 'none',
-                  color: '#64748b',
-                  fontSize: '14px',
-                  cursor: 'pointer',
-                }}
-              >
-                Přeskočit
-              </button>
-            </div>
-          </div>
-        </div>
+        <FirstTimeSetupDialog
+          studentCount={Object.keys(session?.students || {}).length}
+          availableClasses={availableClasses}
+          setupClassId={setupClassId}
+          setSetupClassId={setSetupClassId}
+          suggestedClassName={suggestedClassName}
+          setupSubject={setupSubject}
+          setSetupSubject={setSetupSubject}
+          isSyncing={isSyncing}
+          sessionId={sessionId}
+          onConfirm={handleFirstTimeSetupConfirm}
+          onDismiss={() => setShowFirstTimeSetup(false)}
+        />
       )}
       
       {/* Sync to Class Dialog */}
       {showSyncDialog && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-2xl p-6 max-w-md w-full mx-4 shadow-2xl">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center">
-                <Users className="w-5 h-5 text-white" />
-              </div>
-              <div>
-                <h3 className="text-lg font-bold text-slate-800">Synchronizace se třídou</h3>
-                <p className="text-slate-500 text-sm">
-                  {studentResults.length} studentů bude synchronizováno
-                </p>
-              </div>
-            </div>
-            
-            <div className="space-y-4 mb-6">
-              {/* Class selection */}
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">Třída</label>
-                <select
-                  value={selectedClassId}
-                  onChange={(e) => setSelectedClassId(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '12px',
-                    borderRadius: '12px',
-                    border: '2px solid #e2e8f0',
-                    fontSize: '14px',
-                    backgroundColor: '#ffffff',
-                    color: '#1f2937',
-                  }}
-                >
-                  <option value="">-- Vyberte třídu --</option>
-                  {availableClasses.map(c => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
-                </select>
-              </div>
-              
-              {/* Subject selection */}
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">Předmět</label>
-                <div className="flex flex-wrap gap-2">
-                  {['Matematika', 'Fyzika', 'Chemie', 'Přírodopis', 'Jiný'].map(subject => (
-                    <button
-                      key={subject}
-                      onClick={() => setSelectedSubject(subject)}
-                      style={{
-                        padding: '8px 16px',
-                        borderRadius: '20px',
-                        fontSize: '13px',
-                        fontWeight: 500,
-                        border: selectedSubject === subject ? '2px solid #10b981' : '2px solid #e2e8f0',
-                        backgroundColor: selectedSubject === subject ? '#ecfdf5' : '#ffffff',
-                        color: selectedSubject === subject ? '#059669' : '#64748b',
-                        cursor: 'pointer',
-                      }}
-                    >
-                      {subject}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-            
-            {syncSuccess ? (
-              <div className="bg-emerald-100 text-emerald-700 p-4 rounded-xl text-center mb-4">
-                ✓ Výsledky byly úspěšně synchronizovány!
-              </div>
-            ) : null}
-            
-            <div className="flex gap-2">
-              <button
-                onClick={handleSyncToClass}
-                disabled={!selectedClassId || isSyncing}
-                className="flex-1 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-medium flex items-center justify-center gap-2 disabled:opacity-50"
-              >
-                {isSyncing ? (
-                  <>
-                    <RefreshCw className="w-4 h-4 animate-spin" />
-                    Ukládám...
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle className="w-4 h-4" />
-                    Synchronizovat
-                  </>
-                )}
-              </button>
-              <button
-                onClick={() => { setShowSyncDialog(false); setSelectedClassId(''); }}
-                className="px-6 py-3 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-700 font-medium"
-              >
-                Zrušit
-              </button>
-            </div>
-          </div>
-        </div>
+        <SyncToClassDialog
+          studentCount={studentResults.length}
+          availableClasses={availableClasses}
+          selectedClassId={selectedClassId}
+          setSelectedClassId={setSelectedClassId}
+          selectedSubject={selectedSubject}
+          setSelectedSubject={setSelectedSubject}
+          syncSuccess={syncSuccess}
+          isSyncing={isSyncing}
+          onSync={handleSyncToClass}
+          onClose={() => { setShowSyncDialog(false); setSelectedClassId(''); }}
+        />
       )}
       
       {/* Minimal back button */}
@@ -1965,7 +910,7 @@ Piš stručně, prakticky a v češtině. Formátuj přehledně s odrážkami.`;
                         </button>
                         {quiz?.id && (
                           <button 
-                            onClick={() => { navigate(`/quiz/edit/${quiz.id}`); setShowSettingsMenu(false); }}
+                            onClick={() => { navigate(routes.edit(quiz.id)); setShowSettingsMenu(false); }}
                             style={{
                               width: '100%',
                               padding: '10px 16px',
@@ -2593,7 +1538,7 @@ Piš stručně, prakticky a v češtině. Formátuj přehledně s odrážkami.`;
                     {/* Generate button or generated assessment */}
                     {!generatedAssessment ? (
                       <button
-                        onClick={handleGenerateAssessment}
+                        onClick={() => handleGenerateAssessment(selectedStudent || filteredStudent)}
                         disabled={isGeneratingAssessment}
                         style={{
                           width: '100%',
@@ -2644,7 +1589,7 @@ Piš stručně, prakticky a v češtině. Formátuj přehledně s odrážkami.`;
                         </div>
                         <div style={{ display: 'flex', gap: '8px' }}>
                           <button
-                            onClick={handleGenerateAssessment}
+                            onClick={() => handleGenerateAssessment(selectedStudent || filteredStudent)}
                             disabled={isGeneratingAssessment}
                             style={{
                               padding: '6px 12px',
@@ -3075,7 +2020,7 @@ Piš stručně, prakticky a v češtině. Formátuj přehledně s odrážkami.`;
                               const percentage = stat.totalResponses > 0 
                                 ? (count / stat.totalResponses) * 100 
                                 : 0;
-                              const isStudentAnswer = selectedStudent && String(studentAnswer) === option.id;
+                              const isStudentAnswer = selectedStudent && getABCSelectedAnswerIds(studentAnswer as string | string[] | undefined).includes(option.id);
                               
                               return (
                                 <div 
@@ -3347,235 +2292,18 @@ Piš stručně, prakticky a v češtině. Formátuj přehledně s odrážkami.`;
         
         {/* Delete Results Dialog */}
         {showDeleteDialog && (
-        <div 
-          style={{
-            position: 'fixed',
-            inset: 0,
-            backgroundColor: 'rgba(0, 0, 0, 0.5)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 9999,
-          }}
-          onClick={() => { setShowDeleteDialog(false); setStudentToDelete(null); setDeleteMode('all'); }}
-        >
-          <div 
-            style={{
-              backgroundColor: 'white',
-              borderRadius: '16px',
-              padding: '0',
-              maxWidth: '450px',
-              width: '90%',
-              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
-              maxHeight: '80vh',
-              display: 'flex',
-              flexDirection: 'column',
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Header */}
-            <div style={{ 
-              padding: '20px 24px', 
-              borderBottom: '1px solid #e2e8f0',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '12px',
-            }}>
-              <div style={{
-                width: '40px',
-                height: '40px',
-                borderRadius: '10px',
-                backgroundColor: '#fef2f2',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}>
-                <Trash2 style={{ width: '20px', height: '20px', color: '#ef4444' }} />
-              </div>
-              <div>
-                <h3 style={{ fontSize: '18px', fontWeight: 600, color: '#1e293b', margin: 0 }}>
-                  Smazat výsledky
-                </h3>
-                <p style={{ fontSize: '13px', color: '#64748b', margin: 0 }}>
-                  Vyberte co chcete smazat
-                </p>
-              </div>
-            </div>
-            
-            {/* Content */}
-            <div style={{ padding: '16px 24px', overflowY: 'auto', flex: 1 }}>
-              {/* Delete All Option */}
-              <button
-                onClick={() => { setDeleteMode('all'); setStudentToDelete(null); }}
-                style={{
-                  width: '100%',
-                  padding: '16px',
-                  borderRadius: '12px',
-                  border: deleteMode === 'all' && !studentToDelete ? '2px solid #ef4444' : '1px solid #e2e8f0',
-                  backgroundColor: deleteMode === 'all' && !studentToDelete ? '#fef2f2' : 'white',
-                  cursor: 'pointer',
-                  textAlign: 'left',
-                  marginBottom: '16px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '12px',
-                }}
-              >
-                <div style={{
-                  width: '20px',
-                  height: '20px',
-                  borderRadius: '50%',
-                  border: deleteMode === 'all' && !studentToDelete ? '6px solid #ef4444' : '2px solid #cbd5e1',
-                  backgroundColor: 'white',
-                }} />
-                <div>
-                  <div style={{ fontWeight: 600, color: '#1e293b', fontSize: '15px' }}>
-                    Smazat všechny výsledky
-                  </div>
-                  <div style={{ fontSize: '13px', color: '#64748b', marginTop: '2px' }}>
-                    Smaže výsledky všech žáků a test ze třídy
-                  </div>
-                </div>
-              </button>
-              
-              {/* Divider */}
-              <div style={{ 
-                display: 'flex', 
-                alignItems: 'center', 
-                gap: '12px', 
-                marginBottom: '16px',
-              }}>
-                <div style={{ flex: 1, height: '1px', backgroundColor: '#e2e8f0' }} />
-                <span style={{ fontSize: '12px', color: '#94a3b8', fontWeight: 500 }}>NEBO VYBERTE ŽÁKA</span>
-                <div style={{ flex: 1, height: '1px', backgroundColor: '#e2e8f0' }} />
-              </div>
-              
-              {/* Student List */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {studentResults.map((student) => (
-                  <button
-                    key={student.id}
-                    onClick={() => { setDeleteMode('student'); setStudentToDelete(student.id); }}
-                    style={{
-                      width: '100%',
-                      padding: '12px 16px',
-                      borderRadius: '10px',
-                      border: studentToDelete === student.id ? '2px solid #ef4444' : '1px solid #e2e8f0',
-                      backgroundColor: studentToDelete === student.id ? '#fef2f2' : 'white',
-                      cursor: 'pointer',
-                      textAlign: 'left',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '12px',
-                    }}
-                  >
-                    <div style={{
-                      width: '18px',
-                      height: '18px',
-                      borderRadius: '50%',
-                      border: studentToDelete === student.id ? '5px solid #ef4444' : '2px solid #cbd5e1',
-                      backgroundColor: 'white',
-                      flexShrink: 0,
-                    }} />
-                    <div style={{ 
-                      width: '32px', 
-                      height: '32px', 
-                      borderRadius: '8px',
-                      background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      color: 'white',
-                      fontWeight: 600,
-                      fontSize: '13px',
-                      flexShrink: 0,
-                    }}>
-                      {student.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()}
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontWeight: 500, color: '#1e293b', fontSize: '14px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {student.name}
-                      </div>
-                      {student.score !== undefined && (
-                        <div style={{ fontSize: '12px', color: '#64748b' }}>
-                          {student.score}/{student.maxScore || session?.quiz?.slides?.filter((s: any) => s.type === 'activity').length || '?'} bodů
-                        </div>
-                      )}
-                    </div>
-                  </button>
-                ))}
-                
-                {studentResults.length === 0 && (
-                  <div style={{ 
-                    padding: '24px', 
-                    textAlign: 'center', 
-                    color: '#94a3b8',
-                    fontSize: '14px',
-                  }}>
-                    Žádní žáci k zobrazení
-                  </div>
-                )}
-              </div>
-            </div>
-            
-            {/* Footer */}
-            <div style={{ 
-              padding: '16px 24px', 
-              borderTop: '1px solid #e2e8f0',
-              display: 'flex',
-              gap: '12px',
-              justifyContent: 'flex-end',
-            }}>
-              <button
-                onClick={() => {
-                  setShowDeleteDialog(false);
-                  setStudentToDelete(null);
-                  setDeleteMode('all');
-                }}
-                style={{
-                  padding: '10px 20px',
-                  borderRadius: '8px',
-                  border: '1px solid #e2e8f0',
-                  backgroundColor: 'white',
-                  color: '#64748b',
-                  fontWeight: 500,
-                  cursor: 'pointer',
-                }}
-              >
-                Zrušit
-              </button>
-              <button
-                onClick={handleDeleteResults}
-                disabled={isDeleting}
-                style={{
-                  padding: '10px 20px',
-                  borderRadius: '8px',
-                  border: 'none',
-                  backgroundColor: '#ef4444',
-                  color: 'white',
-                  fontWeight: 500,
-                  cursor: isDeleting ? 'wait' : 'pointer',
-                  opacity: isDeleting ? 0.7 : 1,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                }}
-              >
-                {isDeleting ? (
-                  <Loader2 style={{ width: '16px', height: '16px', animation: 'spin 1s linear infinite' }} />
-                ) : (
-                  <Trash2 style={{ width: '16px', height: '16px' }} />
-                )}
-                {isDeleting ? 'Mažu...' : studentToDelete ? 'Smazat výsledky žáka' : 'Smazat vše'}
-              </button>
-            </div>
-          </div>
-        </div>
+          <DeleteResultsDialog
+            students={studentResults.map(s => ({ id: s.id, name: s.name, score: s.correctCount, maxScore: s.totalAnswered }))}
+            deleteMode={deleteMode}
+            setDeleteMode={setDeleteMode}
+            studentToDelete={studentToDelete}
+            setStudentToDelete={setStudentToDelete}
+            isDeleting={isDeleting}
+            onConfirm={handleDeleteResults}
+            onClose={() => setShowDeleteDialog(false)}
+          />
         )}
         </div>
       </div>
   );
 }
-
-export default QuizResultsPage;
-

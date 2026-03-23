@@ -134,6 +134,7 @@ const BLOCK_TYPE_CONFIG: Record<BlockType, { label: string; icon: typeof Type }>
   'heading': { label: 'Nadpis', icon: Type },
   'paragraph': { label: 'Odstavec', icon: AlignLeft },
   'infobox': { label: 'Infobox', icon: Info },
+  'layout-section': { label: 'Layout sekce', icon: LayoutGrid },
   'multiple-choice': { label: 'Výběr odpovědi', icon: ListChecks },
   'fill-blank': { label: 'Doplňování', icon: TextCursorInput },
   'free-answer': { label: 'Volná odpověď', icon: MessageSquare },

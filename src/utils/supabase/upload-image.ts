@@ -78,7 +78,33 @@ export async function uploadBase64ToStorage(
  * Check if string is a base64 data URL
  */
 export function isBase64DataUrl(str: string): boolean {
-  return str?.startsWith('data:') && str?.includes('base64');
+  return typeof str === 'string' && str.startsWith('data:') && str.includes('base64');
+}
+
+/**
+ * Recursively strip any base64 data URLs from a JSON-serializable object.
+ * Use before saving ANYTHING to Supabase to guarantee no base64 leaks into the DB.
+ * Replaces base64 strings with empty string '' and logs a warning.
+ */
+export function stripBase64FromObject(obj: unknown, path = 'root'): unknown {
+  if (typeof obj === 'string') {
+    if (isBase64DataUrl(obj)) {
+      console.warn(`[stripBase64] ⚠️ base64 detected at ${path} (len=${obj.length}) — stripped!`);
+      return '';
+    }
+    return obj;
+  }
+  if (Array.isArray(obj)) {
+    return obj.map((item, i) => stripBase64FromObject(item, `${path}[${i}]`));
+  }
+  if (obj !== null && typeof obj === 'object') {
+    const result: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(obj as Record<string, unknown>)) {
+      result[key] = stripBase64FromObject(value, `${path}.${key}`);
+    }
+    return result;
+  }
+  return obj;
 }
 
 /**

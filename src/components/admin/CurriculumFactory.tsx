@@ -247,10 +247,14 @@ export function CurriculumFactory() {
           updatedMedia.generatedIllustrations = pending.illustrations;
         }
         
+        // GUARD: strip base64 before saving
+        const { stripBase64FromObject } = await import('../../utils/supabase/upload-image');
+        const safeMedia = stripBase64FromObject(updatedMedia) as typeof updatedMedia;
+
         // Uložit do DB
         const { error } = await supabase
           .from('topic_data_sets')
-          .update({ media: updatedMedia })
+          .update({ media: safeMedia })
           .eq('id', dataSetId);
         
         if (error) {

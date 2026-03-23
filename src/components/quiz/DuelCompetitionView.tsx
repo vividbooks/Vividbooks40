@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { ref, update } from 'firebase/database';
-import { database } from '../../utils/firebase-config';
 import { QRCodeSVG } from 'qrcode.react';
 import Lottie from 'lottie-react';
 import { Copy, CheckCircle, Users, Play, SkipForward, X, ArrowRight, ArrowLeft, Swords } from 'lucide-react';
 import { Quiz, LiveQuizSession, CompetitionPhase, QuizSlide } from '../../types/quiz';
+import { SessionBackend, updateLiveSessionRecord, updateLiveStudentRecord } from '../../utils/live-session-repository';
+import { evaluateABCAnswer } from '../../utils/abc-evaluation';
 
 const SB = 'https://njbtqmsxbyvpwigfceke.supabase.co/storage/v1/object/public/competition_files';
 
@@ -22,7 +22,6 @@ const ASSETS = {
   resultsMusic: `${SB}/mp3/Vysledky_Vyhodnoceni_01.mp3`,
 };
 
-const QUIZ_SESSIONS_PATH = 'quiz_sessions';
 const DEFAULT_TIMER = 45;
 const DUEL_COLOR = '#FF6B35';
 
@@ -64,13 +63,14 @@ function useAudio() {
 interface DuelCompetitionViewProps {
   session: LiveQuizSession;
   sessionId: string;
+  sessionBackend: SessionBackend;
   quiz: Quiz;
   sessionCode: string;
   onEnd: () => void;
   renderSlide: (slide: QuizSlide) => React.ReactNode;
 }
 
-export default function DuelCompetitionView({ session, sessionId, quiz, sessionCode, onEnd, renderSlide }: DuelCompetitionViewProps) {
+export default function DuelCompetitionView({ session, sessionId, sessionBackend, quiz, sessionCode, onEnd, renderSlide }: DuelCompetitionViewProps) {
   const phase = (session.competitionPhase || 'lobby') as CompetitionPhase;
   const dData = session.duelCompetitionData;
   const students = session.students || {};
@@ -99,8 +99,8 @@ export default function DuelCompetitionView({ session, sessionId, quiz, sessionC
   const joinLink = `${window.location.origin}${import.meta.env.BASE_URL || '/'}go/${sessionCode}`;
 
   const updateSession = useCallback((data: Record<string, any>) => {
-    update(ref(database, `${QUIZ_SESSIONS_PATH}/${sessionId}`), data);
-  }, [sessionId]);
+    return updateLiveSessionRecord(sessionBackend, sessionId, data as Partial<LiveQuizSession>);
+  }, [sessionBackend, sessionId]);
 
   // Track if duels were created
   useEffect(() => {
@@ -242,8 +242,7 @@ export default function DuelCompetitionView({ session, sessionId, quiz, sessionC
   const checkCorrect = (slide: QuizSlide, response: any): boolean => {
     const act = slide as any;
     if (act.activityType === 'abc') {
-      const correctOpt = act.options?.find((o: any) => o.isCorrect);
-      return response.answer === correctOpt?.id;
+      return evaluateABCAnswer(act, response.answer);
     } else if (act.activityType === 'open') {
       return (act.correctAnswers || []).some((a: string) => a.trim().toLowerCase() === String(response.answer).trim().toLowerCase());
     } else if (act.activityType === 'example') {
@@ -270,7 +269,7 @@ export default function DuelCompetitionView({ session, sessionId, quiz, sessionC
         if (response) {
           const isCorrect = checkCorrect(currentSlide, response);
           const responses = student.responses.map((r: any) => r.slideId === slideId ? { ...r, isCorrect, points: isCorrect ? 1 : 0 } : r);
-          update(ref(database, `${QUIZ_SESSIONS_PATH}/${sessionId}/students/${pid}`), { responses });
+          updateLiveStudentRecord(sessionBackend, sessionId, pid, { responses });
           results[pid] = isCorrect;
         } else {
           results[pid] = false;

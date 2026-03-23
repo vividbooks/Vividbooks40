@@ -1,5 +1,11 @@
 # PDF Export – FINÁLNÍ ŘEŠENÍ (v3)
 
+## Deployment Note
+
+- V dev režimu je v `src/hooks/usePDFExport.ts` dočasný fallback: místo serverového Browserless exportu se otevírá lokální `/print/:id` stránka.
+- Důvod: serverový export běží proti nasazené appce na GitHub Pages, takže bez deploye nevidí lokální změny v PDF rendereru.
+- Po nasazení aktuální frontend verze je potřeba myslet na návrat k přímému PDF exportu jedním klikem a ověřit, že Browserless už renderuje nový `/print` build správně.
+
 ## VÝCHOZÍ STAV – CO EXISTUJE
 
 ### Pipeline (jak to teď funguje):

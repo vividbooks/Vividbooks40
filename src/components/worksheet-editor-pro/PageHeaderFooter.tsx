@@ -11,7 +11,7 @@ import { PageHeaderConfig, PageFooterConfig, FooterFeedbackStyle } from '../../t
 // ============================================
 
 export const DEFAULT_HEADER: PageHeaderConfig = {
-  enabled: true,
+  enabled: false,
   showName: true,
   showClass: true,
   showGrade: true,
@@ -22,7 +22,7 @@ export const DEFAULT_HEADER: PageHeaderConfig = {
 };
 
 export const DEFAULT_FOOTER: PageFooterConfig = {
-  enabled: true,
+  enabled: false,
   showSeparator: true,
   leftType: 'branding',
   leftText: '',

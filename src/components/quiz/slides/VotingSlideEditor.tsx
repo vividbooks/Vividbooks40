@@ -19,6 +19,7 @@ import {
   Hash,
   CheckCircle,
   List,
+  Upload,
 } from 'lucide-react';
 import { VotingActivitySlide, VotingOption, VotingType, FeedbackStyle, getOptionLabel, createVotingSlide } from '../../../types/quiz';
 import { useAssetPicker } from '../../../hooks/useAssetPicker';
@@ -57,6 +58,19 @@ const VOTING_TYPES: { type: VotingType; label: string; description: string; icon
 
 // Default emoji options for feedback
 const EMOJI_OPTIONS = ['😢', '😟', '😐', '😊', '🥳'];
+
+function getVotingTypeButtonStyle(active: boolean): React.CSSProperties {
+  return active
+    ? {
+        backgroundColor: '#59627B',
+        color: '#ffffff',
+        boxShadow: '0 6px 16px rgba(89, 98, 123, 0.18)',
+      }
+    : {
+        backgroundColor: '#f8fafc',
+        color: '#64748b',
+      };
+}
 
 export function VotingSlideEditor({ slide, onUpdate }: VotingSlideEditorProps) {
   const [editingQuestion, setEditingQuestion] = useState(false);
@@ -220,21 +234,21 @@ export function VotingSlideEditor({ slide, onUpdate }: VotingSlideEditorProps) {
             <button
               key={vt.type}
               onClick={() => handleVotingTypeChange(vt.type)}
-              className={`p-3 rounded-xl border-2 text-left transition-all ${
-                votingType === vt.type
-                  ? 'border-sky-500 bg-sky-50'
-                  : 'border-slate-200 hover:border-sky-200 hover:bg-slate-50'
-              }`}
+              className="p-3 rounded-2xl text-left transition-all"
+              style={getVotingTypeButtonStyle(votingType === vt.type)}
             >
               <div className="flex items-center gap-2 mb-1">
-                <div className={votingType === vt.type ? 'text-sky-600' : 'text-slate-400'}>
+                <div
+                  className="w-10 h-10 rounded-2xl flex items-center justify-center shrink-0"
+                  style={{ backgroundColor: votingType === vt.type ? 'rgba(255,255,255,0.14)' : '#ffffff' }}
+                >
                   {vt.icon}
                 </div>
-                <span className={`font-medium ${votingType === vt.type ? 'text-sky-700' : 'text-slate-700'}`}>
+                <span className={`font-medium ${votingType === vt.type ? 'text-white' : 'text-slate-700'}`}>
                   {vt.label}
                 </span>
               </div>
-              <p className="text-xs text-slate-500">{vt.description}</p>
+              <p className={`text-xs ${votingType === vt.type ? 'text-white/75' : 'text-slate-500'}`}>{vt.description}</p>
             </button>
           ))}
         </div>
@@ -269,29 +283,46 @@ export function VotingSlideEditor({ slide, onUpdate }: VotingSlideEditorProps) {
         )}
         
         {/* Image section */}
-        {slide.media?.url ? (
-          <div className="mt-4 relative">
-            <img 
-              src={slide.media.url} 
-              alt="Obrázek k otázce"
-              className="max-w-full max-h-48 rounded-lg border border-slate-200"
-            />
-            <button
-              onClick={() => onUpdate(slide.id, { media: undefined })}
-              className="absolute top-2 right-2 p-1.5 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors"
+        <div className="mt-4">
+          {slide.media?.url ? (
+            <div className="space-y-2">
+              <div
+                className="relative rounded-xl border border-slate-200 overflow-hidden bg-slate-50"
+                style={{ width: '250px', height: '250px' }}
+              >
+                <img 
+                  src={slide.media.url} 
+                  alt="Obrázek k otázce"
+                  className="w-full h-full object-cover"
+                />
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={openAssetPicker}
+                  className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors"
+                >
+                  <Upload className="w-4 h-4" />
+                  <span>Nahradit obrázek</span>
+                </button>
+                <button
+                  onClick={() => onUpdate(slide.id, { media: undefined })}
+                  className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm text-red-600 bg-red-50 hover:bg-red-100 transition-colors"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  <span>Smazat</span>
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button 
+              onClick={openAssetPicker}
+              className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors"
             >
-              <Trash2 className="w-4 h-4" />
+              <Upload className="w-4 h-4" />
+              <span>Přidat obrázek k otázce</span>
             </button>
-          </div>
-        ) : (
-          <button 
-            onClick={openAssetPicker}
-            className="mt-2 flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm text-slate-500 hover:bg-slate-100 transition-colors"
-          >
-            <ImageIcon className="w-4 h-4" />
-            Přidat obrázek
-          </button>
-        )}
+          )}
+        </div>
       </div>
       
       {/* Scale Settings */}
@@ -563,36 +594,6 @@ export function VotingSlideEditor({ slide, onUpdate }: VotingSlideEditorProps) {
             className="sr-only"
           />
         </label>
-      </div>
-      
-      {/* Preview hint */}
-      <div className="px-6 pb-6">
-        <div className="bg-sky-50 border border-sky-200 rounded-xl p-4">
-          <div className="flex items-start gap-3">
-            <div className="p-2 bg-sky-100 rounded-lg">
-              {votingType === 'scale' ? (
-                <Hash className="w-5 h-5 text-sky-600" />
-              ) : votingType === 'feedback' ? (
-                <Smile className="w-5 h-5 text-sky-600" />
-              ) : votingType === 'multiple' ? (
-                <BarChart2 className="w-5 h-5 text-sky-600" />
-              ) : (
-                <PieChart className="w-5 h-5 text-sky-600" />
-              )}
-            </div>
-            <div>
-              <h4 className="font-medium text-sky-900">
-                {votingType === 'scale' && 'Sloupcový graf škály'}
-                {votingType === 'feedback' && 'Vizuální zpětná vazba'}
-                {votingType === 'multiple' && 'Sloupcový graf'}
-                {votingType === 'single' && 'Koláčový graf'}
-              </h4>
-              <p className="text-sm text-sky-700 mt-1">
-                Učitel uvidí realtime graf hlasování. Studenti {slide.showResultsToStudents ? 'uvidí' : 'neuvidí'} výsledky po odhlasování.
-              </p>
-            </div>
-          </div>
-        </div>
       </div>
       
       {AssetPickerModal}

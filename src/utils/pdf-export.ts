@@ -18,6 +18,8 @@ export interface PDFExportOptions {
   filename?: string;
   /** Open /print page preview in a new tab instead of generating PDF */
   preview?: boolean;
+  /** Add 3mm bleed + crop marks for professional print production */
+  bleed?: boolean;
 }
 
 /**
@@ -25,11 +27,12 @@ export interface PDFExportOptions {
  * and triggers a browser download.
  */
 export async function exportWorksheetPDF(opts: PDFExportOptions): Promise<void> {
-  const { worksheetId, worksheetData, filename = 'pracovni-list.pdf', preview = false } = opts;
+  const { worksheetId, worksheetData, filename = 'pracovni-list.pdf', preview = false, bleed = false } = opts;
 
   if (preview) {
     const base = import.meta.env.PROD ? '/Vividbooks40' : '';
-    window.open(`${base}/print/${worksheetId}`, '_blank');
+    const suffix = bleed ? '?bleed=1' : '';
+    window.open(`${base}/print/${worksheetId}${suffix}`, '_blank');
     return;
   }
 
@@ -43,12 +46,17 @@ export async function exportWorksheetPDF(opts: PDFExportOptions): Promise<void> 
       'apikey': ANON_KEY,
       ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
     },
-    body: JSON.stringify({ worksheetId, worksheetData, filename }),
+    body: JSON.stringify({ worksheetId, worksheetData, filename, bleed }),
   });
 
   if (!response.ok) {
     let errMsg = `HTTP ${response.status}`;
-    try { errMsg = (await response.json()).error ?? errMsg; } catch { /* ignore */ }
+    try {
+      const errBody = await response.json();
+      errMsg = errBody.error ?? errMsg;
+      if (errBody.detail) errMsg += ` (${errBody.detail})`;
+      if (errBody.hint) errMsg += ` — ${errBody.hint}`;
+    } catch { /* ignore */ }
     throw new Error(errMsg);
   }
 

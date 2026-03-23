@@ -588,6 +588,12 @@
   * {
     border-color: var(--border);
     outline-color: var(--ring);
+    /* font-family is intentionally NOT set here — setting it on * would override
+       inline style inheritance in children (any parent with fontFamily inline style
+       would have its value blocked by this * rule for all descendants). */
+  }
+
+  body {
     font-family: Fenomen Sans, -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Helvetica Neue, Arial, sans-serif;
   }
 
@@ -5362,10 +5368,44 @@
 }
 
 @font-face {
+  font-family: Visby Round;
+  src: url("https://jjpiguuubvmiobmixwgh.supabase.co/storage/v1/object/public/Admin%20math/VisbyRoundCFDemiBold-Regular%20(2).otf") format("opentype");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: Vividbooks Script;
+  src: url("https://jjpiguuubvmiobmixwgh.supabase.co/storage/v1/object/public/Admin%20math/VividbooksScriptOne-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* Enable OpenType contextual alternates and ligatures for Vividbooks Script
+   so connected/joining letter forms are activated automatically */
+[style*="Vividbooks Script"] {
+  font-feature-settings: 'calt' 1, 'clig' 1, 'liga' 1, 'kern' 1;
+  font-variant-ligatures: common-ligatures contextual;
+  text-rendering: optimizeLegibility;
+}
+
+@font-face {
+  font-family: Cooper Light;
+  src: url("https://jjpiguuubvmiobmixwgh.supabase.co/storage/v1/object/public/Admin%20math/Cooper-Light.otf") format("opentype");
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* Also register at weight 400/normal so both font-weight values resolve to Cooper Light */
+@font-face {
   font-family: Cooper Light;
   src: url("https://jjpiguuubvmiobmixwgh.supabase.co/storage/v1/object/public/Admin%20math/Cooper-Light.otf") format("opentype");
   font-weight: normal;
   font-style: normal;
+  font-display: swap;
 }
 
 :root {
@@ -5534,10 +5574,15 @@ html {
     break-after: auto;
   }
 
-  /* Catch-all: if parent containers use overflow/100vh, disable it for print */
-  .overflow-hidden,
-  .overflow-auto,
-  .h-screen {
+  /* Catch-all: only LAYOUT containers outside page content get overflow reset.
+     Content elements inside .a4-page must keep their overflow for image clipping. */
+  body > .overflow-hidden,
+  body > .overflow-auto,
+  .h-screen,
+  .center-area.overflow-hidden,
+  .center-area.overflow-auto,
+  .pages-row.overflow-hidden,
+  .pages-row.overflow-auto {
     overflow: visible !important;
     height: auto !important;
   }
@@ -5637,6 +5682,422 @@ html {
 .tiptap-editor p {
   margin-bottom: 1rem;
   line-height: 1.7;
+}
+
+.worksheet-rich-html-editor,
+.worksheet-rich-html-content,
+.worksheet-rich-html-editor p,
+.worksheet-rich-html-content p,
+.worksheet-rich-html-editor div,
+.worksheet-rich-html-content div,
+.worksheet-rich-html-editor span,
+.worksheet-rich-html-content span,
+.worksheet-rich-html-editor li,
+.worksheet-rich-html-content li,
+.worksheet-rich-html-editor ul,
+.worksheet-rich-html-content ul,
+.worksheet-rich-html-editor ol,
+.worksheet-rich-html-content ol,
+.worksheet-rich-html-editor strong,
+.worksheet-rich-html-content strong,
+.worksheet-rich-html-editor em,
+.worksheet-rich-html-content em,
+.worksheet-rich-html-editor u,
+.worksheet-rich-html-content u,
+.worksheet-rich-html-editor mark,
+.worksheet-rich-html-content mark,
+.worksheet-rich-html-editor h1,
+.worksheet-rich-html-content h1,
+.worksheet-rich-html-editor h2,
+.worksheet-rich-html-content h2,
+.worksheet-rich-html-editor h3,
+.worksheet-rich-html-content h3,
+.worksheet-rich-html-editor h4,
+.worksheet-rich-html-content h4,
+.worksheet-rich-html-editor h5,
+.worksheet-rich-html-content h5,
+.worksheet-rich-html-editor h6,
+.worksheet-rich-html-content h6,
+.worksheet-rich-html-editor a,
+.worksheet-rich-html-content a,
+.worksheet-rich-html-editor blockquote,
+.worksheet-rich-html-content blockquote {
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  letter-spacing: inherit;
+  color: inherit;
+}
+
+.worksheet-rich-html-editor p,
+.worksheet-rich-html-content p,
+.worksheet-rich-html-editor div,
+.worksheet-rich-html-content div,
+.worksheet-rich-html-editor h1,
+.worksheet-rich-html-content h1,
+.worksheet-rich-html-editor h2,
+.worksheet-rich-html-content h2,
+.worksheet-rich-html-editor h3,
+.worksheet-rich-html-content h3,
+.worksheet-rich-html-editor h4,
+.worksheet-rich-html-content h4,
+.worksheet-rich-html-editor h5,
+.worksheet-rich-html-content h5,
+.worksheet-rich-html-editor h6,
+.worksheet-rich-html-content h6,
+.worksheet-rich-html-editor blockquote,
+.worksheet-rich-html-content blockquote {
+  margin: 0;
+}
+
+/* Porovnávání počtů: podpora zakulacení (duplicitně s inline — pro tisk / editor) */
+.vb-miniapp.vb-compare-counts .vb-compare-counts-field {
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+/* ─── Písanka (český jazyk) — 3 části řádku: horní / střední / spodní (každá 0,8 nebo 0,6 cm) ─── */
+.vb-miniapp.vb-pisanka,
+.worksheet-rich-html-content .vb-miniapp.vb-pisanka {
+  /* Jednotná mezera od vnitřku oblasti obsahu (canvas — PISANKA_PAGE_OUTER_INSET_PX) */
+  width: calc(100% - 2 * var(--vb-pisanka-page-outer-inset, 0px));
+  max-width: 100%;
+  box-sizing: border-box;
+  margin: var(--vb-pisanka-page-outer-inset, 0px);
+}
+
+.vb-pisanka-page {
+  background: #ffffff;
+  border-radius: 12px;
+  /* vodorovně řídí --pisanka-page-pad-x z inline (0 = pás/linky až k okraji bloku) */
+  padding: clamp(10px, 1.6vw, 18px) var(--pisanka-page-pad-x, 0px);
+  box-sizing: border-box;
+  /* Min. výška vnitřku karty — GridCanvas nastaví --vb-pisanka-page-inner-min-height (tělo stránky − 2× vnější okraj) */
+  min-height: var(--vb-pisanka-page-inner-min-height, auto);
+}
+
+/* Mezery mezi řádky — --pisanka-rows-gap z miniApp (slider) */
+.vb-pisanka-rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pisanka-rows-gap, 56px);
+}
+
+.vb-pisanka-row {
+  position: relative;
+  flex-shrink: 0;
+  margin: 0 !important;
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+}
+
+.vb-pisanka-row-core {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  align-self: stretch;
+}
+
+.vb-pisanka-row-mascot {
+  flex-shrink: 0;
+  /* základ 32px × 1,07 × 1,02 */
+  width: calc(32px * 1.07 * 1.02);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-right: 6px;
+  z-index: 3;
+  pointer-events: none;
+  position: relative;
+  background: transparent;
+  /* žádné ::before „bubliny“ — šířka >100 % zasahovala do okraje stránky */
+  overflow: visible;
+}
+
+.vb-pisanka-mascot-img {
+  height: 100%;
+  width: auto;
+  max-width: calc(28px * 1.07 * 1.02);
+  object-fit: contain;
+  object-position: center bottom;
+  display: block;
+  position: relative;
+  z-index: 1;
+  background: transparent !important;
+  /* jemný bílý obrys kolem siluety (SVG má bílé výplně u nohou i hlavy) */
+  filter: drop-shadow(0 0 0.75px #fff) drop-shadow(0 0 2px #fff) drop-shadow(0 0 4px rgba(255, 255, 255, 0.85));
+}
+
+/* Panáček: linky přes celou šířku řádku (až k levému okraji), figurka vlevo nad nimi */
+.vb-pisanka-row.vb-pisanka-row--mascot {
+  --vb-pisanka-mascot-slot: calc(32px * 1.07 * 1.02 + 6px);
+  display: grid;
+  grid-template-columns: var(--vb-pisanka-mascot-slot) minmax(0, 1fr);
+  grid-template-rows: minmax(0, auto);
+  align-items: stretch;
+}
+
+.vb-pisanka-row--mascot .vb-pisanka-row-mascot {
+  grid-column: 1;
+  grid-row: 1;
+  z-index: 4;
+  width: 100%;
+  max-width: 100%;
+  justify-self: center;
+}
+
+.vb-pisanka-row--mascot .vb-pisanka-row-core {
+  grid-column: 1 / -1;
+  grid-row: 1;
+  flex: unset;
+  min-width: 0;
+  width: auto;
+  max-width: none;
+  z-index: 1;
+}
+
+.vb-pisanka-row--mascot .vb-pisanka-trace-wrap {
+  padding-left: var(--vb-pisanka-mascot-slot);
+  padding-right: clamp(4px, 0.9vw, 10px);
+  padding-top: 0;
+  padding-bottom: calc(var(--pisanka-seg) + max(1px, 0.25mm) + var(--pisanka-trace-pad-extra, 0px));
+}
+
+/* ─── Písanka: vzory linek (1 = plná, 2 = jen střední pás, 3 = plná bez modrého pásu) ─── */
+.vb-miniapp.vb-pisanka[data-pisanka-line-pattern='2'] .vb-pisanka-hair,
+.vb-miniapp.vb-pisanka[data-pisanka-line-pattern='2'] .vb-pisanka-zone--horni,
+.vb-miniapp.vb-pisanka[data-pisanka-line-pattern='2'] .vb-pisanka-zone--spodni {
+  display: none !important;
+}
+
+/* Vzor 2: předpis sedí na spodní lince (bez spodní části — upravené --pisanka-trace-pad-extra v TS) */
+.vb-miniapp.vb-pisanka[data-pisanka-line-pattern='2'] .vb-pisanka-trace-wrap {
+  padding-bottom: calc(max(1px, 0.5mm) + var(--pisanka-trace-pad-extra, 0px));
+}
+
+.vb-miniapp.vb-pisanka[data-pisanka-line-pattern='3'] .vb-pisanka-zone--stredni {
+  background: transparent !important;
+}
+
+/* Obrázek vzadu pod linkami (vizuálně „na lince“ vpravo) */
+.vb-pisanka-row-bg {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  display: flex;
+  justify-content: flex-end;
+  align-items: flex-end;
+  padding-right: clamp(4px, 1.2vw, 14px);
+  padding-bottom: 1px;
+  overflow: hidden;
+}
+
+.vb-pisanka-row-bg-img {
+  max-height: 100%;
+  max-width: min(48%, 220px);
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  object-position: right bottom;
+  user-select: none;
+}
+
+.vb-pisanka-rail {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  flex-shrink: 0;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+/* Horní/spodní ohraničení řádku — plná linka 0,25 mm */
+.vb-pisanka-hair {
+  height: max(1px, 0.25mm);
+  min-height: max(1px, 0.25mm);
+  flex-shrink: 0;
+  background: var(--pisanka-thin);
+}
+
+.vb-pisanka-zone {
+  height: var(--pisanka-seg);
+  min-height: var(--pisanka-seg);
+  max-height: var(--pisanka-seg);
+  flex-shrink: 0;
+  box-sizing: border-box;
+}
+
+.vb-pisanka-zone--stredni {
+  background: var(--pisanka-band);
+}
+
+/* Mezi částmi — plná linka 0,25 mm (ne čárkovaná) */
+.vb-pisanka-rule--thick {
+  height: max(1px, 0.25mm);
+  min-height: max(1px, 0.25mm);
+  flex-shrink: 0;
+  background: var(--pisanka-thick);
+}
+
+/* Základní linka mezi střední a spodní částí — 0,5 mm */
+.vb-pisanka-rule--baseline {
+  height: max(1px, 0.5mm);
+  min-height: max(1px, 0.5mm);
+}
+
+.vb-pisanka-trace-wrap {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: row;
+  align-items: flex-end;
+  padding: 0 clamp(4px, 0.9vw, 10px);
+  /* zarovnání k základní lince + volitelný dev posun (--pisanka-trace-pad-extra, + px = text výš) */
+  padding-bottom: calc(var(--pisanka-seg) + max(1px, 0.25mm) + var(--pisanka-trace-pad-extra, 0px));
+  box-sizing: border-box;
+  pointer-events: none;
+}
+
+/* Tužka + předpis vedle sebe — předpis vyplní zbytek řádku */
+.vb-pisanka-trace-wrap > .vb-pisanka-trace,
+.vb-pisanka-trace-wrap > .vb-pisanka-trace.vb-pisanka-trace--empty {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: auto;
+}
+
+.vb-pisanka-start-pencil {
+  flex: 0 0 auto;
+  align-self: flex-end;
+  width: clamp(26px, 7.5vw, 38px);
+  height: clamp(26px, 7.5vw, 38px);
+  margin: 0 2px 0 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  pointer-events: none;
+}
+
+.vb-pisanka-start-pencil-img {
+  width: 130%;
+  max-width: none;
+  height: auto;
+  object-fit: contain;
+  object-position: right bottom;
+  display: block;
+  /* hrot směřuje k prvnímu písmenu */
+  transform: translate(4px, 3px);
+}
+
+/* Specificita > .worksheet-rich-html-content span { font-size: inherit } — jinak nefunguje velikost ani dev slider */
+.vb-miniapp.vb-pisanka .vb-pisanka-trace {
+  font-size: calc(var(--pisanka-seg) * var(--pisanka-trace-mul, 2.95));
+  line-height: 1;
+  opacity: 1 !important;
+  /* plná výplň, bez „obrysu“ — staré uložené HTML mělo inline stroke */
+  -webkit-text-stroke: 0 !important;
+  paint-order: normal !important;
+  /* žádné mezery mezi znaky — jinak vázané tahy nenavazují */
+  letter-spacing: normal;
+  word-spacing: normal;
+  font-feature-settings: 'calt' 1, 'clig' 1, 'liga' 1, 'kern' 1;
+  font-variant-ligatures: common-ligatures contextual;
+  text-rendering: optimizeLegibility;
+  max-width: 100%;
+  overflow: visible;
+  white-space: nowrap;
+}
+
+/* Cooper Light — menší než Vividbooks, mírně výš na lince (vyladění k šabloně 3×segment) */
+.vb-miniapp.vb-pisanka .vb-pisanka-trace.vb-pisanka-trace--cooper {
+  /* základ × 0,9 × dalších −15 % ≈ 0,765 */
+  font-size: calc(var(--pisanka-seg) * var(--pisanka-trace-mul, 2.95) * 0.765);
+  transform: translateY(-9px);
+  font-feature-settings: 'kern' 1;
+  font-variant-ligatures: normal;
+}
+
+.vb-pisanka-trace--empty {
+  min-height: 0.5em;
+  display: inline-block;
+  width: 100%;
+}
+
+/* Vodící tečky (PisankaGuideDotsLayer) */
+.vb-pisanka-guide-dots-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.vb-pisanka-guide-dot {
+  position: absolute;
+  width: 5px;
+  height: 5px;
+  margin: 0;
+  padding: 0;
+  border-radius: 50%;
+  background: var(--pisanka-thick, #2563eb);
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.4);
+}
+
+/* Číselný řádek: vždy jedna řádka, šířka podle obsahu (max-width z inline na úzkém kontejneru) */
+.vb-miniapp.vb-compare-counts .vb-compare-numeric-row,
+.worksheet-rich-html-content .vb-miniapp.vb-compare-counts .vb-compare-numeric-row {
+  flex-wrap: nowrap !important;
+}
+.vb-miniapp.vb-compare-counts .vb-compare-numeric-row .vb-compare-num-cell,
+.worksheet-rich-html-content .vb-miniapp.vb-compare-counts .vb-compare-numeric-row .vb-compare-num-cell {
+  white-space: nowrap !important;
+}
+.vb-miniapp.vb-compare-counts .vb-compare-numeric-row .vb-compare-num-cell:last-child,
+.vb-miniapp.vb-compare-counts .vb-compare-numeric-row .vb-compare-num-cell--last,
+.worksheet-rich-html-content .vb-miniapp.vb-compare-counts .vb-compare-numeric-row .vb-compare-num-cell:last-child,
+.worksheet-rich-html-content .vb-miniapp.vb-compare-counts .vb-compare-numeric-row .vb-compare-num-cell--last {
+  border-right: none !important;
+}
+.vb-miniapp.vb-compare-counts .vb-compare-numeric-row-outer,
+.worksheet-rich-html-content .vb-miniapp.vb-compare-counts .vb-compare-numeric-row-outer {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Porovnávání počtů: preflight/global img { height:auto; max-width:100% } rozbíjelo pevnou velikost symbolů */
+.worksheet-rich-html-content .vb-miniapp.vb-compare-counts .vb-compare-sticker-cell,
+.vb-miniapp.vb-compare-counts .vb-compare-sticker-cell {
+  flex-shrink: 0;
+}
+
+.worksheet-rich-html-content .vb-miniapp.vb-compare-counts .vb-compare-sticker-cell img.vb-compare-sticker,
+.vb-miniapp.vb-compare-counts .vb-compare-sticker-cell img.vb-compare-sticker {
+  display: block !important;
+  width: 100% !important;
+  height: 100% !important;
+  max-width: 100% !important;
+  max-height: 100% !important;
+  object-fit: contain !important;
+  vertical-align: top !important;
+}
+
+/* Počet u miniaplikace porovnání — vlastní šipky místo malých native spinnerů */
+.vb-compare-count-input[type='number'] {
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+.vb-compare-count-input::-webkit-outer-spin-button,
+.vb-compare-count-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }
 
 .tiptap-editor ul, .tiptap-editor ol {
@@ -5926,13 +6387,23 @@ html {
 .prose th,
 .prose td {
   border: 1px solid var(--table-border-color, #cbd5e1);
-  padding: 0.75rem 1rem;
+  padding: var(--table-cell-padding-v, 0.75rem) var(--table-cell-padding-h, 1rem);
   text-align: left;
   vertical-align: middle;
   position: relative;
-  min-width: 80px;
+  min-width: var(--table-cell-min-width, 80px);
   word-wrap: break-word;
   height: auto;
+  font-size: var(--table-font-size, inherit);
+}
+
+/* Compact density — cells shrink to content */
+.tiptap-editor table.table-density-compact,
+.html-renderer table.table-density-compact,
+.prose table.table-density-compact {
+  table-layout: auto;
+  width: auto;
+  min-width: 100%;
 }
 
 .tiptap-editor th,
@@ -6097,6 +6568,16 @@ html {
 .worksheet-table-container th,
 .worksheet-table-container td {
   border: 1px solid var(--table-border-color, #cbd5e1) !important;
+  padding: var(--table-cell-padding-v, 0.75rem) var(--table-cell-padding-h, 1rem) !important;
+  font-size: var(--table-font-size, inherit) !important;
+  min-width: var(--table-cell-min-width, 80px) !important;
+}
+
+/* Compact layout for worksheet-table-container */
+.worksheet-table-container table.table-density-compact {
+  table-layout: auto !important;
+  width: auto !important;
+  min-width: 100% !important;
 }
 
 /* Table add buttons */
@@ -6309,6 +6790,18 @@ html {
 .table-color-btn:hover {
   transform: scale(1.1);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+/* When table fills full block height (preview/playback mode) */
+.worksheet-table-container.tiptap-editor table[style*="height: 100%"] {
+  /* keep border-collapse: separate so border-radius works */
+}
+.worksheet-table-container.tiptap-editor table[style*="height: 100%"] tbody tr {
+  height: 1%;  /* forces even row-height distribution in fill-height tables */
+}
+.worksheet-table-container.tiptap-editor table[style*="height: 100%"] td,
+.worksheet-table-container.tiptap-editor table[style*="height: 100%"] th {
+  vertical-align: middle;
 }
 
 /* Table resize handle */
@@ -6862,9 +7355,51 @@ html {
   resize: none;
 }
 
-/* Highlight marks in contenteditable (RichQuestionEditor) */
-[contenteditable] mark,
-[contenteditable] span[style*="background-color"] {
+/* VividMap — country hover tooltip */
+.vivid-country-tooltip {
+  background: rgba(15, 23, 42, 0.88) !important;
+  border: none !important;
+  border-radius: 8px !important;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.25) !important;
+  padding: 5px 11px !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  color: #f8fafc !important;
+  pointer-events: none !important;
+  backdrop-filter: blur(6px);
+}
+.vivid-country-tooltip::before {
+  display: none !important;
+}
+.vivid-area-tooltip {
+  background: rgba(15, 23, 42, 0.85) !important;
+  border: none !important;
+  border-radius: 7px !important;
+  padding: 4px 10px !important;
+  font-size: 11px !important;
+  color: #f1f5f9 !important;
+  pointer-events: none !important;
+}
+.vivid-area-tooltip::before {
+  display: none !important;
+}
+
+/* Competition special round animations (QuizJoinPage) */
+@keyframes specialGradientShift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+@keyframes specialPulseOpacity {
+  0%, 100% { opacity: 0.2; }
+  50% { opacity: 0.4; }
+}
+
+/* Highlight marks — applied everywhere (editor + view mode + Vividboard rendered HTML) */
+mark,
+[contenteditable] span[style*="background-color"],
+.quiz-html-content span[style*="background-color"],
+.heading-html-view span[style*="background-color"] {
   border-radius: 7px;
   padding: 0.11em 0.28em;
   -webkit-box-decoration-break: clone;

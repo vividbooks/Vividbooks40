@@ -3,46 +3,79 @@ description: Pravidla pro používání Gemini AI modelů v projektu
 alwaysApply: true
 ---
 
-# Gemini Modely – POUZE Gemini 3
+# Gemini Modely – Gemini 3 a 3.1
 
 ## Povolené modely
 
-Používej VÝHRADNĚ tyto dva modely. Žádné starší verze!
-
 | Model | API ID | Kdy použít |
 |-------|--------|------------|
-| **Gemini 3 Pro** | `gemini-3-pro-preview` | Komplexní úlohy: analýza layoutu, generování strukturovaného JSON, víceagentní pipeline |
-| **Gemini 3 Flash** | `gemini-3-flash-preview` | Rychlé úlohy: chat, jednoduché generování, fallback |
+| **Gemini 3.1 Pro** | `gemini-3.1-pro-preview` | Nejlepší reasoning, složité analýzy, víceagentní pipeline, generování obsahu učebnic |
+| **Gemini 3 Flash** | `gemini-3-flash-preview` | Rychlé úlohy: chat, překlady, jednoduché generování, fallback |
+| **Gemini 3.1 Flash Image** | `gemini-3.1-flash-image-preview` | **Generování obrázků** — ilustrace, konverzační editace, character consistency |
+| **Gemini 3 Pro Image** | `gemini-3-pro-image-preview` | **Vysoká kvalita ilustrací** — reasoning-enhanced composition, učebnicové ilustrace |
+
+> ❌ Nepoužívat: `gemini-3-pro-preview`, `gemini-2.0-flash`, `gemini-1.5-pro`, `gemini-2.5-flash`
 
 ## Edge Function (supabase/functions/ai-chat/index.ts)
 
-Volat pomocí model ID přes edge function:
-- `gemini-3-pro` → mapuje na `gemini-3-pro-preview`
-- `gemini-3-flash` → mapuje na `gemini-3-flash-preview`
+Volat pomocí model ID přes edge function (model mapping):
+- `gemini-3.1-pro` → mapuje na `gemini-3.1-pro-preview` ✅ PRIMARY
+- `gemini-3-flash` → mapuje na `gemini-3-flash-preview` (rychlý fallback)
+- `gemini-image-flash` → mapuje na `gemini-3.1-flash-image-preview` (generování obrázků)
+- `gemini-image-pro` → mapuje na `gemini-3-pro-image-preview` (HQ ilustrace)
 
-## Přímé volání Gemini API
+## Přímé volání Gemini API – Text
 
 ```typescript
-// ✅ SPRÁVNĚ
-fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-preview:generateContent?key=${API_KEY}`)
+// ✅ SPRÁVNĚ – text generation
+fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent?key=${API_KEY}`)
 fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${API_KEY}`)
 
 // ❌ ŠPATNĚ – nepoužívat
+fetch(`.../gemini-3-pro-preview:generateContent...`)   // zastaralý
 fetch(`.../gemini-2.0-flash:generateContent...`)
-fetch(`.../gemini-1.5-pro:generateContent...`)
-fetch(`.../gemini-2.5-flash:generateContent...`)
 ```
 
-## Fallback vzor
-
-Vždy zkus Gemini 3 Pro nejdřív, při selhání fallback na Gemini 3 Flash:
+## Přímé volání Gemini API – Image Generation
 
 ```typescript
-const modelsToTry = ['gemini-3-pro', 'gemini-3-flash'];
+// ✅ Generování obrázků (flash = rychlejší, pro = kvalitnější)
+fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image-preview:generateContent?key=${API_KEY}`)
+fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-image-preview:generateContent?key=${API_KEY}`)
+
+// Response obsahuje inlineData (base64 PNG), ne jen text!
+// Vždy kontroluj parts[].inlineData pro obrázky AND parts[].text pro text
 ```
 
-## Import Agent Pipeline
+## Fallback vzor – Text
 
-- **Agent 1 (vizuální analýza)**: `gemini-3-pro` (nejlepší pochopení obrazu)
-- **Agent 2 (JSON builder)**: `gemini-3-pro` s fallback na `gemini-3-flash`
-- **Chat**: `gemini-3-flash` (rychlý, dostatečný)
+```typescript
+const modelsToTry = ['gemini-3.1-pro', 'gemini-3-flash'];
+```
+
+## Fallback vzor – Image Generation
+
+```typescript
+const imageModelsToTry = ['gemini-image-flash', 'gemini-image-pro'];
+```
+
+## Použití podle use case
+
+| Use case | Model |
+|----------|-------|
+| Generování obsahu učebnic | `gemini-3.1-pro` |
+| Analýza layoutu / JSON | `gemini-3.1-pro` |
+| Ilustrace pro učebnice | `gemini-image-pro` |
+| Rychlé obrázky / thumbnaily | `gemini-image-flash` |
+| Chat asistent | `gemini-3-flash` |
+| Překlady (mapy, texty) | `gemini-3-flash` |
+| Víceagentní pipeline (agent 1) | `gemini-3.1-pro` |
+| Víceagentní pipeline (agent 2) | `gemini-3.1-pro` s fallback na `gemini-3-flash` |
+
+## Novinky Gemini 3.1 Pro (Feb 2026)
+
+- 2.5× lepší reasoning než 3.0 Pro
+- 1 048 576 tokenů context window (→ celé učebnice najednou)
+- 65 536 tokenů max output (→ dlouhé materiály)
+- 82% lepší agentic tool use
+- Knowledge cutoff: leden 2025

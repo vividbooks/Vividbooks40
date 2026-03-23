@@ -1,0 +1,12 @@
+{
+  "rules": {
+    ".read": "auth != null",
+    ".write": "auth != null",
+    "quiz_sessions": {
+      ".indexOn": ["quizId", "createdAt"]
+    },
+    "quiz_shares": {
+      ".indexOn": ["quizId", "createdAt"]
+    }
+  }
+}

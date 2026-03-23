@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Save, Settings, ChevronDown, Undo, Redo, Eye, CheckCircle2, Plus, Trash2, LogOut, Brain, Loader2, User, GraduationCap, ExternalLink, BookOpen, BarChart3, Download } from 'lucide-react';
+import { ArrowLeft, Save, Settings, ChevronDown, Undo, Redo, Eye, CheckCircle2, Plus, Trash2, LogOut, Brain, Loader2, User, GraduationCap, ExternalLink, BookOpen, BarChart3, Download, Globe, Layout } from 'lucide-react';
 import { HtmlRenderer } from './HtmlRenderer';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -97,6 +97,17 @@ function ViewModeDropdown() {
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem 
+          onClick={() => window.open(import.meta.env.BASE_URL + 'admin/atlas', '_blank')} 
+          className="cursor-pointer"
+        >
+          <div className="flex items-center gap-2">
+            <div className="p-1 bg-blue-100 rounded text-blue-600">
+              <Globe className="w-3.5 h-3.5" />
+            </div>
+            <span className="font-medium text-blue-700">Atlas Explorer</span>
+          </div>
+        </DropdownMenuItem>
+        <DropdownMenuItem 
           onClick={() => window.open(import.meta.env.BASE_URL + 'admin/curriculum-factory', '_blank')} 
           className="cursor-pointer"
         >
@@ -144,6 +155,7 @@ export function AdminEditor({ theme, toggleTheme, onLogout }: AdminEditorProps) 
   const [documentType, setDocumentType] = useState('lesson');
   const [featuredMedia, setFeaturedMedia] = useState<string>('');
   const [sectionImages, setSectionImages] = useState<SectionMediaItem[]>([]);
+  const [datasetImages, setDatasetImages] = useState<Array<{ url: string; title?: string; alt?: string }>>([]);
   const [workbookData, setWorkbookData] = useState<WorkbookData>(DEFAULT_WORKBOOK_DATA);
   const [worksheetData, setWorksheetData] = useState<WorksheetData>(DEFAULT_WORKSHEET_DATA);
   
@@ -181,6 +193,33 @@ export function AdminEditor({ theme, toggleTheme, onLogout }: AdminEditorProps) 
     const doc = parser.parseFromString(content, 'text/html');
     return Array.from(doc.querySelectorAll('h2')).map(h2 => h2.textContent || '').filter(Boolean);
   }, [content]);
+
+  // Fetch dataset images when document is linked to a dataset (slug pattern: {datasetId}-text)
+  useEffect(() => {
+    // Use URL slug directly — most reliable source, available before currentPage loads
+    const candidate = slug || currentPage?.slug || '';
+    const match = candidate.match(/^(.+)-text$/);
+    if (!match) {
+      setDatasetImages([]);
+      return;
+    }
+    const datasetId = match[1];
+    supabase
+      .from('topic_data_sets')
+      .select('media')
+      .eq('id', datasetId)
+      .single()
+      .then(({ data, error }) => {
+        if (error || !data?.media) return;
+        const media = data.media as any;
+        const imgs: Array<{ url: string; title?: string; alt?: string }> = [
+          ...(media.images ?? []).map((i: any) => ({ url: i.url, title: i.title || i.name })),
+          ...(media.generatedIllustrations ?? []).map((i: any) => ({ url: i.url, title: i.name })),
+          ...(media.generatedPhotos ?? []).map((i: any) => ({ url: i.url, title: i.name })),
+        ].filter((img: any) => !!img?.url);
+        setDatasetImages(imgs);
+      });
+  }, [slug, currentPage?.slug]);
 
   // Load page when slug changes
   useEffect(() => {
@@ -464,8 +503,11 @@ export function AdminEditor({ theme, toggleTheme, onLogout }: AdminEditorProps) 
                    }
                  });
                }
-            } else if (item.type === 'image' && item.imageUrl) {
-               parts.push(`Obrázek: ${item.imageUrl}`);
+            } else if (item.type === 'image') {
+               const urls = item.imageSteps?.filter(s => s.url).map(s => s.url) || (item.imageUrl ? [item.imageUrl] : []);
+               if (urls.length > 0) parts.push(`Obrázek${urls.length > 1 ? 'y' : ''}: ${urls.join(', ')}`);
+               const descs = item.imageSteps?.filter(s => s.description).map(s => s.description) || (item.imageDescription ? [item.imageDescription] : []);
+               descs.forEach(d => parts.push(`- Popis: ${d}`));
             }
             
             return parts.join('\n');
@@ -1013,9 +1055,9 @@ export function AdminEditor({ theme, toggleTheme, onLogout }: AdminEditorProps) 
                           
                           {/* Media preview */}
                           <div className="relative">
-                            {item.type === 'image' ? (
+                            {(item.type === 'image' || (!item.type && item.imageUrl)) ? (
                               <img 
-                                src={item.imageUrl} 
+                                src={item.imageSteps?.[0]?.url || item.imageUrl} 
                                 alt={item.heading}
                                 className="w-full aspect-video object-cover"
                                 onError={(e) => {
@@ -1053,12 +1095,13 @@ export function AdminEditor({ theme, toggleTheme, onLogout }: AdminEditorProps) 
                   </button>
                   
                   {/* Hidden SectionMediaManager for dialog only */}
-                  <SectionMediaManager 
+                  <SectionMediaManager
                     mediaItems={sectionImages}
                     availableHeadings={availableHeadings}
                     onUpdate={setSectionImages}
                     dialogOnly={true}
                     dialogRef={sectionMediaDialogRef}
+                    datasetImages={datasetImages.length > 0 ? datasetImages : undefined}
                   />
                 </div>
               </div>

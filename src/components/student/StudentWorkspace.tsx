@@ -219,7 +219,7 @@ export function StudentWorkspace({ theme, toggleTheme }: StudentWorkspaceProps) 
     
     setMyContent(getStudentContent(student.id));
     syncStudentContentToCloud(student.id);
-    navigate(`/quiz/${boardId}?studentMode=true`);
+    navigate(`/quiz/edit/${boardId}?studentMode=true`);
   };
 
   // Create folder
@@ -252,7 +252,7 @@ export function StudentWorkspace({ theme, toggleTheme }: StudentWorkspaceProps) 
     } else if (item.type === 'document' && item.content_id) {
       navigate(`/library/my-content/worksheet-editor/${item.content_id}?studentMode=true`);
     } else if (item.type === 'board' && item.content_id) {
-      navigate(`/library/quiz-editor/${item.content_id}?studentMode=true`);
+      navigate(`/quiz/edit/${item.content_id}?studentMode=true`);
     }
   };
 

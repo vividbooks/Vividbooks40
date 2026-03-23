@@ -31,6 +31,7 @@ import {
 } from '../../utils/student-work';
 import { syncIndividualWorkToClass, isUsingSupabase } from '../../utils/supabase/classes';
 import { checkMathAnswer } from '../../utils/math-compare';
+import { evaluateABCAnswer, getABCSelectedAnswerIds } from '../../utils/abc-evaluation';
 
 export function QuizSelfStudyPage() {
   const { id: boardId } = useParams<{ id: string }>();
@@ -54,7 +55,7 @@ export function QuizSelfStudyPage() {
   
   // Answer state
   const [responses, setResponses] = useState<{ [slideId: string]: SlideResponse }>({});
-  const [selectedOption, setSelectedOption] = useState<string | null>(null);
+  const [selectedOption, setSelectedOption] = useState<string | string[] | null>(null);
   const [textAnswer, setTextAnswer] = useState('');
   const [hasAnswered, setHasAnswered] = useState(false);
   
@@ -140,13 +141,13 @@ export function QuizSelfStudyPage() {
     
     const timeSpentSeconds = Math.round((Date.now() - slideStartTime) / 1000);
     let isCorrect = false;
-    let answer: string = '';
+    let answer: string | string[] = '';
     
     if (currentSlide.activityType === 'abc') {
       const abcSlide = currentSlide as ABCActivitySlide;
-      const correctOption = abcSlide.options.find(o => o.isCorrect);
-      isCorrect = selectedOption === correctOption?.id;
-      answer = selectedOption || '';
+      isCorrect = evaluateABCAnswer(abcSlide, selectedOption);
+      const selectedIds = getABCSelectedAnswerIds(selectedOption);
+      answer = abcSlide.allowMultipleCorrect ? selectedIds : (selectedIds[0] || '');
     } else if (currentSlide.activityType === 'open') {
       const openSlide = currentSlide as OpenActivitySlide;
       // Use mathematical comparison for numeric answers
@@ -209,7 +210,7 @@ export function QuizSelfStudyPage() {
           setHasAnswered(true);
           if (prevSlide.type === 'activity') {
             if ((prevSlide as any).activityType === 'abc') {
-              setSelectedOption(prevResponse.answer as string);
+              setSelectedOption(prevResponse.answer as string | string[]);
             } else {
               setTextAnswer(prevResponse.answer as string);
             }
@@ -420,15 +421,23 @@ export function QuizSelfStudyPage() {
                 {(currentSlide as any).activityType === 'abc' && (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     {(currentSlide as ABCActivitySlide).options.map((option) => {
-                      const isSelected = selectedOption === option.id;
+                      const isSelected = getABCSelectedAnswerIds(selectedOption).includes(option.id);
                       const isCorrectOption = option.isCorrect;
-                      const wasSelected = currentResponse?.answer === option.id;
+                      const wasSelected = getABCSelectedAnswerIds(currentResponse?.answer as string | string[] | undefined).includes(option.id);
                       const showResult = hasAnswered;
                       
                       return (
                         <button
                           key={option.id}
-                          onClick={() => !hasAnswered && setSelectedOption(option.id)}
+                          onClick={() => !hasAnswered && setSelectedOption((prev) => {
+                            const selectedIds = getABCSelectedAnswerIds(prev);
+                            if (currentSlide.allowMultipleCorrect) {
+                              return selectedIds.includes(option.id)
+                                ? selectedIds.filter((id) => id !== option.id)
+                                : [...selectedIds, option.id];
+                            }
+                            return option.id;
+                          })}
                           disabled={hasAnswered}
                           className={`
                             p-4 rounded-xl text-left transition-all border-2 flex items-center gap-3
@@ -537,7 +546,7 @@ export function QuizSelfStudyPage() {
           <button
             onClick={submitAnswer}
             disabled={
-              ((currentSlide as any).activityType === 'abc' && !selectedOption) ||
+              ((currentSlide as any).activityType === 'abc' && getABCSelectedAnswerIds(selectedOption).length === 0) ||
               ((currentSlide as any).activityType === 'open' && !textAnswer.trim())
             }
             className="flex items-center gap-2 px-8 py-3 rounded-xl bg-indigo-600 text-white font-semibold disabled:opacity-50"

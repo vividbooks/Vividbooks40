@@ -8,8 +8,13 @@ import React, { useState, useRef, useEffect, useCallback, useId } from 'react';
 import { createPortal } from 'react-dom';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { Plus, X, Check, Circle, Square, Type, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Copy, Trash2, ImageIcon, Table as TableIcon, QrCode, ArrowLeftRight, Bold, Italic, Underline, Info } from 'lucide-react';
-import { WorksheetBlock, ChoiceOption, GlobalFontSize, SpacerStyle, ExamplesContent, MathExample, ExampleDifficulty, AnswerBoxStyle, ImageContent, ImageSize, BlockImage, TableContent, ConnectPairsContent, ImageHotspotsContent, VideoQuizContent, ConnectPairContent, WorksheetHotspot, WorksheetVideoQuestion, HeaderFooterContent, QRCodeContent, FreeCanvasContent, FreeAnswerSubQuestion, SubQuestionLabelType, SubQuestionLabelStyle } from '../../types/worksheet';
+import { Plus, X, Check, Circle, Square, Type, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Copy, Trash2, ImageIcon, Table as TableIcon, QrCode, ArrowLeftRight, Bold, Italic, Underline, Info, LayoutGrid } from 'lucide-react';
+import { WorksheetBlock, ChoiceOption, GlobalFontSize, SpacerStyle, ExamplesContent, MathExample, ExampleDifficulty, AnswerBoxStyle, ImageContent, ImageSize, BlockImage, TableContent, ConnectPairsContent, ImageHotspotsContent, VideoQuizContent, ConnectPairContent, WorksheetHotspot, WorksheetVideoQuestion, HeaderFooterContent, QRCodeContent, FreeCanvasContent, ChartContent, FreeAnswerSubQuestion, SubQuestionLabelType, SubQuestionLabelStyle } from '../../types/worksheet';
+import {
+  BarChart, Bar, LineChart, Line, AreaChart, Area,
+  PieChart, Pie, Cell, RadarChart, Radar, PolarGrid, PolarAngleAxis,
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+} from 'recharts';
 import { FreeCanvasEditor } from './FreeCanvasEditor';
 import { FreeCanvasFullscreen } from './FreeCanvasFullscreen';
 import { PlayfulAnswersDisplay } from './PlayfulAnswersDisplay';
@@ -25,6 +30,19 @@ import TableHeader from '@tiptap/extension-table-header';
 import { WorksheetTextToolbar } from './WorksheetTextToolbar';
 import { TextSelectionBubble } from './TextSelectionBubble';
 import { useAssetPicker } from '../../hooks/useAssetPicker';
+import {
+  getQuestionHtml,
+  legacyQuestionStringToHtml,
+  normalizeRichHtml,
+  richHtmlToPlainText,
+  setQuestionHtml,
+} from '../../utils/worksheet-text';
+import {
+  buildCompareCountsHtml,
+  mergeCompareCountsMiniApp,
+} from '../../utils/mini-apps/compare-counts';
+import { mergePisankaMiniApp, buildPisankaHtml, isPisankaParagraphBlock } from '../../utils/mini-apps/pisanka';
+import { PisankaGuideDotsLayer } from './PisankaGuideDotsLayer';
 
 function PrintSafePattern({ variant, lineSpacing = 40 }: { variant: 'dotted' | 'lined'; lineSpacing?: number }) {
   const id = useId().replace(/:/g, '');
@@ -60,9 +78,9 @@ function PrintSafePattern({ variant, lineSpacing = 40 }: { variant: 'dotted' | '
 // Get font sizes based on global setting
 const getFontSizes = (globalSize: GlobalFontSize = 'normal') => {
   const multipliers = {
-    small: 0.85,
-    normal: 1,
-    large: 1.2,
+    small: 0.7,
+    normal: 0.85,
+    large: 1.05,
   };
   const m = multipliers[globalSize];
   
@@ -92,6 +110,8 @@ interface EditableBlockProps {
   onUpdateMargin?: (marginBottom: number) => void;
   onDelete?: () => void;
   onDuplicate?: () => void;
+  onMoveLeft?: () => void;
+  onMoveRight?: () => void;
   onMoveUp?: () => void;
   onMoveDown?: () => void;
   globalFontSize?: GlobalFontSize;
@@ -99,35 +119,17 @@ interface EditableBlockProps {
   /** If block is rendered in a side-by-side row, which column is it in? */
   columnPosition?: 'left' | 'right';
   onOpenAI?: () => void;
+  onTextFlowBlur?: (blockId: string) => void;
+  onTextFlowSplitAtCaret?: (blockId: string, charIndex: number, currentHtml?: string) => void;
 }
 
-export function EditableBlock({ block, isSelected, isHovered, onSelect, onUpdate, onUpdateMargin, onDelete, onDuplicate, onMoveUp, onMoveDown, globalFontSize = 'normal', activityNumber, columnPosition, onOpenAI }: EditableBlockProps) {
+export function EditableBlock({ block, isSelected, isHovered, onSelect, onUpdate, onUpdateMargin, onDelete, onDuplicate, onMoveLeft, onMoveRight, onMoveUp, onMoveDown, globalFontSize = 'normal', activityNumber, columnPosition, onOpenAI, onTextFlowBlur, onTextFlowSplitAtCaret }: EditableBlockProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [isResizingMargin, setIsResizingMargin] = useState(false);
   const [localMargin, setLocalMargin] = useState<number | null>(null);
   const [toolbarPosition, setToolbarPosition] = useState({ top: 0, left: 0 });
-  const [actionPanelPos, setActionPanelPos] = useState<{ top: number; left: number } | null>(null);
+  const [actionButtonsSide, setActionButtonsSide] = useState<'right' | 'left'>('right');
   const blockRef = useRef<HTMLDivElement>(null);
-
-  // Track block position for action panel portal
-  useEffect(() => {
-    if (!isSelected || !blockRef.current) {
-      setActionPanelPos(null);
-      return;
-    }
-    const update = () => {
-      if (!blockRef.current) return;
-      const rect = blockRef.current.getBoundingClientRect();
-      setActionPanelPos({ top: rect.top + rect.height / 2, left: rect.right + 8 });
-    };
-    update();
-    window.addEventListener('scroll', update, true);
-    window.addEventListener('resize', update);
-    return () => {
-      window.removeEventListener('scroll', update, true);
-      window.removeEventListener('resize', update);
-    };
-  }, [isSelected]);
 
   // Check if this is a block that can be edited inline (shows toolbar or resize handles)
   const isTextBlock = ['heading', 'paragraph', 'infobox', 'multiple-choice', 'fill-blank', 'free-answer', 'spacer', 'image-hotspots', 'connect-pairs'].includes(block.type);
@@ -138,6 +140,11 @@ export function EditableBlock({ block, isSelected, isHovered, onSelect, onUpdate
   // Current margin value - use local during drag
   const marginBottom = localMargin ?? block.marginBottom ?? 0;
   const marginStyle = block.marginStyle || 'empty';
+  const verticalAlign = (block.content as any)?.verticalAlign || 'top';
+  // Vertical alignment: shift text down using paddingTop, compensate by shrinking marginBottom div
+  const vAlignTopPad = verticalAlign === 'center' ? Math.round(marginBottom / 2)
+    : verticalAlign === 'bottom' ? marginBottom : 0;
+  const vAlignBottomMargin = marginBottom - vAlignTopPad;
 
   // Sync isEditing with isSelected from parent to ensure only one toolbar is open
   useEffect(() => {
@@ -203,6 +210,40 @@ export function EditableBlock({ block, isSelected, isHovered, onSelect, onUpdate
       };
     }
   }, [isEditing, isTextBlock]);
+
+  useEffect(() => {
+    if (!isSelected || !blockRef.current) {
+      setActionButtonsSide('right');
+      return;
+    }
+
+    const updateActionButtonsPlacement = () => {
+      const rect = blockRef.current?.getBoundingClientRect();
+      if (!rect) return;
+
+      const mainRect = blockRef.current?.closest('main')?.getBoundingClientRect();
+      const safeLeftEdge = (mainRect?.left ?? 0) + 12;
+      const safeRightEdge = (mainRect?.right ?? window.innerWidth) - 12;
+      const panelWidth = 88;
+      const gap = 12;
+      const hasRoomOnRight = rect.right + gap + panelWidth <= safeRightEdge;
+      const hasRoomOnLeft = rect.left - gap - panelWidth >= safeLeftEdge;
+
+      if (hasRoomOnRight || !hasRoomOnLeft) {
+        setActionButtonsSide('right');
+      } else {
+        setActionButtonsSide('left');
+      }
+    };
+
+    updateActionButtonsPlacement();
+    window.addEventListener('resize', updateActionButtonsPlacement);
+    window.addEventListener('scroll', updateActionButtonsPlacement, true);
+    return () => {
+      window.removeEventListener('resize', updateActionButtonsPlacement);
+      window.removeEventListener('scroll', updateActionButtonsPlacement, true);
+    };
+  }, [isSelected]);
   
   const {
     attributes,
@@ -251,11 +292,18 @@ export function EditableBlock({ block, isSelected, isHovered, onSelect, onUpdate
 
   // Determine padding: use block.padding if explicitly set (even 0), otherwise use visual style padding
   const blockPadding = block.padding;
-  const effectivePadding = blockPadding !== undefined 
-    ? (blockPadding > 0 ? `${blockPadding}px` : '0px')
-    : (hasVisualBackground || hasVisualBorder || hasVisualShadow) 
-      ? '12px 16px' 
+  const isPisankaCanvasBlock = isPisankaParagraphBlock(block);
+  let effectivePadding: string | undefined = blockPadding !== undefined
+    ? blockPadding > 0
+      ? `${blockPadding}px`
+      : '0px'
+    : hasVisualBackground || hasVisualBorder || hasVisualShadow
+      ? '12px 16px'
       : undefined;
+  /* Písanka: žádný padding obalu — vnější mezery řídí výhradně CSS proměnné (--vb-pisanka-page-outer-inset), aby byly stejné ze všech stran */
+  if (isPisankaCanvasBlock) {
+    effectivePadding = '0px';
+  }
 
   // Build visual style object
   const visualStyleObj: React.CSSProperties = {
@@ -272,6 +320,7 @@ export function EditableBlock({ block, isSelected, isHovered, onSelect, onUpdate
     transition,
     opacity: isDragging ? 0.5 : 1,
     zIndex: isDragging ? 1000 : 'auto',
+    ...(vAlignTopPad > 0 ? { paddingTop: vAlignTopPad } : {}),
     ...visualStyleObj,
   };
 
@@ -304,6 +353,7 @@ export function EditableBlock({ block, isSelected, isHovered, onSelect, onUpdate
     }
     
     setIsEditing(false);
+    onTextFlowBlur?.(block.id);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -311,6 +361,17 @@ export function EditableBlock({ block, isSelected, isHovered, onSelect, onUpdate
     // Do NOT prevent Enter - it should create new lines in textareas
     if (e.key === 'Escape') {
       setIsEditing(false);
+      return;
+    }
+
+    if (
+      e.key === 'Enter'
+      && supportsTextFlow(block)
+      && (hasTextFlowFrame(block) || isTextFlowLinked(block))
+    ) {
+      setTimeout(() => {
+        onTextFlowBlur?.(block.id);
+      }, 0);
     }
   };
 
@@ -434,9 +495,11 @@ export function EditableBlock({ block, isSelected, isHovered, onSelect, onUpdate
     } else if (content?.text !== undefined) {
       onUpdate({ ...content, text: (content.text || '') + symbol });
     } else if (content?.question !== undefined) {
-      onUpdate({ ...content, question: (content.question || '') + symbol });
+      onUpdate(setQuestionHtml(content, `${getQuestionHtml(content)}${symbol}`));
     }
   };
+
+  const isInsideLayoutSection = Boolean(block.layoutSectionId);
 
   return (
     <>
@@ -451,7 +514,8 @@ export function EditableBlock({ block, isSelected, isHovered, onSelect, onUpdate
       onClick={handleClick}
       onDoubleClick={handleDoubleClick}
       className={`
-        group relative py-1 px-4 rounded-lg
+        group relative rounded-lg
+        ${isInsideLayoutSection ? 'py-0 px-0' : isPisankaCanvasBlock ? 'py-0 px-0' : 'py-1 px-4'}
         ${isDragging ? 'shadow-xl scale-[1.01]' : ''}
         ${block.type === 'table' ? '' : highlightClass}
         ${isEditing && block.type !== 'table' ? 'ring-2 ring-blue-500' : ''}
@@ -459,20 +523,35 @@ export function EditableBlock({ block, isSelected, isHovered, onSelect, onUpdate
     >
       
       {/* Block content with optional image */}
-                <BlockWithImage
-                  block={block}
-                  isEditing={isEditing}
-                  isSelected={isSelected}
-                  onUpdate={onUpdate}
-                  onBlur={handleBlur}
-                  onKeyDown={handleKeyDown}
-                  globalFontSize={globalFontSize}
-                  activityNumber={activityNumber}
-                />
+      <div
+        data-text-flow-frame-for={block.id}
+        style={
+          block.textFlowFrameHeight
+            ? {
+                height: `${block.textFlowFrameHeight}px`,
+                overflow: 'hidden',
+              }
+            : undefined
+        }
+      >
+        <div style={isInsideLayoutSection ? { padding: '4px 16px' } : undefined}>
+          <BlockWithImage
+            block={block}
+            isEditing={isEditing}
+            isSelected={isSelected}
+            onUpdate={onUpdate}
+            onBlur={handleBlur}
+            onKeyDown={handleKeyDown}
+            globalFontSize={globalFontSize}
+            activityNumber={activityNumber}
+            onTextFlowSplitAtCaret={onTextFlowSplitAtCaret ? (charIndex, currentHtml) => onTextFlowSplitAtCaret(block.id, charIndex, currentHtml) : undefined}
+          />
+        </div>
+      </div>
       
       {/* Bottom margin space with optional pattern */}
-            {marginBottom > 0 && (
-              <div style={{ height: marginBottom }} className="relative">
+            {vAlignBottomMargin > 0 && (
+              <div style={{ height: vAlignBottomMargin }} className="relative">
                 {marginStyle === 'dotted' && (
                   <PrintSafePattern key={`dotted-margin-${marginBottom}`} variant="dotted" />
                 )}
@@ -482,85 +561,99 @@ export function EditableBlock({ block, isSelected, isHovered, onSelect, onUpdate
               </div>
             )}
       
-      {/* Margin resize handle - visible on hover, always at the very bottom (not for tables or spacers which have their own resize) */}
-      {onUpdateMargin && block.type !== 'table' && block.type !== 'spacer' && (
+      {/* Margin resize handle - prominent on selected block, similar to PRO editor */}
+      {onUpdateMargin && block.type !== 'table' && block.type !== 'spacer' && block.type !== 'paragraph' && block.type !== 'infobox' && (
         <div
           onMouseDown={handleMarginMouseDown}
           className={`
-            absolute left-1/2 -translate-x-1/2 w-16 h-4 cursor-row-resize
-            flex items-center justify-center
-            opacity-0 group-hover:opacity-100 transition-opacity
-            ${isResizingMargin ? 'opacity-100' : ''}
+            absolute print:hidden transition-all hover:scale-105 active:scale-95 select-none cursor-ns-resize
+            ${isSelected || isResizingMargin ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}
           `}
-          style={{ bottom: -8 }}
-        >
-          <div 
-            className={`
-              w-10 h-3 rounded-full border-2 transition-colors
-              ${isResizingMargin 
-                ? 'bg-blue-500 border-blue-500' 
-                : 'bg-white border-slate-300 hover:border-blue-400'
-              }
-            `}
-          />
-        </div>
+          style={{
+            bottom: '-14px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            width: '56px',
+            height: '20px',
+            backgroundColor: isResizingMargin ? '#1D4ED8' : '#3B82F6',
+            borderRadius: '10px',
+            border: '2px solid white',
+            boxShadow: '0 2px 8px rgba(59, 130, 246, 0.4)',
+            zIndex: 10001,
+          }}
+          title="Táhni dolů pro přidání mezery"
+        />
       )}
 
-      {/* Action buttons – rendered via portal so page overflow:hidden doesn't clip them */}
-      {isSelected && actionPanelPos && createPortal(
+      {/* Action buttons */}
+      {isSelected && (
         <div
           style={{
-            position: 'fixed',
-            top: actionPanelPos.top,
-            left: actionPanelPos.left,
+            position: 'absolute',
+            top: '50%',
+            right: actionButtonsSide === 'right' ? '-76px' : 'auto',
+            left: actionButtonsSide === 'left' ? '-76px' : 'auto',
             transform: 'translateY(-50%)',
-            zIndex: 9999,
+            zIndex: 2147483647,
           }}
           onClick={(e) => e.stopPropagation()}
         >
-          <div className="grid grid-cols-2 gap-1 bg-white rounded-xl shadow-xl border border-slate-200 p-1.5">
-            {/* Row 1: Up + Duplicate */}
-            <button
-              onClick={() => onMoveUp?.()}
-              className="w-9 h-9 rounded-lg bg-blue-50 border border-blue-200 flex items-center justify-center hover:bg-blue-100 transition-colors"
-              title={columnPosition === 'right' ? 'Přesunout doleva' : 'Posunout nahoru'}
-            >
-              {columnPosition === 'right' ? (
-                <ChevronLeft size={20} className="text-blue-600" />
-              ) : (
+          <div className="bg-white rounded-lg shadow-xl border border-slate-200 p-1.5">
+            {block.layoutSectionId && (
+              <div className="grid grid-cols-2 gap-1 mb-1">
+                <button
+                  onClick={() => onMoveLeft?.()}
+                  disabled={!onMoveLeft}
+                  className="w-9 h-9 rounded-md bg-blue-50 border border-blue-200 flex items-center justify-center hover:bg-blue-100 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  title="Posunout doleva"
+                >
+                  <ChevronLeft size={18} className="text-blue-600" />
+                </button>
+                <button
+                  onClick={() => onMoveRight?.()}
+                  disabled={!onMoveRight}
+                  className="w-9 h-9 rounded-md bg-blue-50 border border-blue-200 flex items-center justify-center hover:bg-blue-100 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  title="Posunout doprava"
+                >
+                  <ChevronRight size={18} className="text-blue-600" />
+                </button>
+              </div>
+            )}
+            <div className="grid grid-cols-2 gap-1">
+              <button
+                onClick={() => onMoveUp?.()}
+                disabled={!onMoveUp}
+                className="w-9 h-9 rounded-md bg-blue-50 border border-blue-200 flex items-center justify-center hover:bg-blue-100 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                title="Posunout nahoru"
+              >
                 <ChevronUp size={20} className="text-blue-600" />
-              )}
-            </button>
-            <button
-              onClick={() => onDuplicate?.()}
-              className="w-9 h-9 rounded-lg bg-blue-50 border border-blue-200 flex items-center justify-center hover:bg-blue-100 transition-colors"
-              title="Duplikovat"
-            >
-              <Copy size={16} className="text-blue-600" />
-            </button>
-            {/* Row 2: Down + Delete */}
-            <button
-              onClick={() => onMoveDown?.()}
-              className="w-9 h-9 rounded-lg bg-blue-50 border border-blue-200 flex items-center justify-center hover:bg-blue-100 transition-colors"
-              title={columnPosition === 'left' ? 'Přesunout doprava' : 'Posunout dolů'}
-            >
-              {columnPosition === 'left' ? (
-                <ChevronRight size={20} className="text-blue-600" />
-              ) : (
+              </button>
+              <button
+                onClick={() => onDuplicate?.()}
+                className="w-9 h-9 rounded-md bg-blue-50 border border-blue-200 flex items-center justify-center hover:bg-blue-100 transition-colors"
+                title="Duplikovat"
+              >
+                <Copy size={16} className="text-blue-600" />
+              </button>
+              <button
+                onClick={() => onMoveDown?.()}
+                disabled={!onMoveDown}
+                className="w-9 h-9 rounded-md bg-blue-50 border border-blue-200 flex items-center justify-center hover:bg-blue-100 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                title="Posunout dolů"
+              >
                 <ChevronDown size={20} className="text-blue-600" />
-              )}
-            </button>
-            <button
-              onClick={() => onDelete?.()}
-              className="w-9 h-9 rounded-lg flex items-center justify-center transition-colors"
-              style={{ backgroundColor: '#ef4444', border: '1px solid #dc2626' }}
-              title="Smazat"
-            >
-              <Trash2 size={16} color="white" />
-            </button>
+              </button>
+              <button
+                onClick={() => onDelete?.()}
+                className="w-9 h-9 rounded-md flex items-center justify-center transition-colors"
+                style={{ backgroundColor: '#ef4444', border: '1px solid #dc2626' }}
+                title="Smazat"
+              >
+                <Trash2 size={16} color="white" />
+              </button>
+            </div>
           </div>
-        </div>,
-        document.body
+        </div>
       )}
     </div>
 
@@ -581,6 +674,7 @@ interface BlockContentProps {
   onUpdate: (content: any) => void;
   onBlur: (e: React.FocusEvent) => void;
   onKeyDown: (e: React.KeyboardEvent) => void;
+  onTextFlowSplitAtCaret?: (charIndex: number, currentHtml?: string) => void;
   globalFontSize?: GlobalFontSize;
   activityNumber?: number;
 }
@@ -597,16 +691,21 @@ const imageSizeToWidth: Record<ImageSize, string> = {
  * BlockWithImage - Wrapper that renders optional image alongside block content.
  * Supports widthPercent, visual styles (shape/stroke/rotation) and a drag handle when selected.
  */
-function BlockWithImage({ block, isEditing, isSelected, onUpdate, onBlur, onKeyDown, globalFontSize = 'normal', activityNumber }: BlockContentProps) {
+function BlockWithImage({ block, isEditing, isSelected, onUpdate, onBlur, onKeyDown, onTextFlowSplitAtCaret, globalFontSize = 'normal', activityNumber }: BlockContentProps) {
   const image = block.image as any;
   const containerRef = React.useRef<HTMLDivElement>(null);
+  const imgContainerRef = React.useRef<HTMLDivElement>(null);
   const draggingRef = React.useRef(false);
+  const heightDraggingRef = React.useRef(false);
+  const imageRef = React.useRef(image);
+  imageRef.current = image;
+  const panOffsetRef = React.useRef({ x: (image?.imageOffsetX ?? 0), y: (image?.imageOffsetY ?? 0) });
 
   // No image → just render content
   if (!image?.url) {
     return (
       <BlockContent block={block} isEditing={isEditing} isSelected={isSelected}
-        onUpdate={onUpdate} onBlur={onBlur} onKeyDown={onKeyDown}
+        onUpdate={onUpdate} onBlur={onBlur} onKeyDown={onKeyDown} onTextFlowSplitAtCaret={onTextFlowSplitAtCaret}
         globalFontSize={globalFontSize} activityNumber={activityNumber} />
     );
   }
@@ -633,15 +732,68 @@ function BlockWithImage({ block, isEditing, isSelected, onUpdate, onBlur, onKeyD
   const hasMultiple = galleryUrls.length > 1;
 
   const maxH = image.maxHeightPx;
-  const imgStyle: React.CSSProperties = shape === 'rectangle'
-    ? { width: '100%', height: 'auto', objectFit: 'contain', display: 'block', borderRadius: borderRadiusCss, ...(maxH ? { maxHeight: maxH } : {}) }
-    : { width: '100%', height: 'auto', objectFit: 'contain', display: 'block', clipPath, WebkitClipPath: clipPath, ...(maxH ? { maxHeight: maxH } : {}) };
+  const imageZoom: number = image.imageZoom ?? 100;
+  const zoomScale = imageZoom / 100;
+  const rawOffsetX: number = image.imageOffsetX ?? 0;
+  const rawOffsetY: number = image.imageOffsetY ?? 0;
+  panOffsetRef.current = { x: rawOffsetX, y: rawOffsetY };
+
+  // object-position: 50% 50% = center. Drag shifts the position.
+  // Clamped to [0, 100] — image always covers container, no white space possible.
+  const objPosX = Math.max(0, Math.min(100, 50 - rawOffsetX / 3));
+  const objPosY = Math.max(0, Math.min(100, 50 - rawOffsetY / 3));
+
+  // When zoomed: use object-fit:cover so the image always fills the container.
+  // When not zoomed: use object-fit:contain to show the full image.
+  const isZoomed = zoomScale > 1;
 
   const renderOneImg = (url: string, idx: number) => {
     const idxRotateDeg = image.galleryRotate ? (((idx * 137 + 29) % (rotateMax * 2 + 1)) - rotateMax) : 0;
+
+    const containerStyle: React.CSSProperties = {
+      position: 'relative',
+      overflow: 'hidden',
+      ...(idxRotateDeg !== 0 ? { transform: `rotate(${idxRotateDeg}deg)` } : {}),
+      ...(dropShadowFilter ? { filter: dropShadowFilter } : {}),
+      ...(shape === 'rectangle' ? { borderRadius: borderRadiusCss } : {}),
+      ...(maxH ? { maxHeight: maxH } : {}),
+    };
+
+    if (isZoomed) {
+      // ZOOMED: hidden <img> for layout sizing + background-image for visual.
+      // background-size > 100% + background-position → physically impossible to show white space.
+      return (
+        <div key={idx} style={containerStyle}>
+          {/* Invisible img determines the container's natural height */}
+          <img src={url} alt="" style={{ width: '100%', height: 'auto', display: 'block', visibility: 'hidden' }} />
+          {/* Visible background layer — always covers the container */}
+          <div style={{
+            position: 'absolute', inset: 0,
+            backgroundImage: `url(${url})`,
+            backgroundSize: `${zoomScale * 100}% auto`,
+            backgroundPosition: `${objPosX}% ${objPosY}%`,
+            backgroundRepeat: 'no-repeat',
+            ...(shape === 'rectangle' ? { borderRadius: borderRadiusCss } : {}),
+            ...(shape !== 'rectangle' ? { clipPath, WebkitClipPath: clipPath } : {}),
+          }} />
+          {shape === 'rectangle' && strokeWidth > 0 && (
+            <div style={{ position: 'absolute', inset: 0, borderRadius: borderRadiusCss, boxShadow: `inset 0 0 0 ${strokeWidth}px ${strokeColor}`, pointerEvents: 'none', zIndex: 10 }} />
+          )}
+        </div>
+      );
+    }
+
+    // NOT ZOOMED: normal <img> rendering
     return (
-      <div key={idx} style={{ transform: idxRotateDeg !== 0 ? `rotate(${idxRotateDeg}deg)` : undefined, filter: dropShadowFilter, ...(shape === 'rectangle' && strokeWidth > 0 ? { outline: `${strokeWidth}px solid ${strokeColor}`, outlineOffset: `-${strokeWidth}px`, borderRadius: borderRadiusCss } : {}) }}>
-        <img src={url} alt={image.alt || ''} style={imgStyle} />
+      <div key={idx} style={containerStyle}>
+        <img src={url} alt={image.alt || ''} style={{
+          width: '100%', height: 'auto', display: 'block',
+          ...(shape === 'rectangle' ? { borderRadius: borderRadiusCss } : {}),
+          ...(shape !== 'rectangle' ? { clipPath, WebkitClipPath: clipPath } : {}),
+        }} />
+        {shape === 'rectangle' && strokeWidth > 0 && (
+          <div style={{ position: 'absolute', inset: 0, borderRadius: borderRadiusCss, boxShadow: `inset 0 0 0 ${strokeWidth}px ${strokeColor}`, pointerEvents: 'none', zIndex: 10 }} />
+        )}
       </div>
     );
   };
@@ -683,14 +835,90 @@ function BlockWithImage({ block, isEditing, isSelected, onUpdate, onBlur, onKeyD
     </div>
   ) : <div style={{ width: 12, flexShrink: 0 }} />;
 
+  // Height drag handle (bobánek) – horizontal strip at the bottom of the image
+  const handleHeightDragStart = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    heightDraggingRef.current = true;
+    const imgEl = imgContainerRef.current;
+    if (!imgEl) return;
+    const startY = imgEl.getBoundingClientRect().top;
+    const onMove = (mv: MouseEvent) => {
+      if (!heightDraggingRef.current) return;
+      const newH = Math.round(mv.clientY - startY);
+      const clamped = Math.max(50, Math.min(600, newH));
+      onUpdate({ image: { ...image, maxHeightPx: clamped } });
+    };
+    const onUp = () => { heightDraggingRef.current = false; document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  };
+
+  const heightDragHandle = isSelected ? (
+    <div onMouseDown={handleHeightDragStart}
+      style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 16, cursor: 'row-resize', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10 }}>
+      <div style={{ width: 36, height: 8, borderRadius: 4, backgroundColor: '#6366f1', boxShadow: '0 0 0 2px #818cf8, 0 2px 8px rgba(99,102,241,0.5)', display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 3 }}>
+        {[0,1,2].map(i => <div key={i} style={{ width: 2, height: 2, borderRadius: '50%', backgroundColor: 'white' }} />)}
+      </div>
+    </div>
+  ) : null;
+
+  // Drag-to-pan – only active when zoom > 100 or maxHeightPx is set
+  const canPan = imageZoom > 100 || !!maxH;
+  const handlePanStart = (e: React.MouseEvent) => {
+    if (!isSelected || !canPan) return;
+    e.preventDefault();
+    e.stopPropagation();
+    let lastX = e.clientX;
+    let lastY = e.clientY;
+    const onMove = (mv: MouseEvent) => {
+      const dx = mv.clientX - lastX;
+      const dy = mv.clientY - lastY;
+      lastX = mv.clientX;
+      lastY = mv.clientY;
+      const newX = panOffsetRef.current.x + dx;
+      const newY = panOffsetRef.current.y + dy;
+      // Clamp to ±150px — render clamps transformOrigin to 0–100%
+      const clampedX = Math.max(-150, Math.min(150, newX));
+      const clampedY = Math.max(-150, Math.min(150, newY));
+      panOffsetRef.current = { x: clampedX, y: clampedY };
+      onUpdate({ image: { ...imageRef.current, imageOffsetX: clampedX, imageOffsetY: clampedY } });
+    };
+    const onUp = () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  };
+
+  const panOverlay = (isSelected && canPan) ? (
+    <div onMouseDown={handlePanStart}
+      style={{ position: 'absolute', inset: 0, cursor: 'grab', zIndex: 5, userSelect: 'none' }} />
+  ) : null;
+
+  const imgWrapStyle = (w: string): React.CSSProperties => ({
+    width: w,
+    flexShrink: 0,
+    position: 'relative',
+    overflow: 'hidden',
+    ...(shape === 'rectangle' ? { borderRadius: borderRadiusCss } : {}),
+    ...(maxH ? { maxHeight: maxH } : {}),
+  });
+
+  const imgBox = (w: string) => (
+    <div ref={imgContainerRef} style={imgWrapStyle(w)}>
+      {renderImg()}
+      {panOverlay}
+      {heightDragHandle}
+    </div>
+  );
+
   // Image before content (above)
   if (image.position === 'before') {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <div style={{ width: resolvedWidth, ...(maxH ? { maxHeight: maxH, overflow: 'hidden' } : {}) }}>{renderImg()}</div>
+        {imgBox(resolvedWidth)}
         {image.caption && <p style={{ fontSize: 11, color: '#64748b', textAlign: 'center', margin: 0 }}>{image.caption}</p>}
         <BlockContent block={block} isEditing={isEditing} isSelected={isSelected}
-          onUpdate={onUpdate} onBlur={onBlur} onKeyDown={onKeyDown}
+          onUpdate={onUpdate} onBlur={onBlur} onKeyDown={onKeyDown} onTextFlowSplitAtCaret={onTextFlowSplitAtCaret}
           globalFontSize={globalFontSize} activityNumber={activityNumber} />
       </div>
     );
@@ -701,9 +929,9 @@ function BlockWithImage({ block, isEditing, isSelected, onUpdate, onBlur, onKeyD
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         <BlockContent block={block} isEditing={isEditing} isSelected={isSelected}
-          onUpdate={onUpdate} onBlur={onBlur} onKeyDown={onKeyDown}
+          onUpdate={onUpdate} onBlur={onBlur} onKeyDown={onKeyDown} onTextFlowSplitAtCaret={onTextFlowSplitAtCaret}
           globalFontSize={globalFontSize} activityNumber={activityNumber} />
-        <div style={{ width: resolvedWidth, ...(maxH ? { maxHeight: maxH, overflow: 'hidden' } : {}) }}>{renderImg()}</div>
+        {imgBox(resolvedWidth)}
         {image.caption && <p style={{ fontSize: 11, color: '#64748b', textAlign: 'center', margin: 0 }}>{image.caption}</p>}
       </div>
     );
@@ -711,20 +939,20 @@ function BlockWithImage({ block, isEditing, isSelected, onUpdate, onBlur, onKeyD
 
   return (
     <div ref={containerRef} style={{ display: 'flex', alignItems: 'flex-start' }}>
-      {isImageLeft && <div style={{ width: resolvedWidth, flexShrink: 0 }}>{renderImg()}</div>}
+      {isImageLeft && imgBox(resolvedWidth)}
       {isImageLeft && dragHandle}
       <div style={{ flex: 1, minWidth: 0 }}>
         <BlockContent block={block} isEditing={isEditing} isSelected={isSelected}
-          onUpdate={onUpdate} onBlur={onBlur} onKeyDown={onKeyDown}
+          onUpdate={onUpdate} onBlur={onBlur} onKeyDown={onKeyDown} onTextFlowSplitAtCaret={onTextFlowSplitAtCaret}
           globalFontSize={globalFontSize} activityNumber={activityNumber} />
       </div>
       {!isImageLeft && dragHandle}
-      {!isImageLeft && <div style={{ width: resolvedWidth, flexShrink: 0 }}>{renderImg()}</div>}
+      {!isImageLeft && imgBox(resolvedWidth)}
     </div>
   );
 }
 
-function BlockContent({ block, isEditing, isSelected, onUpdate, onBlur, onKeyDown, globalFontSize = 'normal', activityNumber }: BlockContentProps) {
+function BlockContent({ block, isEditing, isSelected, onUpdate, onBlur, onKeyDown, onTextFlowSplitAtCaret, globalFontSize = 'normal', activityNumber }: BlockContentProps) {
   const fontSizes = getFontSizes(globalFontSize);
   const effectiveIsEditing = isEditing || (isSelected && ['image-hotspots', 'connect-pairs', 'fill-blank'].includes(block.type));
   switch (block.type) {
@@ -747,7 +975,9 @@ function BlockContent({ block, isEditing, isSelected, onUpdate, onBlur, onKeyDow
           onUpdate={onUpdate}
           onBlur={onBlur}
           onKeyDown={onKeyDown}
+          onEnterAtCaret={onTextFlowSplitAtCaret}
           fontSizes={fontSizes}
+          activityNumber={activityNumber}
         />
       );
     case 'infobox':
@@ -758,8 +988,29 @@ function BlockContent({ block, isEditing, isSelected, onUpdate, onBlur, onKeyDow
           onUpdate={onUpdate}
           onBlur={onBlur}
           onKeyDown={onKeyDown}
+          onEnterAtCaret={onTextFlowSplitAtCaret}
           fontSizes={fontSizes}
         />
+      );
+    case 'layout-section':
+      return (
+        <div
+          style={{
+            border: '1px dashed #94a3b8',
+            borderRadius: 12,
+            padding: '16px',
+            background: 'rgba(248,250,252,0.8)',
+            color: '#475569',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, fontWeight: 700 }}>
+            <LayoutGrid size={16} />
+            Layout sekce
+          </div>
+          <div style={{ fontSize: 13 }}>
+            {(block.content as any)?.columns === 3 ? '3 sloupce' : '2 sloupce'}
+          </div>
+        </div>
       );
     case 'multiple-choice':
       return (
@@ -837,6 +1088,7 @@ function BlockContent({ block, isEditing, isSelected, onUpdate, onBlur, onKeyDow
           isEditing={effectiveIsEditing}
           onUpdate={onUpdate}
           activityNumber={activityNumber}
+          fontSizes={fontSizes}
         />
       );
     case 'image-hotspots':
@@ -846,6 +1098,7 @@ function BlockContent({ block, isEditing, isSelected, onUpdate, onBlur, onKeyDow
           isEditing={effectiveIsEditing}
           onUpdate={onUpdate}
           activityNumber={activityNumber}
+          fontSizes={fontSizes}
         />
       );
     case 'video-quiz':
@@ -855,6 +1108,7 @@ function BlockContent({ block, isEditing, isSelected, onUpdate, onBlur, onKeyDow
           isEditing={isEditing}
           onUpdate={onUpdate}
           activityNumber={activityNumber}
+          fontSizes={fontSizes}
         />
       );
     case 'qr-code':
@@ -882,6 +1136,14 @@ function BlockContent({ block, isEditing, isSelected, onUpdate, onBlur, onKeyDow
           activityNumber={activityNumber}
         />
       );
+    case 'chart':
+      return (
+        <WorksheetChartBlock
+          content={block.content as ChartContent}
+          onUpdate={onUpdate}
+          isEditing={isEditing}
+        />
+      );
     default:
       return <p className="text-slate-400">Neznámý typ bloku</p>;
   }
@@ -901,6 +1163,16 @@ interface FontSizes {
   h3: string;
 }
 
+function getActivityLabelStyle(fontSizes?: FontSizes): React.CSSProperties {
+  const compactBody = getFontSizes('small').body;
+  const isCompact = fontSizes?.body === compactBody;
+  return {
+    fontSize: isCompact ? '11pt' : '12pt',
+    lineHeight: 1.3,
+    fontWeight: 600,
+  };
+}
+
 interface HeadingEditorProps {
   content: { text: string; level: 'h1' | 'h2' | 'h3'; align?: 'left' | 'center' | 'right'; isBold?: boolean; isItalic?: boolean; isUnderline?: boolean; fontSize?: number; textColor?: string; highlightColor?: string; headingStyle?: 'plain' | 'pill' | 'underline' | 'left-border' };
   isEditing: boolean;
@@ -911,72 +1183,158 @@ interface HeadingEditorProps {
 }
 
 function HeadingEditor({ content, isEditing, onUpdate, onBlur, onKeyDown, fontSizes }: HeadingEditorProps) {
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const editableRef = useRef<HTMLDivElement>(null);
+  const lastHtmlRef = useRef('');
   const didFocusRef = useRef(false);
   const isBold = content.isBold || false;
   const isItalic = content.isItalic || false;
   const isUnderline = content.isUnderline || false;
-  const textColor = content.textColor || '#1e293b'; // default slate-800
+  const textColor = content.textColor || '#1e293b';
   const highlightColor = content.highlightColor || 'transparent';
 
-  // Auto-resize textarea
-  const autoResize = useCallback(() => {
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
-      textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
-    }
-  }, []);
+  const [headingBubblePos, setHeadingBubblePos] = useState<{ top: number; left: number } | null>(null);
+  const [showHeadingHighlights, setShowHeadingHighlights] = useState(false);
+
+  // Sync content.text → innerHTML when value changes externally
+  const normalizeHtml = (html: string) =>
+    html
+      .replace(/<div><br\s*\/?><\/div>/gi, '<br>')
+      .replace(/<\/div><div>/gi, '<br>')
+      .replace(/<div>/gi, '<br>')
+      .replace(/<\/div>/gi, '');
 
   useEffect(() => {
-    if (isEditing && !didFocusRef.current && textareaRef.current) {
+    const el = editableRef.current;
+    if (!el) return;
+    const incoming = normalizeHtml(content.text ?? '');
+    if (incoming === lastHtmlRef.current) return;
+    lastHtmlRef.current = incoming;
+    if (el.innerHTML !== incoming) el.innerHTML = incoming;
+  }, [content.text]);
+
+  // Focus when editing starts — also set initial innerHTML (sync effect won't fire if content.text didn't change)
+  useEffect(() => {
+    if (isEditing && !didFocusRef.current && editableRef.current) {
       didFocusRef.current = true;
-      textareaRef.current.focus();
-      // Place cursor at end (not select-all, to avoid overwriting on next keystroke)
-      const len = textareaRef.current.value.length;
-      textareaRef.current.setSelectionRange(len, len);
-      autoResize();
+      const el = editableRef.current;
+      // Normalize on load — old stored HTML may have <div> blocks from contenteditable
+      const incoming = normalizeHtml(content.text ?? '');
+      if (el.innerHTML !== incoming) {
+        el.innerHTML = incoming;
+        lastHtmlRef.current = incoming;
+      }
+      el.focus();
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      range.collapse(false);
+      window.getSelection()?.removeAllRanges();
+      window.getSelection()?.addRange(range);
     }
     if (!isEditing) {
       didFocusRef.current = false;
+      lastHtmlRef.current = ''; // reset so next entry always syncs
     }
-  }, [isEditing, autoResize]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isEditing]);
 
-  const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    onUpdate({ ...content, text: e.target.value });
-    autoResize();
-  };
+  const syncHtml = useCallback(() => {
+    const el = editableRef.current;
+    if (!el) return;
+    const normalized = normalizeHtml(el.innerHTML);
+    lastHtmlRef.current = normalized;
+    onUpdate({ ...content, text: normalized });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [content, onUpdate]);
 
-  const handleKeyDownLocal = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    // Only blur on Enter without Shift (Shift+Enter for new line)
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      onBlur(e as unknown as React.FocusEvent);
-    }
-    onKeyDown(e);
-  };
+  const checkSel = useCallback(() => {
+    const sel = window.getSelection();
+    const el = editableRef.current;
+    if (!sel || sel.isCollapsed || !sel.rangeCount || !el) { setHeadingBubblePos(null); return; }
+    const range = sel.getRangeAt(0);
+    if (!el.contains(range.commonAncestorContainer)) { setHeadingBubblePos(null); return; }
+    const rect = range.getBoundingClientRect();
+    if (rect.width === 0) { setHeadingBubblePos(null); return; }
+    setHeadingBubblePos({ top: rect.top - 52, left: rect.left + rect.width / 2 });
+  }, []);
 
-  // Font sizes for headings - use custom fontSize if set, otherwise use global font size defaults
-  const defaultSize = {
-    h1: fontSizes.h1,
-    h2: fontSizes.h2,
-    h3: fontSizes.h3,
-  }[content.level];
-  
-  // If content.fontSize is set (as a number), use it; otherwise fall back to default
+  const applyFmt = useCallback((cmd: string, val?: string) => {
+    const el = editableRef.current;
+    if (!el) return;
+    el.focus();
+    // eslint-disable-next-line @typescript-eslint/no-deprecated
+    document.execCommand(cmd, false, val);
+    syncHtml();
+    setHeadingBubblePos(null);
+    setShowHeadingHighlights(false);
+  }, [syncHtml]);
+
+  const headingBubble = headingBubblePos && isEditing ? createPortal(
+    <div
+      data-toolbar-element="true"
+      onMouseDown={(e) => e.preventDefault()}
+      style={{
+        position: 'fixed',
+        top: Math.max(8, headingBubblePos.top),
+        left: headingBubblePos.left,
+        transform: 'translateX(-50%)',
+        zIndex: 99999,
+        background: 'white',
+        borderRadius: '10px',
+        boxShadow: '0 4px 24px rgba(0,0,0,0.18)',
+        border: '1px solid #e2e8f0',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '2px',
+        padding: '4px 8px',
+        height: '40px',
+        userSelect: 'none',
+      }}
+    >
+      <RichBubbleBtn title="Tučné"     onClick={() => applyFmt('bold')}><Bold     size={14} strokeWidth={2.5} /></RichBubbleBtn>
+      <RichBubbleBtn title="Kurzíva"   onClick={() => applyFmt('italic')}><Italic   size={14} /></RichBubbleBtn>
+      <RichBubbleBtn title="Podtržené" onClick={() => applyFmt('underline')}><Underline size={14} /></RichBubbleBtn>
+      <div style={{ width: 1, height: 20, background: '#e2e8f0', margin: '0 4px' }} />
+      <div style={{ position: 'relative' }}>
+        <RichBubbleBtn title="Zvýraznit" onClick={() => setShowHeadingHighlights(v => !v)}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 18, height: 18, borderRadius: 4, background: '#fef08a', fontWeight: 700, fontSize: 12, color: '#78350f' }}>A</span>
+        </RichBubbleBtn>
+        {showHeadingHighlights && (
+          <div
+            data-toolbar-element="true"
+            onMouseDown={(e) => e.preventDefault()}
+            style={{ position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)', marginTop: 6, background: 'white', borderRadius: 10, boxShadow: '0 4px 20px rgba(0,0,0,0.15)', border: '1px solid #e2e8f0', display: 'flex', gap: 6, padding: '8px 10px' }}
+          >
+            {RICH_HIGHLIGHTS.map(({ bg, label }) => (
+              <button
+                key={bg}
+                data-toolbar-element="true"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => applyFmt('hiliteColor', bg === 'transparent' ? 'transparent' : bg)}
+                title={label}
+                style={{ width: 22, height: 22, borderRadius: 6, background: bg === 'transparent' ? 'white' : bg, border: bg === 'transparent' ? '2px dashed #cbd5e1' : '2px solid transparent', cursor: 'pointer' }}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>,
+    document.body
+  ) : null;
+
+  // Font sizes for headings
+  const defaultSize = { h1: fontSizes.h1, h2: fontSizes.h2, h3: fontSizes.h3 }[content.level];
   const sizeStyle = content.fontSize ? `${content.fontSize}pt` : defaultSize;
 
-  const alignClass = {
-    left: 'text-left',
-    center: 'text-center',
-    right: 'text-right',
-  }[content.align || 'left'];
+  const alignClass = { left: 'text-left', center: 'text-center', right: 'text-right' }[content.align || 'left'];
 
-  // H1 uses Cooper Light font - no quotes format like index.css line 510
   const isH1 = content.level === 'h1';
-  const fontClass = isH1 ? 'font-cooper' : '';
-  const baseFontWeight = isH1 ? 300 : 700;
-  const fontWeight = isBold && !isH1 ? 'bold' : baseFontWeight;
-  const fontFamily = isH1 ? 'Cooper Light, serif' : undefined;
+  // Read fontFamily from content; fall back to Cooper for H1, undefined for others
+  const defaultFontFamily = isH1 ? 'Cooper Light, serif' : undefined;
+  const fontFamily = (content as any).fontFamily || defaultFontFamily;
+  const isCooper = fontFamily?.toLowerCase().includes('cooper');
+  const fontClass = isCooper ? 'font-cooper' : '';
+  const baseFontWeight = isH1 && isCooper ? 300 : 700;
+  const fontWeight = (isBold && !isCooper) ? 'bold' : baseFontWeight;
 
   const hStyle = content.headingStyle || 'plain';
 
@@ -991,40 +1349,64 @@ function HeadingEditor({ content, isEditing, onUpdate, onBlur, onKeyDown, fontSi
     fontSize: sizeStyle,
     fontWeight,
     fontFamily,
-    lineHeight: 1.2,
+    lineHeight: (content as any).lineHeight || 1.2,
+    letterSpacing: (content as any).letterSpacing ? `${(content as any).letterSpacing / 100}em` : undefined,
     margin: 0,
     padding: 0,
     ...formattingStyle,
   };
-  
-  const innerStyle: React.CSSProperties = isH1 
-    ? { fontFamily: 'Cooper Light, serif', fontWeight: 300, ...formattingStyle }
-    : { ...formattingStyle };
 
-  // Render content: textarea when editing, LatexRenderer when not
+  const innerStyle: React.CSSProperties = {
+    fontFamily, fontWeight,
+    lineHeight: (content as any).lineHeight || 1.2,
+    letterSpacing: (content as any).letterSpacing ? `${(content as any).letterSpacing / 100}em` : undefined,
+    ...formattingStyle,
+  };
+
+  const hasHtml = /<[a-z][\s\S]*>/i.test(content.text || '');
+  const sharedDivStyle: React.CSSProperties = { ...headingStyle, minHeight: '1.2em', whiteSpace: 'pre-wrap', wordBreak: 'break-word' };
+  const sharedDivClass = `w-full ${alignClass} ${fontClass}`;
+
   const renderContent = () => {
     if (isEditing) {
+      // Edit mode: contenteditable div (no dangerouslySetInnerHTML — content managed via ref/useEffect)
       return (
-        <textarea
-          ref={textareaRef}
-          value={content.text}
-          onChange={handleChange}
-          onBlur={onBlur}
-          onKeyDown={handleKeyDownLocal}
-          onInput={autoResize}
-          className={`w-full bg-transparent border-none outline-none resize-none overflow-hidden ${alignClass} ${fontClass}`}
-          style={{ ...headingStyle, minHeight: '1.2em' }}
-          placeholder="Zadejte nadpis..."
-          rows={1}
-        />
+        <>
+          {headingBubble}
+          <div
+            ref={editableRef}
+            contentEditable
+            suppressContentEditableWarning
+            onInput={syncHtml}
+            onBlur={onBlur}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') {
+                e.preventDefault();
+                onBlur(e as unknown as React.FocusEvent);
+              } else if (e.key === 'Enter') {
+                e.preventDefault();
+                document.execCommand('insertLineBreak');
+              }
+              onKeyDown(e);
+            }}
+            onMouseUp={checkSel}
+            onKeyUp={checkSel}
+            className={`${sharedDivClass} bg-transparent border-none outline-none`}
+            style={sharedDivStyle}
+            data-placeholder="Zadejte nadpis..."
+          />
+        </>
       );
     }
-    return content.text ? (
-      <span style={innerStyle}>
-        <LatexRenderer text={content.text} style={innerStyle} />
-      </span>
-    ) : (
-      <span className="text-slate-400" style={innerStyle}>Nadpis...</span>
+    // View mode: plain div with dangerouslySetInnerHTML — no contentEditable to avoid PDF issues
+    if (!content.text) return <span className="text-slate-400" style={innerStyle}>Nadpis...</span>;
+    if (!hasHtml) return <span style={innerStyle}><LatexRenderer text={content.text} style={innerStyle} /></span>;
+    return (
+      <div
+        className={`${sharedDivClass} heading-html-view worksheet-rich-html-content`}
+        style={sharedDivStyle}
+        dangerouslySetInnerHTML={{ __html: preventOrphansInHtml(normalizeHtml(content.text)) }}
+      />
     );
   };
 
@@ -1113,13 +1495,120 @@ interface ParagraphEditorProps {
   onUpdate: (content: any) => void;
   onBlur: (e: React.FocusEvent) => void;
   onKeyDown: (e: React.KeyboardEvent) => void;
+  onEnterAtCaret?: (charIndex: number, currentHtml?: string) => void;
   fontSizes: FontSizes;
+  activityNumber?: number;
 }
 
-function ParagraphEditor({ content, isEditing, onUpdate, onBlur, onKeyDown, fontSizes }: ParagraphEditorProps) {
+function ParagraphEditor({ content, isEditing, onUpdate, onBlur, onKeyDown, onEnterAtCaret, fontSizes, activityNumber }: ParagraphEditorProps) {
   const editorRef = useRef<HTMLTextAreaElement>(null);
   const didFocusPRef = useRef(false);
-  
+  const pisankaHostRef = useRef<HTMLDivElement>(null);
+
+  // Písanka (čJ) — náhled vždy z miniApp (barva/průhlednost, mezery řádků — ne zastaralé uložené html)
+  if ((content as any).miniApp?.type === 'pisanka') {
+    const rawMini = mergePisankaMiniApp(undefined, (content as any).miniApp ?? {});
+    const htmlOut = buildPisankaHtml(rawMini);
+    return (
+      <div className="vb-miniapp-paragraph-host" style={{ width: '100%' }}>
+        <div
+          ref={pisankaHostRef}
+          className="worksheet-rich-html-content vb-pisanka-view"
+          style={{ width: '100%', userSelect: 'none' }}
+          dangerouslySetInnerHTML={{
+            __html: preventOrphansInHtml(htmlOut),
+          }}
+        />
+        <PisankaGuideDotsLayer rootRef={pisankaHostRef} mini={rawMini} />
+      </div>
+    );
+  }
+
+  // Miniaplikace „porovnávání počtů“ — hlavička jako u klasické otázky, widget v pravém panelu / náhled
+  if ((content as any).miniApp?.type === 'compare-counts') {
+    const rawMini = (content as any).miniApp;
+    const mini = mergeCompareCountsMiniApp(undefined, rawMini ?? {});
+    const rawHtml = String((content as any).html || '').trim();
+    const circleColor = mini.circleColor || '#1e293b';
+    const circleSize = mini.circleSize || 21;
+    const questionStyles: React.CSSProperties = {
+      fontFamily: mini.qFontFamily || "'Fenomen Sans', sans-serif",
+      fontSize: mini.qFontSize ? `${mini.qFontSize}pt` : fontSizes.title,
+      fontWeight: mini.qFontWeight === 'bold' || mini.qIsBold ? 'bold' : (mini.qFontWeight || '500'),
+      color: mini.qTextColor || '#1e293b',
+      lineHeight: mini.qLineHeight || 1.2,
+      letterSpacing: `${(mini.qLetterSpacing || 0) / 100}em`,
+      textAlign: mini.qAlign || 'left',
+      fontStyle: mini.qIsItalic ? 'italic' : 'normal',
+      textDecoration: mini.qIsUnderline ? 'underline' : 'none',
+    };
+    const qHtml = getQuestionHtml({ question: mini.question, questionHtml: mini.questionHtml });
+
+    const patchCompareQuestion = (questionHtml: string) => {
+      const q = setQuestionHtml({ question: mini.question, questionHtml: mini.questionHtml }, questionHtml);
+      const nextMini = mergeCompareCountsMiniApp(mini, q);
+      onUpdate({
+        ...(content as any),
+        miniApp: nextMini,
+        html: buildCompareCountsHtml(nextMini),
+      });
+    };
+
+    return (
+      <div className="vb-miniapp-paragraph-host" style={{ width: '100%' }}>
+        <div className="flex items-start gap-3 mb-3">
+          {activityNumber != null && activityNumber > 0 ? (
+            <div
+              className="flex items-center justify-center shrink-0 font-bold text-white activity-number-circle"
+              style={{
+                width: `${circleSize}px`,
+                height: `${circleSize}px`,
+                minWidth: `${circleSize}px`,
+                minHeight: `${circleSize}px`,
+                borderRadius: '50%',
+                backgroundColor: circleColor,
+                fontSize: `${Math.round(circleSize * 0.57)}px`,
+              }}
+            >
+              {activityNumber}
+            </div>
+          ) : null}
+          <div className="flex-1 relative" style={{ ...questionStyles, minHeight: '1.5em' }}>
+            {isEditing ? (
+              <RichQuestionEditor
+                value={qHtml}
+                onChange={patchCompareQuestion}
+                style={questionStyles}
+                placeholder="Zde zadejte zadání úlohy…"
+                onKeyDown={onKeyDown}
+                onBlur={onBlur}
+                autoFocus
+              />
+            ) : qHtml ? (
+              <div
+                className="worksheet-rich-html-content"
+                style={{ ...questionStyles, minHeight: '1.5em' }}
+                dangerouslySetInnerHTML={{ __html: preventOrphansInHtml(qHtml) }}
+              />
+            ) : (
+              <span className="text-slate-400">Zadejte zadání úlohy…</span>
+            )}
+          </div>
+        </div>
+        <div
+          data-text-flow-content="true"
+          className="worksheet-rich-html-content vb-compare-counts-view"
+          style={{ width: '100%', userSelect: 'none' }}
+          dangerouslySetInnerHTML={{
+            __html: rawHtml
+              ? preventOrphansInHtml(rawHtml)
+              : '<div style="font-size:12px;color:#94a3b8;padding:8px 0;">Nastavení úlohy je v pravém sloupci.</div>',
+          }}
+        />
+      </div>
+    );
+  }
+
   const displayMode = content.displayMode || 'normal';
   const bgColor = content.bgColor || 'blue';
   const hasBorder = content.hasBorder ?? true;
@@ -1180,13 +1669,15 @@ function ParagraphEditor({ content, isEditing, onUpdate, onBlur, onKeyDown, font
     : {};
 
   // Strip HTML to get plain text
-  const plainText = content.html?.replace(/<[^>]*>/g, '') || '';
+  const normalizedHtml = normalizeRichBlockHtml(content.html || '');
+  const plainText = normalizedHtml.replace(/<[^>]*>/g, '') || '';
 
   const textStyle: React.CSSProperties = {
     textAlign: align,
     fontSize: fontSizeStyle,
-    fontFamily: FONT_FAMILY,
-    lineHeight: 1.5,
+    fontFamily: content.fontFamily || FONT_FAMILY,
+    lineHeight: content.lineHeight || 1.5,
+    letterSpacing: content.letterSpacing ? `${content.letterSpacing / 100}em` : undefined,
     outline: 'none',
     minHeight: '1.5em',
     margin: 0,
@@ -1265,7 +1756,7 @@ function ParagraphEditor({ content, isEditing, onUpdate, onBlur, onKeyDown, font
   };
 
   const columns = (content as any).columns || 1;
-  const hasHtml = content.html && /<[a-z][\s\S]*>/i.test(content.html);
+  const hasHtml = normalizedHtml && /<[a-z][\s\S]*>/i.test(normalizedHtml);
 
   const columnStyle: React.CSSProperties = columns > 1 ? {
     columnCount: columns,
@@ -1280,38 +1771,31 @@ function ParagraphEditor({ content, isEditing, onUpdate, onBlur, onKeyDown, font
       data-has-border={displayMode === 'infobox' ? (hasBorder ? 'true' : 'false') : undefined}
     >
       {renderImage()}
-      <div style={{ ...textStyle, whiteSpace: hasHtml ? undefined : 'pre-wrap', flex: 1, minHeight: '1.5em', ...columnStyle }}>
+      <div
+        data-text-flow-content="true"
+        style={{ ...textStyle, whiteSpace: hasHtml ? undefined : 'pre-wrap', flex: 1, minHeight: '1.5em', ...columnStyle }}
+      >
         {isEditing ? (
-          <textarea
-            ref={editorRef}
-            value={plainText}
-            onChange={(e) => {
-              onUpdate({ ...content, html: e.target.value });
-              autoResize();
-            }}
-            onBlur={onBlur}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                setTimeout(autoResize, 0);
-                return;
-              }
-              onKeyDown(e);
-            }}
-            onInput={autoResize}
-            className="w-full bg-transparent border-none outline-none resize-none overflow-hidden"
+          <RichHtmlEditor
+            value={normalizedHtml}
+            onChange={(v) => onUpdate({ ...content, html: normalizeRichBlockHtml(v) })}
             style={{ ...textStyle, width: '100%', minHeight: '1.5em' }}
             placeholder="Odstavec textu..."
+            onKeyDown={onKeyDown}
+            onEnterAtCaret={onEnterAtCaret}
+            onBlur={onBlur}
+            autoFocus
           />
         ) : (
-          content.html ? (
+          normalizedHtml ? (
             hasHtml ? (
               <div
-                className="prose-content"
+                className="worksheet-rich-html-content"
                 style={textStyle}
-                dangerouslySetInnerHTML={{ __html: preventOrphansInHtml(content.html) }}
+                dangerouslySetInnerHTML={{ __html: preventOrphansInHtml(normalizedHtml) }}
               />
             ) : (
-              <LatexRenderer text={content.html} style={textStyle} />
+              <LatexRenderer text={normalizedHtml} style={textStyle} />
             )
           ) : (
             <span style={{ color: '#94a3b8' }}>Odstavec textu...</span>
@@ -1332,13 +1816,15 @@ interface InfoboxEditorProps {
   onUpdate: (content: any) => void;
   onBlur: (e: React.FocusEvent) => void;
   onKeyDown: (e: React.KeyboardEvent) => void;
+  onEnterAtCaret?: (charIndex: number, currentHtml?: string) => void;
   fontSizes: FontSizes;
 }
 
-function InfoboxEditor({ content, isEditing, onUpdate, onBlur, onKeyDown, fontSizes }: InfoboxEditorProps) {
+function InfoboxEditor({ content, isEditing, onUpdate, onBlur, onKeyDown, onEnterAtCaret, fontSizes }: InfoboxEditorProps) {
   const titleRef = useRef<HTMLInputElement>(null);
   const textRef = useRef<HTMLTextAreaElement>(null);
-  const plainText = content.html?.replace(/<[^>]*>/g, '') || '';
+  const normalizedHtml = normalizeRichBlockHtml(content.html || '');
+  const plainText = normalizedHtml.replace(/<[^>]*>/g, '') || '';
 
   // Auto-resize textarea
   const autoResize = useCallback(() => {
@@ -1381,20 +1867,18 @@ function InfoboxEditor({ content, isEditing, onUpdate, onBlur, onKeyDown, fontSi
             style={{ fontSize: fontSizes.title, fontWeight: 600, color: accent, padding: 0, margin: 0, marginBottom: '6px', display: 'block' }}
             placeholder="Titulek (volitelný)..."
           />
-          <textarea
-            ref={textRef}
-            value={plainText}
-            onChange={(e) => {
-              onUpdate({ ...content, html: `<p>${e.target.value}</p>` });
-              autoResize();
-            }}
-            onBlur={onBlur}
-            onKeyDown={onKeyDown}
-            onInput={autoResize}
-            className="w-full bg-transparent border-none outline-none resize-none overflow-hidden"
-            style={{ fontSize: fontSizes.body, minHeight: '40px', padding: 0, margin: 0, color: '#374151' }}
-            placeholder="Text infoboxu..."
-          />
+          <div data-text-flow-content="true">
+            <RichHtmlEditor
+              value={normalizedHtml}
+              onChange={(v) => onUpdate({ ...content, html: normalizeRichBlockHtml(v) })}
+              style={{ fontSize: fontSizes.body, minHeight: '40px', padding: 0, margin: 0, color: '#374151' }}
+              placeholder="Text infoboxu..."
+              onKeyDown={onKeyDown}
+              onEnterAtCaret={onEnterAtCaret}
+              onBlur={onBlur}
+              autoFocus={false}
+            />
+          </div>
         </>
       ) : (
         <>
@@ -1403,10 +1887,12 @@ function InfoboxEditor({ content, isEditing, onUpdate, onBlur, onKeyDown, fontSi
               {content.title}
             </h4>
           )}
-          <div 
+          <div
+            className="worksheet-rich-html-content"
+            data-text-flow-content="true"
             style={{ fontSize: fontSizes.body, color: '#374151' }}
             dangerouslySetInnerHTML={{ 
-              __html: preventOrphansInHtml(content.html || '<p style="color:#9ca3af">Infobox...</p>')
+              __html: preventOrphansInHtml(normalizedHtml || '<p style="color:#9ca3af">Infobox...</p>')
             }}
           />
         </>
@@ -1421,50 +1907,14 @@ function InfoboxEditor({ content, isEditing, onUpdate, onBlur, onKeyDown, fontSi
 // with a floating Bold/Italic/Underline/Highlight toolbar on selection.
 // ============================================
 
-/** Walk a DOM node tree and convert it to our markdown subset */
-function nodeToMd(node: Node): string {
-  if (node.nodeType === Node.TEXT_NODE) return node.textContent ?? '';
-  if (node.nodeType !== Node.ELEMENT_NODE) return '';
-  const el = node as HTMLElement;
-  const tag = el.tagName.toLowerCase();
-  const inner = Array.from(el.childNodes).map(nodeToMd).join('');
-  switch (tag) {
-    case 'strong': case 'b': return `**${inner}**`;
-    case 'em':     case 'i': return `*${inner}*`;
-    case 'u': return `<u>${inner}</u>`;
-    case 'mark': {
-      const styleAttr = el.getAttribute('style') ?? '';
-      const bgMatch = styleAttr.match(/background(?:-color)?:\s*([^;]+)/);
-      const bg = bgMatch ? bgMatch[1].trim() : el.style.backgroundColor;
-      return bg ? `<mark style="background:${bg}">${inner}</mark>` : `<mark>${inner}</mark>`;
-    }
-    case 'span': {
-      const bg = el.style.backgroundColor;
-      if (bg && bg !== 'transparent' && bg !== 'rgba(0, 0, 0, 0)') {
-        return `<mark style="background:${bg}">${inner}</mark>`;
-      }
-      return inner;
-    }
-    case 'br':  return '\n';
-    case 'div': return inner ? `${inner}\n` : '\n';
-    default: return inner;
-  }
-}
-
-/** Convert contenteditable innerHTML → markdown */
+/** Convert contenteditable innerHTML to our normalized rich HTML. */
 function richHtmlToMd(html: string): string {
-  const wrapper = document.createElement('div');
-  wrapper.innerHTML = html;
-  return Array.from(wrapper.childNodes).map(nodeToMd).join('').trim();
+  return normalizeRichHtml(html);
 }
 
-/** Convert markdown → display HTML for contenteditable */
+/** Convert legacy text/markdown-like content to editable HTML. */
 function mdToRichHtml(md: string): string {
-  return (md ?? '')
-    .replace(/\*\*([\s\S]+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*([^*\n]+?)\*/g, '<em>$1</em>')
-    .replace(/\n/g, '<br>');
-  // <u>...</u> and <mark ...>...</mark> are already HTML — left as-is
+  return legacyQuestionStringToHtml(md);
 }
 
 /** Plain-text option editor — textarea with guaranteed Enter support */
@@ -1554,7 +2004,7 @@ interface RichQuestionEditorProps {
 
 function RichQuestionEditor({ value, onChange, style, placeholder, onKeyDown, onBlur, autoFocus }: RichQuestionEditorProps) {
   const editableRef = useRef<HTMLDivElement>(null);
-  const lastMdRef   = useRef('');
+  const lastHtmlRef = useRef('');
   const [showBubble,     setShowBubble]     = useState(false);
   const [bubblePos,      setBubblePos]      = useState<{ top: number; left: number } | null>(null);
   const [showHighlights, setShowHighlights] = useState(false);
@@ -1563,9 +2013,9 @@ function RichQuestionEditor({ value, onChange, style, placeholder, onKeyDown, on
   useEffect(() => {
     const el = editableRef.current;
     const safeValue = value ?? '';
-    if (!el || safeValue === lastMdRef.current) return;
-    lastMdRef.current = safeValue;
-    const newHtml = mdToRichHtml(safeValue);
+    const newHtml = normalizeRichHtml(mdToRichHtml(safeValue));
+    if (!el || newHtml === lastHtmlRef.current) return;
+    lastHtmlRef.current = newHtml;
     if (el.innerHTML !== newHtml) el.innerHTML = newHtml;
   }, [value]);
 
@@ -1585,9 +2035,9 @@ function RichQuestionEditor({ value, onChange, style, placeholder, onKeyDown, on
   const syncToMd = useCallback(() => {
     const el = editableRef.current;
     if (!el) return;
-    const md = richHtmlToMd(el.innerHTML);
-    lastMdRef.current = md;
-    onChange(md);
+    const html = richHtmlToMd(el.innerHTML);
+    lastHtmlRef.current = html;
+    onChange(html);
   }, [onChange]);
 
   const checkSel = useCallback(() => {
@@ -1699,6 +2149,220 @@ function RichQuestionEditor({ value, onChange, style, placeholder, onKeyDown, on
 }
 
 // ============================================
+// RICH HTML EDITOR
+// contenteditable that works directly with HTML (no markdown conversion),
+// with a floating Bold/Italic/Underline/Highlight bubble toolbar on selection.
+// Used by ParagraphEditor and InfoboxEditor.
+// ============================================
+function normalizeRichBlockHtml(html: string): string {
+  if (!html) return '';
+  if (typeof document === 'undefined') return html;
+
+  const root = document.createElement('div');
+  root.innerHTML = html;
+
+  root.querySelectorAll<HTMLElement>('*').forEach((el) => {
+    el.style.removeProperty('font-size');
+    el.style.removeProperty('font-family');
+    el.style.removeProperty('line-height');
+    el.style.removeProperty('letter-spacing');
+    el.style.removeProperty('color');
+    el.style.removeProperty('text-align');
+
+    if (!el.getAttribute('style')?.trim()) {
+      el.removeAttribute('style');
+    }
+  });
+
+  return root.innerHTML;
+}
+
+interface RichHtmlEditorProps {
+  value: string;
+  onChange: (html: string) => void;
+  style?: React.CSSProperties;
+  placeholder?: string;
+  onKeyDown?: (e: React.KeyboardEvent) => void;
+  onEnterAtCaret?: (charIndex: number, currentHtml?: string) => void;
+  onBlur?: (e: React.FocusEvent) => void;
+  autoFocus?: boolean;
+}
+
+function RichHtmlEditor({ value, onChange, style, placeholder, onKeyDown, onEnterAtCaret, onBlur, autoFocus }: RichHtmlEditorProps) {
+  const editableRef = useRef<HTMLDivElement>(null);
+  const lastHtmlRef = useRef('');
+  const [showBubble, setShowBubble] = useState(false);
+  const [bubblePos, setBubblePos] = useState<{ top: number; left: number } | null>(null);
+  const [showHighlights, setShowHighlights] = useState(false);
+
+  // Sync external HTML value → innerHTML (only when changed from outside)
+  useEffect(() => {
+    const el = editableRef.current;
+    const safeVal = normalizeRichBlockHtml(value ?? '');
+    if (!el || safeVal === lastHtmlRef.current) return;
+    lastHtmlRef.current = safeVal;
+    if (el.innerHTML !== safeVal) el.innerHTML = safeVal;
+  }, [value]);
+
+  // Auto-focus + move cursor to end
+  useEffect(() => {
+    if (!autoFocus || !editableRef.current) return;
+    const el = editableRef.current;
+    // Use requestAnimationFrame to avoid layout thrash during mount
+    requestAnimationFrame(() => {
+      el.focus({ preventScroll: true });
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      range.collapse(false);
+      const sel = window.getSelection();
+      sel?.removeAllRanges();
+      sel?.addRange(range);
+    });
+  }, [autoFocus]);
+
+  const syncHtml = useCallback(() => {
+    const el = editableRef.current;
+    if (!el) return;
+    const html = normalizeRichBlockHtml(el.innerHTML);
+    lastHtmlRef.current = html;
+    onChange(html);
+  }, [onChange]);
+
+  const getCaretCharIndex = useCallback((): number | null => {
+    const el = editableRef.current;
+    const sel = window.getSelection();
+    if (!el || !sel || !sel.rangeCount) return null;
+    const range = sel.getRangeAt(0);
+    if (!el.contains(range.startContainer)) return null;
+    const probe = range.cloneRange();
+    probe.selectNodeContents(el);
+    probe.setEnd(range.startContainer, range.startOffset);
+    return probe.toString().length;
+  }, []);
+
+  const checkSel = useCallback(() => {
+    const sel = window.getSelection();
+    const el = editableRef.current;
+    if (!sel || sel.isCollapsed || !sel.rangeCount || !el) { setShowBubble(false); return; }
+    const range = sel.getRangeAt(0);
+    if (!el.contains(range.commonAncestorContainer)) { setShowBubble(false); return; }
+    const rect = range.getBoundingClientRect();
+    if (rect.width === 0 && rect.height === 0) { setShowBubble(false); return; }
+    setShowBubble(true);
+    setBubblePos({ top: rect.top - 52, left: rect.left + rect.width / 2 });
+  }, []);
+
+  const applyFmt = useCallback((cmd: string, val?: string) => {
+    const el = editableRef.current;
+    if (!el) return;
+    el.focus({ preventScroll: true });
+    // eslint-disable-next-line @typescript-eslint/no-deprecated
+    document.execCommand(cmd, false, val);
+    syncHtml();
+    setShowBubble(false);
+    setShowHighlights(false);
+  }, [syncHtml]);
+
+  const bubble = showBubble && bubblePos ? createPortal(
+    <div
+      data-toolbar-element="true"
+      onMouseDown={(e) => e.preventDefault()}
+      style={{
+        position: 'fixed',
+        top: Math.max(8, bubblePos.top),
+        left: bubblePos.left,
+        transform: 'translateX(-50%)',
+        zIndex: 99999,
+        background: 'white',
+        borderRadius: '10px',
+        boxShadow: '0 4px 24px rgba(0,0,0,0.18)',
+        border: '1px solid #e2e8f0',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '2px',
+        padding: '4px 8px',
+        height: '40px',
+        userSelect: 'none',
+      }}
+    >
+      <RichBubbleBtn title="Tučné"     onClick={() => applyFmt('bold')}><Bold     size={14} strokeWidth={2.5} /></RichBubbleBtn>
+      <RichBubbleBtn title="Kurzíva"   onClick={() => applyFmt('italic')}><Italic   size={14} /></RichBubbleBtn>
+      <RichBubbleBtn title="Podtržené" onClick={() => applyFmt('underline')}><Underline size={14} /></RichBubbleBtn>
+      <div style={{ width: 1, height: 20, background: '#e2e8f0', margin: '0 4px' }} />
+      <div style={{ position: 'relative' }}>
+        <RichBubbleBtn title="Zvýraznit" onClick={() => setShowHighlights(v => !v)}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 18, height: 18, borderRadius: 4, background: '#fef08a', fontWeight: 700, fontSize: 12, color: '#78350f' }}>A</span>
+        </RichBubbleBtn>
+        {showHighlights && (
+          <div
+            data-toolbar-element="true"
+            onMouseDown={(e) => e.preventDefault()}
+            style={{ position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)', marginTop: 6, background: 'white', borderRadius: 10, boxShadow: '0 4px 20px rgba(0,0,0,0.15)', border: '1px solid #e2e8f0', display: 'flex', gap: 6, padding: '8px 10px' }}
+          >
+            {RICH_HIGHLIGHTS.map(({ bg, label }) => (
+              <button
+                key={bg}
+                title={label}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  if (bg === 'transparent') applyFmt('removeFormat');
+                  else applyFmt('backColor', bg);
+                }}
+                style={{ width: 24, height: 24, borderRadius: '50%', background: bg === 'transparent' ? 'white' : bg, border: bg === 'transparent' ? '2px solid #e2e8f0' : '2px solid transparent', cursor: 'pointer', position: 'relative', flexShrink: 0 }}
+              >
+                {bg === 'transparent' && <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ef4444', fontSize: 16, fontWeight: 700, lineHeight: 1 }}>×</span>}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>,
+    document.body
+  ) : null;
+
+  return (
+    <div style={{ position: 'relative', minHeight: '1.5em' }}>
+      {!value && placeholder && (
+        <span style={{ ...style, position: 'absolute', top: 0, left: 0, pointerEvents: 'none', color: '#94a3b8' }}>{placeholder}</span>
+      )}
+      <div
+        ref={editableRef}
+        className="worksheet-rich-html-editor"
+        contentEditable
+        suppressContentEditableWarning
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && onEnterAtCaret && (e.metaKey || e.ctrlKey || e.altKey)) {
+            e.preventDefault();
+            const el = editableRef.current;
+            const html = normalizeRichBlockHtml(el?.innerHTML || value || '');
+            lastHtmlRef.current = html;
+            onChange(html);
+            onEnterAtCaret(getCaretCharIndex() ?? 0, html);
+            return;
+          }
+          onKeyDown?.(e as any);
+        }}
+        onInput={syncHtml}
+        onMouseUp={checkSel}
+        onKeyUp={() => { checkSel(); }}
+        onBlur={(e) => {
+          setTimeout(() => {
+            if (!(document.activeElement as HTMLElement)?.closest?.('[data-toolbar-element]')) {
+              setShowBubble(false);
+              setShowHighlights(false);
+            }
+          }, 150);
+          onBlur?.(e);
+        }}
+        style={{ ...style, outline: 'none', minHeight: '1.5em', wordBreak: 'break-word', whiteSpace: 'pre-wrap' }}
+      />
+      {bubble}
+    </div>
+  );
+}
+
+
+// ============================================
 // MULTIPLE CHOICE EDITOR
 // ============================================
 
@@ -1747,7 +2411,7 @@ function MultipleChoiceEditor({ content, isEditing, onUpdate, onBlur, onKeyDown,
     fontWeight: content.fontWeight === 'bold' || content.isBold ? 'bold' : (content.fontWeight || '500'),
     color: content.textColor || '#1e293b',
     lineHeight: content.lineHeight || 1.2,
-    letterSpacing: `${content.letterSpacing || 0}%`,
+    letterSpacing: `${(content.letterSpacing || 0) / 100}em`,
     textAlign: content.align || 'left',
     fontStyle: content.isItalic ? 'italic' : 'normal',
     textDecoration: content.isUnderline ? 'underline' : 'none',
@@ -1760,7 +2424,7 @@ function MultipleChoiceEditor({ content, isEditing, onUpdate, onBlur, onKeyDown,
     fontWeight: content.fontWeight === 'bold' || content.isBold ? 'bold' : 'normal',
     color: content.textColor || '#475569',
     lineHeight: content.lineHeight || 1.5,
-    letterSpacing: `${content.letterSpacing || 0}%`,
+    letterSpacing: `${(content.letterSpacing || 0) / 100}em`,
     fontStyle: content.isItalic ? 'italic' : 'normal',
     textDecoration: content.isUnderline ? 'underline' : 'none',
   };
@@ -1770,7 +2434,7 @@ function MultipleChoiceEditor({ content, isEditing, onUpdate, onBlur, onKeyDown,
   const circleSize = content.circleSize || 21;
 
   const handleQuestionChange = (value: string) => {
-    onUpdate({ ...content, question: value });
+    onUpdate(setQuestionHtml(content, value));
   };
 
   const handleOptionChange = (optionId: string, text: string) => {
@@ -2243,7 +2907,7 @@ function MultipleChoiceEditor({ content, isEditing, onUpdate, onBlur, onKeyDown,
         <div className="flex-1 relative" style={{ ...questionStyles, minHeight: '1.5em' }}>
           {isEditing ? (
             <RichQuestionEditor
-              value={content.question}
+              value={getQuestionHtml(content)}
               onChange={handleQuestionChange}
               style={questionStyles}
               placeholder="Zadejte otázku..."
@@ -2252,8 +2916,12 @@ function MultipleChoiceEditor({ content, isEditing, onUpdate, onBlur, onKeyDown,
               autoFocus
             />
           ) : (
-            content.question ? (
-              <LatexRenderer text={content.question} />
+            getQuestionHtml(content) ? (
+              <div
+                className="worksheet-rich-html-content"
+                style={{ ...questionStyles, minHeight: '1.5em' }}
+                dangerouslySetInnerHTML={{ __html: preventOrphansInHtml(getQuestionHtml(content)) }}
+              />
             ) : (
               <span className="text-slate-400">Otázka...</span>
             )
@@ -2300,6 +2968,7 @@ interface FillBlankEditorProps {
 function FillBlankEditor({ content, isEditing, onUpdate, onBlur, onKeyDown, fontSizes, activityNumber }: FillBlankEditorProps) {
   const instructionRef = useRef<HTMLInputElement>(null);
   const textRef = useRef<HTMLTextAreaElement>(null);
+  const activityLabelStyle = getActivityLabelStyle(fontSizes);
 
   // Convert segments to editable text with [brackets]
   const segmentsToText = (segments: FillBlankSegment[]) => {
@@ -2398,7 +3067,7 @@ function FillBlankEditor({ content, isEditing, onUpdate, onBlur, onKeyDown, font
                   onChange={(e) => onUpdate({ ...content, instruction: e.target.value })}
                   onKeyDown={onKeyDown}
                   className="flex-1 text-slate-500 bg-transparent border-none outline-none font-medium"
-                  style={{ fontSize: fontSizes.small }}
+                  style={activityLabelStyle}
                   placeholder="Instrukce (např. Doplňte chybějící slova)..."
                 />
                 <button
@@ -2430,7 +3099,7 @@ function FillBlankEditor({ content, isEditing, onUpdate, onBlur, onKeyDown, font
           ) : (
             <>
               {content.instruction && (
-                <p className="text-slate-500 mb-2 font-medium" style={{ fontSize: fontSizes.small }}>
+                <p className="text-slate-500 mb-2 font-medium" style={activityLabelStyle}>
                   <LatexRenderer text={content.instruction} />
                 </p>
               )}
@@ -2545,7 +3214,7 @@ function FreeAnswerEditor({ content, isEditing, onUpdate, onBlur, onKeyDown, fon
     fontSize: content.fontSize ? `${content.fontSize}pt` : fontSizes.title,
     fontWeight: content.fontWeight || '500',
     lineHeight: content.lineHeight || 1.4,
-    letterSpacing: content.letterSpacing ? `${content.letterSpacing}%` : undefined,
+    letterSpacing: content.letterSpacing ? `${content.letterSpacing / 100}em` : undefined,
     color: content.textColor || '#1e293b',
   };
 
@@ -2590,8 +3259,8 @@ function FreeAnswerEditor({ content, isEditing, onUpdate, onBlur, onKeyDown, fon
         <div className="flex-1" style={{ ...questionFontStyle, minHeight: '1.5em' }}>
           {isEditing ? (
             <RichQuestionEditor
-              value={content.question}
-              onChange={(v) => onUpdate({ ...content, question: v })}
+              value={getQuestionHtml(content)}
+              onChange={(v) => onUpdate(setQuestionHtml(content, v))}
               style={questionFontStyle}
               placeholder="Zadejte otázku..."
               onKeyDown={onKeyDown}
@@ -2599,8 +3268,12 @@ function FreeAnswerEditor({ content, isEditing, onUpdate, onBlur, onKeyDown, fon
               autoFocus
             />
           ) : (
-            content.question ? (
-              <LatexRenderer text={content.question} />
+            getQuestionHtml(content) ? (
+              <div
+                className="worksheet-rich-html-content"
+                style={{ ...questionFontStyle, minHeight: '1.5em' }}
+                dangerouslySetInnerHTML={{ __html: preventOrphansInHtml(getQuestionHtml(content)) }}
+              />
             ) : (
               <span className="text-slate-400">Otázka...</span>
             )
@@ -2740,14 +3413,36 @@ function FreeAnswerEditor({ content, isEditing, onUpdate, onBlur, onKeyDown, fon
                     const siRotate = content.subImageRotate ?? false;
                     const siRotateMax = content.subImageRotateMax ?? 5;
                     const siHeight = content.subImageHeight || 140;
+                    const siZoom: number = (content as any).subImageZoom ?? 100;
+                    const siZoomScale = siZoom / 100;
+                    const siOffX: number = (sq as any).imageOffsetX ?? 0;
+                    const siOffY: number = (sq as any).imageOffsetY ?? 0;
+                    const siTransform = (siZoom > 100 || siOffX !== 0 || siOffY !== 0)
+                      ? `translate(${siOffX}px, ${siOffY}px) scale(${siZoomScale})`
+                      : undefined;
                     const siClipPath = (GALLERY_CLIP_PATHS as Record<string, string>)[siShape] || '';
                     const siIsRect = siShape === 'rectangle';
                     const siRotDeg = siRotate
                       ? (((i * 137 + 29) % (siRotateMax * 2 + 1)) - siRotateMax)
                       : 0;
-                    const siDropShadow = siStrokeWidth > 0
+                    const siDropShadow = (!siIsRect && siStrokeWidth > 0)
                       ? `drop-shadow(0 0 ${siStrokeWidth}px ${siStrokeColor}) drop-shadow(0 0 ${Math.ceil(siStrokeWidth / 2)}px ${siStrokeColor})`
                       : undefined;
+                    const handleSiPanStart = (e: React.MouseEvent) => {
+                      if (!isEditing) return;
+                      e.preventDefault(); e.stopPropagation();
+                      let lx = e.clientX, ly = e.clientY;
+                      const onMove = (mv: MouseEvent) => {
+                        const nx = (siOffX + mv.clientX - lx), ny = (siOffY + mv.clientY - ly);
+                        lx = mv.clientX; ly = mv.clientY;
+                        const updated = [...(content.subQuestions || [])];
+                        updated[i] = { ...updated[i], imageOffsetX: nx, imageOffsetY: ny } as any;
+                        onUpdate({ ...content, subQuestions: updated });
+                      };
+                      const onUp = () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); };
+                      document.addEventListener('mousemove', onMove);
+                      document.addEventListener('mouseup', onUp);
+                    };
                     return (
                       <div
                         style={{
@@ -2755,19 +3450,11 @@ function FreeAnswerEditor({ content, isEditing, onUpdate, onBlur, onKeyDown, fon
                           transform: siRotDeg !== 0 ? `rotate(${siRotDeg}deg)` : undefined,
                         }}
                       >
-                        <div
-                          style={{
-                            filter: !siIsRect ? siDropShadow : undefined,
-                            ...(siIsRect && siStrokeWidth > 0 ? {
-                              outline: `${siStrokeWidth}px solid ${siStrokeColor}`,
-                              outlineOffset: `-${siStrokeWidth}px`,
-                              borderRadius: `${siRadius}px`,
-                            } : {}),
-                          }}
-                        >
+                        <div style={{ filter: siDropShadow }}>
                           {siIsRect ? (
                             <div
                               style={{
+                                position: 'relative',
                                 width: '100%',
                                 height: `${siHeight}px`,
                                 borderRadius: `${siRadius}px`,
@@ -2783,11 +3470,18 @@ function FreeAnswerEditor({ content, isEditing, onUpdate, onBlur, onKeyDown, fon
                                   height: '100%',
                                   objectFit: 'cover',
                                   display: 'block',
+                                  ...(siTransform ? { transform: siTransform, transformOrigin: 'center center' } : {}),
                                 }}
                               />
+                              {siStrokeWidth > 0 && (
+                                <div style={{ position: 'absolute', inset: 0, borderRadius: `${siRadius}px`, boxShadow: `inset 0 0 0 ${siStrokeWidth}px ${siStrokeColor}`, pointerEvents: 'none', zIndex: 10 }} />
+                              )}
+                              {isEditing && (
+                                <div onMouseDown={handleSiPanStart} style={{ position: 'absolute', inset: 0, cursor: 'grab', zIndex: 5, userSelect: 'none' }} />
+                              )}
                             </div>
                           ) : (
-                            <div style={{ width: '100%', height: `${siHeight}px` }}>
+                            <div style={{ position: 'relative', width: '100%', height: `${siHeight}px` }}>
                               <img
                                 src={sq.imageUrl}
                                 alt=""
@@ -2798,8 +3492,12 @@ function FreeAnswerEditor({ content, isEditing, onUpdate, onBlur, onKeyDown, fon
                                   display: 'block',
                                   clipPath: siClipPath,
                                   WebkitClipPath: siClipPath,
+                                  ...(siTransform ? { transform: siTransform, transformOrigin: 'center center' } : {}),
                                 } as React.CSSProperties}
                               />
+                              {isEditing && (
+                                <div onMouseDown={handleSiPanStart} style={{ position: 'absolute', inset: 0, cursor: 'grab', zIndex: 5, userSelect: 'none' }} />
+                              )}
                             </div>
                           )}
                         </div>
@@ -2825,26 +3523,40 @@ function FreeAnswerEditor({ content, isEditing, onUpdate, onBlur, onKeyDown, fon
                   const siStrokeColor = content.subImageStrokeColor || '#334155';
                   const siStrokeWidth = content.subImageStrokeWidth ?? 0;
                   const siHeight = content.subImageHeight || 100;
+                  const siZoom: number = (content as any).subImageZoom ?? 100;
+                  const siZoomScale = siZoom / 100;
+                  const siOffX: number = (sq as any).imageOffsetX ?? 0;
+                  const siOffY: number = (sq as any).imageOffsetY ?? 0;
+                  const siTransform = (siZoom > 100 || siOffX !== 0 || siOffY !== 0)
+                    ? `translate(${siOffX}px, ${siOffY}px) scale(${siZoomScale})`
+                    : undefined;
                   const siClipPath = (GALLERY_CLIP_PATHS as Record<string, string>)[siShape] || '';
                   const siIsRect = siShape === 'rectangle';
-                  const siDropShadow = siStrokeWidth > 0
+                  const siDropShadow = (!siIsRect && siStrokeWidth > 0)
                     ? `drop-shadow(0 0 ${siStrokeWidth}px ${siStrokeColor}) drop-shadow(0 0 ${Math.ceil(siStrokeWidth / 2)}px ${siStrokeColor})`
                     : undefined;
+                  const handleSiPanStart = (e: React.MouseEvent) => {
+                    if (!isEditing) return;
+                    e.preventDefault(); e.stopPropagation();
+                    let lx = e.clientX, ly = e.clientY;
+                    const onMove = (mv: MouseEvent) => {
+                      const nx = (siOffX + mv.clientX - lx), ny = (siOffY + mv.clientY - ly);
+                      lx = mv.clientX; ly = mv.clientY;
+                      const updated = [...(content.subQuestions || [])];
+                      updated[i] = { ...updated[i], imageOffsetX: nx, imageOffsetY: ny } as any;
+                      onUpdate({ ...content, subQuestions: updated });
+                    };
+                    const onUp = () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); };
+                    document.addEventListener('mousemove', onMove);
+                    document.addEventListener('mouseup', onUp);
+                  };
                   return (
                     <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center' }}>
-                      <div
-                        style={{
-                          filter: !siIsRect ? siDropShadow : undefined,
-                          ...(siIsRect && siStrokeWidth > 0 ? {
-                            outline: `${siStrokeWidth}px solid ${siStrokeColor}`,
-                            outlineOffset: `-${siStrokeWidth}px`,
-                            borderRadius: `${siRadius}px`,
-                          } : {}),
-                        }}
-                      >
+                      <div style={{ filter: siDropShadow }}>
                         {siIsRect ? (
                           <div
                             style={{
+                              position: 'relative',
                               width: `${siHeight}px`,
                               height: `${siHeight}px`,
                               borderRadius: `${siRadius}px`,
@@ -2855,11 +3567,17 @@ function FreeAnswerEditor({ content, isEditing, onUpdate, onBlur, onKeyDown, fon
                             <img
                               src={sq.imageUrl}
                               alt=""
-                              style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                              style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', ...(siTransform ? { transform: siTransform, transformOrigin: 'center center' } : {}) }}
                             />
+                            {siStrokeWidth > 0 && (
+                              <div style={{ position: 'absolute', inset: 0, borderRadius: `${siRadius}px`, boxShadow: `inset 0 0 0 ${siStrokeWidth}px ${siStrokeColor}`, pointerEvents: 'none', zIndex: 10 }} />
+                            )}
+                            {isEditing && (
+                              <div onMouseDown={handleSiPanStart} style={{ position: 'absolute', inset: 0, cursor: 'grab', zIndex: 5, userSelect: 'none' }} />
+                            )}
                           </div>
                         ) : (
-                          <div style={{ width: `${siHeight}px`, height: `${siHeight}px` }}>
+                          <div style={{ position: 'relative', width: `${siHeight}px`, height: `${siHeight}px` }}>
                             <img
                               src={sq.imageUrl}
                               alt=""
@@ -2870,8 +3588,12 @@ function FreeAnswerEditor({ content, isEditing, onUpdate, onBlur, onKeyDown, fon
                                 display: 'block',
                                 clipPath: siClipPath,
                                 WebkitClipPath: siClipPath,
+                                ...(siTransform ? { transform: siTransform, transformOrigin: 'center center' } : {}),
                               } as React.CSSProperties}
                             />
+                            {isEditing && (
+                              <div onMouseDown={handleSiPanStart} style={{ position: 'absolute', inset: 0, cursor: 'grab', zIndex: 5, userSelect: 'none' }} />
+                            )}
                           </div>
                         )}
                       </div>
@@ -2888,6 +3610,7 @@ function FreeAnswerEditor({ content, isEditing, onUpdate, onBlur, onKeyDown, fon
                       {/* Bottom handle – height resize */}
                       {answerStyle !== 'none' && answerStyle !== 'inline-line' && (
                         <div
+                          data-editor-only="true"
                           onMouseDown={(e) => {
                             e.preventDefault();
                             e.stopPropagation();
@@ -2933,6 +3656,7 @@ function FreeAnswerEditor({ content, isEditing, onUpdate, onBlur, onKeyDown, fon
                       {/* Right handle – individual width resize */}
                       {columns >= 2 && (
                         <div
+                          data-editor-only="true"
                           onMouseDown={(e) => {
                             e.preventDefault();
                             e.stopPropagation();
@@ -3422,22 +4146,131 @@ function ImageEditor({ content, isEditing, onUpdate }: ImageEditorProps) {
     galleryRotateMax = 5,
     galleryLabelType = 'none',
     galleryLabelColor = '#3b82f6',
-  } = content;
+  } = content as any;
   
   // Hooks must be before any early returns!
   const [isLoading, setIsLoading] = useState(true);
-  
+  const panDraggingRef = React.useRef<{ idx: number; lastX: number; lastY: number } | null>(null);
+  const heightDraggingRef = React.useRef(false);
+  const frameRefs = React.useRef<Record<number, HTMLDivElement | null>>({});
+  const naturalSizeRefs = React.useRef<Record<number, { width: number; height: number }>>({});
+
+  const handleImgPanStart = (e: React.MouseEvent, imgIdx: number) => {
+    if (!isEditing) return;
+    e.preventDefault();
+    e.stopPropagation();
+    let lastX = e.clientX, lastY = e.clientY;
+    const existingOffsets: { x: number; y: number }[] = (content as any).galleryOffsets || [];
+    let curX = existingOffsets[imgIdx]?.x ?? 0;
+    let curY = existingOffsets[imgIdx]?.y ?? 0;
+    const onMove = (mv: MouseEvent) => {
+      curX += mv.clientX - lastX;
+      curY += mv.clientY - lastY;
+      lastX = mv.clientX; lastY = mv.clientY;
+      const clamped = clampImagePanOffset(imgIdx, curX, curY);
+      curX = clamped.x;
+      curY = clamped.y;
+      const offs = [...existingOffsets];
+      while (offs.length <= imgIdx) offs.push({ x: 0, y: 0 });
+      offs[imgIdx] = { x: curX, y: curY };
+      onUpdate({ ...content, galleryOffsets: offs } as any);
+    };
+    const onUp = () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  };
+
+  const handleImgHeightDragStart = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    heightDraggingRef.current = true;
+    const startY = e.clientY;
+    const startH = containerHeight > 0 ? containerHeight : 250;
+    const onMove = (mv: MouseEvent) => {
+      if (!heightDraggingRef.current) return;
+      const newH = Math.max(50, Math.min(800, Math.round(startH + mv.clientY - startY)));
+      onUpdate({ ...content, containerHeight: newH } as any);
+    };
+    const onUp = () => { heightDraggingRef.current = false; document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  };
+
+  const slotIndexRef = React.useRef<number | null>(null);
   const { openAssetPicker, AssetPickerModal } = useAssetPicker({
     onSelect: (result) => {
-      onUpdate({ ...content, url: result.url, gallery: [result.url] });
+      const idx = slotIndexRef.current;
+      if (idx !== null) {
+        const newGallery = [...(content.gallery || [])];
+        newGallery[idx] = result.url;
+        onUpdate({ ...content, url: newGallery[0] || result.url, gallery: newGallery });
+        slotIndexRef.current = null;
+      } else {
+        onUpdate({ ...content, url: result.url, gallery: [result.url] });
+      }
     },
   });
+  const openAssetPickerForSlot = (idx: number) => {
+    slotIndexRef.current = idx;
+    openAssetPicker();
+  };
 
-  const displayImages = (gallery.length > 0 ? gallery : [url]).filter(u => !!u);
+  // Keep empty strings (placeholder slots) – filter only undefined/null
+  const rawImages = gallery.length > 0 ? gallery : (url ? [url] : []);
+  const displayImages = rawImages.filter(u => u !== undefined && u !== null);
   const hasGallery = displayImages.length > 1;
 
   // Size and Crop logic
   const zoomFactor = size > 100 ? size / 100 : 1;
+
+  const getImagePanMetrics = React.useCallback((imgIdx: number) => {
+    const frame = frameRefs.current[imgIdx];
+    const natural = naturalSizeRefs.current[imgIdx];
+    if (!frame || !natural || natural.width <= 0 || natural.height <= 0) {
+      return null;
+    }
+
+    const frameRect = frame.getBoundingClientRect();
+    const frameWidth = frameRect.width;
+    const frameHeight = frameRect.height;
+    if (frameWidth <= 0 || frameHeight <= 0) {
+      return null;
+    }
+
+    const baseScale = Math.max(frameWidth / natural.width, frameHeight / natural.height);
+    const renderedWidth = natural.width * baseScale * zoomFactor;
+    const renderedHeight = natural.height * baseScale * zoomFactor;
+    const maxOffsetX = Math.max(0, (renderedWidth - frameWidth) / 2);
+    const maxOffsetY = Math.max(0, (renderedHeight - frameHeight) / 2);
+
+    return { maxOffsetX, maxOffsetY };
+  }, [zoomFactor]);
+
+  const clampImagePanOffset = React.useCallback((imgIdx: number, x: number, y: number) => {
+    const metrics = getImagePanMetrics(imgIdx);
+    if (!metrics) {
+      return { x, y };
+    }
+    const { maxOffsetX, maxOffsetY } = metrics;
+    return {
+      x: Math.max(-maxOffsetX, Math.min(maxOffsetX, x)),
+      y: Math.max(-maxOffsetY, Math.min(maxOffsetY, y)),
+    };
+  }, [getImagePanMetrics]);
+
+  const getImageObjectPosition = React.useCallback((imgIdx: number, x: number, y: number) => {
+    const clamped = clampImagePanOffset(imgIdx, x, y);
+    const metrics = getImagePanMetrics(imgIdx);
+    if (!metrics) {
+      return '50% 50%';
+    }
+    const posX = metrics.maxOffsetX > 0 ? 50 + (clamped.x / metrics.maxOffsetX) * 50 : 50;
+    const posY = metrics.maxOffsetY > 0 ? 50 - (clamped.y / metrics.maxOffsetY) * 50 : 50;
+    return {
+      x: Math.max(0, Math.min(100, posX)),
+      y: Math.max(0, Math.min(100, posY)),
+    };
+  }, [clampImagePanOffset, getImagePanMetrics]);
   
   // Pro galerii držíme šířku (obrázky na pozicích) a zmenšujeme jen výšku.
   // Pro samostatný obrázek zmenšujeme šířku standardně.
@@ -3475,6 +4308,51 @@ function ImageEditor({ content, isEditing, onUpdate }: ImageEditorProps) {
   }
 
   const renderSingleImage = (imgUrl: string, index?: number) => {
+    // Prázdný placeholder slot
+    if (!imgUrl) {
+      const baseH = containerHeight > 0 ? containerHeight : 200;
+      const idx = index ?? 0;
+      return (
+        <div key={idx} style={{ position: 'relative', width: '100%' }}>
+          <div
+            onClick={() => openAssetPickerForSlot(idx)}
+            style={{
+              width: '100%', height: baseH,
+              display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8,
+              backgroundColor: '#f1f5f9', border: '2px dashed #cbd5e1', borderRadius: 8,
+              cursor: 'pointer', transition: 'background 0.15s',
+            }}
+            onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#e2e8f0')}
+            onMouseLeave={e => (e.currentTarget.style.backgroundColor = '#f1f5f9')}
+          >
+            <ImageIcon className="w-8 h-8 text-slate-400" />
+            <span style={{ fontSize: 12, color: '#94a3b8', fontWeight: 500 }}>Nahrát obrázek</span>
+          </div>
+          {/* X tlačítko pro smazání slotu */}
+          {isEditing && (
+            <button
+              onClick={e => {
+                e.stopPropagation();
+                const newGallery = [...(content.gallery || [])];
+                newGallery.splice(idx, 1);
+                const newCaptions = [...(content.galleryCaptions || [])];
+                newCaptions.splice(idx, 1);
+                onUpdate({ ...content, gallery: newGallery, galleryCaptions: newCaptions, url: newGallery[0] || '' });
+              }}
+              style={{
+                position: 'absolute', top: 6, right: 6,
+                width: 22, height: 22, borderRadius: '50%',
+                background: 'rgba(0,0,0,0.55)', border: 'none', cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10,
+              }}
+            >
+              <span style={{ color: 'white', fontSize: 13, lineHeight: 1 }}>×</span>
+            </button>
+          )}
+        </div>
+      );
+    }
+
     // Základní výška pro mřížku (pokud není nastavena explicitně)
     const baseHeight = containerHeight > 0 ? containerHeight : 250;
     
@@ -3503,8 +4381,13 @@ function ImageEditor({ content, isEditing, onUpdate }: ImageEditorProps) {
 
     const imgH = typeof currentHeight === 'number' ? `${currentHeight}px` : currentHeight;
     const imgObjectFit = (hasGallery || size > 100 || containerHeight > 0) ? 'cover' : 'contain';
-    const imgTransform = size > 100 ? `scale(${zoomFactor})` : 'none';
-    const dropShadowFilter = galleryStrokeWidth > 0
+    const galleryOffsets: { x: number; y: number }[] = (content as any).galleryOffsets || [];
+    const panX: number = galleryOffsets[idx]?.x ?? 0;
+    const panY: number = galleryOffsets[idx]?.y ?? 0;
+    const clampedPan = clampImagePanOffset(idx, panX, panY);
+    const objectPosition = getImageObjectPosition(idx, clampedPan.x, clampedPan.y);
+    const imgTransform = zoomFactor !== 1 ? `scale(${zoomFactor})` : 'none';
+    const dropShadowFilter = (!isRect && galleryStrokeWidth > 0)
       ? `drop-shadow(0 0 ${galleryStrokeWidth}px ${galleryStrokeColor}) drop-shadow(0 0 ${Math.ceil(galleryStrokeWidth / 2)}px ${galleryStrokeColor})`
       : undefined;
 
@@ -3514,34 +4397,74 @@ function ImageEditor({ content, isEditing, onUpdate }: ImageEditorProps) {
         className="relative w-full flex flex-col"
         style={{ transform: rotationDeg !== 0 ? `rotate(${rotationDeg}deg)` : undefined }}
       >
+        {/* X tlačítko pro smazání obrázku z galerie */}
+        {isEditing && (
+          <button
+            onClick={e => {
+              e.stopPropagation();
+              const newGallery = [...(content.gallery || [])];
+              newGallery.splice(idx, 1);
+              const newCaptions = [...(content.galleryCaptions || [])];
+              newCaptions.splice(idx, 1);
+              onUpdate({ ...content, gallery: newGallery, galleryCaptions: newCaptions, url: newGallery[0] || '' });
+            }}
+            style={{
+              position: 'absolute', top: 6, right: 6,
+              width: 22, height: 22, borderRadius: '50%',
+              background: 'rgba(0,0,0,0.55)', border: 'none', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 20,
+            }}
+          >
+            <span style={{ color: 'white', fontSize: 14, lineHeight: 1 }}>×</span>
+          </button>
+        )}
         {/* ── Image + overlays wrapper (relative so absolute children position here) ── */}
         <div
           className="relative w-full"
-          style={{
-            filter: dropShadowFilter,
-            ...(isRect && galleryStrokeWidth > 0 ? { outline: `${galleryStrokeWidth}px solid ${galleryStrokeColor}`, outlineOffset: `-${galleryStrokeWidth}px`, borderRadius: borderRadiusCss } : {}),
-          }}
+          style={{ filter: dropShadowFilter }}
         >
           {/* Image */}
           {isRect ? (
             <div
-              className="relative overflow-hidden w-full flex items-center justify-center bg-slate-50"
+              className="relative overflow-hidden w-full bg-slate-50"
+              ref={(node) => { frameRefs.current[idx] = node; }}
               style={{ height: imgH, borderRadius: borderRadiusCss }}
             >
               <img
                 src={imgUrl} alt={alt || ''}
                 className="w-full transition-opacity duration-300"
-                style={{ opacity: isLoading ? 0.5 : 1, height: currentHeight === 'auto' ? 'auto' : '100%', objectFit: imgObjectFit, transform: imgTransform, transformOrigin: 'center center' }}
-                onLoad={() => setIsLoading(false)}
+                style={{ opacity: isLoading ? 0.5 : 1, height: currentHeight === 'auto' ? 'auto' : '100%', objectFit: imgObjectFit, objectPosition: `${objectPosition.x}% ${objectPosition.y}%`, transform: imgTransform, transformOrigin: 'center center' }}
+                onLoad={(e) => {
+                  naturalSizeRefs.current[idx] = {
+                    width: e.currentTarget.naturalWidth,
+                    height: e.currentTarget.naturalHeight,
+                  };
+                  setIsLoading(false);
+                }}
               />
+              {galleryStrokeWidth > 0 && (
+                <div style={{ position: 'absolute', inset: 0, borderRadius: borderRadiusCss, boxShadow: `inset 0 0 0 ${galleryStrokeWidth}px ${galleryStrokeColor}`, pointerEvents: 'none', zIndex: 10 }} />
+              )}
+              {isEditing && (
+                <div onMouseDown={(e) => handleImgPanStart(e, idx)} style={{ position: 'absolute', inset: 0, cursor: 'grab', zIndex: 5, userSelect: 'none' }} />
+              )}
             </div>
           ) : (
-            <div className="relative w-full" style={{ height: imgH }}>
+            <div className="relative w-full" ref={(node) => { frameRefs.current[idx] = node; }} style={{ height: imgH }}>
               <img
                 src={imgUrl} alt={alt || ''}
-                style={{ opacity: isLoading ? 0.5 : 1, width: '100%', height: '100%', objectFit: 'cover', display: 'block', clipPath: clipPath, WebkitClipPath: clipPath, transform: imgTransform, transformOrigin: 'center center' }}
-                onLoad={() => setIsLoading(false)}
+                style={{ opacity: isLoading ? 0.5 : 1, width: '100%', height: '100%', objectFit: 'cover', objectPosition: `${objectPosition.x}% ${objectPosition.y}%`, display: 'block', clipPath: clipPath, WebkitClipPath: clipPath, transform: imgTransform, transformOrigin: 'center center' }}
+                onLoad={(e) => {
+                  naturalSizeRefs.current[idx] = {
+                    width: e.currentTarget.naturalWidth,
+                    height: e.currentTarget.naturalHeight,
+                  };
+                  setIsLoading(false);
+                }}
               />
+              {isEditing && (
+                <div onMouseDown={(e) => handleImgPanStart(e, idx)} style={{ position: 'absolute', inset: 0, cursor: 'grab', zIndex: 5, userSelect: 'none' }} />
+              )}
             </div>
           )}
 
@@ -3569,7 +4492,13 @@ function ImageEditor({ content, isEditing, onUpdate }: ImageEditorProps) {
 
         {/* Individual Item Caption */}
         {hasGallery && itemCaption && (
-          <div className="mt-1.5 text-center font-medium text-slate-600 px-1 leading-tight" style={{ fontSize: content.captionFontSize ? `${content.captionFontSize}px` : '11px' }}>
+          <div
+            className="text-center font-medium text-slate-600 px-1 leading-tight"
+            style={{
+              marginTop: '10px',
+              fontSize: content.captionFontSize ? `${content.captionFontSize}px` : '11px',
+            }}
+          >
             {itemCaption}
           </div>
         )}
@@ -3596,6 +4525,15 @@ function ImageEditor({ content, isEditing, onUpdate }: ImageEditorProps) {
           {displayImages.map((imgUrl, idx) => renderSingleImage(imgUrl, idx))}
         </div>
 
+        {/* Height drag handle (bobánek) */}
+        {isEditing && (containerHeight > 0 || displayImages.length > 0) && (
+          <div onMouseDown={handleImgHeightDragStart}
+            style={{ position: 'absolute', bottom: -8, left: 0, right: 0, height: 16, cursor: 'row-resize', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 20 }}>
+            <div style={{ width: 36, height: 8, borderRadius: 4, backgroundColor: '#6366f1', boxShadow: '0 0 0 2px #818cf8, 0 2px 8px rgba(99,102,241,0.5)', display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 3 }}>
+              {[0,1,2].map(i => <div key={i} style={{ width: 2, height: 2, borderRadius: '50%', backgroundColor: 'white' }} />)}
+            </div>
+          </div>
+        )}
       </div>
       
       {showCaption && caption && (
@@ -3625,6 +4563,12 @@ function TableEditor({ content, isEditing, onUpdate, onBlur }: TableEditorProps)
   const [hasBorder, setHasBorder] = useState(content.hasBorder);
   const [hasRoundedCorners, setHasRoundedCorners] = useState(content.hasRoundedCorners);
   const [colorStyle, setColorStyle] = useState(content.colorStyle || 'default');
+  const [fontSize, setFontSize] = useState(content.fontSize || 'base');
+  const [density, setDensity] = useState(content.density || 'normal');
+
+  // Sync fontSize/density when content prop is updated externally (e.g. from ProBlockSettingsPanel)
+  useEffect(() => { setFontSize(content.fontSize || 'base'); }, [content.fontSize]);
+  useEffect(() => { setDensity(content.density || 'normal'); }, [content.density]);
 
   // Click outside detection to close editing
   useEffect(() => {
@@ -3709,14 +4653,30 @@ function TableEditor({ content, isEditing, onUpdate, onBlur }: TableEditorProps)
         hasBorder,
         hasRoundedCorners,
         colorStyle,
+        fontSize,
+        density,
       });
     },
   });
+
+  // Derive CSS vars from density and fontSize
+  const DENSITY_VARS: Record<string, { paddingV: string; paddingH: string; minWidth: string }> = {
+    compact:  { paddingV: '3px',   paddingH: '6px',  minWidth: '0px'  },
+    normal:   { paddingV: '10px',  paddingH: '14px', minWidth: '60px' },
+    spacious: { paddingV: '18px',  paddingH: '20px', minWidth: '80px' },
+  };
+  const FONT_SIZE_MAP: Record<string, string> = {
+    xs:   '10px',
+    sm:   '12px',
+    base: '13px',
+    lg:   '15px',
+  };
 
   // Apply styles to table element
   useEffect(() => {
     if (editorWrapperRef.current) {
       const table = editorWrapperRef.current.querySelector('table');
+      const wrapper = editorWrapperRef.current;
       if (table) {
         // Apply border class
         if (!hasBorder) {
@@ -3730,6 +4690,9 @@ function TableEditor({ content, isEditing, onUpdate, onBlur }: TableEditorProps)
         } else {
           table.classList.remove('no-rounded');
         }
+        // Apply density class
+        table.classList.toggle('table-density-compact', density === 'compact');
+
         // Apply color style
         if (colorStyle && colorStyle !== 'default') {
           const colorMap: Record<string, { header: string; border: string }> = {
@@ -3751,8 +4714,14 @@ function TableEditor({ content, isEditing, onUpdate, onBlur }: TableEditorProps)
           table.style.removeProperty('--table-border-color');
         }
       }
+      // Apply density + font-size CSS vars on the wrapper so they cascade into cells
+      const dv = DENSITY_VARS[density] || DENSITY_VARS.normal;
+      wrapper.style.setProperty('--table-cell-padding-v', dv.paddingV);
+      wrapper.style.setProperty('--table-cell-padding-h', dv.paddingH);
+      wrapper.style.setProperty('--table-cell-min-width', dv.minWidth);
+      wrapper.style.setProperty('--table-font-size', FONT_SIZE_MAP[fontSize] || FONT_SIZE_MAP.base);
     }
-  }, [hasBorder, hasRoundedCorners, colorStyle, editor]);
+  }, [hasBorder, hasRoundedCorners, colorStyle, density, fontSize, editor]);
 
   const applyColorStyle = (style: string) => {
     setColorStyle(style as TableContent['colorStyle']);
@@ -3778,6 +4747,24 @@ function TableEditor({ content, isEditing, onUpdate, onBlur }: TableEditorProps)
       ...content,
       html: editor?.getHTML() || content.html,
       hasRoundedCorners: checked,
+    });
+  };
+
+  const applyFontSize = (size: TableContent['fontSize']) => {
+    setFontSize(size || 'base');
+    onUpdate({
+      ...content,
+      html: editor?.getHTML() || content.html,
+      fontSize: size,
+    });
+  };
+
+  const applyDensity = (d: TableContent['density']) => {
+    setDensity(d || 'normal');
+    onUpdate({
+      ...content,
+      html: editor?.getHTML() || content.html,
+      density: d,
     });
   };
 
@@ -4058,9 +5045,34 @@ interface ConnectPairsEditorBlockProps {
   isEditing: boolean;
   onUpdate: (content: ConnectPairsContent) => void;
   activityNumber?: number;
+  fontSizes: FontSizes;
 }
 
-function ConnectPairsEditorBlock({ content, isEditing, onUpdate, activityNumber }: ConnectPairsEditorBlockProps) {
+function ConnectPairsEditorBlock({ content, isEditing, onUpdate, activityNumber, fontSizes }: ConnectPairsEditorBlockProps) {
+  const compactFontSizes = getFontSizes('small');
+  const isCompact = fontSizes.body === compactFontSizes.body;
+  const activityLabelStyle = getActivityLabelStyle(fontSizes);
+  const headerGap = isCompact ? '10px' : '12px';
+  const outerSpacingClass = isCompact ? 'space-y-2.5' : 'space-y-4';
+  const pairsSpacingClass = isCompact ? 'space-y-2' : 'space-y-3';
+  const connectorWidth = isCompact ? '28px' : '40px';
+  const cardPaddingClass = isCompact ? 'px-2.5 py-2' : 'px-3 py-2.5';
+  const cardTextClass = isCompact ? 'text-[13px]' : 'text-sm';
+  const itemGapClass = isCompact ? 'gap-2' : 'gap-3';
+  const pairGapClass = isCompact ? 'gap-8' : 'gap-12';
+  const instructionStyle: React.CSSProperties = activityLabelStyle;
+  const choiceBubbleStyle: React.CSSProperties = {
+    width: isCompact ? '19px' : '21px',
+    height: isCompact ? '19px' : '21px',
+    minWidth: isCompact ? '19px' : '21px',
+    minHeight: isCompact ? '19px' : '21px',
+    borderRadius: '50%',
+    border: '1.5px solid #1e293b',
+    color: '#1e293b',
+    backgroundColor: '#ffffff',
+    fontSize: isCompact ? '10px' : '11px',
+  };
+
   // Logic for shuffling in view mode (consistent with print)
   const rightItems = React.useMemo(() => {
     const items = content.pairs.map((p, idx) => ({ ...p.right, originalIdx: idx }));
@@ -4145,7 +5157,7 @@ function ConnectPairsEditorBlock({ content, isEditing, onUpdate, activityNumber 
 
     // View mode - UI polished with labels inside
     return (
-      <div className={`flex-1 flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm border shadow-sm transition-all ${
+      <div className={`flex-1 flex items-center ${itemGapClass} ${cardPaddingClass} rounded-xl ${cardTextClass} border shadow-sm transition-all ${
         side === 'left' 
           ? 'bg-blue-50 border-blue-100 text-blue-900' 
           : 'bg-purple-50 border-purple-100 text-purple-900'
@@ -4153,17 +5165,7 @@ function ConnectPairsEditorBlock({ content, isEditing, onUpdate, activityNumber 
         {label && (
           <div 
             className="flex items-center justify-center shrink-0 font-semibold choice-circle"
-            style={{
-              width: '21px',
-              height: '21px',
-              minWidth: '21px',
-              minHeight: '21px',
-              borderRadius: '50%',
-              border: '1.5px solid #1e293b',
-              color: '#1e293b',
-              backgroundColor: '#ffffff',
-              fontSize: '11px',
-            }}
+            style={choiceBubbleStyle}
           >
             {label.replace('.', '').replace(':', '')}
           </div>
@@ -4181,7 +5183,7 @@ function ConnectPairsEditorBlock({ content, isEditing, onUpdate, activityNumber 
               )}
             </div>
           ) : (
-            <div className="leading-tight">
+            <div className="leading-tight" style={{ fontSize: fontSizes.body }}>
               {item.content ? <LatexRenderer text={item.content} /> : <span className="opacity-30 italic">...</span>}
             </div>
           )}
@@ -4191,9 +5193,9 @@ function ConnectPairsEditorBlock({ content, isEditing, onUpdate, activityNumber 
   };
 
   return (
-    <div className="space-y-4">
+    <div className={outerSpacingClass}>
       {/* Header with activity number */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center" style={{ gap: headerGap }}>
         {activityNumber && (
           <div
             className="flex items-center justify-center shrink-0 font-bold text-white"
@@ -4208,13 +5210,13 @@ function ConnectPairsEditorBlock({ content, isEditing, onUpdate, activityNumber 
             {activityNumber}
           </div>
         )}
-        <span className="font-semibold text-slate-800">
+        <span className="font-semibold text-slate-800" style={instructionStyle}>
           {content.instruction || 'Spoj správné dvojice'}
         </span>
       </div>
 
       {/* Pairs grid */}
-      <div className="space-y-3" style={{ paddingLeft: activityNumber ? '32px' : 0 }}>
+      <div className={pairsSpacingClass} style={{ paddingLeft: activityNumber ? '32px' : 0 }}>
         {isEditing ? (
           // Editing mode - show pairs directly
           content.pairs.map((pair, idx) => (
@@ -4238,13 +5240,13 @@ function ConnectPairsEditorBlock({ content, isEditing, onUpdate, activityNumber 
         ) : (
           // View mode - UI polished with labels inside
           content.pairs.map((pair, idx) => (
-            <div key={pair.id} className="flex items-center gap-12 group"> {/* Even more space in the middle */}
+            <div key={pair.id} className={`flex items-center ${pairGapClass} group`}>
               {renderItem(pair.left, 'left', pair.id, `${idx + 1}.`)}
               
               <div className="flex-shrink-0 flex flex-col items-center">
-                <div className="w-10 h-[1.5px] bg-slate-200 relative">
-                  <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-slate-300" />
-                  <div className="absolute right-0 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-slate-300" />
+                <div className="h-[1.5px] bg-slate-200 relative" style={{ width: connectorWidth }}>
+                  <div className="absolute left-0 top-1/2 -translate-y-1/2 rounded-full bg-slate-300" style={{ width: isCompact ? '5px' : '6px', height: isCompact ? '5px' : '6px' }} />
+                  <div className="absolute right-0 top-1/2 -translate-y-1/2 rounded-full bg-slate-300" style={{ width: isCompact ? '5px' : '6px', height: isCompact ? '5px' : '6px' }} />
                 </div>
               </div>
               
@@ -4276,14 +5278,16 @@ interface ImageHotspotsEditorBlockProps {
   isEditing: boolean;
   onUpdate: (content: ImageHotspotsContent) => void;
   activityNumber?: number;
+  fontSizes: FontSizes;
 }
 
-function ImageHotspotsEditorBlock({ content, isEditing, onUpdate, activityNumber }: ImageHotspotsEditorBlockProps) {
+function ImageHotspotsEditorBlock({ content, isEditing, onUpdate, activityNumber, fontSizes }: ImageHotspotsEditorBlockProps) {
   const containerRef = React.useRef<HTMLDivElement>(null);
   const [draggedHotspotId, setDraggedHotspotId] = useState<string | null>(null);
   const [isPlacementMode, setIsPlacementMode] = useState(false);
   const [ghostPos, setGhostPos] = useState<{ x: number, y: number } | null>(null);
   const isDraggingRef = React.useRef(false);
+  const activityLabelStyle = getActivityLabelStyle(fontSizes);
   const ignoreNextClickRef = React.useRef(false);
   const dragStartRef = React.useRef<{ x: number; y: number; hX: number; hY: number } | null>(null);
 
@@ -4429,7 +5433,7 @@ function ImageHotspotsEditorBlock({ content, isEditing, onUpdate, activityNumber
             {activityNumber}
           </div>
         )}
-        <span className="font-semibold text-slate-800">
+        <span className="font-semibold text-slate-800" style={activityLabelStyle}>
           {content.instruction || 'Označ správná místa na obrázku'}
         </span>
       </div>
@@ -4646,9 +5650,11 @@ interface VideoQuizEditorBlockProps {
   isEditing: boolean;
   onUpdate: (content: VideoQuizContent) => void;
   activityNumber?: number;
+  fontSizes: FontSizes;
 }
 
-function VideoQuizEditorBlock({ content, isEditing, onUpdate, activityNumber }: VideoQuizEditorBlockProps) {
+function VideoQuizEditorBlock({ content, isEditing, onUpdate, activityNumber, fontSizes }: VideoQuizEditorBlockProps) {
+  const activityLabelStyle = getActivityLabelStyle(fontSizes);
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
@@ -4698,7 +5704,7 @@ function VideoQuizEditorBlock({ content, isEditing, onUpdate, activityNumber }: 
             {activityNumber}
           </div>
         )}
-        <span className="font-medium text-slate-700">
+        <span className="font-medium text-slate-700" style={activityLabelStyle}>
           {content.instruction || 'Video kvíz'}
         </span>
       </div>
@@ -5051,6 +6057,202 @@ function FreeCanvasActivityBlock({ block, isEditing, onUpdate, activityNumber }:
       <div className="w-full overflow-hidden" style={{ borderTop: isFullscreen ? 'none' : '1px solid #e5e7eb' }}>
         <FreeCanvasEditor content={content} onUpdate={onUpdate} />
       </div>
+    </div>
+  );
+}
+
+// ============================================
+// CHART BLOCK
+// ============================================
+
+const WS_CHART_PALETTE = ['#6366f1', '#22d3ee', '#f59e0b', '#10b981', '#f43f5e', '#a78bfa', '#34d399', '#fb923c'];
+const WS_CHART_CAT_COLORS: Record<string, string> = {
+  válka: '#ef4444', politika: '#6366f1', kultura: '#f59e0b',
+  ekonomika: '#10b981', věda: '#22d3ee', náboženství: '#a78bfa',
+};
+
+const WS_CHART_TYPES = [
+  { id: 'bar' as const,      label: 'Sloupce',  emoji: '📊' },
+  { id: 'line' as const,     label: 'Linie',    emoji: '📈' },
+  { id: 'area' as const,     label: 'Oblast',   emoji: '🌊' },
+  { id: 'pie' as const,      label: 'Koláč',    emoji: '🥧' },
+  { id: 'radar' as const,    label: 'Pavučina', emoji: '🕸️' },
+  { id: 'timeline' as const, label: 'Timeline', emoji: '⏳' },
+];
+
+export function WorksheetChartBlock({
+  content,
+  onUpdate,
+  isEditing,
+}: {
+  content: ChartContent;
+  onUpdate: (patch: any) => void;
+  isEditing: boolean;
+}) {
+  const { chartType = 'bar', chartTitle = '', chartColumns = ['Kategorie', 'Hodnota'], chartRows = [], chartHeight = 320 } = content;
+  const isTimeline = chartType === 'timeline';
+  const dataKeys = chartColumns.slice(1);
+
+  const setContent = (patch: Partial<ChartContent>) => onUpdate({ ...content, ...patch });
+  const updateCell = (ri: number, ci: number, val: string) => {
+    const r = chartRows.map(row => [...row]);
+    r[ri][ci] = val;
+    setContent({ chartRows: r });
+  };
+  const addRow = () => setContent({ chartRows: [...chartRows, new Array(chartColumns.length).fill('')] });
+  const removeRow = (ri: number) => setContent({ chartRows: chartRows.filter((_, i) => i !== ri) });
+  const updateCol = (ci: number, val: string) => { const c = [...chartColumns]; c[ci] = val; setContent({ chartColumns: c }); };
+  const addSeries = () => {
+    const c = [...chartColumns, `Řada ${chartColumns.length}`];
+    setContent({ chartColumns: c, chartRows: chartRows.map(r => [...r, '']) });
+  };
+  const removeSeries = () => {
+    if (chartColumns.length <= 2) return;
+    setContent({ chartColumns: chartColumns.slice(0, -1), chartRows: chartRows.map(r => r.slice(0, -1)) });
+  };
+  const setType = (t: ChartContent['chartType']) => {
+    if (t === 'timeline') {
+      setContent({ chartType: t, chartColumns: ['Rok/Období', 'Popis', 'Kategorie'], chartRows: chartRows.map(r => [r[0] ?? '', r[1] ?? '', r[2] ?? '']) });
+    } else if (isTimeline) {
+      setContent({ chartType: t, chartColumns: ['Kategorie', 'Hodnota'], chartRows: chartRows.map(r => [r[0] ?? '', r[1] ?? '']) });
+    } else {
+      setContent({ chartType: t });
+    }
+  };
+
+  const rechartsData = chartRows.map(row => {
+    const obj: Record<string, string | number> = { name: row[0] || '' };
+    dataKeys.forEach((k, i) => { obj[k] = parseFloat(row[i + 1]) || 0; });
+    return obj;
+  });
+  const tt = { borderRadius: 10, fontSize: 12, border: '1px solid #e2e8f0', background: '#fff' };
+
+  const renderChart = () => {
+    if (chartType === 'timeline') {
+      return (
+        <div style={{ paddingLeft: 28, position: 'relative' }}>
+          <div style={{ position: 'absolute', left: 10, top: 0, bottom: 0, width: 3, background: 'linear-gradient(to bottom,#6366f1,#22d3ee)', borderRadius: 99 }} />
+          {chartRows.map((row, i) => {
+            const color = WS_CHART_CAT_COLORS[(row[2] || '').toLowerCase()] || WS_CHART_PALETTE[i % WS_CHART_PALETTE.length];
+            return (
+              <div key={i} style={{ display: 'flex', gap: 10, marginBottom: 12, position: 'relative' }}>
+                <div style={{ position: 'absolute', left: -22, top: 5, width: 12, height: 12, borderRadius: '50%', backgroundColor: color, border: '3px solid white', boxShadow: `0 0 0 2px ${color}` }} />
+                <div style={{ background: 'white', borderRadius: 10, padding: '8px 12px', border: `1px solid ${color}33`, borderLeft: `4px solid ${color}`, flex: 1, boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
+                  <div style={{ fontSize: 13, fontWeight: 800, color }}>{row[0]}</div>
+                  <div style={{ fontSize: 12, color: '#334155', lineHeight: 1.4 }}>{row[1]}</div>
+                  {row[2] && <div style={{ marginTop: 3, fontSize: 10, fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase' }}>{row[2]}</div>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      );
+    }
+    const height = chartHeight;
+    if (chartType === 'pie') return (
+      <ResponsiveContainer width="100%" height={height}>
+        <PieChart><Pie data={rechartsData.map(d => ({ name: d.name, value: (d[dataKeys[0]] as number) || 0 }))} cx="50%" cy="50%" outerRadius="70%" innerRadius="30%" paddingAngle={3} dataKey="value" label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`} labelLine={false}>
+          {rechartsData.map((_, i) => <Cell key={i} fill={WS_CHART_PALETTE[i % WS_CHART_PALETTE.length]} />)}
+        </Pie><Tooltip contentStyle={tt} /></PieChart>
+      </ResponsiveContainer>
+    );
+    if (chartType === 'line') return (
+      <ResponsiveContainer width="100%" height={height}>
+        <LineChart data={rechartsData} margin={{ top: 10, right: 20, left: -10, bottom: 10 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" /><XAxis dataKey="name" tick={{ fontSize: 12 }} /><YAxis tick={{ fontSize: 12 }} />
+          <Tooltip contentStyle={tt} />{dataKeys.length > 1 && <Legend wrapperStyle={{ fontSize: 12 }} />}
+          {dataKeys.map((k, i) => <Line key={k} type="monotone" dataKey={k} stroke={WS_CHART_PALETTE[i]} strokeWidth={3} dot={{ r: 4 }} />)}
+        </LineChart>
+      </ResponsiveContainer>
+    );
+    if (chartType === 'area') return (
+      <ResponsiveContainer width="100%" height={height}>
+        <AreaChart data={rechartsData} margin={{ top: 10, right: 20, left: -10, bottom: 10 }}>
+          <defs>{dataKeys.map((k, i) => <linearGradient key={k} id={`wscg${i}`} x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={WS_CHART_PALETTE[i]} stopOpacity={0.35} /><stop offset="95%" stopColor={WS_CHART_PALETTE[i]} stopOpacity={0} /></linearGradient>)}</defs>
+          <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" /><XAxis dataKey="name" tick={{ fontSize: 12 }} /><YAxis tick={{ fontSize: 12 }} />
+          <Tooltip contentStyle={tt} />{dataKeys.length > 1 && <Legend wrapperStyle={{ fontSize: 12 }} />}
+          {dataKeys.map((k, i) => <Area key={k} type="monotone" dataKey={k} stroke={WS_CHART_PALETTE[i]} strokeWidth={2.5} fill={`url(#wscg${i})`} />)}
+        </AreaChart>
+      </ResponsiveContainer>
+    );
+    if (chartType === 'radar') return (
+      <ResponsiveContainer width="100%" height={height}>
+        <RadarChart data={rechartsData}><PolarGrid stroke="#e2e8f0" /><PolarAngleAxis dataKey="name" tick={{ fontSize: 12 }} />
+          {dataKeys.map((k, i) => <Radar key={k} dataKey={k} stroke={WS_CHART_PALETTE[i]} fill={WS_CHART_PALETTE[i]} fillOpacity={0.28} />)}
+          {dataKeys.length > 1 && <Legend wrapperStyle={{ fontSize: 12 }} />}
+          <Tooltip contentStyle={tt} />
+        </RadarChart>
+      </ResponsiveContainer>
+    );
+    return (
+      <ResponsiveContainer width="100%" height={height}>
+        <BarChart data={rechartsData} margin={{ top: 10, right: 20, left: -10, bottom: 10 }} barCategoryGap="8%">
+          <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+          <XAxis dataKey="name" tick={{ fontSize: 12 }} /><YAxis tick={{ fontSize: 12 }} />
+          <Tooltip contentStyle={tt} />{dataKeys.length > 1 && <Legend wrapperStyle={{ fontSize: 12 }} />}
+          {dataKeys.map((k, i) => (
+            <Bar key={k} dataKey={k} fill={WS_CHART_PALETTE[i]} radius={[6, 6, 0, 0]}>
+              {dataKeys.length === 1 && rechartsData.map((_, idx) => <Cell key={idx} fill={WS_CHART_PALETTE[idx % WS_CHART_PALETTE.length]} />)}
+            </Bar>
+          ))}
+        </BarChart>
+      </ResponsiveContainer>
+    );
+  };
+
+  return (
+    <div style={{ borderRadius: 12, border: '1px solid #e2e8f0', overflow: 'hidden', background: 'white' }}>
+      {isEditing && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 12px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', flexWrap: 'wrap' }}>
+          {WS_CHART_TYPES.map(ct => (
+            <button
+              key={ct.id}
+              onClick={() => setType(ct.id)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 4, padding: '3px 10px', borderRadius: 8,
+                border: `2px solid ${chartType === ct.id ? '#6366f1' : '#e2e8f0'}`,
+                background: chartType === ct.id ? '#eef2ff' : 'white',
+                color: chartType === ct.id ? '#4338ca' : '#64748b',
+                fontSize: 11, fontWeight: 600, cursor: 'pointer',
+              }}
+            >
+              <span style={{ fontSize: 12 }}>{ct.emoji}</span> {ct.label}
+            </button>
+          ))}
+          <input value={chartTitle} onChange={e => setContent({ chartTitle: e.target.value })} placeholder="Název grafu…" style={{ marginLeft: 'auto', fontSize: 11, padding: '3px 8px', border: '1px solid #e2e8f0', borderRadius: 6, width: 140, color: '#334155' }} />
+          <input type="number" value={chartHeight} onChange={e => setContent({ chartHeight: parseInt(e.target.value) || 320 })} min={150} max={600} step={20} title="Výška grafu" style={{ fontSize: 11, padding: '3px 6px', border: '1px solid #e2e8f0', borderRadius: 6, width: 60, color: '#334155' }} />
+          <span style={{ fontSize: 10, color: '#94a3b8' }}>px</span>
+        </div>
+      )}
+      <div style={{ padding: isTimeline ? '16px 16px 16px 28px' : '16px', position: 'relative' }}>
+        {chartTitle && <div style={{ textAlign: 'center', fontWeight: 700, fontSize: 15, color: '#0f172a', marginBottom: 12 }}>{chartTitle}</div>}
+        {renderChart()}
+      </div>
+      {isEditing && (
+        <div style={{ borderTop: '1px solid #e2e8f0', background: '#f8fafc', padding: 12 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', marginBottom: 8, letterSpacing: 0.5 }}>Data tabulka</div>
+          <div style={{ display: 'flex', gap: 4, marginBottom: 4 }}>
+            {chartColumns.map((col, ci) => (
+              <input key={ci} value={col} onChange={e => updateCol(ci, e.target.value)} style={{ flex: 1, minWidth: 60, fontSize: 11, fontWeight: 700, padding: '4px 8px', border: '1px solid #c7d2fe', borderRadius: 6, background: '#eef2ff', color: '#4338ca' }} placeholder={ci === 0 ? 'Kategorie' : `Řada ${ci}`} />
+            ))}
+            {!isTimeline && (
+              <>
+                <button onClick={addSeries} style={{ padding: '4px 10px', borderRadius: 6, border: '1px dashed #c7d2fe', background: 'white', color: '#6366f1', fontSize: 16, cursor: 'pointer' }} title="Přidat řadu">+</button>
+                {chartColumns.length > 2 && <button onClick={removeSeries} style={{ padding: '4px 10px', borderRadius: 6, border: '1px dashed #fca5a5', background: 'white', color: '#ef4444', fontSize: 16, cursor: 'pointer' }} title="Odebrat řadu">−</button>}
+              </>
+            )}
+          </div>
+          {chartRows.map((row, ri) => (
+            <div key={ri} style={{ display: 'flex', gap: 4, marginBottom: 4 }}>
+              {row.map((cell, ci) => (
+                <input key={ci} value={cell} onChange={e => updateCell(ri, ci, e.target.value)} style={{ flex: 1, minWidth: 60, fontSize: 11, padding: '4px 8px', border: '1px solid #e2e8f0', borderRadius: 6, background: ri % 2 === 0 ? '#f8fafc' : 'white', color: '#334155' }} placeholder={ci === 0 ? (isTimeline ? 'Rok' : 'Název') : ci === 1 && isTimeline ? 'Popis' : isTimeline ? 'Kategorie' : '0'} />
+              ))}
+              <button onClick={() => removeRow(ri)} style={{ padding: '4px 8px', borderRadius: 6, border: 'none', background: 'transparent', color: '#cbd5e1', cursor: 'pointer', fontSize: 16 }} onMouseEnter={e => ((e.target as HTMLElement).style.color = '#ef4444')} onMouseLeave={e => ((e.target as HTMLElement).style.color = '#cbd5e1')}>×</button>
+            </div>
+          ))}
+          <button onClick={addRow} style={{ marginTop: 4, width: '100%', padding: '6px', borderRadius: 6, border: '1px dashed #c7d2fe', background: 'white', color: '#6366f1', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>+ Přidat řádek</button>
+        </div>
+      )}
     </div>
   );
 }

@@ -26,6 +26,7 @@ import {
   Table,
   FileText,
   QrCode,
+  LayoutGrid,
 } from 'lucide-react';
 import {
   Select,
@@ -56,6 +57,7 @@ const BLOCK_TYPE_CONFIG: Record<BlockType, { label: string; icon: typeof Type; c
   'heading': { label: 'Nadpis', icon: Type, color: 'text-blue-500' },
   'paragraph': { label: 'Odstavec', icon: AlignLeft, color: 'text-slate-500' },
   'infobox': { label: 'Infobox', icon: Info, color: 'text-amber-500' },
+  'layout-section': { label: 'Layout sekce', icon: LayoutGrid, color: 'text-violet-500' },
   'multiple-choice': { label: 'Výběr odpovědi', icon: ListChecks, color: 'text-green-500' },
   'fill-blank': { label: 'Doplňování', icon: TextCursorInput, color: 'text-purple-500' },
   'free-answer': { label: 'Volná odpověď', icon: MessageSquare, color: 'text-rose-500' },

@@ -10,6 +10,8 @@ import { Worksheet } from '../types/worksheet';
 import { supabase } from './supabase/client';
 import { fetchTeacherTombstones } from './sync/teacher-tombstones';
 import { queueUpsert, queueDelete } from './sync/sync-queue';
+import { stripBase64FromObject } from './supabase/upload-image';
+import { migrateWorksheetTextContent } from './worksheet-text';
 
 const WORKSHEETS_KEY = 'vividbooks_worksheets';
 const WORKSHEET_PREFIX = 'vividbooks_worksheet_';
@@ -111,24 +113,25 @@ export function getWorksheetList(): WorksheetListItem[] {
  */
 function saveWorksheetToLocalStorageOnly(worksheet: Worksheet): void {
   try {
+    const normalizedWorksheet = migrateWorksheetTextContent(worksheet);
     // Uložit samotný worksheet
     localStorage.setItem(
-      `${WORKSHEET_PREFIX}${worksheet.id}`, 
-      JSON.stringify(worksheet)
+      `${WORKSHEET_PREFIX}${normalizedWorksheet.id}`, 
+      JSON.stringify(normalizedWorksheet)
     );
     
     // Aktualizovat seznam
     const list = getWorksheetList();
-    const existingIndex = list.findIndex(item => item.id === worksheet.id);
+    const existingIndex = list.findIndex(item => item.id === normalizedWorksheet.id);
     
     const listItem: WorksheetListItem = {
       id: worksheet.id,
-      title: worksheet.title || 'Bez názvu',
-      subject: worksheet.metadata?.subject || 'other',
-      grade: worksheet.metadata?.grade || 6,
+      title: normalizedWorksheet.title || 'Bez názvu',
+      subject: normalizedWorksheet.metadata?.subject || 'other',
+      grade: normalizedWorksheet.metadata?.grade || 6,
       updatedAt: new Date().toISOString(),
       createdAt: existingIndex >= 0 ? list[existingIndex].createdAt : new Date().toISOString(),
-      blocksCount: worksheet.blocks?.length || 0,
+      blocksCount: normalizedWorksheet.blocks?.length || 0,
       folderId: existingIndex >= 0 ? list[existingIndex].folderId : undefined,
     };
     
@@ -147,38 +150,52 @@ function saveWorksheetToLocalStorageOnly(worksheet: Worksheet): void {
 
 /**
  * Uložit/aktualizovat pracovní list do localStorage a Supabase
+ * @param folderId - pokud je zadáno, přepíše existující folderId (vhodné při vytváření nového listu z generátoru)
  */
-export function saveWorksheet(worksheet: Worksheet): void {
+export function saveWorksheet(worksheet: Worksheet, folderId?: string | null, bookId?: string | null): void {
+  const normalizedWorksheet = migrateWorksheetTextContent(worksheet);
   // Pokusit se uložit do localStorage (může selhat při quota exceeded)
   try {
-    saveWorksheetToLocalStorageOnly(worksheet);
+    saveWorksheetToLocalStorageOnly(normalizedWorksheet);
   } catch (e) {
     console.warn('[WorksheetStorage] localStorage failed, continuing with Supabase sync:', e);
   }
 
   // Remove from deleted IDs if re-saving
   try {
-    if (deletedWorksheetIds.has(worksheet.id)) {
-      deletedWorksheetIds.delete(worksheet.id);
+    if (deletedWorksheetIds.has(normalizedWorksheet.id)) {
+      deletedWorksheetIds.delete(normalizedWorksheet.id);
       localStorage.setItem(DELETED_IDS_KEY, JSON.stringify([...deletedWorksheetIds]));
     }
   } catch (e) {
     // Ignore localStorage errors
   }
 
-  // Get folder ID from list
-  const folderId = getWorksheetList().find(w => w.id === worksheet.id)?.folderId ?? null;
+  // Pokud je folderId explicitně předáno, použij ho; jinak načti z listu
+  const effectiveFolderId = folderId !== undefined
+    ? folderId
+    : (getWorksheetList().find(w => w.id === normalizedWorksheet.id)?.folderId ?? null);
+
+  // Aktualizovat folderId i v localStorage listu (pro nové listy)
+  if (folderId !== undefined) {
+    try {
+      const list = getWorksheetList();
+      const idx = list.findIndex(w => w.id === normalizedWorksheet.id);
+      if (idx >= 0) list[idx].folderId = folderId;
+      localStorage.setItem(WORKSHEETS_KEY, JSON.stringify(list));
+    } catch (e) { /* ignore */ }
+  }
 
   // Přímo uložit do Supabase (ne přes queue která také používá localStorage)
-  saveWorksheetDirectToSupabase(worksheet, folderId);
+  saveWorksheetDirectToSupabase(normalizedWorksheet, effectiveFolderId, bookId);
   
-  console.log('[WorksheetStorage] Worksheet saved:', worksheet.id);
+  console.log('[WorksheetStorage] Worksheet saved:', normalizedWorksheet.id, 'folder:', effectiveFolderId, 'book:', bookId);
 }
 
 /**
  * Přímé uložení do Supabase (bypass localStorage queue)
  */
-async function saveWorksheetDirectToSupabase(worksheet: Worksheet, folderId: string | null): Promise<void> {
+async function saveWorksheetDirectToSupabase(worksheet: Worksheet, folderId: string | null, bookId?: string | null): Promise<void> {
   try {
     const { supabase } = await import('./supabase/client');
     const { data: { user } } = await supabase.auth.getUser();
@@ -188,20 +205,26 @@ async function saveWorksheetDirectToSupabase(worksheet: Worksheet, folderId: str
       return;
     }
     
+    // ❌ NIKDY neukládat base64 do DB! Stripovat před každým uložením.
+    const safeWorksheet = stripBase64FromObject(worksheet) as Worksheet;
+
+    const upsertData: Record<string, unknown> = {
+      id: safeWorksheet.id,
+      teacher_id: user.id,
+      name: safeWorksheet.title || 'Nový pracovní list',
+      worksheet_type: safeWorksheet.metadata?.subject || null,
+      content: safeWorksheet,
+      pdf_settings: (safeWorksheet as any).pdfSettings || {},
+      folder_id: folderId,
+      source_dataset_id: safeWorksheet.metadata?.sourceDatasetId ?? null,
+      created_at: safeWorksheet.createdAt || new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    if (bookId !== undefined) upsertData.book_id = bookId;
+
     const { error } = await supabase
       .from('teacher_worksheets')
-      .upsert({
-        id: worksheet.id,
-        teacher_id: user.id,
-        name: worksheet.title || 'Nový pracovní list',
-        worksheet_type: worksheet.metadata?.subject || null,
-        // Store full worksheet JSON so print/export can reconstruct everything
-        content: worksheet,
-        pdf_settings: (worksheet as any).pdfSettings || {},
-        folder_id: folderId,
-        created_at: worksheet.createdAt || new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      }, { onConflict: 'id' });
+      .upsert(upsertData, { onConflict: 'id' });
     
     if (error) {
       console.error('[WorksheetStorage] Supabase save error:', error);
@@ -214,14 +237,57 @@ async function saveWorksheetDirectToSupabase(worksheet: Worksheet, folderId: str
 }
 
 /**
- * Načíst pracovní list podle ID
+ * Načíst pracovní list podle ID (pouze localStorage)
  */
 export function getWorksheet(id: string): Worksheet | null {
   try {
     const data = localStorage.getItem(`${WORKSHEET_PREFIX}${id}`);
-    return data ? JSON.parse(data) : null;
+    return data ? migrateWorksheetTextContent(JSON.parse(data)) : null;
   } catch (error) {
     console.error('Error loading worksheet:', error);
+    return null;
+  }
+}
+
+/**
+ * Načíst pracovní list ze Supabase (async fallback, když není v localStorage).
+ * Po načtení uloží do localStorage jako cache.
+ */
+export async function loadWorksheetFromSupabase(id: string): Promise<Worksheet | null> {
+  try {
+    const { supabase } = await import('./supabase/client');
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (!user) {
+      console.warn('[WorksheetStorage] No user for Supabase load');
+      return null;
+    }
+
+    const { data, error } = await supabase
+      .from('teacher_worksheets')
+      .select('content')
+      .eq('id', id)
+      .eq('teacher_id', user.id)
+      .single();
+
+    if (error || !data?.content) {
+      console.warn('[WorksheetStorage] Not found in Supabase:', id, error?.message);
+      return null;
+    }
+
+    const worksheet = migrateWorksheetTextContent(data.content as Worksheet);
+
+    // Uložit do localStorage jako cache pro příští načtení
+    try {
+      localStorage.setItem(`${WORKSHEET_PREFIX}${id}`, JSON.stringify(worksheet));
+    } catch {
+      // localStorage může být plný — nevadí, jen nebudeme cachovat
+    }
+
+    console.log('[WorksheetStorage] Loaded from Supabase and cached:', id);
+    return worksheet;
+  } catch (err) {
+    console.error('[WorksheetStorage] loadWorksheetFromSupabase error:', err);
     return null;
   }
 }
@@ -548,15 +614,18 @@ export async function migrateToSupabase(): Promise<{ success: boolean; migrated:
       const worksheet = getWorksheet(wsMeta.id);
       if (!worksheet) continue;
 
+      // ❌ NIKDY neukládat base64 do DB! Stripovat před každým uložením.
+      const safeWs = stripBase64FromObject(worksheet) as Worksheet;
+
       const { error } = await supabase
         .from('teacher_worksheets')
         .upsert({
-          id: worksheet.id,
+          id: safeWs.id,
           teacher_id: userId,
-          name: worksheet.title || 'Nový pracovní list',
-          worksheet_type: worksheet.metadata?.subject,
-          content: worksheet,
-          pdf_settings: (worksheet as any).pdfSettings,
+          name: safeWs.title || 'Nový pracovní list',
+          worksheet_type: safeWs.metadata?.subject,
+          content: safeWs,
+          pdf_settings: (safeWs as any).pdfSettings,
           folder_id: wsMeta.folderId,
           created_at: wsMeta.createdAt,
           updated_at: wsMeta.updatedAt || new Date().toISOString(),

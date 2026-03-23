@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../utils/supabase/client';
 import { useViewMode } from '../../contexts/ViewModeContext';
 import * as storage from '../../utils/profile-storage';
+import { consumeAuthReturnTo } from '../../utils/auth-return-to';
 import { Loader2 } from 'lucide-react';
 
 /**
@@ -149,8 +150,8 @@ export function AuthCallback() {
         setMessage('Přihlášení úspěšné! Přesměrování...');
         setViewMode('teacher');
         
-        // Redirect to profile page
-        setTimeout(() => navigate('/library/profile'), 1500);
+        const returnTo = consumeAuthReturnTo() ?? '/library/my-content';
+        setTimeout(() => navigate(returnTo), 800);
         
       } catch (err: any) {
         console.error('[AuthCallback] Error:', err);
