@@ -44,13 +44,13 @@ Ta:
 - **Supabase CLI:** `supabase db push` / `supabase migration up` (podle tvého workflow), nebo  
 - **Dashboard → SQL:** vložit obsah souboru a spustit.
 
-### 2b) Oprava rekurze RLS („infinite recursion … teacher_books“)
+### 2b) Oprava rekurze RLS („infinite recursion … teacher_books“ / HTTP 500)
 
-Po migraci sdílení může PostgreSQL hlásit chybu při vytváření / načítání knih. Spusť navíc:
+Po migraci sdílení může PostgreSQL hlásit chybu při vytváření / načítání knih. Spusť **v tomto pořadí**:
 
-**`supabase/migrations/20260324140000_fix_teacher_books_rls_recursion.sql`**
+1. **`20260324140000_fix_teacher_books_rls_recursion.sql`** — politiky `teacher_book_shares` používají **`teacher_book_is_owner`** (`SECURITY DEFINER`).
 
-Ta nahradí v politikách `teacher_book_shares` přímý `SELECT` z `teacher_books` funkcí **`teacher_book_is_owner`** (`SECURITY DEFINER`), aby se přerušil cyklus RLS.
+2. **`20260324150000_teacher_books_shared_select_definer.sql`** — politika **`teacher_books_select_shared`** a čtení listů ve sdílené knize používají **`user_has_teacher_book_share`**, aby se při SELECT na `teacher_books` vůbec nešlo přes RLS do `teacher_book_shares` (jinak může zůstat 500 i po kroku 1).
 
 ### 3) Google OAuth (přihlášení)
 
@@ -67,4 +67,4 @@ V **Google Cloud Console** u OAuth klienta zůstává redirect na **Supabase** (
 
 ---
 
-Po nasazení migrací ověř v **Table Editor** tabulku `teacher_book_shares` a v **Database → Functions** funkce `lookup_user_id_for_book_share` a `teacher_book_is_owner`.
+Po nasazení migrací ověř v **Database → Functions** také **`user_has_teacher_book_share`**.

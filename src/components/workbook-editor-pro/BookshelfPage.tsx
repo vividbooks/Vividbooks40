@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, type ChangeEvent } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { Plus, BookOpen, MoreHorizontal, Pencil, Trash2, Clock, Layers, Search, X, Download, Upload, Loader2, Share2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '../../utils/supabase/client';
@@ -10,7 +10,8 @@ import {
 } from '../../utils/workbook/workbook-json-db';
 import { sanitizeFilenamePart } from '../../utils/workbook/workbook-json-io';
 import { fetchTeacherBooksForCurrentUser } from '../../utils/supabase/teacher-books';
-import { laioutBookEditorPath } from '../../utils/laiout-routes';
+import { laioutBookEditorPath, LAIOUT_BOOKSHELF_PATH } from '../../utils/laiout-routes';
+import { formatSupabaseError } from '../../utils/supabase/errors';
 import { LaioutBrandLogo } from './LaioutBrandLogo';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -702,7 +703,6 @@ function ShareBookDialog({
 
 export function BookshelfPage() {
   const navigate = useNavigate();
-  const location = useLocation();
   const [books, setBooks] = useState<TeacherBook[]>([]);
   const [loading, setLoading] = useState(true);
   const [showNew, setShowNew] = useState(false);
@@ -718,8 +718,7 @@ export function BookshelfPage() {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
-        const next = `${location.pathname}${location.search}`;
-        navigate(`/teacher/login?next=${encodeURIComponent(next)}`);
+        navigate(LAIOUT_BOOKSHELF_PATH, { replace: true });
         return;
       }
 
@@ -743,7 +742,7 @@ export function BookshelfPage() {
       );
     } catch (e) {
       console.error('[Bookshelf] load error', e);
-      toast.error('Nepodařilo se načíst knihy');
+      toast.error(`Nepodařilo se načíst knihy: ${formatSupabaseError(e)}`);
     } finally {
       setLoading(false);
     }
@@ -776,10 +775,7 @@ export function BookshelfPage() {
 
     if (error || !data) {
       console.error('[Bookshelf] create book', error);
-      const hint = error?.message
-        ? `${error.message}${error?.hint ? ` (${error.hint})` : ''}`
-        : 'Neznámá chyba';
-      toast.error(`Nepodařilo se vytvořit knihu: ${hint}`);
+      toast.error(`Nepodařilo se vytvořit knihu: ${formatSupabaseError(error ?? 'Neznámá chyba')}`);
       return;
     }
 
