@@ -26,6 +26,7 @@ import {
 import { useStudentAuth } from '../../contexts/StudentAuthContext';
 import { verifyStudentCode, StudentAccessData } from '../../utils/legacy-api';
 import { supabase } from '../../utils/supabase/client';
+import { getAuthCallbackRedirectUrl } from '../../utils/router-basename';
 import VividLogo from '../../imports/Group70';
 import { RandomLottieBackground } from '../auth/RandomLottieBackground';
 
@@ -118,7 +119,7 @@ export function StudentLoginPage() {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${window.location.origin}/auth/callback`,
+          redirectTo: getAuthCallbackRedirectUrl(),
         },
       });
       

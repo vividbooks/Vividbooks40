@@ -14,3 +14,10 @@ export function getRouterBasename(): string {
   }
   return '';
 }
+
+/** Plná URL pro Supabase OAuth `redirectTo` (funguje i s `base` `/Vividbooks40/` na GitHub Pages). */
+export function getAuthCallbackRedirectUrl(): string {
+  if (typeof window === 'undefined') return '/auth/callback';
+  const base = getRouterBasename();
+  return `${window.location.origin}${base}/auth/callback`;
+}

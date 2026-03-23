@@ -6,6 +6,7 @@ import { useViewMode } from '../../contexts/ViewModeContext';
 import VividLogo from '../../imports/Group70';
 import * as storage from '../../utils/profile-storage';
 import { setAuthReturnTo, authReturnToFromSearchParams } from '../../utils/auth-return-to';
+import { getAuthCallbackRedirectUrl } from '../../utils/router-basename';
 import { getLegacySchoolWithLicenses, MappedSchoolData } from '../../utils/legacy-api';
 
 const SAVED_SCHOOL_KEY = 'vivid-teacher-school';
@@ -528,7 +529,7 @@ export function TeacherLoginPage() {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${window.location.origin}/auth/callback`,
+          redirectTo: getAuthCallbackRedirectUrl(),
         },
       });
       
@@ -561,7 +562,7 @@ export function TeacherLoginPage() {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${window.location.origin}/auth/callback`,
+          redirectTo: getAuthCallbackRedirectUrl(),
         },
       });
       

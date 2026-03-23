@@ -11,7 +11,7 @@ import { MyClassesLayout } from './components/MyClassesLayout';
 import { WorksheetEditorLayout } from './components/WorksheetEditorLayout';
 import { ProEditorLayout } from './components/worksheet-editor-pro';
 import { ImportAgentStudio } from './components/admin/ImportAgentStudio';
-import { WorkbookProLayout, BookshelfPage } from './components/workbook-editor-pro';
+import { WorkbookProLayout, BookshelfPage, LaioutLoginPage } from './components/workbook-editor-pro';
 import { PaperTestPage } from './components/worksheet-editor/PaperTestPage';
 import { PrintPage } from './components/worksheet-editor-pro/PrintPage';
 import { PaperTestUploadPage } from './components/worksheet-editor/PaperTestUploadPage';
@@ -77,17 +77,6 @@ import { syncFromSupabase as syncFiles, migrateToSupabase as migrateFiles } from
 function TeacherLoginLegacyRedirect() {
   const { search } = useLocation();
   return <Navigate to={`/teacher/login${search}`} replace />;
-}
-
-/** Po neautorizovaném vstupu na /laiout/ — přihlášení a návrat zpět. */
-function RedirectToTeacherLoginWithNext() {
-  const { pathname, search } = useLocation();
-  return (
-    <Navigate
-      to={`/teacher/login?next=${encodeURIComponent(pathname + search)}`}
-      replace
-    />
-  );
 }
 
 // Helper component to redirect /quiz/new while preserving URL params
@@ -464,7 +453,7 @@ export default function App() {
             isAuthenticated || isOfflineMode() ? (
               <BookshelfPage />
             ) : (
-              <RedirectToTeacherLoginWithNext />
+              <LaioutLoginPage />
             )
           }
         />
@@ -474,7 +463,7 @@ export default function App() {
             isAuthenticated || isOfflineMode() ? (
               <WorkbookProLayout theme={theme} toggleTheme={toggleTheme} />
             ) : (
-              <RedirectToTeacherLoginWithNext />
+              <LaioutLoginPage />
             )
           }
         />
