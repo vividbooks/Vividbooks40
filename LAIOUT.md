@@ -44,16 +44,27 @@ Ta:
 - **Supabase CLI:** `supabase db push` / `supabase migration up` (podle tvého workflow), nebo  
 - **Dashboard → SQL:** vložit obsah souboru a spustit.
 
+### 2b) Oprava rekurze RLS („infinite recursion … teacher_books“)
+
+Po migraci sdílení může PostgreSQL hlásit chybu při vytváření / načítání knih. Spusť navíc:
+
+**`supabase/migrations/20260324140000_fix_teacher_books_rls_recursion.sql`**
+
+Ta nahradí v politikách `teacher_book_shares` přímý `SELECT` z `teacher_books` funkcí **`teacher_book_is_owner`** (`SECURITY DEFINER`), aby se přerušil cyklus RLS.
+
 ### 3) Google OAuth (přihlášení)
 
 V **Supabase → Authentication → URL configuration**:
 
-- **Redirect URLs** musí obsahovat  
-  `https://<tvůj-web>/auth/callback`  
-  a u lokálu např. `http://localhost:5173/auth/callback` (port podle Vite).
+- **Site URL** pro produkci nastav na kanonickou adresu webu (ne localhost), např.  
+  `https://vividbooks.github.io/Vividbooks40`  
+  — jinak po OAuth může Supabase přesměrovat na starý localhost z **Site URL**.
+- **Redirect URLs** (všechny, které používáš) musí obsahovat např.  
+  `https://vividbooks.github.io/Vividbooks40/auth/callback`  
+  a lokálně `http://localhost:3000/auth/callback` (port podle `vite` / `npm run dev`).
 
-V **Google Cloud Console** (OAuth klient) stejné autorizované přesměrování.
+V **Google Cloud Console** u OAuth klienta zůstává redirect na **Supabase** (`https://<ref>.supabase.co/auth/v1/callback`), ne na Vividbooks URL — ty řeší až Supabase podle `redirectTo` z aplikace.
 
 ---
 
-Po nasazení migrace ověř v **Table Editor**, že existuje tabulka `teacher_book_shares`, a v **Database → Functions** funkce `lookup_user_id_for_book_share`.
+Po nasazení migrací ověř v **Table Editor** tabulku `teacher_book_shares` a v **Database → Functions** funkce `lookup_user_id_for_book_share` a `teacher_book_is_owner`.

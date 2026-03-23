@@ -15,9 +15,16 @@ export function getRouterBasename(): string {
   return '';
 }
 
-/** Plná URL pro Supabase OAuth `redirectTo` (funguje i s `base` `/Vividbooks40/` na GitHub Pages). */
+/**
+ * Plná URL pro Supabase OAuth `redirectTo`.
+ * Musí vycházet z Vite `import.meta.env.BASE_URL` (build pro GH = `/Vividbooks40/`),
+ * ne z dynamického getRouterBasename() — jinak na Pages vznikne `/auth/callback` bez prefixu,
+ * redirect není v Supabase allow listu a Supabase pošle uživatele na Site URL (často localhost).
+ */
 export function getAuthCallbackRedirectUrl(): string {
-  if (typeof window === 'undefined') return '/auth/callback';
-  const base = getRouterBasename();
-  return `${window.location.origin}${base}/auth/callback`;
+  const raw = import.meta.env.BASE_URL ?? '/';
+  const trimmed = raw.replace(/\/$/, '');
+  const path = trimmed ? `${trimmed}/auth/callback` : '/auth/callback';
+  if (typeof window === 'undefined') return path;
+  return `${window.location.origin}${path}`;
 }
