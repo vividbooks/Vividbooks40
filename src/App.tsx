@@ -65,6 +65,7 @@ import { LibraryLandingPage } from './components/library/LibraryLandingPage';
 import { supabase } from './utils/supabase/client';
 import { projectId, publicAnonKey } from './utils/supabase/info.tsx';
 import { fetchWithRetry } from './utils/supabase/fetch-helper';
+import { getRouterBasename } from './utils/router-basename';
 import { syncFromSupabase as syncQuizzes, migrateToSupabase as migrateQuizzes } from './utils/quiz-storage';
 import { syncFromSupabase as syncFolders, migrateToSupabase as migrateFolders } from './utils/folder-storage';
 import { syncLinksFromSupabase, migrateLinksToSupabase } from './utils/link-storage';
@@ -420,7 +421,7 @@ export default function App() {
     <ViewModeProvider>
     <ClassroomShareProvider>
     <StudentAuthProvider>
-    <Router basename={import.meta.env.PROD ? "/Vividbooks40" : ""}>
+    <Router basename={getRouterBasename() || undefined}>
       {/* Toast notifications */}
       <Toaster position="top-center" richColors />
       
@@ -446,6 +447,29 @@ export default function App() {
         <Route 
           path="/" 
           element={<WelcomePage theme={theme} toggleTheme={toggleTheme} />} 
+        />
+
+        {/* Laiout — hned pod / aby je nic nepředběhlo (RR7 + GitHub Pages) */}
+        <Route
+          path="/laiout"
+          element={
+            isAuthenticated || isOfflineMode() ? (
+              <BookshelfPage />
+            ) : (
+              <RedirectToTeacherLoginWithNext />
+            )
+          }
+        />
+        <Route path="/laiout/" element={<Navigate to="/laiout" replace />} />
+        <Route
+          path="/laiout/:id"
+          element={
+            isAuthenticated || isOfflineMode() ? (
+              <WorkbookProLayout theme={theme} toggleTheme={toggleTheme} />
+            ) : (
+              <RedirectToTeacherLoginWithNext />
+            )
+          }
         />
         
         <Route 
@@ -614,28 +638,6 @@ export default function App() {
           }
         />
 
-        {/* Laiout — knihovna + editor (stejné komponenty jako /admin/pro + /admin/workbook-pro/:id) */}
-        <Route
-          path="/laiout"
-          element={
-            isAuthenticated || isOfflineMode() ? (
-              <BookshelfPage />
-            ) : (
-              <RedirectToTeacherLoginWithNext />
-            )
-          }
-        />
-        <Route
-          path="/laiout/:id"
-          element={
-            isAuthenticated || isOfflineMode() ? (
-              <WorkbookProLayout theme={theme} toggleTheme={toggleTheme} />
-            ) : (
-              <RedirectToTeacherLoginWithNext />
-            )
-          }
-        />
-        
         <Route 
           path="/library/my-content/worksheet-editor/:id" 
           element={<WorksheetEditorLayout theme={theme} toggleTheme={toggleTheme} />} 
