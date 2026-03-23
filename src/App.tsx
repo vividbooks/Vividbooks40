@@ -73,12 +73,18 @@ import { syncFromSupabase as syncDocuments, migrateToSupabase as migrateDocument
 import { syncFromSupabase as syncWorksheets, migrateToSupabase as migrateWorksheets } from './utils/worksheet-storage';
 import { syncFromSupabase as syncFiles, migrateToSupabase as migrateFiles } from './utils/file-storage';
 
-/** Po neautorizovaném vstupu na /laiout — přihlášení a návrat zpět. */
+/** Staré záložky / odkazy na `/teacher-login` → správná routa `/teacher/login` (query zachováme). */
+function TeacherLoginLegacyRedirect() {
+  const { search } = useLocation();
+  return <Navigate to={`/teacher/login${search}`} replace />;
+}
+
+/** Po neautorizovaném vstupu na /laiout/ — přihlášení a návrat zpět. */
 function RedirectToTeacherLoginWithNext() {
   const { pathname, search } = useLocation();
   return (
     <Navigate
-      to={`/teacher-login?next=${encodeURIComponent(pathname + search)}`}
+      to={`/teacher/login?next=${encodeURIComponent(pathname + search)}`}
       replace
     />
   );
@@ -442,6 +448,7 @@ export default function App() {
         
         {/* Teacher routes */}
         <Route path="/teacher/login" element={<TeacherLoginPage />} />
+        <Route path="/teacher-login" element={<TeacherLoginLegacyRedirect />} />
         <Route path="/auth/callback" element={<AuthCallback />} />
         <Route path="/logout" element={<LogoutPage />} />
         <Route 
@@ -449,9 +456,10 @@ export default function App() {
           element={<WelcomePage theme={theme} toggleTheme={toggleTheme} />} 
         />
 
-        {/* Laiout — hned pod / aby je nic nepředběhlo (RR7 + GitHub Pages) */}
+        {/* Laiout — kanonicky /laiout/ (s /) kvůli GH Pages laiout/index.html; /laiout přesměruje */}
+        <Route path="/laiout" element={<Navigate to="/laiout/" replace />} />
         <Route
-          path="/laiout"
+          path="/laiout/"
           element={
             isAuthenticated || isOfflineMode() ? (
               <BookshelfPage />
@@ -460,7 +468,6 @@ export default function App() {
             )
           }
         />
-        <Route path="/laiout/" element={<Navigate to="/laiout" replace />} />
         <Route
           path="/laiout/:id"
           element={

@@ -747,7 +747,7 @@ export function BookshelfPage() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
         const next = `${location.pathname}${location.search}`;
-        navigate(`/teacher-login?next=${encodeURIComponent(next)}`);
+        navigate(`/teacher/login?next=${encodeURIComponent(next)}`);
         return;
       }
 

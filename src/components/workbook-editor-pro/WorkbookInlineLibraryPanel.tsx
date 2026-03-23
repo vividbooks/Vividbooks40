@@ -4,7 +4,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { X, Search, Plus, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '../../utils/supabase/client';
@@ -42,6 +42,7 @@ export function WorkbookInlineLibraryPanel({
   currentBookId,
 }: WorkbookInlineLibraryPanelProps) {
   const navigate = useNavigate();
+  const location = useLocation();
   const [books, setBooks] = useState<TeacherBookWithMeta[]>([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
@@ -59,8 +60,8 @@ export function WorkbookInlineLibraryPanel({
         user = session?.user ?? null;
       }
       if (!user) {
-        const next = `${window.location.pathname}${window.location.search}`;
-        navigate(`/teacher-login?next=${encodeURIComponent(next)}`);
+        const next = `${location.pathname}${location.search}`;
+        navigate(`/teacher/login?next=${encodeURIComponent(next)}`);
         onCloseRef.current();
         return;
       }
@@ -79,7 +80,7 @@ export function WorkbookInlineLibraryPanel({
     } finally {
       setLoading(false);
     }
-  }, [navigate]);
+  }, [navigate, location.pathname, location.search]);
 
   useEffect(() => {
     if (isOpen) {

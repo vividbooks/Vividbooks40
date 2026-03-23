@@ -43,6 +43,11 @@ jobs:
           VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
         run: npm run build
 
+      - name: Verify GitHub Pages SPA output (laiout + 404)
+        run: |
+          test -f build/laiout/index.html || (echo "Missing build/laiout/index.html — vite plugin github-pages-spa-404?" && exit 1)
+          test -f build/404.html || (echo "Missing build/404.html" && exit 1)
+
       - name: Deploy to gh-pages branch
         uses: JamesIves/github-pages-deploy-action@v4
         with:

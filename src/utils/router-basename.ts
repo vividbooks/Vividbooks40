@@ -1,8 +1,8 @@
 /**
  * Basename pro React Router = stejný prefix jako Vite `base` / import.meta.env.BASE_URL.
  *
- * Na GitHub Pages je správná URL …/Vividbooks40/laiout. Pokud někdo otevře jen …/laiout
- * (bez názvu repa), nepoužijeme basename, aby routy jako /laiout pořád fungovaly.
+ * Na GitHub Pages je správná URL …/Vividbooks40/laiout/ (knihovna). Pokud někdo otevře jen …/laiout
+ * (bez názvu repa), nepoužijeme basename, aby routy jako /laiout/ pořád fungovaly.
  */
 export function getRouterBasename(): string {
   const configured = (import.meta.env.BASE_URL ?? '/').replace(/\/$/, '');

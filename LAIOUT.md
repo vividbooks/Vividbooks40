@@ -4,13 +4,14 @@
 
 | Cesta | Co zobrazí |
 |--------|------------|
-| **`/laiout`** | Knihovna všech knih (dříve také `/admin/pro`) |
+| **`/laiout/`** | Knihovna všech knih (dříve také `/admin/pro`) — **doporučeno s koncovým /** |
+| **`/laiout`** | Přesměruje na **`/laiout/`** |
 | **`/laiout/:id`** | Editor konkrétní knihy (`id` = ID z tabulky `teacher_books`) |
 
-Na GitHub Pages je k cestám automaticky prefix z Vite (`basename`), např.  
-`/Vividbooks40/laiout`.
+Na GitHub Pages je prefix z Vite (`basename`), např. **`https://vividbooks.github.io/Vividbooks40/laiout/`**.  
+Build vytvoří **`laiout/index.html`** (stejný obsah jako hlavní `index.html`), aby server vracel **200** místo holého 404 u cesty se složkou.
 
-Staré cesty **`/admin/pro`** a **`/admin/workbook-pro/:id`** dál fungují; nové kliky v editoru vedou na **`/laiout`**.
+Staré cesty **`/admin/pro`** a **`/admin/workbook-pro/:id`** dál fungují; nové kliky v editoru vedou na **`/laiout/`** (bez koncového lomítka tě přesměruje router na kanonickou URL).
 
 ---
 

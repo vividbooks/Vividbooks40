@@ -157,7 +157,7 @@ export function AuthCallback() {
         console.error('[AuthCallback] Error:', err);
         setStatus('error');
         setMessage('Nastala neočekávaná chyba');
-        setTimeout(() => navigate('/teacher-login'), 3000);
+        setTimeout(() => navigate('/teacher/login'), 3000);
       }
     };
     
@@ -187,7 +187,7 @@ export function AuthCallback() {
             console.error('[AuthCallback] Error setting session:', error);
             setStatus('error');
             setMessage('Chyba při přihlášení: ' + error.message);
-            setTimeout(() => navigate('/teacher-login'), 3000);
+            setTimeout(() => navigate('/teacher/login'), 3000);
             return;
           }
           
@@ -208,7 +208,7 @@ export function AuthCallback() {
       } else {
         setStatus('error');
         setMessage('Nepodařilo se dokončit přihlášení');
-        setTimeout(() => navigate('/teacher-login'), 3000);
+        setTimeout(() => navigate('/teacher/login'), 3000);
       }
     };
     

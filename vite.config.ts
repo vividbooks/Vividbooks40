@@ -4,17 +4,25 @@
   import path from 'path';
   import fs from 'fs';
 
-  /** GitHub Pages: neexistující cesty (např. /laiout) musí vrátit stejný HTML jako index — jinak prázdná stránka. */
+  /**
+   * GitHub Pages (project site /Vividbooks40/):
+   * - 404.html = index → SPA pro neznámé cesty (např. /laiout/:id)
+   * - laiout/index.html = index → GET /Vividbooks40/laiout/ vrací 200 (adresář + index.html)
+   *   (cesta bez koncového / na Pages někdy 404 — v aplikaci kanonicky /laiout/ a redirect z /laiout)
+   */
   function githubPagesSpa404() {
     return {
       name: 'github-pages-spa-404',
+      /** Po zkopírování `public/` (včetně 404.html) — přepíšeme 404 na plné SPA a doplníme laiout/. */
+      enforce: 'post' as const,
       closeBundle() {
         const outDir = path.resolve(__dirname, 'build');
         const indexHtml = path.join(outDir, 'index.html');
-        const notFoundHtml = path.join(outDir, '404.html');
-        if (fs.existsSync(indexHtml)) {
-          fs.copyFileSync(indexHtml, notFoundHtml);
-        }
+        if (!fs.existsSync(indexHtml)) return;
+        fs.copyFileSync(indexHtml, path.join(outDir, '404.html'));
+        const laioutDir = path.join(outDir, 'laiout');
+        fs.mkdirSync(laioutDir, { recursive: true });
+        fs.copyFileSync(indexHtml, path.join(laioutDir, 'index.html'));
       },
     };
   }
