@@ -236,15 +236,17 @@ export default function App() {
       }
 
       // 1. Test Supabase connectivity first (using robust fetch)
+      // Nepoužívat GET/HEAD na /rest/v1/ — od dubna 2026 anon klíč k rootu Data API nepůjde
+      // (viz https://github.com/orgs/supabase/discussions/42949). Auth health je veřejný ping.
       const testStart = Date.now();
       let supabaseConnected = false;
       try {
-        // Simple ping to check if Supabase is alive/woken up
-        const testResponse = await fetchWithRetry(`${import.meta.env.VITE_SUPABASE_URL}/rest/v1/`, {
-          method: 'HEAD',
-          headers: { 'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY },
+        const base = (import.meta.env.VITE_SUPABASE_URL ?? '').replace(/\/$/, '');
+        const testResponse = await fetchWithRetry(`${base}/auth/v1/health`, {
+          method: 'GET',
+          headers: { apikey: import.meta.env.VITE_SUPABASE_ANON_KEY },
           timeout: 8000,
-          retries: 1
+          retries: 1,
         });
         
         supabaseConnected = testResponse.ok;
