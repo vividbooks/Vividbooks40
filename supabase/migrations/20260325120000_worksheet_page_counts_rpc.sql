@@ -1,8 +1,11 @@
 -- Rychlé zjištění počtu stran z JSON content (bez stahování celého obsahu klientem jen kvůli meta).
 -- Používá se přehledem knihy Laiout při lehkém načtení řádků teacher_worksheets.
+-- teacher_worksheets.id je TEXT (ne uuid) — parametr musí být text[].
 
-CREATE OR REPLACE FUNCTION public.worksheet_page_counts(p_ids uuid[])
-RETURNS TABLE(id uuid, page_count integer)
+DROP FUNCTION IF EXISTS public.worksheet_page_counts(uuid[]);
+
+CREATE OR REPLACE FUNCTION public.worksheet_page_counts(p_ids text[])
+RETURNS TABLE(id text, page_count integer)
 LANGUAGE sql
 STABLE
 SECURITY INVOKER
@@ -32,5 +35,5 @@ AS $$
     AND w.teacher_id = auth.uid();
 $$;
 
-REVOKE ALL ON FUNCTION public.worksheet_page_counts(uuid[]) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.worksheet_page_counts(uuid[]) TO authenticated;
+REVOKE ALL ON FUNCTION public.worksheet_page_counts(text[]) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.worksheet_page_counts(text[]) TO authenticated;
