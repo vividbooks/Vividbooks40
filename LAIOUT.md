@@ -52,6 +52,16 @@ Po migraci sdílení může PostgreSQL hlásit chybu při vytváření / načít
 
 2. **`20260324150000_teacher_books_shared_select_definer.sql`** — politika **`teacher_books_select_shared`** a čtení listů ve sdílené knize používají **`user_has_teacher_book_share`**, aby se při SELECT na `teacher_books` vůbec nešlo přes RLS do `teacher_book_shares` (jinak může zůstat 500 i po kroku 1).
 
+### 2c) Přehled knihy — správný počet stran / náhledy
+
+Pro **rychlé načtení** se z DB tahají jen řádky `teacher_worksheets` bez celého `content`. Počet stran se doplňuje RPC **`worksheet_page_counts`** z uloženého JSON (`metadata.pageCount` nebo `blocks[].pageIndex`).
+
+Spusť migraci:
+
+**`supabase/migrations/20260325120000_worksheet_page_counts_rpc.sql`**
+
+Bez ní klient v konzoli vypíše varování a přehled může zůstat u kapitol se **1 stránkou**, dokud list neotevřeš.
+
 ### 3) Google OAuth (přihlášení)
 
 V **Supabase → Authentication → URL configuration**:

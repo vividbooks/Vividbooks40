@@ -52,6 +52,8 @@ import {
   getWorksheet as getWorksheetLocal,
   loadWorksheetFromSupabase,
 } from '../../utils/worksheet-storage';
+import { deriveWorksheetPageCount } from '../../utils/worksheet-page-count';
+import { replaceWorksheetPageSpan } from '../../utils/workbook/replace-worksheet-pages';
 
 interface WorkbookProLayoutProps {
   theme: 'light' | 'dark';
@@ -407,6 +409,23 @@ export function WorkbookProLayout({ theme, toggleTheme }: WorkbookProLayoutProps
         if (!seenIds.has(row.id)) { seenIds.add(row.id); lightRows.push(row); }
       }
 
+      /** Počty stran z DB (content.metadata / blocks) — bez tahání celého JSONu na klienta */
+      const countById: Record<string, number> = {};
+      if (lightRows.length > 0) {
+        const { data: rpcRows, error: rpcErr } = await supabase.rpc('worksheet_page_counts', {
+          p_ids: lightRows.map((r) => r.id),
+        });
+        if (rpcErr) {
+          console.warn('[WorkbookPro] worksheet_page_counts:', rpcErr.message);
+        } else {
+          for (const row of rpcRows ?? []) {
+            const rid = row?.id as string | undefined;
+            const pc = row?.page_count as number | undefined;
+            if (rid && typeof pc === 'number' && pc > 0) countById[rid] = pc;
+          }
+        }
+      }
+
       // Empty book — clear demo data and show empty canvas with correct pageLimit
       if (lightRows.length === 0) {
         setWorkbook(prev => ({
@@ -448,7 +467,15 @@ export function WorkbookProLayout({ theme, toggleTheme }: WorkbookProLayoutProps
           const localWs = getWorksheetLocal(light.id);
           const localPageCount = localWs?.metadata?.pageCount ?? 0;
           const cachedPageCount = newMeta[light.id]?.pageCount ?? 0;
-          const wsPageCount = localPageCount || cachedPageCount || 1;
+          const serverCount = countById[light.id] ?? 0;
+          const wsPageCount =
+            localPageCount > 0
+              ? localPageCount
+              : serverCount > 0
+                ? serverCount
+                : cachedPageCount > 0
+                  ? cachedPageCount
+                  : 1;
 
           newMeta[light.id] = {
             name: light.name,
@@ -496,6 +523,19 @@ export function WorkbookProLayout({ theme, toggleTheme }: WorkbookProLayoutProps
               changedWorksheetData[light.id] = fullCache[light.id];
             }
           }
+        }
+      }
+
+      // Bez lokálního draftu přebij počet stran hodnotou z DB (RPC), ať přehled neukazuje jen 1 stránku
+      for (const light of lightRows) {
+        const localPc = getWorksheetLocal(light.id)?.metadata?.pageCount ?? 0;
+        if (localPc > 0) continue;
+        const srv = countById[light.id];
+        if (srv == null || srv < 1) continue;
+        if (!newMeta[light.id]) {
+          newMeta[light.id] = { name: light.name, title: light.name, pageCount: srv };
+        } else {
+          newMeta[light.id].pageCount = srv;
         }
       }
 
@@ -598,8 +638,13 @@ export function WorkbookProLayout({ theme, toggleTheme }: WorkbookProLayoutProps
   }
 
   const ensureWorksheetLoaded = useCallback(async (worksheetId: string) => {
-    const existing = workbook.worksheets[worksheetId];
-    if (existing && Array.isArray(existing.blocks)) return;
+    const wb = workbookRef.current;
+    const existing = wb.worksheets[worksheetId];
+    if (existing && Array.isArray(existing.blocks) && existing.blocks.length > 0) {
+      const expected = deriveWorksheetPageCount(existing);
+      const span = wb.pages.filter((p) => p.worksheetId === worksheetId).length;
+      if (span === expected) return;
+    }
 
     try {
       const localWs = getWorksheetLocal(worksheetId);
@@ -620,6 +665,24 @@ export function WorkbookProLayout({ theme, toggleTheme }: WorkbookProLayoutProps
 
       if (!resolved) return;
 
+      const pageCount = deriveWorksheetPageCount(resolved);
+
+      try {
+        const raw = sessionStorage.getItem(cacheKey);
+        if (raw) {
+          const c = JSON.parse(raw) as WsMetaCache;
+          c.meta[worksheetId] = {
+            ...(c.meta[worksheetId] ?? { name: resolved.title, title: resolved.title }),
+            name: resolved.title || c.meta[worksheetId]?.name || '',
+            title: resolved.title || c.meta[worksheetId]?.title || '',
+            pageCount,
+          };
+          sessionStorage.setItem(cacheKey, JSON.stringify(c));
+        }
+      } catch {
+        /* ignore */
+      }
+
       const mergedFullCache = {
         ...readFullWorksheetCache(),
         [worksheetId]: resolved!,
@@ -627,12 +690,11 @@ export function WorkbookProLayout({ theme, toggleTheme }: WorkbookProLayoutProps
       writeFullWorksheetCache(mergedFullCache);
 
       setWorkbook((prev) => {
-        const current = prev.worksheets[worksheetId];
-        if (current && Array.isArray(current.blocks)) return prev;
+        const withPages = replaceWorksheetPageSpan(prev, worksheetId, pageCount);
         return {
-          ...prev,
+          ...withPages,
           worksheets: {
-            ...prev.worksheets,
+            ...withPages.worksheets,
             [worksheetId]: resolved!,
           },
         };
@@ -640,7 +702,7 @@ export function WorkbookProLayout({ theme, toggleTheme }: WorkbookProLayoutProps
     } catch (e) {
       console.warn('[WorkbookPro] ensureWorksheetLoaded failed', worksheetId, e);
     }
-  }, [workbook.worksheets]);
+  }, [cacheKey]);
 
   useEffect(() => {
     if (viewMode !== 'canvas') return;
@@ -1342,8 +1404,8 @@ export function WorkbookProLayout({ theme, toggleTheme }: WorkbookProLayoutProps
         currentBookId={id}
       />
 
-      {/* Figma-style left sidebar */}
-      {sidebarOpen && (
+      {/* Postranní panel knihy (kapitoly) — v design systému / data setu ne, ať zůstane jen mini-sidebar + editor */}
+      {sidebarOpen && viewMode !== 'design' && viewMode !== 'dataset' && (
         <aside 
           className="flex-shrink-0 flex flex-col overflow-hidden"
           style={{ backgroundColor: '#1e293b', width: '320px', borderRight: '1px solid #334155' }}
@@ -1396,20 +1458,6 @@ export function WorkbookProLayout({ theme, toggleTheme }: WorkbookProLayoutProps
               </div>
             </div>
           </div>
-          
-          
-          {(viewMode === 'design' || viewMode === 'dataset') && (
-            <div className="flex-1 overflow-y-auto p-4">
-              <h2 className="font-semibold text-sm text-slate-300 mb-2">
-                {viewMode === 'design' ? 'Design system' : 'Data set'}
-              </h2>
-              <p className="text-xs text-slate-500 leading-relaxed">
-                {viewMode === 'design'
-                  ? 'Upravte barvy, typografii a výchozí layout. Hlavní editor je uprostřed obrazovky.'
-                  : 'Soubory a texty pro AI jsou uložené v rámci této knihy (scope).'}
-              </p>
-            </div>
-          )}
 
           {/* Chapters list - when canvas viewMode */}
           {viewMode === 'canvas' && (
@@ -1562,8 +1610,8 @@ export function WorkbookProLayout({ theme, toggleTheme }: WorkbookProLayoutProps
         </aside>
       )}
       
-      {/* Toggle sidebar button when closed */}
-      {!sidebarOpen && (
+      {/* Toggle sidebar button when closed (jen když panel v daném režimu existuje) */}
+      {!sidebarOpen && viewMode !== 'design' && viewMode !== 'dataset' && (
         <button
           onClick={() => setSidebarOpen(true)}
           style={{

@@ -11,6 +11,7 @@ import {
   DEFAULT_WORKBOOK_SETTINGS,
 } from '../../types/workbook';
 import type { Worksheet } from '../../types/worksheet';
+import { deriveWorksheetPageCount } from '../worksheet-page-count';
 import {
   wrapWorkbookForExport,
   parseWorkbookImportRoot,
@@ -108,10 +109,7 @@ export async function fetchWorkbookForJsonExport(bookId: string): Promise<Workbo
     const wid = row.id;
     const ws: Worksheet = { ...content, id: wid };
     worksheets[wid] = ws;
-    const pageCount =
-      ws.metadata?.pageCount != null && Number(ws.metadata.pageCount) > 0
-        ? Math.round(Number(ws.metadata.pageCount))
-        : 1;
+    const pageCount = deriveWorksheetPageCount(ws);
     const chapter = {
       id: `chapter-${wid}`,
       title: ws.title || row.name || `Kapitola ${i + 1}`,
