@@ -6,6 +6,20 @@ const CUSTOM_COLORS_STORAGE_KEY = 'vividbooks.customColors';
 const CUSTOM_COLORS_UPDATED_EVENT = 'vividbooks-custom-colors-updated';
 const MAX_CUSTOM_COLORS = 12;
 
+/** Pro porovnání výběru a deduplikaci palety (žádná / bílá / černá vždy první). */
+function normalizeHexForCompare(v: string | undefined): string | null {
+  if (!v || v.trim().toLowerCase() === 'transparent') return null;
+  const t = v.trim().toLowerCase();
+  if (t === '#fff') return '#ffffff';
+  if (t === '#000') return '#000000';
+  return t;
+}
+
+function isWhiteOrBlackHex(v: string): boolean {
+  const n = normalizeHexForCompare(v);
+  return n === '#ffffff' || n === '#000000';
+}
+
 type DesignSystemSwatch = {
   id: string;
   name?: string;
@@ -18,6 +32,8 @@ interface ColorPickerFieldProps {
   onClear?: () => void;
   palette?: Array<{ value: string; label: string }>;
   designSystemSwatches?: DesignSystemSwatch[];
+  /** Pouze swatche z design systému — bez výchozí palety, bez uložených vlastních barev a bez „Přidat vlastní barvu“. */
+  designSystemOnly?: boolean;
   placeholder?: string;
   swatchStyle?: 'fill' | 'border';
   borderStyle?: string;
@@ -31,6 +47,7 @@ export function ColorPickerField({
   onClear,
   palette = TEXT_COLORS,
   designSystemSwatches = [],
+  designSystemOnly = false,
   placeholder = 'Vlastní barva',
   swatchStyle = 'fill',
   borderStyle = 'solid',
@@ -104,11 +121,26 @@ export function ColorPickerField({
   };
 
   const customPalette = useMemo(
-    () => customColors
+    () => (designSystemOnly ? [] : customColors
       .filter((color) => !palette.some((item) => item.value.toLowerCase() === color.toLowerCase()))
       .filter((color) => !designSystemSwatches.some((item) => item.value.toLowerCase() === color.toLowerCase()))
-      .map((color) => ({ value: color, label: color.toUpperCase() })),
-    [customColors, designSystemSwatches, palette]
+      .map((color) => ({ value: color, label: color.toUpperCase() }))),
+    [customColors, designSystemOnly, designSystemSwatches, palette]
+  );
+
+  const filteredDesignSystemSwatches = useMemo(
+    () => designSystemSwatches.filter((s) => !isWhiteOrBlackHex(s.value)),
+    [designSystemSwatches]
+  );
+
+  const filteredPalette = useMemo(
+    () => palette.filter((p) => !isWhiteOrBlackHex(p.value)),
+    [palette]
+  );
+
+  const filteredCustomPalette = useMemo(
+    () => customPalette.filter((p) => !isWhiteOrBlackHex(p.value)),
+    [customPalette]
   );
 
   useEffect(() => {
@@ -123,24 +155,40 @@ export function ColorPickerField({
   }, [open]);
 
   const currentLabel = useMemo(() => {
-    const fromPalette = palette.find((item) => item.value === value)?.label;
+    if (!value || value.trim().toLowerCase() === 'transparent') return 'Žádná';
+    const n = normalizeHexForCompare(value);
+    if (n === '#ffffff') return 'Bílá';
+    if (n === '#000000') return 'Černá';
+    const fromPalette = palette.find((item) => normalizeHexForCompare(item.value) === n)?.label;
     if (fromPalette) return fromPalette;
-    const fromDesignSystem = designSystemSwatches.find((item) => item.value === value)?.name;
+    const fromDesignSystem = designSystemSwatches.find((item) => normalizeHexForCompare(item.value) === n)?.name;
     if (fromDesignSystem) return fromDesignSystem;
-    const fromCustomPalette = customPalette.find((item) => item.value === value)?.label;
+    const fromCustomPalette = customPalette.find((item) => normalizeHexForCompare(item.value) === n)?.label;
     return fromCustomPalette || placeholder;
   }, [customPalette, designSystemSwatches, palette, placeholder, value]);
 
+  const isNoneValue = !value || value.trim().toLowerCase() === 'transparent';
   const swatchNode = (
     <div
       style={{
         width: 20,
         height: 20,
         borderRadius: '50%',
-        backgroundColor: swatchStyle === 'fill' ? value || '#000000' : 'transparent',
-        border: swatchStyle === 'fill'
-          ? `1px solid ${value === '#FFFFFF' ? '#475569' : 'rgba(255,255,255,0.08)'}`
-          : `3px ${borderStyle} ${value || '#475569'}`,
+        ...(swatchStyle === 'fill'
+          ? isNoneValue
+            ? {
+                backgroundColor: '#f1f5f9',
+                backgroundImage:
+                  'repeating-conic-gradient(#e2e8f0 0% 25%, #f8fafc 0% 50%) 50% / 6px 6px',
+              }
+            : { backgroundColor: value || '#000000' }
+          : { backgroundColor: 'transparent' }),
+        border:
+          swatchStyle === 'fill'
+            ? isNoneValue
+              ? '1px dashed #94a3b8'
+              : `1px solid ${value === '#FFFFFF' ? '#475569' : 'rgba(255,255,255,0.08)'}`
+            : `3px ${borderStyle} ${isNoneValue ? 'rgba(148,163,184,0.5)' : value || '#475569'}`,
         boxShadow: '0 1px 3px rgba(0,0,0,0.24)',
         flexShrink: 0,
       }}
@@ -170,7 +218,7 @@ export function ColorPickerField({
         <span style={{ flex: 1, textAlign: 'left', fontSize: 12, fontWeight: 700 }}>
           {currentLabel}
         </span>
-        {onClear && value ? (
+        {onClear && value && !isNoneValue ? (
           <span
             onClick={(event) => {
               event.stopPropagation();
@@ -227,7 +275,141 @@ export function ColorPickerField({
             boxShadow: '0 16px 30px rgba(2, 6, 23, 0.45)',
           }}
         >
-          {designSystemSwatches.length > 0 && (
+          <div style={{ marginBottom: 12 }}>
+            <div
+              style={{
+                marginBottom: 8,
+                fontSize: 9,
+                fontWeight: 700,
+                letterSpacing: '0.08em',
+                textTransform: 'uppercase',
+                color: '#8ea0bf',
+              }}
+            >
+              Barvy
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 40px)', gap: 12, justifyContent: 'space-between' }}>
+              {(() => {
+                const isActiveNone = normalizeHexForCompare(value) === null;
+                const isActiveWhite = normalizeHexForCompare(value) === '#ffffff';
+                const isActiveBlack = normalizeHexForCompare(value) === '#000000';
+                return (
+                  <>
+                    <button
+                      type="button"
+                      title="Žádná"
+                      onClick={() => {
+                        onClear?.();
+                        if (!onClear) onChange('transparent');
+                        setOpen(false);
+                      }}
+                      style={{
+                        width: 40,
+                        height: 40,
+                        borderRadius: '50%',
+                        border: isActiveNone ? '2px solid #e2e8f0' : '1px dashed rgba(148,163,184,0.55)',
+                        backgroundColor: swatchStyle === 'fill' ? '#f1f5f9' : '#223047',
+                        backgroundImage:
+                          swatchStyle === 'fill'
+                            ? 'repeating-conic-gradient(#e2e8f0 0% 25%, #f8fafc 0% 50%) 50% / 8px 8px'
+                            : undefined,
+                        boxShadow: isActiveNone
+                          ? '0 0 0 3px rgba(92,92,255,0.28)'
+                          : 'inset 0 0 0 1px rgba(15,23,42,0.14)',
+                        cursor: 'pointer',
+                        padding: 0,
+                        outline: 'none',
+                        position: 'relative',
+                      }}
+                    >
+                      {swatchStyle === 'border' && (
+                        <span
+                          style={{
+                            position: 'absolute',
+                            inset: 8,
+                            borderRadius: '50%',
+                            border: `4px dashed rgba(148,163,184,0.65)`,
+                          }}
+                        />
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      title="Bílá"
+                      onClick={() => {
+                        onChange('#FFFFFF');
+                        setOpen(false);
+                      }}
+                      style={{
+                        width: 40,
+                        height: 40,
+                        borderRadius: '50%',
+                        border: isActiveWhite ? '2px solid #e2e8f0' : '1px solid rgba(255,255,255,0.16)',
+                        backgroundColor: swatchStyle === 'fill' ? '#FFFFFF' : '#223047',
+                        boxShadow: isActiveWhite
+                          ? '0 0 0 3px rgba(92,92,255,0.28)'
+                          : 'inset 0 0 0 1px rgba(15,23,42,0.14)',
+                        cursor: 'pointer',
+                        padding: 0,
+                        outline: 'none',
+                        position: 'relative',
+                      }}
+                    >
+                      {swatchStyle === 'border' && (
+                        <span
+                          style={{
+                            position: 'absolute',
+                            inset: 8,
+                            borderRadius: '50%',
+                            border: `4px ${borderStyle} #FFFFFF`,
+                          }}
+                        />
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      title="Černá"
+                      onClick={() => {
+                        onChange('#000000');
+                        setOpen(false);
+                      }}
+                      style={{
+                        width: 40,
+                        height: 40,
+                        borderRadius: '50%',
+                        border: isActiveBlack ? '2px solid #e2e8f0' : '1px solid rgba(255,255,255,0.06)',
+                        backgroundColor: swatchStyle === 'fill' ? '#000000' : '#223047',
+                        boxShadow: isActiveBlack
+                          ? '0 0 0 3px rgba(92,92,255,0.28)'
+                          : 'inset 0 0 0 1px rgba(15,23,42,0.14)',
+                        cursor: 'pointer',
+                        padding: 0,
+                        outline: 'none',
+                        position: 'relative',
+                      }}
+                    >
+                      {swatchStyle === 'border' && (
+                        <span
+                          style={{
+                            position: 'absolute',
+                            inset: 8,
+                            borderRadius: '50%',
+                            border: `4px ${borderStyle} #000000`,
+                          }}
+                        />
+                      )}
+                    </button>
+                  </>
+                );
+              })()}
+            </div>
+            {(filteredDesignSystemSwatches.length > 0 ||
+              (!designSystemOnly && (filteredCustomPalette.length > 0 || filteredPalette.length > 0))) && (
+              <div style={{ height: 1, backgroundColor: 'rgba(148,163,184,0.2)', marginTop: 12 }} />
+            )}
+          </div>
+
+          {filteredDesignSystemSwatches.length > 0 && (
             <div style={{ marginBottom: 12 }}>
               <div
                 style={{
@@ -239,11 +421,11 @@ export function ColorPickerField({
                   color: '#8ea0bf',
                 }}
               >
-                Design systém
+                {designSystemOnly ? 'Paleta design systému' : 'Design systém'}
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 40px)', gap: 12, justifyContent: 'space-between' }}>
-                {designSystemSwatches.map((swatch) => {
-                  const isActive = swatch.value === value;
+                {filteredDesignSystemSwatches.map((swatch) => {
+                  const isActive = normalizeHexForCompare(swatch.value) === normalizeHexForCompare(value);
                   return (
                     <button
                       key={swatch.id}
@@ -280,11 +462,13 @@ export function ColorPickerField({
                   );
                 })}
               </div>
-              <div style={{ height: 1, backgroundColor: 'rgba(148,163,184,0.2)', marginTop: 12 }} />
+              {!designSystemOnly && (
+                <div style={{ height: 1, backgroundColor: 'rgba(148,163,184,0.2)', marginTop: 12 }} />
+              )}
             </div>
           )}
 
-          {customPalette.length > 0 && (
+          {!designSystemOnly && filteredCustomPalette.length > 0 && (
             <div style={{ marginBottom: 12 }}>
               <div
                 style={{
@@ -299,8 +483,8 @@ export function ColorPickerField({
                 Vlastní barvy
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 40px)', gap: 12, justifyContent: 'space-between' }}>
-                {customPalette.map((color) => {
-                  const isActive = color.value === value;
+                {filteredCustomPalette.map((color) => {
+                  const isActive = normalizeHexForCompare(color.value) === normalizeHexForCompare(value);
                   return (
                     <button
                       key={color.value}
@@ -341,9 +525,10 @@ export function ColorPickerField({
             </div>
           )}
 
+          {!designSystemOnly && (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 40px)', gap: 12, justifyContent: 'space-between' }}>
-            {palette.map((color) => {
-              const isActive = color.value === value;
+            {filteredPalette.map((color) => {
+              const isActive = normalizeHexForCompare(color.value) === normalizeHexForCompare(value);
               return (
                 <button
                   key={color.value}
@@ -380,7 +565,9 @@ export function ColorPickerField({
               );
             })}
           </div>
+          )}
 
+          {!designSystemOnly && (
           <button
             type="button"
             onClick={() => hiddenInputRef.current?.click()}
@@ -404,6 +591,7 @@ export function ColorPickerField({
             <Palette size={14} />
             Přidat vlastní barvu
           </button>
+          )}
         </div>
       )}
     </div>

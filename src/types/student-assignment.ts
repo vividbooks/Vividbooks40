@@ -73,6 +73,8 @@ export interface StudentSubmission {
   teacher_comment?: string;
   graded_at?: string;
   graded_by?: string;
+  /** Plain text pro náhled u učitele (Supabase), bez base64 */
+  text_preview?: string;
 }
 
 /**

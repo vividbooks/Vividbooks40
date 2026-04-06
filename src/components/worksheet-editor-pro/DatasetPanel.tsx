@@ -32,6 +32,34 @@ function formatSize(bytes?: number) {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
+/**
+ * Stejná paleta jako levý panel kapitol / Nastavení v WorkbookProLayout (#1e293b + karty #0f172a).
+ * (Bundlovaný `index.css` bez řady Tailwind utilit.)
+ */
+const DATASET_PANEL_BG = '#1e293b';
+
+const DATASET_STACKED_SURFACE: React.CSSProperties = {
+  borderRadius: 24,
+  border: '1px solid #334155',
+  backgroundColor: '#0f172a',
+  boxShadow: 'inset 0 1px 0 0 rgba(255, 255, 255, 0.04)',
+};
+
+const DATASET_STACKED_TEXTAREA: React.CSSProperties = {
+  width: '100%',
+  boxSizing: 'border-box',
+  resize: 'vertical',
+  borderRadius: 12,
+  padding: '12px 14px',
+  fontSize: 13,
+  lineHeight: 1.65,
+  color: '#f1f5f9',
+  backgroundColor: DATASET_PANEL_BG,
+  border: '1px solid #475569',
+  outline: 'none',
+  fontFamily: 'inherit',
+};
+
 // ─── Drop zone ─────────────────────────────────────────────────────────────────
 
 function DropZone({
@@ -57,7 +85,7 @@ function DropZone({
         padding: '20px 20px',
         display: 'flex', alignItems: 'center', gap: '14px',
         cursor: 'pointer',
-        backgroundColor: dragOver ? 'rgba(59,130,246,0.08)' : 'rgba(255,255,255,0.02)',
+        backgroundColor: dragOver ? 'rgba(59,130,246,0.08)' : 'rgba(15,23,42,0.6)',
         transition: 'all 0.15s',
       }}
     >
@@ -204,9 +232,11 @@ export interface DatasetPanelProps {
   scopeId: string;
   initialDataset?: DesignSystemDataset;
   onDatasetChange?: (ds: DesignSystemDataset) => void;
+  /** Sloupec karet v Nastavení knihy (bez vnitřního levého sidebaru) */
+  layout?: 'default' | 'stacked';
 }
 
-export function DatasetPanel({ scopeId, initialDataset, onDatasetChange }: DatasetPanelProps) {
+export function DatasetPanel({ scopeId, initialDataset, onDatasetChange, layout = 'default' }: DatasetPanelProps) {
   const [dataset, setDatasetState] = useState<DesignSystemDataset>(() => {
     return initialDataset ?? loadDataset(scopeId);
   });
@@ -281,94 +311,154 @@ export function DatasetPanel({ scopeId, initialDataset, onDatasetChange }: Datas
   const textFiles = dataset.files.filter(f => f.kind === 'text');
   const imageFiles = dataset.files.filter(f => f.kind === 'image');
 
-  const NAV: { id: Tab; label: string; icon: React.ComponentType<any>; count: number }[] = [
+  const NAV: { id: Tab; label: string; icon: React.ComponentType<{ size?: number; style?: React.CSSProperties }>; count: number }[] = [
     { id: 'text',  label: 'Textové podklady', icon: FileText,   count: textFiles.length },
     { id: 'image', label: 'Obrázky',           icon: ImageIcon, count: imageFiles.length },
   ];
 
-  return (
-    <div style={{ flex: 1, display: 'flex', overflow: 'hidden', backgroundColor: '#0d1526' }}>
+  const topicBlock = (
+    <div
+      className={layout === 'stacked' ? `p-6` : ''}
+      style={
+        layout === 'stacked'
+          ? { ...DATASET_STACKED_SURFACE, padding: 24 }
+          : { padding: '12px 14px', borderBottom: '1px solid #334155' }
+      }
+    >
+      <div
+        className="text-slate-400"
+        style={{
+          fontSize: layout === 'stacked' ? 11 : 10,
+          fontWeight: 700,
+          textTransform: 'uppercase',
+          letterSpacing: '0.08em',
+          marginBottom: 8,
+        }}
+      >
+        Téma pro AI
+      </div>
+      <textarea
+        value={dataset.topic ?? ''}
+        onChange={e => setDataset({ ...dataset, topic: e.target.value })}
+        placeholder="Krátký popis — AI to dostane jako kontext při generování."
+        rows={layout === 'stacked' ? 4 : 3}
+        className={
+          layout === 'stacked'
+            ? 'w-full box-border placeholder:text-slate-600'
+            : 'w-full box-border rounded-lg border border-slate-600 bg-slate-950/80 text-slate-100'
+        }
+        style={
+          layout === 'stacked'
+            ? { ...DATASET_STACKED_TEXTAREA }
+            : {
+                padding: '10px 12px',
+                fontSize: 13,
+                lineHeight: 1.6,
+                resize: 'vertical',
+                fontFamily: 'inherit',
+                outline: 'none',
+              }
+        }
+      />
+    </div>
+  );
 
-      {/* ── Left sidebar ─────────────────────────────────────────────────────── */}
-      <aside style={{
-        width: '300px', minWidth: '300px',
-        backgroundColor: '#1e293b',
-        borderRight: '1px solid #334155',
-        display: 'flex', flexDirection: 'column',
-        overflowY: 'auto',
-        flexShrink: 0,
-      }}>
-        {/* Header */}
-        <div style={{
-          padding: '16px 16px 12px',
-          borderBottom: '1px solid #334155',
-          display: 'flex', alignItems: 'center', gap: '8px',
-        }}>
-          <Database size={16} style={{ color: '#3B82F6' }} />
-          <span style={{ fontSize: '13px', fontWeight: 700, color: '#e2e8f0' }}>Data set</span>
-          {uploading && <Loader2 size={13} className="animate-spin" style={{ color: '#3B82F6', marginLeft: 'auto' }} />}
-        </div>
-
-        {/* Topic */}
-        <div style={{ padding: '12px 14px', borderBottom: '1px solid #334155' }}>
-          <div style={{ fontSize: '10px', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>
-            Téma pro AI
-          </div>
-          <textarea
-            value={dataset.topic ?? ''}
-            onChange={e => setDataset({ ...dataset, topic: e.target.value })}
-            placeholder="Krátký popis — AI to dostane jako kontext při generování."
-            rows={3}
-            style={{
-              width: '100%', padding: '8px 10px', boxSizing: 'border-box',
-              backgroundColor: '#0f172a', border: '1px solid #334155', borderRadius: '8px',
-              color: '#f1f5f9', fontSize: '12px', lineHeight: 1.6, resize: 'vertical',
-              fontFamily: 'inherit',
-            }}
-          />
-        </div>
-
-        {/* Nav */}
-        <div style={{ padding: '8px 8px' }}>
-          {NAV.map(item => {
-            const isActive = activeTab === item.id;
-            const Icon = item.icon;
-            return (
-              <button
-                key={item.id}
-                onClick={() => setActiveTab(item.id)}
+  const tabSwitcher = (
+    <div
+      className={layout === 'stacked' ? 'flex gap-1 p-1.5' : ''}
+      style={
+        layout === 'stacked'
+          ? { ...DATASET_STACKED_SURFACE, padding: 6 }
+          : { padding: '8px 8px' }
+      }
+    >
+      {NAV.map(item => {
+        const isActive = activeTab === item.id;
+        const Icon = item.icon;
+        return (
+          <button
+            key={item.id}
+            type="button"
+            onClick={() => setActiveTab(item.id)}
+            className={layout === 'stacked' ? 'flex flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2.5 text-sm font-medium' : ''}
+            style={
+              layout === 'default'
+                ? {
+                    width: '100%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 10,
+                    padding: '10px 12px',
+                    borderRadius: 8,
+                    cursor: 'pointer',
+                    border: 'none',
+                    textAlign: 'left',
+                    backgroundColor: isActive ? '#0f172a' : 'transparent',
+                    marginBottom: 2,
+                  }
+                : {
+                    flex: 1,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 8,
+                    padding: '10px 12px',
+                    borderRadius: 8,
+                    cursor: 'pointer',
+                    border: 'none',
+                    backgroundColor: isActive ? '#1e293b' : 'transparent',
+                    color: isActive ? '#f1f5f9' : '#94a3b8',
+                    transition: 'background-color 0.15s, color 0.15s',
+                  }
+            }
+            onMouseEnter={
+              layout === 'default'
+                ? (e => { if (!isActive) (e.currentTarget as HTMLElement).style.backgroundColor = '#263348'; })
+                : (e => { if (!isActive) (e.currentTarget as HTMLElement).style.backgroundColor = 'rgba(30, 41, 59, 0.55)'; })
+            }
+            onMouseLeave={
+              layout === 'default'
+                ? (e => { if (!isActive) (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'; })
+                : (e => { if (!isActive) (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'; })
+            }
+          >
+            <Icon size={16} style={{ color: isActive ? '#3B82F6' : '#64748b', flexShrink: 0 }} />
+            <span style={{ fontSize: 13, fontWeight: 500, color: isActive ? '#e2e8f0' : '#94a3b8', flex: layout === 'stacked' ? undefined : 1 }}>
+              {item.label}
+            </span>
+            {item.count > 0 && (
+              <span
                 style={{
-                  width: '100%', display: 'flex', alignItems: 'center', gap: '10px',
-                  padding: '10px 12px', borderRadius: '8px', cursor: 'pointer',
-                  border: 'none', textAlign: 'left',
-                  backgroundColor: isActive ? '#0f172a' : 'transparent',
-                  marginBottom: '2px',
+                  fontSize: 11,
+                  fontWeight: 600,
+                  color: isActive ? '#3B82F6' : '#475569',
+                  backgroundColor: isActive ? 'rgba(59,130,246,0.15)' : '#0f172a',
+                  padding: '1px 7px',
+                  borderRadius: 10,
                 }}
-                onMouseEnter={e => { if (!isActive) (e.currentTarget as HTMLElement).style.backgroundColor = '#263348'; }}
-                onMouseLeave={e => { if (!isActive) (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'; }}
               >
-                <Icon size={16} style={{ color: isActive ? '#3B82F6' : '#64748b', flexShrink: 0 }} />
-                <span style={{ fontSize: '13px', fontWeight: 500, color: isActive ? '#e2e8f0' : '#94a3b8', flex: 1 }}>
-                  {item.label}
-                </span>
-                {item.count > 0 && (
-                  <span style={{
-                    fontSize: '11px', fontWeight: 600,
-                    color: isActive ? '#3B82F6' : '#475569',
-                    backgroundColor: isActive ? 'rgba(59,130,246,0.15)' : '#0f172a',
-                    padding: '1px 7px', borderRadius: '10px',
-                  }}>
-                    {item.count}
-                  </span>
-                )}
-              </button>
-            );
-          })}
-        </div>
-      </aside>
+                {item.count}
+              </span>
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
 
-      {/* ── Right content ─────────────────────────────────────────────────────── */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '28px 32px' }}>
+  const mainContent = (
+    <div
+      style={
+        layout === 'stacked'
+          ? {
+              ...DATASET_STACKED_SURFACE,
+              flex: 1,
+              overflowY: 'auto',
+              padding: '22px 24px',
+            }
+          : { flex: 1, overflowY: 'auto', padding: '28px 32px' }
+      }
+    >
 
         {/* Text tab */}
         {activeTab === 'text' && (
@@ -523,7 +613,75 @@ export function DatasetPanel({ scopeId, initialDataset, onDatasetChange }: Datas
             )}
           </div>
         )}
+    </div>
+  );
+
+  if (layout === 'stacked') {
+    return (
+      <div className="flex w-full flex-col gap-5" style={{ colorScheme: 'dark' }}>
+        <div className="flex flex-col gap-5 p-6" style={DATASET_STACKED_SURFACE}>
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5" style={{ color: '#f8fafc' }}>
+              <Database size={18} className="shrink-0" style={{ color: '#818cf8' }} />
+              <span className="text-sm font-semibold" style={{ fontSize: 15 }}>
+                Data set knihy
+              </span>
+            </div>
+            {uploading && (
+              <Loader2 size={15} className="animate-spin" style={{ color: '#818cf8' }} />
+            )}
+          </div>
+          <div>
+            <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Téma pro AI
+            </div>
+            <textarea
+              value={dataset.topic ?? ''}
+              onChange={(e) => setDataset({ ...dataset, topic: e.target.value })}
+              placeholder="Krátký popis — AI to dostane jako kontext při generování."
+              rows={4}
+              className="w-full placeholder:text-slate-600"
+              style={DATASET_STACKED_TEXTAREA}
+            />
+          </div>
+        </div>
+        {tabSwitcher}
+        {mainContent}
       </div>
+    );
+  }
+
+  return (
+    <div style={{ flex: 1, display: 'flex', overflow: 'hidden', backgroundColor: '#0d1526' }}>
+      <aside
+        style={{
+          width: '300px',
+          minWidth: '300px',
+          backgroundColor: '#1e293b',
+          borderRight: '1px solid #334155',
+          display: 'flex',
+          flexDirection: 'column',
+          overflowY: 'auto',
+          flexShrink: 0,
+        }}
+      >
+        <div
+          style={{
+            padding: '16px 16px 12px',
+            borderBottom: '1px solid #334155',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+          }}
+        >
+          <Database size={16} style={{ color: '#3B82F6' }} />
+          <span style={{ fontSize: '13px', fontWeight: 700, color: '#e2e8f0' }}>Data set</span>
+          {uploading && <Loader2 size={13} className="animate-spin" style={{ color: '#3B82F6', marginLeft: 'auto' }} />}
+        </div>
+        {topicBlock}
+        {tabSwitcher}
+      </aside>
+      {mainContent}
     </div>
   );
 }

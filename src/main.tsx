@@ -50,6 +50,16 @@ if ((window as any).__BROWSERLESS__ && (window as any).__WORKSHEET_DATA__) {
     );
   });
 } else {
+  if (import.meta.env.DEV) {
+    void import('./utils/migration/migrate-class-localstorage-to-supabase').then((m) => {
+      window.__VIVID_MIGRATE_CLASS_LS__ = async () => {
+        const r = await m.runMigrateClassLocalStorageToSupabase();
+        console.info('[dev] Výsledek migrace localStorage→Supabase:', r);
+        return r;
+      };
+      console.info('[dev] Migrace: await window.__VIVID_MIGRATE_CLASS_LS__()');
+    });
+  }
   root.render(<App />);
 }
   

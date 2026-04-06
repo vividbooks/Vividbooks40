@@ -1,13 +1,16 @@
 import { WorksheetBlock, generateBlockId } from '../types/worksheet';
 import { preventOrphansInHtml } from '../components/worksheet-editor/LatexRenderer';
 
-const FLOW_FRAME_SELECTOR = '[data-text-flow-frame-for]';
 const FLOW_CONTENT_SELECTOR = '[data-text-flow-content="true"]';
+
+function debugTextFlow(scope: string, payload: Record<string, unknown>) {
+  if (!import.meta.env.DEV || typeof window === 'undefined' || (window as any).__VB_TEXT_FLOW_DEBUG !== true) return;
+  console.log(`[text-flow] ${scope}`, payload);
+}
 
 export function supportsTextFlow(block: WorksheetBlock): boolean {
   if (block.type === 'infobox') return true;
   if (block.type !== 'paragraph') return false;
-  // Miniaplikace v odstavci — bez ořezu a bez červeného bobánku (text flow)
   const mt = (block.content as any)?.miniApp?.type;
   if (mt === 'compare-counts' || mt === 'pisanka') return false;
   return !(block.content as any)?.imageUrl;
@@ -17,6 +20,10 @@ export function hasTextFlowFrame(block: WorksheetBlock): boolean {
   return supportsTextFlow(block) && typeof block.textFlowFrameHeight === 'number' && block.textFlowFrameHeight > 0;
 }
 
+export function getTextFlowFrameMode(block: WorksheetBlock): 'auto' | 'manual' {
+  return block.textFlowFrameMode === 'manual' ? 'manual' : 'auto';
+}
+
 export function isTextFlowLinked(block: WorksheetBlock): boolean {
   return !!(block.textFlowPrevBlockId || block.textFlowNextBlockId || block.textFlowChainId);
 }
@@ -24,6 +31,16 @@ export function isTextFlowLinked(block: WorksheetBlock): boolean {
 export function getTextFlowHtml(block: WorksheetBlock): string {
   if (!supportsTextFlow(block)) return '';
   return String((block.content as any)?.html ?? '');
+}
+
+export function isTextFlowHtmlEmpty(html: string): boolean {
+  if (!html) return true;
+  if (typeof document === 'undefined') {
+    return !html.replace(/<[^>]*>/g, '').trim();
+  }
+  const root = document.createElement('div');
+  root.innerHTML = html;
+  return !(root.textContent || '').trim();
 }
 
 function normalizeTextFlowHtml(html: string): string {
@@ -82,10 +99,100 @@ function getFrameEl(blockId: string): HTMLElement | null {
   return document.querySelector<HTMLElement>(`[data-text-flow-frame-for="${blockId}"]`);
 }
 
+function getElementScale(el: HTMLElement | null): number {
+  if (!el) return 1;
+  const rect = el.getBoundingClientRect();
+  const offsetH = el.offsetHeight || el.clientHeight || 0;
+  if (!offsetH) return 1;
+  const scale = rect.height / offsetH;
+  return Number.isFinite(scale) && scale > 0 ? scale : 1;
+}
+
+export function getTextFlowAvailableFrameHeight(blockId: string): number | undefined {
+  const frame = getFrameEl(blockId);
+  if (!frame) return undefined;
+  const contentGrid = frame.closest<HTMLElement>('[data-page-content-grid="true"]');
+  if (!contentGrid) return undefined;
+
+  const scale = getElementScale(contentGrid);
+  const frameTop = frame.getBoundingClientRect().top;
+  const gridRect = contentGrid.getBoundingClientRect();
+
+  // Grid has bottom padding (contentPadBot) — frame must not extend into it.
+  const gridPadBot = parseFloat(window.getComputedStyle(contentGrid).paddingBottom) || 0;
+  // Frame sits inside EditableBlock wrapper with py-1 (4px bottom padding).
+  const blockWrapper = frame.closest<HTMLElement>('[data-block-id]');
+  const wrapperPadBot = blockWrapper
+    ? (parseFloat(window.getComputedStyle(blockWrapper).paddingBottom) || 0)
+    : 0;
+
+  const effectiveBottom = gridRect.bottom - (gridPadBot * scale) - (wrapperPadBot * scale);
+  const availableHeight = Math.floor((effectiveBottom - frameTop) / scale);
+
+  if (!Number.isFinite(availableHeight) || availableHeight < 36) return undefined;
+  debugTextFlow('available-frame-height', {
+    blockId,
+    availableHeight,
+    scale,
+    frameTop: Math.round(frameTop),
+    gridBottom: Math.round(gridRect.bottom),
+    gridPadBot: Math.round(gridPadBot),
+    wrapperPadBot: Math.round(wrapperPadBot),
+    effectiveBottom: Math.round(effectiveBottom),
+  });
+  return availableHeight;
+}
+
+export type TextFlowDebugMetrics = {
+  blockId: string;
+  frameHeight: number;
+  availableHeight?: number;
+  scrollHeight: number;
+  clientHeight: number;
+  contentHeight: number;
+  lineHeight: number;
+  estimatedAvailableLines: number;
+  estimatedRenderedLines: number;
+  estimatedVisibleLines: number;
+  overflowPx: number;
+};
+
+export function getTextFlowDebugMetrics(blockId: string): TextFlowDebugMetrics | null {
+  if (typeof window === 'undefined') return null;
+  const frame = getFrameEl(blockId);
+  if (!frame) return null;
+  const content = frame.querySelector<HTMLElement>(FLOW_CONTENT_SELECTOR);
+  const target = content ? getHtmlMeasureTarget(content) : null;
+  const lineHeight = content ? getTextFlowLineStep(blockId, 24) : 24;
+  const frameHeight = Math.round(frame.clientHeight || frame.offsetHeight || 0);
+  const scrollHeight = Math.round(frame.scrollHeight || 0);
+  const clientHeight = Math.round(frame.clientHeight || 0);
+  const contentHeight = Math.round(target?.scrollHeight || target?.clientHeight || 0);
+  const availableHeight = getTextFlowAvailableFrameHeight(blockId);
+  const estimatedAvailableLines = Math.max(0, Math.round((availableHeight ?? 0) / Math.max(1, lineHeight)));
+  const estimatedRenderedLines = Math.max(0, Math.round(contentHeight / Math.max(1, lineHeight)));
+  const estimatedVisibleLines = Math.max(0, Math.round(clientHeight / Math.max(1, lineHeight)));
+  const overflowPx = Math.max(0, scrollHeight - clientHeight);
+
+  return {
+    blockId,
+    frameHeight,
+    availableHeight,
+    scrollHeight,
+    clientHeight,
+    contentHeight,
+    lineHeight,
+    estimatedAvailableLines,
+    estimatedRenderedLines,
+    estimatedVisibleLines,
+    overflowPx,
+  };
+}
+
 export function getTextFlowNaturalFrameHeight(blockId: string, fallback = 180): number {
   const frame = getFrameEl(blockId);
   if (!frame) return fallback;
-  return Math.max(36, Math.round(frame.scrollHeight || frame.getBoundingClientRect().height || fallback));
+  return Math.max(36, Math.round(frame.scrollHeight || frame.clientHeight || frame.offsetHeight || fallback));
 }
 
 export function getTextFlowLineStep(blockId: string, fallback = 24): number {
@@ -151,7 +258,7 @@ function cloneFrameForMeasurement(blockId: string): { frame: HTMLElement; conten
   clone.style.minHeight = '0';
   clone.style.maxHeight = 'none';
   clone.style.overflow = 'visible';
-  clone.style.width = `${Math.round(sourceFrame.getBoundingClientRect().width)}px`;
+  clone.style.width = `${Math.round(sourceFrame.clientWidth || sourceFrame.offsetWidth || sourceFrame.getBoundingClientRect().width)}px`;
   clone.removeAttribute('data-text-flow-frame-for');
   const content = clone.querySelector<HTMLElement>(FLOW_CONTENT_SELECTOR);
   if (!content) return null;
@@ -263,6 +370,10 @@ function trimBoundaryWhitespace(text: string, index: number): number {
   return nextIndex;
 }
 
+function getHtmlMeasureTarget(content: HTMLElement): HTMLElement {
+  return content.querySelector<HTMLElement>('.worksheet-rich-html-content') ?? content;
+}
+
 function cleanupSplitHtml(html: string, mode: 'start' | 'end'): string {
   if (typeof document === 'undefined' || !html) return html;
   const root = document.createElement('div');
@@ -295,29 +406,23 @@ function cleanupSplitHtml(html: string, mode: 'start' | 'end'): string {
 }
 
 function htmlHeightForPrefix(measureFrame: HTMLElement, measureContent: HTMLElement, prefixHtml: string): number {
-  measureContent.innerHTML = prefixHtml || '<span></span>';
-  return Math.ceil(measureFrame.getBoundingClientRect().height);
+  const target = getHtmlMeasureTarget(measureContent);
+  target.innerHTML = prefixHtml || '<span></span>';
+  return Math.ceil(measureFrame.offsetHeight || measureFrame.scrollHeight || measureFrame.getBoundingClientRect().height);
 }
 
-function measureHtmlHeightForFrame(blockId: string, html: string, fallback = 36): number {
+export function measureTextFlowHtmlNaturalHeight(blockId: string, html: string, fallback = 180): number {
+  if (typeof document === 'undefined') return fallback;
   const measured = cloneFrameForMeasurement(blockId);
   if (!measured) return fallback;
+
   try {
-    return Math.max(fallback, htmlHeightForPrefix(measured.frame, measured.content, html));
+    const target = getHtmlMeasureTarget(measured.content);
+    target.innerHTML = html || '<span></span>';
+    return Math.max(36, Math.ceil(measured.frame.offsetHeight || measured.frame.scrollHeight || fallback));
   } finally {
     cleanupMeasuredFrame(measured.frame);
   }
-}
-
-function measureContentLineStep(measureContent: HTMLElement, fallback = 24): number {
-  if (typeof window === 'undefined') return fallback;
-  const computed = window.getComputedStyle(measureContent);
-  let lineHeight = Number.parseFloat(computed.lineHeight);
-  if (!Number.isFinite(lineHeight)) {
-    const fontSize = Number.parseFloat(computed.fontSize) || 16;
-    lineHeight = fontSize * 1.5;
-  }
-  return Math.max(8, Math.round(lineHeight));
 }
 
 function htmlFromTopLevelNodes(nodes: ChildNode[]): string {
@@ -358,12 +463,31 @@ function trySplitByTopLevelNodes(
   };
 }
 
+const MAX_SPLIT_BACKWARD_CHARS = 28;
+const MAX_SPLIT_BACKWARD_SLACK_LINES = 1;
+
 function normalizeSplitChars(fullText: string, fitChars: number): number {
   if (fitChars <= 0 || fitChars >= fullText.length) return fitChars;
   if (isSafeSplitBoundary(fullText, fitChars)) {
     return trimBoundaryWhitespace(fullText, fitChars);
   }
-  return getSafeBoundaryBefore(fullText, fitChars);
+  const safe = getSafeBoundaryBefore(fullText, fitChars);
+  if (fitChars - safe > MAX_SPLIT_BACKWARD_CHARS) {
+    return trimBoundaryWhitespace(fullText, fitChars);
+  }
+  return trimBoundaryWhitespace(fullText, safe);
+}
+
+function getMeasuredLineHeight(content: HTMLElement, fallback = 24): number {
+  if (typeof window === 'undefined') return fallback;
+  const target = getHtmlMeasureTarget(content);
+  const computed = window.getComputedStyle(target);
+  let lineHeight = Number.parseFloat(computed.lineHeight);
+  if (!Number.isFinite(lineHeight)) {
+    const fontSize = Number.parseFloat(computed.fontSize) || 16;
+    lineHeight = fontSize * 1.5;
+  }
+  return Math.max(8, Math.round(lineHeight));
 }
 
 export function splitHtmlForFrame(blockId: string, html: string, availableHeight?: number): { fitHtml: string; overflowHtml: string } {
@@ -373,18 +497,30 @@ export function splitHtmlForFrame(blockId: string, html: string, availableHeight
 
   try {
     const { frame, content, sourceFrame } = measured;
-    const maxHeight = availableHeight ?? Math.round(sourceFrame.getBoundingClientRect().height);
+    const maxHeight = availableHeight ?? Math.round(sourceFrame.clientHeight || sourceFrame.offsetHeight || sourceFrame.getBoundingClientRect().height);
     if (!maxHeight || maxHeight <= 0) return { fitHtml: html, overflowHtml: '' };
 
     const sourceRoot = document.createElement('div');
     sourceRoot.innerHTML = html || '';
     const fullText = sourceRoot.textContent ?? '';
 
-    content.innerHTML = html || '<span></span>';
-    if (Math.ceil(frame.getBoundingClientRect().height) <= maxHeight) {
+    const measureTarget = getHtmlMeasureTarget(content);
+    measureTarget.innerHTML = html || '<span></span>';
+    if (Math.ceil(frame.offsetHeight || frame.scrollHeight || frame.getBoundingClientRect().height) <= maxHeight) {
+      debugTextFlow('split-fit-all', {
+        blockId,
+        maxHeight,
+        measuredHeight: Math.ceil(frame.offsetHeight || frame.scrollHeight || frame.getBoundingClientRect().height),
+        textLength: fullText.length,
+      });
       return { fitHtml: html, overflowHtml: '' };
     }
     if (!fullText.length) {
+      debugTextFlow('split-empty-text', {
+        blockId,
+        maxHeight,
+        htmlLength: html.length,
+      });
       return { fitHtml: '', overflowHtml: html };
     }
 
@@ -392,15 +528,18 @@ export function splitHtmlForFrame(blockId: string, html: string, availableHeight
     if (topLevelSplit) {
       const fitHeight = htmlHeightForPrefix(frame, content, topLevelSplit.fitHtml);
       const remainingSlack = Math.max(0, maxHeight - fitHeight);
-      const lineStep = measureContentLineStep(content);
       const overflowRoot = document.createElement('div');
       overflowRoot.innerHTML = topLevelSplit.overflowHtml;
       const overflowText = (overflowRoot.textContent || '').trim();
 
-      // Keep block-level splitting only when it already fills the frame closely.
-      // Otherwise continue with char-level fitting so we don't leave large empty
-      // space just because the next paragraph doesn't fit as a whole.
-      if (!overflowText || remainingSlack <= Math.max(12, Math.round(lineStep * 0.75))) {
+      if (!overflowText || remainingSlack <= 2) {
+        debugTextFlow('split-top-level', {
+          blockId,
+          maxHeight,
+          fitTextLength: (topLevelSplit.fitHtml.replace(/<[^>]*>/g, '') || '').length,
+          overflowTextLength: overflowText.length,
+          remainingSlack,
+        });
         return topLevelSplit;
       }
     }
@@ -421,9 +560,32 @@ export function splitHtmlForFrame(blockId: string, html: string, availableHeight
       }
     }
 
-    const fitChars = normalizeSplitChars(fullText, best);
+    const rawFitChars = trimBoundaryWhitespace(fullText, best);
+    const safeFitChars = normalizeSplitChars(fullText, best);
+    let fitChars = safeFitChars;
+
+    if (safeFitChars !== rawFitChars) {
+      const rawFitHeight = htmlHeightForPrefix(frame, content, rangeHtml(sourceRoot, 0, rawFitChars));
+      const safeFitHeight = htmlHeightForPrefix(frame, content, rangeHtml(sourceRoot, 0, safeFitChars));
+      const lineHeight = getMeasuredLineHeight(content, 24);
+      const safeSlack = Math.max(0, maxHeight - safeFitHeight);
+
+      // Keep nice word boundaries, but not at the cost of leaving visibly empty rows.
+      if (rawFitHeight <= maxHeight && safeSlack > lineHeight * MAX_SPLIT_BACKWARD_SLACK_LINES) {
+        fitChars = rawFitChars;
+      }
+    }
+
     const fitHtml = cleanupSplitHtml(rangeHtml(sourceRoot, 0, fitChars), 'end');
     const overflowHtml = cleanupSplitHtml(rangeHtml(sourceRoot, fitChars, fullText.length), 'start');
+    debugTextFlow('split-char-level', {
+      blockId,
+      maxHeight,
+      fullTextLength: fullText.length,
+      fitChars,
+      fitTextLength: (fitHtml.replace(/<[^>]*>/g, '') || '').length,
+      overflowTextLength: (overflowHtml.replace(/<[^>]*>/g, '') || '').length,
+    });
     return {
       fitHtml,
       overflowHtml,
@@ -471,15 +633,49 @@ export function reflowTextFlowChain(blocks: WorksheetBlock[], blockId: string, c
   chain.forEach((block, index) => {
     const isLast = index === chain.length - 1;
     if (!hasTextFlowFrame(block) || isLast) {
-      updated.set(block.id, setTextFlowHtml(block, remainingHtml));
+      const nextHtmlBlock = setTextFlowHtml(block, remainingHtml);
+      const nextFrameHeight = (
+        isLast
+        && hasTextFlowFrame(block)
+        && getTextFlowFrameMode(block) === 'auto'
+      )
+        ? (() => {
+            const naturalHeight = measureTextFlowHtmlNaturalHeight(block.id, remainingHtml, block.textFlowFrameHeight || 180);
+            const availableHeight = getTextFlowAvailableFrameHeight(block.id);
+            return Math.min(naturalHeight, availableHeight ?? naturalHeight);
+          })()
+        : block.textFlowFrameHeight;
+      debugTextFlow('reflow-pass-through', {
+        blockId,
+        targetBlockId: block.id,
+        index,
+        isLast,
+        hasFrame: hasTextFlowFrame(block),
+        remainingTextLength: (remainingHtml.replace(/<[^>]*>/g, '') || '').length,
+        frameHeight: block.textFlowFrameHeight,
+        nextFrameHeight,
+      });
+      updated.set(block.id, {
+        ...nextHtmlBlock,
+        ...(typeof nextFrameHeight === 'number' ? { textFlowFrameHeight: nextFrameHeight } : {}),
+      });
       remainingHtml = '';
       return;
     }
 
     const { fitHtml, overflowHtml } = splitHtmlForFrame(block.id, remainingHtml, block.textFlowFrameHeight);
+    debugTextFlow('reflow-split', {
+      blockId,
+      targetBlockId: block.id,
+      index,
+      frameHeight: block.textFlowFrameHeight,
+      fitTextLength: (fitHtml.replace(/<[^>]*>/g, '') || '').length,
+      overflowTextLength: (overflowHtml.replace(/<[^>]*>/g, '') || '').length,
+      marginBottom: block.marginBottom || 0,
+    });
     updated.set(block.id, {
       ...setTextFlowHtml(block, fitHtml),
-      textFlowFrameHeight: measureHtmlHeightForFrame(block.id, fitHtml, 36),
+      textFlowFrameHeight: block.textFlowFrameHeight,
       marginBottom: overflowHtml ? 0 : (block.marginBottom || 0),
     });
     remainingHtml = overflowHtml;
@@ -506,10 +702,11 @@ export function createTextFlowContinuation(blocks: WorksheetBlock[], blockId: st
   newBlock.id = newBlockId;
   newBlock.order = source.order + 1;
   newBlock.marginBottom = 0;
+  newBlock.textFlowFrameMode = 'auto';
   newBlock.textFlowChainId = chainId;
   newBlock.textFlowPrevBlockId = source.id;
   newBlock.textFlowNextBlockId = undefined;
-  newBlock.textFlowFrameHeight = source.textFlowFrameHeight || Math.round(getFrameEl(source.id)?.getBoundingClientRect().height || 180);
+  newBlock.textFlowFrameHeight = source.textFlowFrameHeight || Math.round(getFrameEl(source.id)?.clientHeight || getFrameEl(source.id)?.offsetHeight || 180);
   newBlock.image = undefined;
   if (newBlock.type === 'infobox') {
     (newBlock.content as any).title = '';
@@ -520,9 +717,10 @@ export function createTextFlowContinuation(blocks: WorksheetBlock[], blockId: st
     if (block.id !== source.id) return block;
     return {
       ...block,
+      textFlowFrameMode: block.textFlowFrameMode ?? 'auto',
       textFlowChainId: chainId,
       textFlowNextBlockId: newBlockId,
-      textFlowFrameHeight: block.textFlowFrameHeight || Math.round(getFrameEl(block.id)?.getBoundingClientRect().height || 180),
+      textFlowFrameHeight: block.textFlowFrameHeight || Math.round(getFrameEl(block.id)?.clientHeight || getFrameEl(block.id)?.offsetHeight || 180),
     };
   });
 
@@ -572,7 +770,7 @@ export function splitTextFlowAtChar(
     if (block.id !== blockId) return block;
     return {
       ...setTextFlowHtml(block, beforeHtml),
-      textFlowFrameHeight: measureHtmlHeightForFrame(block.id, beforeHtml || '<span></span>', 36),
+      textFlowFrameHeight: block.textFlowFrameHeight,
       marginBottom: 0,
     };
   });
@@ -595,31 +793,63 @@ export function removeTextFlowBlock(blocks: WorksheetBlock[], blockId: string): 
     .filter((block) => block.id !== blockId)
     .map((block) => {
       if (!remainingIds.has(block.id)) return block;
-      const currentIndex = remainingChain.findIndex((item) => item.id === block.id);
-      const prev = remainingChain[currentIndex - 1];
-      const next = remainingChain[currentIndex + 1];
-      return {
-        ...block,
-        textFlowPrevBlockId: prev?.id,
-        textFlowNextBlockId: next?.id,
-        textFlowChainId: remainingChain.length > 1 ? (block.textFlowChainId || remainingChain[0]?.textFlowChainId) : undefined,
-      };
+
+      let updated = { ...block };
+      if (updated.textFlowPrevBlockId === blockId) {
+        updated.textFlowPrevBlockId = undefined;
+      }
+      if (updated.textFlowNextBlockId === blockId) {
+        updated.textFlowNextBlockId = undefined;
+      }
+
+      return updated;
     })
     .map((block, index) => ({ ...block, order: index }));
 
   if (remainingChain.length === 0) return pruned;
   if (remainingChain.length === 1) {
-    const soleId = remainingChain[0].id;
-    return pruned.map((block) => {
-      if (block.id !== soleId) return block;
-      return setTextFlowHtml({
-        ...block,
-        textFlowPrevBlockId: undefined,
-        textFlowNextBlockId: undefined,
-        textFlowChainId: undefined,
-      }, combinedHtml);
-    });
+    const solo = remainingChain[0];
+    return pruned.map((block) => (
+      block.id === solo.id
+        ? {
+          ...setTextFlowHtml(block, combinedHtml),
+          textFlowChainId: undefined,
+          textFlowPrevBlockId: undefined,
+          textFlowNextBlockId: undefined,
+        }
+        : block
+    ));
   }
 
   return reflowTextFlowChain(pruned, remainingChain[0].id, combinedHtml);
+}
+
+export function trimTrailingEmptyTextFlowBlocks(blocks: WorksheetBlock[], chainBlockId: string): WorksheetBlock[] {
+  const chain = getOrderedTextFlowChain(blocks, chainBlockId);
+  if (chain.length <= 1) return blocks;
+
+  const toRemove = new Set<string>();
+  for (let i = chain.length - 1; i > 0; i--) {
+    const block = chain[i];
+    if (isTextFlowHtmlEmpty(getTextFlowHtml(block))) {
+      toRemove.add(block.id);
+    } else {
+      break;
+    }
+  }
+
+  if (toRemove.size === 0) return blocks;
+
+  const remaining = chain.filter((block) => !toRemove.has(block.id));
+  const lastRemaining = remaining[remaining.length - 1];
+
+  return blocks
+    .filter((block) => !toRemove.has(block.id))
+    .map((block) => {
+      if (block.id === lastRemaining?.id) {
+        return { ...block, textFlowNextBlockId: undefined };
+      }
+      return block;
+    })
+    .map((block, index) => ({ ...block, order: index }));
 }

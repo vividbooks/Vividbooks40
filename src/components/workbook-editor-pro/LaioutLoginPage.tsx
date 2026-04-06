@@ -6,8 +6,10 @@ import { useViewMode } from '../../contexts/ViewModeContext';
 import { setAuthReturnTo, authReturnToFromSearchParams } from '../../utils/auth-return-to';
 import { getAuthCallbackRedirectUrl } from '../../utils/router-basename';
 import { LaioutBrandLogo } from './LaioutBrandLogo';
+import { LaioutLoginPaperCanvas } from './LaioutLoginPaperCanvas';
 
-const BG = '#0d1526';
+const BG = '#06051A';
+const LAIOUT_LOGO_PX = 112;
 
 function GoogleMark() {
   return (
@@ -78,41 +80,61 @@ export function LaioutLoginPage() {
 
   return (
     <div
-      className="min-h-screen flex flex-col items-center justify-center px-6"
+      className="relative isolate min-h-screen overflow-hidden px-6"
       style={{ backgroundColor: BG }}
     >
-      <div className="flex flex-col items-center gap-10 max-w-sm w-full text-center">
-        <div className="flex flex-col items-center gap-5">
-          <LaioutBrandLogo size={112} />
-          <h1
-            className="text-white font-semibold tracking-tight"
-            style={{ fontSize: '2rem', letterSpacing: '-0.04em' }}
-          >
-            laiout
-          </h1>
+      <LaioutLoginPaperCanvas />
+
+      <div className="relative z-10 flex min-h-screen flex-col items-center">
+        <div className="flex w-full flex-1 flex-col items-center justify-center">
+          <div className="flex w-full max-w-sm -translate-y-7 flex-col items-center gap-0 text-center">
+            <div className="flex flex-col items-center gap-5">
+              <LaioutBrandLogo size={LAIOUT_LOGO_PX} />
+              <h1
+                className="whitespace-nowrap font-semibold text-white"
+                style={{
+                  fontFamily: "'Fenomen Sans', sans-serif",
+                  fontSize: '2.625rem',
+                  letterSpacing: '-0.04em',
+                  lineHeight: 1.1,
+                }}
+              >
+                laiout
+              </h1>
+            </div>
+
+            <div className="w-full shrink-0" style={{ height: 70 }} aria-hidden />
+
+            <div className="flex w-full flex-col items-center gap-4">
+              <button
+                type="button"
+                onClick={() => void handleGoogle()}
+                disabled={loading}
+                className="inline-flex w-full max-w-xs items-center justify-center gap-3 rounded-xl bg-white px-5 py-3.5 text-sm font-medium text-gray-800 shadow-md transition hover:bg-gray-50 disabled:pointer-events-none disabled:opacity-60"
+              >
+                {loading ? (
+                  <Loader2 className="h-5 w-5 animate-spin text-gray-600" />
+                ) : (
+                  <GoogleMark />
+                )}
+                {loading ? 'Přesměrování…' : 'Přihlásit se přes Google'}
+              </button>
+
+              {error ? (
+                <p className="text-sm text-red-400" role="alert">
+                  {error}
+                </p>
+              ) : null}
+            </div>
+          </div>
         </div>
 
-        <div className="w-full flex flex-col items-center gap-4">
-          <button
-            type="button"
-            onClick={() => void handleGoogle()}
-            disabled={loading}
-            className="inline-flex items-center justify-center gap-3 w-full max-w-xs rounded-xl bg-white px-5 py-3.5 text-sm font-medium text-gray-800 shadow-md transition hover:bg-gray-50 disabled:opacity-60 disabled:pointer-events-none"
-          >
-            {loading ? (
-              <Loader2 className="h-5 w-5 animate-spin text-gray-600" />
-            ) : (
-              <GoogleMark />
-            )}
-            {loading ? 'Přesměrování…' : 'Přihlásit se přes Google'}
-          </button>
-
-          {error ? (
-            <p className="text-sm text-red-400" role="alert">
-              {error}
-            </p>
-          ) : null}
-        </div>
+        <p
+          className="max-w-sm shrink-0 px-2 text-center font-mono text-[11px] uppercase tracking-[0.28em] text-white"
+          style={{ paddingBottom: '2.5rem' }}
+        >
+          Design as code. Publishing, reinvented.
+        </p>
       </div>
     </div>
   );

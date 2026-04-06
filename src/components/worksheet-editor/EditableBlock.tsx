@@ -308,7 +308,7 @@ export function EditableBlock({ block, isSelected, isHovered, onSelect, onUpdate
   // Build visual style object
   const visualStyleObj: React.CSSProperties = {
     backgroundColor: hasVisualBackground ? visualStyles.backgroundColor : undefined,
-    border: hasVisualBorder ? `${visualStyles.borderWidth || 2}px solid ${visualStyles.borderColor}` : undefined,
+    border: hasVisualBorder ? `${visualStyles.borderWidth ?? 2}px solid ${visualStyles.borderColor}` : undefined,
     borderRadius: typeof visualStyles.borderRadius === 'number' ? `${visualStyles.borderRadius}px` : undefined,
     boxShadow: getShadowStyle(visualStyles.shadow),
     // Apply padding from block settings or visual styles
@@ -1334,7 +1334,7 @@ function HeadingEditor({ content, isEditing, onUpdate, onBlur, onKeyDown, fontSi
   const isCooper = fontFamily?.toLowerCase().includes('cooper');
   const fontClass = isCooper ? 'font-cooper' : '';
   const baseFontWeight = isH1 && isCooper ? 300 : 700;
-  const fontWeight = (isBold && !isCooper) ? 'bold' : baseFontWeight;
+  const fontWeight = content.fontWeight || (isBold && !isCooper ? 'bold' : baseFontWeight);
 
   const hStyle = content.headingStyle || 'plain';
 
@@ -1681,7 +1681,7 @@ function ParagraphEditor({ content, isEditing, onUpdate, onBlur, onKeyDown, onEn
     outline: 'none',
     minHeight: '1.5em',
     margin: 0,
-    fontWeight: isBold ? 'bold' : 'normal',
+    fontWeight: content.fontWeight === 'bold' || isBold ? 'bold' : (content.fontWeight || 'normal'),
     fontStyle: isItalic ? 'italic' : 'normal',
     textDecoration: isUnderline ? 'underline' : 'none',
     color: textColor,

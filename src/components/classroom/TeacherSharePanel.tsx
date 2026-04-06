@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   X, 
   Users, 
@@ -12,7 +12,9 @@ import {
   UserPlus
 } from 'lucide-react';
 import { useClassroomShare } from '../../contexts/ClassroomShareContext';
-import { MOCK_CLASSES, ConnectedStudent } from '../../types/classroom-share';
+import { useMyClassesClassesOverview, type ClassSummary } from '../../features/moje-trida';
+import { isUsingSupabase } from '../../utils/supabase/classes';
+import { ConnectedStudent } from '../../types/classroom-share';
 
 interface TeacherSharePanelProps {
   isOpen: boolean;
@@ -22,6 +24,18 @@ interface TeacherSharePanelProps {
 
 export function TeacherSharePanel({ isOpen, onClose, documentTitle }: TeacherSharePanelProps) {
   const { state, connectedStudents, startSharing, stopSharing } = useClassroomShare();
+  const useSupabaseData = isUsingSupabase();
+  const demoClassesForShare = useMemo<ClassSummary[]>(
+    () => [
+      { id: '1', name: '6.A', studentsCount: 28, createdAt: '2024-09-01' },
+      { id: '2', name: '6.B', studentsCount: 26, createdAt: '2024-09-01' },
+      { id: '3', name: '7.A', studentsCount: 24, createdAt: '2024-09-01' },
+      { id: '4', name: '7.B', studentsCount: 25, createdAt: '2024-09-01' },
+    ],
+    [],
+  );
+  const { classes: teacherShareClasses, loadingClasses: loadingTeacherShareClasses } =
+    useMyClassesClassesOverview(useSupabaseData, demoClassesForShare);
   const [selectedClass, setSelectedClass] = useState<string | null>(null);
   const [showClassSelector, setShowClassSelector] = useState(true);
   const [notifications, setNotifications] = useState<string[]>([]);
@@ -52,7 +66,7 @@ export function TeacherSharePanel({ isOpen, onClose, documentTitle }: TeacherSha
   const handleStartSharing = () => {
     if (!selectedClass) return;
     
-    const classInfo = MOCK_CLASSES.find(c => c.id === selectedClass);
+    const classInfo = teacherShareClasses.find(c => c.id === selectedClass);
     if (classInfo) {
       startSharing(
         selectedClass,
@@ -67,7 +81,6 @@ export function TeacherSharePanel({ isOpen, onClose, documentTitle }: TeacherSha
   const handleStopSharing = () => {
     stopSharing();
     setShowClassSelector(true);
-    setConnectedStudents([]);
   };
 
   const activeStudents = connectedStudents.filter(s => s.isActive).length;
@@ -101,7 +114,11 @@ export function TeacherSharePanel({ isOpen, onClose, documentTitle }: TeacherSha
 
           {showClassSelector && !isSharing && (
             <div className="mt-3 space-y-2">
-              {MOCK_CLASSES.map((cls) => (
+              {useSupabaseData && loadingTeacherShareClasses && (
+                <div className="text-center text-sm text-white/60 py-4">Načítám třídy…</div>
+              )}
+              {!(useSupabaseData && loadingTeacherShareClasses) &&
+                teacherShareClasses.map((cls) => (
                 <button
                   key={cls.id}
                   onClick={() => setSelectedClass(cls.id)}
@@ -115,7 +132,7 @@ export function TeacherSharePanel({ isOpen, onClose, documentTitle }: TeacherSha
                     <Users className="w-4 h-4 text-white/70" />
                     <span>{cls.name}</span>
                   </div>
-                  <span className="text-sm text-white/60">{cls.studentCount} žáků</span>
+                  <span className="text-sm text-white/60">{cls.studentsCount} žáků</span>
                 </button>
               ))}
               

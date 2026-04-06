@@ -416,8 +416,8 @@ export default function App() {
 
   return (
     <ViewModeProvider>
-    <ClassroomShareProvider>
     <StudentAuthProvider>
+    <ClassroomShareProvider>
     <Router basename={getRouterBasename() || undefined}>
       {/* Toast notifications */}
       <Toaster position="top-center" richColors />
@@ -933,8 +933,8 @@ export default function App() {
         />
       </Routes>
     </Router>
-    </StudentAuthProvider>
     </ClassroomShareProvider>
+    </StudentAuthProvider>
     </ViewModeProvider>
   );
 }

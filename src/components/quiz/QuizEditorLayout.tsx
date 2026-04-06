@@ -109,6 +109,7 @@ import { getMediaFolderId, ensureMediaFolderExists, createMediaSubfolder } from 
 import { VersionHistoryPanel } from '../shared/VersionHistoryPanel';
 import { supabase } from '../../utils/supabase/client';
 import { projectId } from '../../utils/supabase/info';
+import { fetchVividboardProxy } from '../../utils/vividboard-proxy-fetch';
 import { 
   Quiz, 
   QuizSlide, 
@@ -886,8 +887,7 @@ export function QuizEditorLayout({
       if (uuidMatch) {
         // Use Supabase proxy to avoid CORS issues with the old vividboard API
         const boardId = uuidMatch[1];
-        const proxyUrl = `https://${projectId}.supabase.co/functions/v1/make-server-46c8107b/vividboard-proxy/${boardId}`;
-        const response = await fetch(proxyUrl);
+        const response = await fetchVividboardProxy(boardId);
         if (!response.ok) throw new Error(`Proxy vrátila chybu ${response.status}`);
         data = await response.json();
       } else if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
@@ -2722,10 +2722,9 @@ export function QuizEditorLayout({
                                 return;
                               }
                               const boardId = uuidM[1];
-                              const proxyUrl = `https://${projectId}.supabase.co/functions/v1/make-server-46c8107b/vividboard-proxy/${boardId}`;
                               setJsonPreviewLoading(true);
                               try {
-                                const res = await fetch(proxyUrl);
+                                const res = await fetchVividboardProxy(boardId);
                                 const text = await res.text();
                                 try {
                                   const json = JSON.parse(text);
@@ -2734,7 +2733,9 @@ export function QuizEditorLayout({
                                   setJsonPreviewText(text || '(prázdná odpověď)');
                                 }
                               } catch(e) {
-                                setJsonPreviewText(`CHYBA: ${e}\n\nProxy URL: ${proxyUrl}`);
+                                setJsonPreviewText(
+                                  `CHYBA: ${e}\n\nBoard ID: ${boardId}`,
+                                );
                               } finally {
                                 setJsonPreviewLoading(false);
                               }

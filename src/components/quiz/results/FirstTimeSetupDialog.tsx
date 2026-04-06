@@ -1,6 +1,7 @@
 import React from 'react';
 import { Users, CheckCircle, RefreshCw } from 'lucide-react';
 import { ClassGroup } from '../../../utils/supabase/classes';
+import { persistQuizSetupDismissal } from '../../../features/moje-trida';
 
 interface FirstTimeSetupDialogProps {
   studentCount: number;
@@ -32,10 +33,16 @@ export function FirstTimeSetupDialog({
   onDismiss,
 }: FirstTimeSetupDialogProps) {
   const handleDismiss = () => {
-    if (sessionId) {
-      localStorage.setItem(`quiz_setup_dismissed_${sessionId}`, 'true');
-    }
-    onDismiss();
+    void (async () => {
+      try {
+        if (sessionId) {
+          await persistQuizSetupDismissal(sessionId);
+        }
+      } catch (e) {
+        console.error('persistQuizSetupDismissal', e);
+      }
+      onDismiss();
+    })();
   };
 
   return (

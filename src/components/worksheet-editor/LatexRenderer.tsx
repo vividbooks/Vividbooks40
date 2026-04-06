@@ -2,16 +2,24 @@ import React from 'react';
 import katex from 'katex';
 import { preventOrphans } from '../math/MathText';
 
+function normalizeNbspEntities(text: string): string {
+  return text
+    .replace(/&nbsp;/gi, '\u00A0')
+    .replace(/&#160;/gi, '\u00A0')
+    .replace(/&#xa0;/gi, '\u00A0');
+}
+
 /**
  * Applies Czech orphan-prevention (non-breaking spaces after single-char prepositions)
  * to HTML string – only touches text nodes between tags, never inside tag attributes.
  */
 export function preventOrphansInHtml(html: string): string {
   if (!html) return html;
+  const normalizedHtml = normalizeNbspEntities(html);
   // Process ALL text nodes: between tags (>TEXT<) AND at end of string (>TEXT with no closing <).
   // Using />([^<]+)/g instead of />([^<]+)</g so the final text node is also processed.
-  return html
-    .replace(/>([^<]+)/g, (match, text) => '>' + preventOrphans(text))
+  return normalizedHtml
+    .replace(/>([^<]+)/g, (_match, text) => '>' + preventOrphans(normalizeNbspEntities(text)))
     .replace(/(\s[aioukvszAIOUKVSZ])(<)/gi, (_, word, tag) => word.trimEnd() + '\u00A0' + tag);
 }
 

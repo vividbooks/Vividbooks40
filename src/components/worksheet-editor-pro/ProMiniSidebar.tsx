@@ -17,12 +17,13 @@ import {
   Download,
   Scissors,
   MonitorPlay,
-  BookOpen,
   Image,
   Settings,
   Database,
   Palette,
   ChevronLeft,
+  MessageSquare,
+  Workflow,
 } from 'lucide-react';
 
 // Custom workbook/structure icon (Vividbooks brand icon)
@@ -46,7 +47,14 @@ export type ProActivePanel = 'sheet-settings' | 'structure' | 'add' | 'ai' | 'im
 type SaveStatus = 'saved' | 'saving' | 'unsaved';
 
 export type AppMode = 'chapter' | 'book' | 'dataset';
-export type BookViewMode = 'canvas' | 'covers' | 'settings' | 'design' | 'dataset';
+export type BookViewMode =
+  | 'canvas'
+  | 'covers'
+  | 'settings'
+  | 'design'
+  | 'design2'
+  | 'agentPipeline'
+  | 'collaboration';
 
 interface ProMiniSidebarProps {
   activePanel: ProActivePanel;
@@ -489,18 +497,12 @@ export function ProMiniSidebar({
       </>}
 
       {appMode === 'book' && <>
-        {/* Book mode icons — Obsah / Obálka / Nastavení */}
+        {/* Obálka je v širokém panelu u kapitol; data set v Nastavení → záložka */}
         <IconButton
           onClick={() => onBookViewChange?.('canvas')}
           isActive={bookViewMode === 'canvas'}
           icon={LayoutGrid}
           label="Obsah"
-        />
-        <IconButton
-          onClick={() => onBookViewChange?.('covers')}
-          isActive={bookViewMode === 'covers'}
-          icon={BookOpen}
-          label="Obálka"
         />
         <IconButton
           onClick={() => onBookViewChange?.('settings')}
@@ -512,13 +514,25 @@ export function ProMiniSidebar({
           onClick={() => onBookViewChange?.('design')}
           isActive={bookViewMode === 'design'}
           icon={Palette}
-          label="Design system"
+          label="Design systém"
         />
         <IconButton
-          onClick={() => onBookViewChange?.('dataset')}
-          isActive={bookViewMode === 'dataset'}
-          icon={Database}
-          label="Data set"
+          onClick={() => onBookViewChange?.('design2')}
+          isActive={bookViewMode === 'design2'}
+          icon={Sparkles}
+          label="Design systém 2"
+        />
+        <IconButton
+          onClick={() => onBookViewChange?.('agentPipeline')}
+          isActive={bookViewMode === 'agentPipeline'}
+          icon={Workflow}
+          label="Agenti"
+        />
+        <IconButton
+          onClick={() => onBookViewChange?.('collaboration')}
+          isActive={bookViewMode === 'collaboration'}
+          icon={MessageSquare}
+          label="Komentáře"
         />
       </>}
 

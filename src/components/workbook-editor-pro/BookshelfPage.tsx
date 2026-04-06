@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, type ChangeEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, BookOpen, MoreHorizontal, Pencil, Trash2, Clock, Layers, Search, X, Download, Upload, Loader2, Share2 } from 'lucide-react';
+import { Plus, BookOpen, MoreHorizontal, Pencil, Trash2, Clock, Search, X, Download, Upload, Loader2, Share2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '../../utils/supabase/client';
 import {
@@ -11,7 +11,7 @@ import {
 import { sanitizeFilenamePart } from '../../utils/workbook/workbook-json-io';
 import { fetchTeacherBooksForCurrentUser } from '../../utils/supabase/teacher-books';
 import { laioutBookEditorPath, LAIOUT_BOOKSHELF_PATH } from '../../utils/laiout-routes';
-import { formatSupabaseError } from '../../utils/supabase/errors';
+import { formatSupabaseError, isMissingPostgrestColumnError } from '../../utils/supabase/errors';
 import { LaioutBrandLogo } from './LaioutBrandLogo';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -50,6 +50,15 @@ const C = {
   muted: '#64748b',
   accent: '#3B82F6',
 };
+
+const FONT_FENOMEN = "'Fenomen Sans', -apple-system, BlinkMacSystemFont, sans-serif";
+
+function shelfChapterLabel(n: number): string {
+  if (n <= 0) return '0 kapitol';
+  if (n === 1) return '1 kapitola';
+  if (n >= 2 && n <= 4) return `${n} kapitoly`;
+  return `${n} kapitol`;
+}
 
 // ── Book Card ─────────────────────────────────────────────────────────────────
 
@@ -120,221 +129,374 @@ function BookCard({
     return new Date(iso).toLocaleDateString('cs-CZ', { day: 'numeric', month: 'short' });
   };
 
-  return (
-    <div
-      onClick={isRenaming || menuOpen ? undefined : onOpen}
-      style={{
-        background: C.card,
-        borderRadius: '14px',
-        overflow: 'hidden',
-        border: `1px solid ${C.border}`,
-        cursor: isRenaming ? 'default' : 'pointer',
-        transition: 'transform 120ms ease, box-shadow 120ms ease, background 120ms ease',
-        display: 'flex',
-        flexDirection: 'column',
-        position: 'relative',
-      }}
-      onMouseEnter={e => {
-        (e.currentTarget as HTMLDivElement).style.transform = 'translateY(-3px)';
-        (e.currentTarget as HTMLDivElement).style.boxShadow = `0 12px 40px rgba(0,0,0,0.45)`;
-        (e.currentTarget as HTMLDivElement).style.background = C.cardHover;
-      }}
-      onMouseLeave={e => {
-        (e.currentTarget as HTMLDivElement).style.transform = 'translateY(0)';
-        (e.currentTarget as HTMLDivElement).style.boxShadow = 'none';
-        (e.currentTarget as HTMLDivElement).style.background = C.card;
-      }}
-    >
-      {/* Cover */}
-      <div style={{
-        height: '160px',
-        background: book.cover_url
-          ? `url(${book.cover_url}) center/cover`
-          : `linear-gradient(135deg, ${book.color}dd, ${book.color}88)`,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        flexShrink: 0,
-        position: 'relative',
-      }}>
-        {!book.cover_url && (
-          <BookOpen size={48} color="rgba(255,255,255,0.35)" strokeWidth={1.5} />
-        )}
+  const baseBg = book.cover_url
+    ? `linear-gradient(180deg, rgba(0,0,0,0.42) 0%, rgba(0,0,0,0.12) 35%, rgba(0,0,0,0.15) 65%, rgba(0,0,0,0.5) 100%), url(${book.cover_url})`
+    : `linear-gradient(165deg, ${book.color} 0%, ${book.color}cc 45%, ${book.color}99 100%)`;
+  const chapters = book.chapter_count ?? 0;
 
-        {/* Chapter badge */}
-        {book.is_shared && (
-          <div style={{
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', width: '100%', maxWidth: 280, margin: '0 auto' }}>
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={isRenaming || menuOpen ? undefined : onOpen}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            if (!isRenaming && !menuOpen) onOpen();
+          }
+        }}
+        style={{
+          position: 'relative',
+          width: '100%',
+          aspectRatio: '210 / 297',
+          maxHeight: 300,
+          borderRadius: 6,
+          overflow: 'hidden',
+          cursor: isRenaming ? 'default' : 'pointer',
+          border: '1px solid rgba(0,0,0,0.35)',
+          backgroundColor: book.color,
+          backgroundImage: baseBg,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          boxShadow: '0 8px 22px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.12)',
+          transition: 'transform 0.15s ease, box-shadow 0.15s ease',
+        }}
+        onMouseEnter={(e) => {
+          if (!isRenaming) {
+            (e.currentTarget as HTMLDivElement).style.transform = 'translateY(-3px)';
+            (e.currentTarget as HTMLDivElement).style.boxShadow =
+              '0 14px 34px rgba(0,0,0,0.48), inset 0 1px 0 rgba(255,255,255,0.12)';
+          }
+        }}
+        onMouseLeave={(e) => {
+          (e.currentTarget as HTMLDivElement).style.transform = 'translateY(0)';
+          (e.currentTarget as HTMLDivElement).style.boxShadow =
+            '0 8px 22px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.12)';
+        }}
+      >
+        <div
+          aria-hidden
+          style={{
             position: 'absolute',
-            bottom: '10px',
-            left: '10px',
-            background: 'rgba(0,0,0,0.5)',
-            backdropFilter: 'blur(6px)',
-            borderRadius: '20px',
-            padding: '3px 10px',
-            fontSize: '11px',
-            color: 'rgba(255,255,255,0.9)',
-            fontWeight: 600,
-          }}>
+            left: 0,
+            top: 0,
+            bottom: 0,
+            width: 5,
+            background: 'linear-gradient(90deg, rgba(0,0,0,0.2), transparent)',
+            pointerEvents: 'none',
+            zIndex: 1,
+          }}
+        />
+
+        {book.is_shared && (
+          <div
+            style={{
+              position: 'absolute',
+              top: 6,
+              left: 6,
+              zIndex: 2,
+              fontSize: 9,
+              fontWeight: 600,
+              color: '#e9d5ff',
+              background: 'rgba(88, 28, 135, 0.75)',
+              padding: '3px 6px',
+              borderRadius: 4,
+              letterSpacing: '0.02em',
+              fontFamily: FONT_FENOMEN,
+            }}
+          >
             Sdíleno
           </div>
         )}
 
-        {(book.chapter_count ?? 0) > 0 && (
-          <div style={{
-            position: 'absolute',
-            top: '10px',
-            left: '10px',
-            background: 'rgba(0,0,0,0.45)',
-            backdropFilter: 'blur(6px)',
-            borderRadius: '20px',
-            padding: '3px 10px',
-            fontSize: '11px',
-            color: 'rgba(255,255,255,0.85)',
-            fontWeight: 500,
-            display: 'flex',
-            alignItems: 'center',
-            gap: '4px',
-          }}>
-            <Layers size={11} />
-            {book.chapter_count} {book.chapter_count === 1 ? 'kapitola' : (book.chapter_count! < 5 ? 'kapitoly' : 'kapitol')}
+        {canManage && (
+          <div ref={menuRef} style={{ position: 'absolute', top: 6, right: 6, zIndex: 4 }} onClick={(e) => e.stopPropagation()}>
+            <button
+              type="button"
+              onClick={() => setMenuOpen((v) => !v)}
+              style={{
+                background: menuOpen ? 'rgba(255,255,255,0.28)' : 'rgba(0,0,0,0.4)',
+                backdropFilter: 'blur(6px)',
+                border: 'none',
+                borderRadius: 8,
+                width: 30,
+                height: 30,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                color: '#fff',
+                transition: 'background 120ms',
+              }}
+            >
+              <MoreHorizontal size={16} />
+            </button>
+
+            {menuOpen && (
+              <div
+                style={{
+                  position: 'absolute',
+                  top: 36,
+                  right: 0,
+                  background: '#1e293b',
+                  border: `1px solid ${C.border}`,
+                  borderRadius: 10,
+                  overflow: 'hidden',
+                  minWidth: 160,
+                  boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
+                  zIndex: 10,
+                  fontFamily: FONT_FENOMEN,
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    onShare(book.id);
+                  }}
+                  style={{
+                    width: '100%',
+                    padding: '9px 14px',
+                    background: 'none',
+                    border: 'none',
+                    color: C.text,
+                    textAlign: 'left',
+                    cursor: 'pointer',
+                    fontSize: 13,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                  }}
+                  onMouseEnter={(e) => {
+                    (e.currentTarget as HTMLButtonElement).style.background = '#334155';
+                  }}
+                  onMouseLeave={(e) => {
+                    (e.currentTarget as HTMLButtonElement).style.background = 'none';
+                  }}
+                >
+                  <Share2 size={13} /> Sdílet…
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    setIsRenaming(true);
+                  }}
+                  style={{
+                    width: '100%',
+                    padding: '9px 14px',
+                    background: 'none',
+                    border: 'none',
+                    color: C.text,
+                    textAlign: 'left',
+                    cursor: 'pointer',
+                    fontSize: 13,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                  }}
+                  onMouseEnter={(e) => {
+                    (e.currentTarget as HTMLButtonElement).style.background = '#334155';
+                  }}
+                  onMouseLeave={(e) => {
+                    (e.currentTarget as HTMLButtonElement).style.background = 'none';
+                  }}
+                >
+                  <Pencil size={13} /> Přejmenovat
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    onDelete(book.id);
+                  }}
+                  style={{
+                    width: '100%',
+                    padding: '9px 14px',
+                    background: 'none',
+                    border: 'none',
+                    color: '#f87171',
+                    textAlign: 'left',
+                    cursor: 'pointer',
+                    fontSize: 13,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                  }}
+                  onMouseEnter={(e) => {
+                    (e.currentTarget as HTMLButtonElement).style.background = '#3b1e1e';
+                  }}
+                  onMouseLeave={(e) => {
+                    (e.currentTarget as HTMLButtonElement).style.background = 'none';
+                  }}
+                >
+                  <Trash2 size={13} /> Smazat knihu
+                </button>
+                <button
+                  type="button"
+                  disabled={jsonBusy}
+                  onClick={() => {
+                    setMenuOpen(false);
+                    onDownloadJson();
+                  }}
+                  style={{
+                    width: '100%',
+                    padding: '9px 14px',
+                    background: 'none',
+                    border: 'none',
+                    color: C.text,
+                    textAlign: 'left',
+                    cursor: jsonBusy ? 'wait' : 'pointer',
+                    fontSize: 13,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    opacity: jsonBusy ? 0.6 : 1,
+                  }}
+                  onMouseEnter={(e) => {
+                    (e.currentTarget as HTMLButtonElement).style.background = '#334155';
+                  }}
+                  onMouseLeave={(e) => {
+                    (e.currentTarget as HTMLButtonElement).style.background = 'none';
+                  }}
+                >
+                  {jsonBusy ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
+                  Stáhnout JSON
+                </button>
+                <button
+                  type="button"
+                  disabled={jsonBusy}
+                  onClick={() => {
+                    setMenuOpen(false);
+                    onImportJson();
+                  }}
+                  style={{
+                    width: '100%',
+                    padding: '9px 14px',
+                    background: 'none',
+                    border: 'none',
+                    color: C.text,
+                    textAlign: 'left',
+                    cursor: jsonBusy ? 'wait' : 'pointer',
+                    fontSize: 13,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    opacity: jsonBusy ? 0.6 : 1,
+                  }}
+                  onMouseEnter={(e) => {
+                    (e.currentTarget as HTMLButtonElement).style.background = '#334155';
+                  }}
+                  onMouseLeave={(e) => {
+                    (e.currentTarget as HTMLButtonElement).style.background = 'none';
+                  }}
+                >
+                  <Upload size={13} /> Nahrát JSON
+                </button>
+              </div>
+            )}
           </div>
         )}
 
-        {/* Menu button */}
-        {canManage && (
         <div
-          ref={menuRef}
-          style={{ position: 'absolute', top: '8px', right: '8px' }}
-          onClick={e => e.stopPropagation()}
+          style={{
+            position: 'relative',
+            zIndex: 1,
+            height: '100%',
+            display: 'flex',
+            flexDirection: 'column',
+            padding: '14px 12px 12px 14px',
+            boxSizing: 'border-box',
+          }}
         >
-          <button
-            onClick={() => setMenuOpen(v => !v)}
-            style={{
-              background: menuOpen ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.35)',
-              backdropFilter: 'blur(6px)',
-              border: 'none',
-              borderRadius: '8px',
-              width: '30px',
-              height: '30px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: 'pointer',
-              color: '#fff',
-              transition: 'background 120ms',
-            }}
-          >
-            <MoreHorizontal size={16} />
-          </button>
-
-          {menuOpen && (
-            <div style={{
-              position: 'absolute',
-              top: '36px',
-              right: 0,
-              background: '#1e293b',
-              border: `1px solid ${C.border}`,
-              borderRadius: '10px',
-              overflow: 'hidden',
-              minWidth: '150px',
-              boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
-              zIndex: 10,
-            }}>
-              <button
-                onClick={() => { setMenuOpen(false); onShare(book.id); }}
-                style={{ width: '100%', padding: '9px 14px', background: 'none', border: 'none', color: C.text, textAlign: 'left', cursor: 'pointer', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '8px' }}
-                onMouseEnter={e => (e.currentTarget.style.background = '#334155')}
-                onMouseLeave={e => (e.currentTarget.style.background = 'none')}
-              >
-                <Share2 size={13} /> Sdílet…
-              </button>
-              <button
-                onClick={() => { setMenuOpen(false); setIsRenaming(true); }}
-                style={{ width: '100%', padding: '9px 14px', background: 'none', border: 'none', color: C.text, textAlign: 'left', cursor: 'pointer', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '8px' }}
-                onMouseEnter={e => (e.currentTarget.style.background = '#334155')}
-                onMouseLeave={e => (e.currentTarget.style.background = 'none')}
-              >
-                <Pencil size={13} /> Přejmenovat
-              </button>
-              <button
-                onClick={() => { setMenuOpen(false); onDelete(book.id); }}
-                style={{ width: '100%', padding: '9px 14px', background: 'none', border: 'none', color: '#f87171', textAlign: 'left', cursor: 'pointer', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '8px' }}
-                onMouseEnter={e => (e.currentTarget.style.background = '#3b1e1e')}
-                onMouseLeave={e => (e.currentTarget.style.background = 'none')}
-              >
-                <Trash2 size={13} /> Smazat knihu
-              </button>
-              <button
-                type="button"
-                disabled={jsonBusy}
-                onClick={() => { setMenuOpen(false); onDownloadJson(); }}
-                style={{ width: '100%', padding: '9px 14px', background: 'none', border: 'none', color: C.text, textAlign: 'left', cursor: jsonBusy ? 'wait' : 'pointer', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '8px', opacity: jsonBusy ? 0.6 : 1 }}
-                onMouseEnter={e => (e.currentTarget.style.background = '#334155')}
-                onMouseLeave={e => (e.currentTarget.style.background = 'none')}
-              >
-                {jsonBusy ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
-                Stáhnout JSON
-              </button>
-              <button
-                type="button"
-                disabled={jsonBusy}
-                onClick={() => { setMenuOpen(false); onImportJson(); }}
-                style={{ width: '100%', padding: '9px 14px', background: 'none', border: 'none', color: C.text, textAlign: 'left', cursor: jsonBusy ? 'wait' : 'pointer', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '8px', opacity: jsonBusy ? 0.6 : 1 }}
-                onMouseEnter={e => (e.currentTarget.style.background = '#334155')}
-                onMouseLeave={e => (e.currentTarget.style.background = 'none')}
-              >
-                <Upload size={13} /> Nahrát JSON
-              </button>
+          {isRenaming ? (
+            <input
+              ref={inputRef}
+              value={renameValue}
+              onChange={(e) => setRenameValue(e.target.value)}
+              onBlur={commitRename}
+              onClick={(e) => e.stopPropagation()}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') commitRename();
+                if (e.key === 'Escape') {
+                  setRenameValue(book.title);
+                  setIsRenaming(false);
+                }
+              }}
+              style={{
+                background: 'rgba(15,23,42,0.92)',
+                border: `1px solid ${C.accent}`,
+                borderRadius: 8,
+                color: '#fff',
+                fontSize: 15,
+                fontWeight: 600,
+                fontFamily: FONT_FENOMEN,
+                padding: '8px 10px',
+                width: '100%',
+                outline: 'none',
+                boxSizing: 'border-box',
+              }}
+            />
+          ) : (
+            <div
+              style={{
+                fontFamily: FONT_FENOMEN,
+                fontWeight: 600,
+                fontSize: 'clamp(16px, 3.5vw, 22px)',
+                lineHeight: 1.2,
+                color: '#fff',
+                textAlign: 'center',
+                display: '-webkit-box',
+                WebkitLineClamp: 5,
+                WebkitBoxOrient: 'vertical',
+                overflow: 'hidden',
+                wordBreak: 'break-word',
+                hyphens: 'auto',
+                flex: 1,
+                paddingTop: 4,
+              }}
+            >
+              {book.title}
             </div>
           )}
         </div>
-        )}
+
+        <div
+          style={{
+            position: 'absolute',
+            right: 8,
+            bottom: 8,
+            zIndex: 2,
+            fontSize: 11,
+            fontWeight: 500,
+            letterSpacing: '0.02em',
+            color: 'rgba(255,255,255,0.95)',
+            pointerEvents: 'none',
+            fontFamily: FONT_FENOMEN,
+          }}
+        >
+          {shelfChapterLabel(chapters)}
+        </div>
       </div>
 
-      {/* Info */}
-      <div style={{ padding: '14px 16px', flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
-        {isRenaming ? (
-          <input
-            ref={inputRef}
-            value={renameValue}
-            onChange={e => setRenameValue(e.target.value)}
-            onBlur={commitRename}
-            onKeyDown={e => {
-              if (e.key === 'Enter') commitRename();
-              if (e.key === 'Escape') { setRenameValue(book.title); setIsRenaming(false); }
-            }}
-            style={{
-              background: '#0d1a2d',
-              border: `1px solid ${C.accent}`,
-              borderRadius: '6px',
-              color: C.text,
-              fontSize: '14px',
-              fontWeight: 600,
-              padding: '4px 8px',
-              width: '100%',
-              outline: 'none',
-            }}
-          />
-        ) : (
-          <div style={{
-            fontSize: '14px',
-            fontWeight: 600,
-            color: C.text,
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-          }}>
-            {book.title}
-          </div>
-        )}
-
+      <div style={{ marginTop: 10, textAlign: 'center', minHeight: 32, fontFamily: FONT_FENOMEN }}>
         {(book.subject || book.grade) && (
-          <div style={{ fontSize: '12px', color: C.muted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <div style={{ fontSize: 11, color: C.muted, lineHeight: 1.35 }}>
             {[book.subject, book.grade].filter(Boolean).join(' · ')}
           </div>
         )}
-
-        <div style={{ fontSize: '11px', color: '#475569', marginTop: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+        <div
+          style={{
+            fontSize: 11,
+            color: '#475569',
+            marginTop: book.subject || book.grade ? 4 : 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 4,
+          }}
+        >
           <Clock size={11} />
           {timeAgo(book.updated_at)}
         </div>
@@ -353,6 +515,24 @@ const PAGE_PRESETS = [
   { label: '128', value: 128 },
   { label: '160', value: 160 },
 ];
+
+/** Ochrana proti visícímu fetchi (getSession + insert jsou jinak rychlé). */
+const CREATE_BOOK_INSERT_TIMEOUT_MS = 18_000;
+
+function raceWithTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const t = window.setTimeout(() => reject(new Error(message)), ms);
+    promise
+      .then((v) => {
+        window.clearTimeout(t);
+        resolve(v);
+      })
+      .catch((e) => {
+        window.clearTimeout(t);
+        reject(e);
+      });
+  });
+}
 
 // ── New Book Dialog ───────────────────────────────────────────────────────────
 
@@ -379,6 +559,9 @@ function NewBookDialog({
     setSaving(true);
     try {
       await onCreate(title.trim(), color, subject.trim(), totalPages);
+    } catch (e) {
+      console.error('[Bookshelf] Nová kniha', e);
+      toast.error(e instanceof Error ? e.message : 'Vytvoření knihy selhalo.');
     } finally {
       setSaving(false);
     }
@@ -716,7 +899,9 @@ export function BookshelfPage() {
   // ── Load books ──────────────────────────────────────────────────────────────
   const loadBooks = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      // getSession = lokální JWT, bez čekání na Auth server (getUser() umí trvat dlouho)
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user;
       if (!user) {
         navigate(LAIOUT_BOOKSHELF_PATH, { replace: true });
         return;
@@ -748,39 +933,97 @@ export function BookshelfPage() {
     }
   };
 
-  useEffect(() => { loadBooks(); }, []);
+  useEffect(() => {
+    void supabase.auth.getSession();
+    loadBooks();
+  }, []);
 
   // ── Create book ─────────────────────────────────────────────────────────────
   const handleCreate = async (title: string, color: string, subject: string, totalPages: number) => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+    try {
+      const { data: sessionData, error: sessErr } = await supabase.auth.getSession();
+      if (sessErr) {
+        console.error('[Bookshelf] getSession', sessErr);
+        toast.error('Nepodařilo se načíst relaci. Obnov stránku.');
+        return;
+      }
+      const user = sessionData.session?.user;
+      if (!user?.id) {
+        toast.error('Nejsi přihlášená.');
+        return;
+      }
 
-    const payload: Record<string, unknown> = {
-      teacher_id: user.id,
-      title,
-      color,
-      subject: subject || null,
-      total_pages: Math.max(1, Math.min(500, Math.round(totalPages))),
-    };
+      const totalPagesValue = Math.max(1, Math.min(500, Math.round(totalPages)));
+      const payload: Record<string, unknown> = {
+        teacher_id: user.id,
+        title,
+        color,
+        subject: subject || null,
+        total_pages: totalPagesValue,
+      };
 
-    let { data, error } = await supabase.from('teacher_books').insert(payload).select().single();
+      const doInsert = async () => {
+        let ins = await supabase.from('teacher_books').insert(payload).select('id').maybeSingle();
+        if (ins.error?.message?.includes('total_pages') || ins.error?.code === 'PGRST204') {
+          const { total_pages: _t, ...withoutPages } = payload;
+          ins = await supabase.from('teacher_books').insert(withoutPages).select('id').maybeSingle();
+        }
+        return ins;
+      };
 
-    // Starší DB bez sloupce total_pages — zkusit znovu bez něj (kniha vznikne s výchozí 0 stran)
-    if (error?.message?.includes('total_pages') || error?.code === 'PGRST204') {
-      const { total_pages: _t, ...withoutPages } = payload;
-      const retry = await supabase.from('teacher_books').insert(withoutPages).select().single();
-      data = retry.data;
-      error = retry.error;
+      let bookId: string | undefined;
+      let insertError: Awaited<ReturnType<typeof doInsert>>['error'];
+      try {
+        const res = await raceWithTimeout(
+          doInsert(),
+          CREATE_BOOK_INSERT_TIMEOUT_MS,
+          'Ukládání knihy trvá příliš dlouho — zkontroluj síť a zkus znovu.',
+        );
+        bookId = (res.data as { id?: string } | null)?.id;
+        insertError = res.error;
+      } catch (e) {
+        console.error('[Bookshelf] create book timeout', e);
+        toast.error(formatSupabaseError(e));
+        return;
+      }
+
+      if (!bookId && !insertError) {
+        const pick = await supabase
+          .from('teacher_books')
+          .select('id')
+          .eq('teacher_id', user.id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        bookId = pick.data?.id;
+      }
+
+      if (insertError || !bookId) {
+        console.error('[Bookshelf] create book', insertError, { bookId });
+        toast.error(`Nepodařilo se vytvořit knihu: ${formatSupabaseError(insertError ?? 'Neznámá chyba')}`);
+        return;
+      }
+
+      // Vždy zapsat plán stran z formuláře (insert někdy sloupec nepřenese / zůstane 0 v DB)
+      const { error: pagesErr } = await supabase
+        .from('teacher_books')
+        .update({ total_pages: totalPagesValue })
+        .eq('id', bookId)
+        .eq('teacher_id', user.id);
+      if (pagesErr) {
+        console.error('[Bookshelf] total_pages po vytvoření knihy', pagesErr);
+        toast.warning(
+          `Kniha vznikla, ale počet stran (${totalPagesValue}) se nepodařilo uložit — nastav ho v nastavení sešitu. ${formatSupabaseError(pagesErr)}`,
+          { duration: 8000 },
+        );
+      }
+
+      setShowNew(false);
+      navigate(laioutBookEditorPath(bookId));
+    } catch (e) {
+      console.error('[Bookshelf] create book', e);
+      toast.error(formatSupabaseError(e));
     }
-
-    if (error || !data) {
-      console.error('[Bookshelf] create book', error);
-      toast.error(`Nepodařilo se vytvořit knihu: ${formatSupabaseError(error ?? 'Neznámá chyba')}`);
-      return;
-    }
-
-    setShowNew(false);
-    navigate(laioutBookEditorPath(data.id));
   };
 
   const shareTargetBook = shareBookId ? books.find(b => b.id === shareBookId) : null;
@@ -947,7 +1190,7 @@ export function BookshelfPage() {
 
   // ── Render ──────────────────────────────────────────────────────────────────
   return (
-    <div style={{ minHeight: '100vh', background: C.bg, color: C.text, fontFamily: 'Inter, system-ui, sans-serif' }}>
+    <div style={{ minHeight: '100vh', background: C.bg, color: C.text, fontFamily: FONT_FENOMEN }}>
       <input
         ref={importJsonInputRef}
         type="file"
@@ -1037,7 +1280,7 @@ export function BookshelfPage() {
       </div>
 
       {/* Content */}
-      <div style={{ padding: '40px 32px', maxWidth: '1200px', margin: '0 auto' }}>
+      <div style={{ padding: '40px 32px', maxWidth: '1280px', margin: '0 auto' }}>
         {loading ? (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '300px', color: C.muted, fontSize: '14px', gap: '10px' }}>
             <div style={{
@@ -1090,8 +1333,8 @@ export function BookshelfPage() {
             )}
             <div style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
-              gap: '20px',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(168px, 1fr))',
+              gap: '24px',
             }}>
               {filtered.map(book => (
                 <BookCard

@@ -66,9 +66,13 @@ import {
   getStudentAuthStatus,
   getClassSubjects,
   addClassSubject,
+  getClassCollaborators,
+  inviteCollaborator,
+  removeCollaborator,
 } from '../../utils/supabase/classes';
 import {
   getAssignmentsForClass,
+  getTaskSubmissionsGroupedForClass,
 } from '../../utils/student-assignments';
 import {
   StudentAssignment,
@@ -164,6 +168,7 @@ export function ClassResultsGrid({ classId, className, onBack }: ClassResultsGri
   const [classMessages, setClassMessages] = useState<ClassMessage[]>([]);
   const [studentEvaluationsMap, setStudentEvaluationsMap] = useState<Map<string, Map<string, string>>>(new Map()); // evaluationId -> studentId -> text
   const [colleagues, setColleagues] = useState<{ id: string; name: string; email: string; subject: string }[]>(() => {
+    if (typeof window !== 'undefined' && isUsingSupabase()) return [];
     const saved = localStorage.getItem(`class_${classId}_colleagues`);
     return saved ? JSON.parse(saved) : [
       { id: 'c1', name: 'Mgr. Jana Nováková', email: 'novakova@skola.cz', subject: 'Matematika' },
@@ -217,8 +222,9 @@ export function ClassResultsGrid({ classId, className, onBack }: ClassResultsGri
           const subjectNames = loadedSubjects.map(s => s.subject_name);
           setSubjects(subjectNames);
           setSelectedSubject(subjectNames[0]);
-          // Also update localStorage
-          localStorage.setItem(`class_${classId}_subjects`, JSON.stringify(subjectNames));
+          if (!isUsingSupabase()) {
+            localStorage.setItem(`class_${classId}_subjects`, JSON.stringify(subjectNames));
+          }
         }
       } catch (error) {
         console.error('Error loading subjects from Supabase:', error);
@@ -229,17 +235,44 @@ export function ClassResultsGrid({ classId, className, onBack }: ClassResultsGri
     loadSubjects();
   }, [classId]);
   
-  // Save subjects to localStorage when they change
+  // Save subjects to localStorage when they change (demo režim; u Supabase jsou předměty v DB)
   useEffect(() => {
-    if (subjectsLoaded) {
-    localStorage.setItem(`class_${classId}_subjects`, JSON.stringify(subjects));
+    if (subjectsLoaded && !useSupabase) {
+      localStorage.setItem(`class_${classId}_subjects`, JSON.stringify(subjects));
     }
-  }, [subjects, classId, subjectsLoaded]);
+  }, [subjects, classId, subjectsLoaded, useSupabase]);
   
-  // Save colleagues to localStorage when they change
+  // Kolegové z Supabase při zapnutém datovém zdroji
   useEffect(() => {
-    localStorage.setItem(`class_${classId}_colleagues`, JSON.stringify(colleagues));
-  }, [colleagues, classId]);
+    if (!useSupabase) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const list = await getClassCollaborators(classId);
+        if (cancelled) return;
+        setColleagues(
+          list.map((c) => ({
+            id: c.id,
+            name: c.teacher_name || c.teacher_email || 'Kolega',
+            email: c.teacher_email || '',
+            subject: c.subject_name,
+          })),
+        );
+      } catch (e) {
+        console.error('[ClassResultsGrid] getClassCollaborators', e);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [classId, useSupabase]);
+
+  // Save colleagues to localStorage when they change (jen demo)
+  useEffect(() => {
+    if (!useSupabase) {
+      localStorage.setItem(`class_${classId}_colleagues`, JSON.stringify(colleagues));
+    }
+  }, [colleagues, classId, useSupabase]);
   
   // Available subjects to add (those not already added)
   const availableSubjects = VIVIDBOOKS_SUBJECTS.filter(s => !subjects.includes(s));
@@ -327,21 +360,12 @@ export function ClassResultsGrid({ classId, className, onBack }: ClassResultsGri
       // Store student tasks (úkoly)
       setStudentTasks(tasks || []);
       
-      // Load task submissions from localStorage
       try {
-        const allSubmissions = JSON.parse(localStorage.getItem('vivid-student-submissions') || '[]') as StudentSubmission[];
-        const submissionsByTask: { [assignmentId: string]: { [studentId: string]: StudentSubmission } } = {};
-        
-        for (const sub of allSubmissions) {
-          if (!submissionsByTask[sub.assignment_id]) {
-            submissionsByTask[sub.assignment_id] = {};
-          }
-          submissionsByTask[sub.assignment_id][sub.student_id] = sub;
-        }
-        
+        const submissionsByTask = await getTaskSubmissionsGroupedForClass(classId);
         setTaskSubmissions(submissionsByTask);
       } catch (e) {
         console.log('[ClassResultsGrid] Error loading submissions:', e);
+        setTaskSubmissions({});
       }
     } catch (error) {
       console.error('[ClassResultsGrid] Error loading data:', error);
@@ -353,6 +377,62 @@ export function ClassResultsGrid({ classId, className, onBack }: ClassResultsGri
     }
     
     setLoading(false);
+  };
+
+  const handleInviteColleague = async () => {
+    const email = colleagueEmail.trim();
+    if (!email) return;
+    if (useSupabase) {
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        const invited = await inviteCollaborator(classId, email, 'Čeká na potvrzení', user?.id || 'unknown');
+        if (invited) {
+          setColleagues((prev) => [
+            ...prev,
+            {
+              id: invited.id,
+              name: invited.teacher_name || email.split('@')[0],
+              email: invited.teacher_email || email,
+              subject: invited.subject_name,
+            },
+          ]);
+          setColleagueEmail('');
+          toast.success('Pozvánka odeslána');
+        } else {
+          toast.error('Nepodařilo se pozvat kolegu');
+        }
+      } catch (e) {
+        console.error(e);
+        toast.error('Chyba při pozvání');
+      }
+      return;
+    }
+    setColleagues([
+      ...colleagues,
+      {
+        id: `c${Date.now()}`,
+        name: email.split('@')[0],
+        email,
+        subject: 'Čeká na potvrzení',
+      },
+    ]);
+    setColleagueEmail('');
+  };
+
+  const handleRemoveColleague = async (collaboratorId: string) => {
+    if (useSupabase) {
+      const ok = await removeCollaborator(classId, collaboratorId);
+      if (ok) {
+        setColleagues((prev) => prev.filter((c) => c.id !== collaboratorId));
+        toast.success('Kolega odebrán');
+      } else {
+        toast.error('Nepodařilo se odebrat kolegu');
+      }
+      return;
+    }
+    setColleagues(colleagues.filter((c) => c.id !== collaboratorId));
   };
   
   // Student management functions
@@ -2076,7 +2156,7 @@ export function ClassResultsGrid({ classId, className, onBack }: ClassResultsGri
                           </div>
                         </div>
                         <button 
-                          onClick={() => setColleagues(colleagues.filter(c => c.id !== colleague.id))}
+                          onClick={() => void handleRemoveColleague(colleague.id)}
                           className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
                         >
                           <X className="w-4 h-4" />
@@ -2098,17 +2178,7 @@ export function ClassResultsGrid({ classId, className, onBack }: ClassResultsGri
                   className="flex-1 px-4 py-3 rounded-xl border border-slate-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 outline-none text-sm"
                 />
                 <button
-                  onClick={() => {
-                    if (colleagueEmail.trim()) {
-                      setColleagues([...colleagues, {
-                        id: `c${Date.now()}`,
-                        name: colleagueEmail.split('@')[0],
-                        email: colleagueEmail,
-                        subject: 'Čeká na potvrzení',
-                      }]);
-                      setColleagueEmail('');
-                    }
-                  }}
+                  onClick={() => void handleInviteColleague()}
                   className="px-4 py-3 rounded-xl bg-emerald-600 text-white font-medium hover:bg-emerald-700 transition-colors flex items-center gap-2"
                 >
                   <Mail className="w-4 h-4" />

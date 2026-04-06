@@ -140,6 +140,13 @@ export function getSchoolByCode(code: string): School | null {
   return schools.find(s => s.code.toUpperCase() === code.toUpperCase()) || null;
 }
 
+/** Škola aktuálně uloženého uživatelského profilu (localStorage). */
+export function getCurrentSchool(): School | null {
+  const profile = getCurrentUserProfile();
+  if (!profile?.schoolId) return null;
+  return getSchoolById(profile.schoolId);
+}
+
 export function createSchool(school: Omit<School, 'id' | 'createdAt'>): School {
   const schools = getSchools();
   const newSchool: School = {
@@ -265,6 +272,7 @@ export const storage = {
   getSchools,
   getSchoolById,
   getSchoolByCode,
+  getCurrentSchool,
   createSchool,
   deleteSchool,
   

@@ -32,8 +32,10 @@ import {
   SUBMISSION_STATUS_COLORS,
   AIDetectionFlag,
 } from '../../types/student-assignment';
-import { 
+import {
   getAssignmentsForClass,
+  getSubmissionsForAssignmentWithStudents,
+  type SubmissionWithStudentInfo,
 } from '../../utils/student-assignments';
 import { parseISO, format, formatDistanceToNow } from 'date-fns';
 import { cs } from 'date-fns/locale';
@@ -45,19 +47,47 @@ interface AssignmentReviewProps {
   onClose: () => void;
 }
 
-// Mock submission data for demo (in real app, fetch from Supabase)
-interface SubmissionWithStudent extends StudentSubmission {
-  studentName: string;
-  studentInitials: string;
-  studentColor: string;
+function resolveSubmissionPreviewText(submission: SubmissionWithStudentInfo): string {
+  const cloud = submission.text_preview?.trim();
+  if (cloud) return cloud;
+  return getAssignmentPreviewLocalFallback(submission.content_id, submission.content_type);
+}
+
+function getAssignmentPreviewLocalFallback(
+  contentId: string,
+  contentType: StudentSubmission['content_type']
+): string {
+  const plain = localStorage.getItem(`assignment_content_${contentId}`);
+  if (plain) return plain;
+
+  if (contentType === 'document') {
+    const docStr = localStorage.getItem(`vivid-doc-${contentId}`);
+    if (docStr) {
+      try {
+        const doc = JSON.parse(docStr) as { content?: string };
+        const html = doc.content || '';
+        const stripped = html
+          .replace(/<[^>]+>/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+        if (stripped) return stripped;
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+
+  return 'Obsah není k dispozici (zobrazí se jen na tomto zařízení, pokud ho má žák uložený lokálně).';
 }
 
 export function AssignmentReview({ classId, className, onClose }: AssignmentReviewProps) {
   const [assignments, setAssignments] = useState<StudentAssignment[]>([]);
   const [selectedAssignment, setSelectedAssignment] = useState<StudentAssignment | null>(null);
-  const [submissions, setSubmissions] = useState<SubmissionWithStudent[]>([]);
+  const [submissions, setSubmissions] = useState<SubmissionWithStudentInfo[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedSubmission, setSelectedSubmission] = useState<SubmissionWithStudent | null>(null);
+  const [loadingSubmissions, setLoadingSubmissions] = useState(false);
+  const [selectedSubmission, setSelectedSubmission] =
+    useState<SubmissionWithStudentInfo | null>(null);
 
   // Load assignments
   useEffect(() => {
@@ -75,37 +105,34 @@ export function AssignmentReview({ classId, className, onClose }: AssignmentRevi
     loadData();
   }, [classId]);
 
-  // Load submissions when assignment selected
+  // Load submissions when assignment selected (Supabase + students, fallback localStorage)
   useEffect(() => {
     if (!selectedAssignment) {
       setSubmissions([]);
       return;
     }
 
-    // In real app, fetch from Supabase joining with students table
-    // For now, get from localStorage
-    try {
-      const allSubmissions = JSON.parse(localStorage.getItem('vivid-student-submissions') || '[]');
-      const assignmentSubmissions = allSubmissions.filter(
-        (s: StudentSubmission) => s.assignment_id === selectedAssignment.id
-      );
-
-      // Mock student data
-      const colors = ['#EC4899', '#3B82F6', '#8B5CF6', '#10B981', '#F59E0B'];
-      const names = ['Jan Novák', 'Marie Svobodová', 'Petr Dvořák', 'Anna Horáková', 'Tomáš Černý'];
-      
-      const withStudents: SubmissionWithStudent[] = assignmentSubmissions.map((s: StudentSubmission, i: number) => ({
-        ...s,
-        studentName: names[i % names.length],
-        studentInitials: names[i % names.length].split(' ').map(n => n[0]).join(''),
-        studentColor: colors[i % colors.length],
-      }));
-
-      setSubmissions(withStudents);
-    } catch (error) {
-      console.error('Error loading submissions:', error);
+    let cancelled = false;
+    async function loadSubmissions() {
+      setLoadingSubmissions(true);
+      try {
+        const rows = await getSubmissionsForAssignmentWithStudents(
+          classId,
+          selectedAssignment.id
+        );
+        if (!cancelled) setSubmissions(rows);
+      } catch (error) {
+        console.error('Error loading submissions:', error);
+        if (!cancelled) setSubmissions([]);
+      } finally {
+        if (!cancelled) setLoadingSubmissions(false);
+      }
     }
-  }, [selectedAssignment]);
+    loadSubmissions();
+    return () => {
+      cancelled = true;
+    };
+  }, [classId, selectedAssignment]);
 
   const getAIFlagSeverity = (flags: AIDetectionFlag[]): 'none' | 'low' | 'medium' | 'high' => {
     if (!flags || flags.length === 0) return 'none';
@@ -230,10 +257,14 @@ export function AssignmentReview({ classId, className, onClose }: AssignmentRevi
 
                 {/* Submissions list */}
                 <h4 className="text-sm font-medium text-slate-500 dark:text-slate-400 mb-3">
-                  Odevzdané práce ({submissions.length})
+                  Odevzdané práce ({loadingSubmissions ? '…' : submissions.length})
                 </h4>
 
-                {submissions.length === 0 ? (
+                {loadingSubmissions ? (
+                  <div className="flex items-center justify-center py-8 text-slate-400">
+                    <Loader2 className="w-8 h-8 animate-spin" />
+                  </div>
+                ) : submissions.length === 0 ? (
                   <div className="text-center py-8 text-slate-400">
                     <Clock className="w-10 h-10 mx-auto mb-2 opacity-50" />
                     <p>Zatím nikdo neodevzdal</p>
@@ -370,7 +401,7 @@ export function AssignmentReview({ classId, className, onClose }: AssignmentRevi
                 <h4 className="text-sm font-medium text-slate-500 mb-2">Obsah práce</h4>
                 <div className="p-4 bg-slate-50 dark:bg-slate-700 rounded-xl">
                   <p className="text-slate-600 dark:text-slate-300 whitespace-pre-wrap">
-                    {localStorage.getItem(`assignment_content_${selectedSubmission.content_id}`) || 'Obsah není k dispozici'}
+                    {resolveSubmissionPreviewText(selectedSubmission)}
                   </p>
                 </div>
               </div>

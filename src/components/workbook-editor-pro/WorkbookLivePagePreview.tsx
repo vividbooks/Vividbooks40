@@ -6,6 +6,14 @@ import { PrintGridCanvas } from '../worksheet-editor-pro/PrintGridCanvas';
 
 const stablePreviewKeys = new Set<string>();
 
+/** Re-render jen když se opravdu změní obsah/struktura listu — ne při každém `ds.updated_at` v náhledovém worksheetu. */
+function worksheetVisualMemoKey(w: Worksheet | null): string {
+  if (!w) return '';
+  const blocks = w.blocks ?? [];
+  if (blocks.length === 0) return `${w.id}:0`;
+  return `${w.id}:${blocks.length}:${blocks.map((b) => b.id).join(',')}`;
+}
+
 interface WorkbookLivePagePreviewProps {
   worksheet: Worksheet | null;
   pageIndex: number;
@@ -13,6 +21,15 @@ interface WorkbookLivePagePreviewProps {
   height: number;
   borderRadius?: string;
   onLoadRequested?: () => void;
+  /** Vnořený scroll (náhled toku) — viewport IO by jinak stránky neviděl. */
+  forceVisible?: boolean;
+  /**
+   * Zobrazí jen horní část stránky (hodnota 0–1 z výšky stránky). Měřítko se počítá jen ze šířky,
+   * aby spodní prázdný papír u krátkých layoutů nebyl v náhledu vidět (oříznutí overflow).
+   */
+  clipPageHeightFraction?: number;
+  /** Násobí měřítko oproti „na šířku“ (např. 1,2) a ořízne boky — užší výřez textové oblasti stránky. */
+  clipPreviewZoom?: number;
 }
 
 export const WorkbookLivePagePreview = memo(function WorkbookLivePagePreview({
@@ -22,14 +39,21 @@ export const WorkbookLivePagePreview = memo(function WorkbookLivePagePreview({
   height,
   borderRadius = '7px',
   onLoadRequested,
+  forceVisible = false,
+  clipPageHeightFraction,
+  clipPreviewZoom,
 }: WorkbookLivePagePreviewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [isVisible, setIsVisible] = useState(false);
+  const [isVisible, setIsVisible] = useState(forceVisible);
   const [isStable, setIsStable] = useState(false);
-  const hasEverBeenStableRef = useRef(false);
-  const stableKey = `${worksheet?.id ?? 'empty'}:${worksheet?.updatedAt ?? 'none'}:${pageIndex}`;
+  /** Bez `updatedAt` — jinak při každém autosave DS problikává „Načítám stránku…“. */
+  const stableKey = `${worksheet?.id ?? 'empty'}:${pageIndex}`;
 
   useEffect(() => {
+    if (forceVisible) {
+      setIsVisible(true);
+      return;
+    }
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries[0]?.isIntersecting) {
@@ -42,19 +66,14 @@ export const WorkbookLivePagePreview = memo(function WorkbookLivePagePreview({
 
     if (containerRef.current) observer.observe(containerRef.current);
     return () => observer.disconnect();
-  }, []);
+  }, [forceVisible]);
 
   useEffect(() => {
     if (stablePreviewKeys.has(stableKey)) {
       setIsStable(true);
-      hasEverBeenStableRef.current = true;
-    } else if (!hasEverBeenStableRef.current) {
+    } else {
       setIsStable(false);
     }
-    // When the page was already shown once, DON'T reset isStable to false.
-    // The old content stays visible while PrintGridCanvas silently re-renders
-    // with the new worksheet data. onStable will fire when the new render
-    // stabilises, updating the stableKey set.
   }, [stableKey]);
 
   useEffect(() => {
@@ -65,8 +84,25 @@ export const WorkbookLivePagePreview = memo(function WorkbookLivePagePreview({
 
   const pageFormat = (worksheet?.metadata?.pageFormat as PageFormat | undefined) || 'a4';
   const dims = PAGE_DIMENSIONS[pageFormat] || PAGE_DIMENSIONS.a4;
-  const scale = Math.min(width / dims.width, height / dims.height);
+  const zoom = clipPreviewZoom ?? 1;
+  const scale =
+    clipPageHeightFraction != null
+      ? (width / dims.width) * zoom
+      : Math.min(width / dims.width, height / dims.height);
+  const clipLayout = clipPageHeightFraction != null;
+  const scaledPageW = dims.width * scale;
+  const clipLeftPx = clipLayout ? (width - scaledPageW) / 2 : 0;
   const canRender = Boolean(worksheet && Array.isArray(worksheet.blocks) && isVisible);
+
+  /** Náhled toku (design systém) — když PrintGridCanvas neohlásí onStable, stejně po chvíli skrýt loader. */
+  useEffect(() => {
+    if (!forceVisible || !canRender) return;
+    const t = window.setTimeout(() => {
+      stablePreviewKeys.add(stableKey);
+      setIsStable(true);
+    }, 1200);
+    return () => window.clearTimeout(t);
+  }, [forceVisible, canRender, stableKey]);
 
   return (
     <div
@@ -83,14 +119,28 @@ export const WorkbookLivePagePreview = memo(function WorkbookLivePagePreview({
     >
       {canRender && (
         <div
-          style={{
-            width: `${dims.width}px`,
-            height: `${dims.height}px`,
-            transform: `scale(${scale})`,
-            transformOrigin: 'top left',
-            pointerEvents: 'none',
-            userSelect: 'none',
-          }}
+          style={
+            clipLayout
+              ? {
+                  position: 'absolute',
+                  left: clipLeftPx,
+                  top: 0,
+                  width: `${dims.width}px`,
+                  height: `${dims.height}px`,
+                  transform: `scale(${scale})`,
+                  transformOrigin: 'top left',
+                  pointerEvents: 'none',
+                  userSelect: 'none',
+                }
+              : {
+                  width: `${dims.width}px`,
+                  height: `${dims.height}px`,
+                  transform: `scale(${scale})`,
+                  transformOrigin: 'top left',
+                  pointerEvents: 'none',
+                  userSelect: 'none',
+                }
+          }
         >
           <PrintGridCanvas
             worksheet={worksheet!}
@@ -99,7 +149,6 @@ export const WorkbookLivePagePreview = memo(function WorkbookLivePagePreview({
             onStable={() => {
               stablePreviewKeys.add(stableKey);
               setIsStable(true);
-              hasEverBeenStableRef.current = true;
             }}
           />
         </div>
@@ -141,15 +190,12 @@ export const WorkbookLivePagePreview = memo(function WorkbookLivePagePreview({
 }, (prevProps, nextProps) => {
   if (prevProps.pageIndex !== nextProps.pageIndex) return false;
   if (prevProps.width !== nextProps.width || prevProps.height !== nextProps.height) return false;
+  if (prevProps.clipPageHeightFraction !== nextProps.clipPageHeightFraction) return false;
+  if (prevProps.clipPreviewZoom !== nextProps.clipPreviewZoom) return false;
   if (prevProps.borderRadius !== nextProps.borderRadius) return false;
+  if (prevProps.forceVisible !== nextProps.forceVisible) return false;
 
-  const prevId = prevProps.worksheet?.id ?? null;
-  const nextId = nextProps.worksheet?.id ?? null;
-  if (prevId !== nextId) return false;
-
-  const prevUpdatedAt = prevProps.worksheet?.updatedAt ?? null;
-  const nextUpdatedAt = nextProps.worksheet?.updatedAt ?? null;
-  if (prevUpdatedAt !== nextUpdatedAt) return false;
+  if (worksheetVisualMemoKey(prevProps.worksheet) !== worksheetVisualMemoKey(nextProps.worksheet)) return false;
 
   const prevLoaded = Boolean(prevProps.worksheet && Array.isArray(prevProps.worksheet.blocks));
   const nextLoaded = Boolean(nextProps.worksheet && Array.isArray(nextProps.worksheet.blocks));

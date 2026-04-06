@@ -31,10 +31,13 @@ import {
   PISANKA_PAGE_OUTER_INSET_PX,
   type PageFormat,
 } from '../../utils/page-layout';
+import { getGoogleFontsUrl } from '../../types/design-system';
 
 interface PrintGridCanvasProps {
   worksheet: Worksheet;
   onStable?: () => void;
+  /** Volá se spolu s onStable — počet vykreslených stránek (tisk / náhled toku). */
+  onStableMeta?: (meta: { pageCount: number }) => void;
   bleed?: boolean;
   renderOnlyPageIndex?: number;
   hideAttributions?: boolean;
@@ -89,14 +92,33 @@ function CropMarks({ pageWidth, pageHeight, bleedPx }: { pageWidth: number; page
 export function PrintGridCanvas({
   worksheet,
   onStable,
+  onStableMeta,
   bleed = false,
   renderOnlyPageIndex,
   hideAttributions = false,
 }: PrintGridCanvasProps) {
   const worksheetCacheKey = `${worksheet.id ?? 'worksheet'}:${worksheet.updatedAt ?? 'unknown'}`;
-  const [fontsReady, setFontsReady] = useState(
-    typeof document === 'undefined' || !('fonts' in document) ? true : document.fonts.status === 'loaded'
+
+  const printGoogleFontFamilies = useMemo(() => {
+    const explicit = worksheet.metadata?.printGoogleFontFamilies as string[] | undefined;
+    if (explicit && explicit.length > 0) return explicit;
+    const df = worksheet.metadata?.designFonts;
+    if (df?.heading || df?.body) {
+      return [...new Set([df.heading, df.body].filter(Boolean))] as string[];
+    }
+    return [];
+  }, [
+    worksheet.metadata?.printGoogleFontFamilies,
+    worksheet.metadata?.designFonts?.heading,
+    worksheet.metadata?.designFonts?.body,
+  ]);
+
+  const googleFontsStylesheetUrl = useMemo(
+    () => getGoogleFontsUrl(printGoogleFontFamilies),
+    [printGoogleFontFamilies]
   );
+
+  const [fontsReady, setFontsReady] = useState(() => !googleFontsStylesheetUrl);
   const pageFormat     = (worksheet.metadata?.pageFormat as PageFormat) || 'a4';
   const gridColumns    = (worksheet.metadata?.gridColumns as GridColumns) || 12;
   const globalFontSize = (worksheet.metadata?.globalFontSize as GlobalFontSize) || 'normal';
@@ -134,6 +156,8 @@ export function PrintGridCanvas({
 
   const containerRef = useRef<HTMLDivElement>(null);
   const didSignalRef = useRef(false);
+  /** Aktuální počet stránek pro onStableMeta (čte se po renderu). */
+  const totalPagesRef = useRef(1);
 
   const [blockHeights, setBlockHeights] = useState<Record<string, number>>(
     () => worksheetBlockHeightCache.get(worksheetCacheKey) ?? {}
@@ -169,17 +193,48 @@ export function PrintGridCanvas({
   }, [blockHeights, fontsReady, worksheetCacheKey]);
 
   useEffect(() => {
-    if (fontsReady) return;
-    if (typeof document === 'undefined' || !('fonts' in document)) return;
-    let cancelled = false;
-    document.fonts.ready.then(() => {
-      if (cancelled) return;
+    if (typeof document === 'undefined') return;
+
+    if (!googleFontsStylesheetUrl) {
       setFontsReady(true);
-    });
+      return;
+    }
+
+    setFontsReady(false);
+    const linkId = `print-grid-google-fonts-${worksheet.id ?? 'anon'}`;
+    let link = document.getElementById(linkId) as HTMLLinkElement | null;
+    if (!link) {
+      link = document.createElement('link');
+      link.id = linkId;
+      link.rel = 'stylesheet';
+      document.head.appendChild(link);
+    }
+    link.href = googleFontsStylesheetUrl;
+
+    let cancelled = false;
+    const finish = () => {
+      if (cancelled) return;
+      if ('fonts' in document) {
+        void document.fonts.ready.then(() => {
+          if (!cancelled) setFontsReady(true);
+        });
+        window.setTimeout(() => {
+          if (!cancelled) setFontsReady(true);
+        }, 6000);
+      } else {
+        setFontsReady(true);
+      }
+    };
+
+    link.onload = () => finish();
+    link.onerror = () => finish();
+    const fallbackTimer = window.setTimeout(finish, 3000);
+
     return () => {
       cancelled = true;
+      window.clearTimeout(fallbackTimer);
     };
-  }, [fontsReady]);
+  }, [googleFontsStylesheetUrl, worksheet.id]);
 
   // ── Measure block heights with robust ResizeObserver ────────────────────────
   // Observer is created lazily in blockRefCallback (not in useEffect) so that
@@ -231,15 +286,15 @@ export function PrintGridCanvas({
   // Uses a debounce timer: after each blockHeights change, wait 400 ms. If no
   // further change occurs, the layout is considered stable. This handles both
   // single-render and multi-render scenarios correctly.
-  const onStableRef     = useRef(onStable);
-  onStableRef.current   = onStable;
+  const onStableRef = useRef(onStable);
+  onStableRef.current = onStable;
+  const onStableMetaRef = useRef(onStableMeta);
+  onStableMetaRef.current = onStableMeta;
   const timerRef        = useRef<ReturnType<typeof setTimeout>>();
 
   useEffect(() => {
     if (didSignalRef.current) return;
     if (!fontsReady) return;
-    const hasBlocks = Object.keys(blockHeights).length > 0 || blocks.length === 0;
-    if (!hasBlocks) return;
 
     clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => {
@@ -251,11 +306,29 @@ export function PrintGridCanvas({
           renderOnlyPageIndex,
         });
         onStableRef.current?.();
+        onStableMetaRef.current?.({ pageCount: totalPagesRef.current });
       }
     }, 400);
 
     return () => clearTimeout(timerRef.current);
   }, [blockHeights, blocks.length, fontsReady]);
+
+  /** Když ResizeObserver neohlásí výšky (např. skryté vnořené stromy), stejně dokončíme náhled. */
+  useEffect(() => {
+    if (didSignalRef.current) return;
+    if (!fontsReady) return;
+    if (blocks.length === 0) return;
+
+    const t = window.setTimeout(() => {
+      if (didSignalRef.current) return;
+      didSignalRef.current = true;
+      debugPrintGridCanvas('stable-fallback-timeout', { worksheetId: worksheet.id ?? null });
+      onStableRef.current?.();
+      onStableMetaRef.current?.({ pageCount: totalPagesRef.current });
+    }, 2800);
+
+    return () => window.clearTimeout(t);
+  }, [blocks.length, fontsReady, worksheet.id, worksheetCacheKey]);
 
   // ── Activity numbers ──────────────────────────────────────────────────────
   const activityNumbers = useMemo(() => {
@@ -553,6 +626,7 @@ export function PrintGridCanvas({
   }
 
   const totalPages = (twoColPagesData ?? pagesData).length;
+  totalPagesRef.current = totalPages;
   const renderedPageIndices = renderOnlyPageIndex === undefined
     ? Array.from({ length: totalPages }, (_, index) => index)
     : Array.from({ length: totalPages }, (_, index) => index);
@@ -609,7 +683,8 @@ export function PrintGridCanvas({
             position: isOffscreenMeasurePage ? 'absolute' : 'relative',
             left: isOffscreenMeasurePage ? '-200000px' : undefined,
             top: isOffscreenMeasurePage ? '0' : undefined,
-            visibility: isOffscreenMeasurePage ? 'hidden' : 'visible',
+            /* visibility:hidden může v některých prohlížečích zabránit ResizeObserveru u bloků na „neaktivních“ stránkách */
+            opacity: isOffscreenMeasurePage ? 0 : 1,
             pointerEvents: isOffscreenMeasurePage ? 'none' : 'auto',
             overflow: 'hidden',
             display: 'block',
@@ -638,6 +713,8 @@ export function PrintGridCanvas({
 
           {/* Content grid */}
           <div
+            data-page-content-grid="true"
+            data-page-index={pageIndex}
             style={{
                 paddingLeft: CONTENT_PADDING_H,
               paddingRight: CONTENT_PADDING_H,

@@ -64,6 +64,7 @@ import { toast } from 'sonner';
 import {
   StudentContentItem,
   getStudentContent,
+  hydrateStudentContentFromCloud,
   addStudentContentItem,
   createStudentFolder,
   deleteStudentContentItem,
@@ -114,8 +115,8 @@ export function StudentWorkspace({ theme, toggleTheme }: StudentWorkspaceProps) 
         setAssignments(loadedAssignments);
         setSubmissions(loadedSubmissions);
         
-        // Load student's own content
-        const content = getStudentContent(student.id);
+        // Load student's own content (Supabase + merge s lokální cache)
+        const content = await hydrateStudentContentFromCloud(student.id);
         setMyContent(content);
       } catch (error) {
         console.error('Error loading workspace data:', error);
@@ -238,11 +239,12 @@ export function StudentWorkspace({ theme, toggleTheme }: StudentWorkspaceProps) 
   // Delete content item
   const handleDeleteItem = (itemId: string) => {
     if (!student) return;
-    
-    deleteStudentContentItem(student.id, itemId);
-    setMyContent(getStudentContent(student.id));
-    syncStudentContentToCloud(student.id);
-    toast.success('Smazáno');
+    void (async () => {
+      await deleteStudentContentItem(student.id, itemId);
+      setMyContent(getStudentContent(student.id));
+      await syncStudentContentToCloud(student.id);
+      toast.success('Smazáno');
+    })();
   };
 
   // Open content item

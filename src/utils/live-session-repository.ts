@@ -1,5 +1,6 @@
 import { supabase } from './supabase/client';
 import { stripBase64FromObject } from './supabase/upload-image';
+import { createEmptyQuiz } from '../types/quiz';
 import type { BoardPost, LiveQuizSession, Quiz, SlideResponse } from '../types/quiz';
 import type { StudentData } from './student-session';
 
@@ -27,6 +28,14 @@ export interface ShareSessionRecord {
   createdBy: string;
   classId?: string | null;
   responses: Record<string, ShareStudentRecord>;
+  /** Sdílení dokumentu ve třídě (settings JSONB) */
+  classroomDocumentPath?: string | null;
+  classroomClassName?: string | null;
+  scrollPosition?: number;
+  currentSection?: string | null;
+  lastHeartbeat?: number;
+  shareTeacherName?: string;
+  sessionStatus?: 'active' | 'paused' | 'ended';
 }
 
 export interface ShareStudentRecord {
@@ -266,6 +275,13 @@ function mapSupabaseShareSession(
     createdBy: sessionRow.teacher_user_id || 'anonymous',
     classId: settings.classId ?? null,
     responses: mapSupabaseParticipantsToShareResponses(participants),
+    classroomDocumentPath: settings.documentPath ?? null,
+    classroomClassName: settings.className ?? null,
+    scrollPosition: typeof settings.scrollPosition === 'number' ? settings.scrollPosition : undefined,
+    currentSection: settings.currentSection ?? null,
+    lastHeartbeat: typeof settings.lastHeartbeat === 'number' ? settings.lastHeartbeat : undefined,
+    shareTeacherName: sessionRow.teacher_name,
+    sessionStatus: sessionRow.status,
   };
 }
 
@@ -384,6 +400,86 @@ export async function createShareSessionRecord(params: {
   return { backend: 'supabase', shareId: params.share.id, share: params.share };
 }
 
+/** Sdílení dokumentu v knihovně (kind share) — prázdný board jako snapshot, stav v `settings`. */
+export async function createClassroomDocumentShareSession(params: {
+  classId: string;
+  className: string;
+  documentPath: string;
+  documentTitle: string;
+  teacherUserId: string;
+  teacherName: string;
+}): Promise<{ publicId: string }> {
+  const publicId = crypto.randomUUID();
+  const quiz = createEmptyQuiz(`classroom-share-${publicId}`);
+  quiz.title = params.documentTitle;
+  const cleanedQuiz = stripBase64FromObject(quiz) as Quiz;
+  const settings = {
+    anonymousAccess: false,
+    showSolutionHints: false,
+    showActivityResults: false,
+    requireAnswerToProgress: false,
+    showNotes: false,
+    classId: params.classId,
+    className: params.className,
+    classroomShare: true,
+    documentPath: params.documentPath,
+    documentTitle: params.documentTitle,
+    scrollPosition: 0,
+    lastHeartbeat: Date.now(),
+  };
+  const { error: sessionError } = await supabase.from('live_sessions').insert({
+    public_id: publicId,
+    kind: 'share',
+    join_code: null,
+    share_slug: publicId,
+    source_board_id: quiz.id,
+    title: params.documentTitle,
+    teacher_user_id: params.teacherUserId,
+    teacher_name: params.teacherName,
+    status: 'active',
+    current_slide_index: 0,
+    is_locked: false,
+    is_paused: false,
+    show_results: false,
+    settings,
+    created_at: new Date().toISOString(),
+  });
+  if (sessionError) throw sessionError;
+
+  const { error: contentError } = await supabase.from('live_session_content').upsert(
+    {
+      session_public_id: publicId,
+      quiz_id: quiz.id,
+      board_snapshot: cleanedQuiz,
+    },
+    { onConflict: 'session_public_id' },
+  );
+  if (contentError) throw contentError;
+
+  return { publicId };
+}
+
+export async function patchShareSessionSettings(
+  publicId: string,
+  patch: Record<string, unknown>,
+  extra?: { title?: string; status?: 'active' | 'paused' | 'ended' },
+): Promise<void> {
+  const { data, error } = await supabase
+    .from('live_sessions')
+    .select('settings')
+    .eq('public_id', publicId)
+    .eq('kind', 'share')
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return;
+  const merged = { ...(data.settings as Record<string, unknown>), ...patch };
+  const row: Record<string, unknown> = { settings: merged };
+  if (extra?.title !== undefined) row.title = extra.title;
+  if (extra?.status !== undefined) row.status = extra.status;
+  const { error: upError } = await supabase.from('live_sessions').update(row).eq('public_id', publicId).eq('kind', 'share');
+  if (upError) throw upError;
+}
+
 export async function loadLiveSession(publicId: string): Promise<{ backend: SessionBackend; session: LiveQuizSession } | null> {
   for (const backend of orderedBackends()) {
     const session = await getSupabaseLiveSession(publicId);
@@ -398,6 +494,28 @@ export async function loadShareSession(publicId: string): Promise<{ backend: Ses
     if (share) return { backend: 'supabase', share };
   }
   return null;
+}
+
+/** Aktivní řádek sdílení dokumentu ve třídě (`settings.classroomShare`, `settings.classId`). */
+export async function findActiveClassroomDocumentShareForClass(
+  classId: string,
+): Promise<ShareSessionRecord | null> {
+  const { data, error } = await supabase
+    .from('live_sessions')
+    .select('public_id, settings, created_at')
+    .eq('kind', 'share')
+    .eq('status', 'active')
+    .filter('settings->>classId', 'eq', classId);
+
+  if (error) {
+    console.warn('[live-session] findActiveClassroomDocumentShareForClass', error.message);
+    return null;
+  }
+  const row = (data || [])
+    .filter((r) => (r.settings as Record<string, unknown>)?.classroomShare === true)
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
+  if (!row?.public_id) return null;
+  return getSupabaseShareSession(row.public_id);
 }
 
 export async function lookupLiveSessionByCode(code: string): Promise<{ backend: SessionBackend; sessionId: string; session: LiveQuizSession } | null> {

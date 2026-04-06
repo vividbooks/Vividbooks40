@@ -5,6 +5,7 @@ import {
   syncQuizResultsToClass,
   QuizSessionResult,
 } from '../../utils/supabase/classes';
+import { isQuizSetupDismissed } from '../../features/moje-trida';
 import { LiveQuizSession, Quiz } from '../../types/quiz';
 
 interface UseClassSyncProps {
@@ -80,16 +81,25 @@ export function useClassSync({
 
   // Check if results need to be synced (first-time setup)
   useEffect(() => {
+    let cancelled = false;
+
     async function checkIfNeedsSync() {
       if (isStudentView || !sessionId) return;
 
-      const dismissedKey = `quiz_setup_dismissed_${sessionId}`;
-      if (localStorage.getItem(dismissedKey)) {
-        console.log('[FirstTimeSetup] User dismissed dialog previously, skipping');
+      if (hasCheckedSync || !session?.students || availableClasses.length === 0) return;
+
+      let dismissed = false;
+      try {
+        dismissed = await isQuizSetupDismissed(sessionId);
+      } catch (e) {
+        console.warn('[FirstTimeSetup] isQuizSetupDismissed', e);
+      }
+      if (cancelled) return;
+      if (dismissed) {
+        console.log('[FirstTimeSetup] User dismissed dialog previously (repo or legacy), skipping');
+        setHasCheckedSync(true);
         return;
       }
-
-      if (hasCheckedSync || !session?.students || availableClasses.length === 0) return;
 
       setHasCheckedSync(true);
 
@@ -148,7 +158,10 @@ export function useClassSync({
       }
     }
 
-    checkIfNeedsSync();
+    void checkIfNeedsSync();
+    return () => {
+      cancelled = true;
+    };
   }, [sessionId, session, quiz, availableClasses, hasCheckedSync, isStudentView, onRecommendationLoaded]);
 
   const buildStudentResults = (students: Record<string, any>): QuizSessionResult[] =>

@@ -28,9 +28,10 @@ interface ImagenRequest {
    * Výběr modelu:
    *   'pro'   → gemini-3-pro-image-preview   (~$0.13/obr, nejvyšší kvalita)
    *   'flash' → gemini-3.1-flash-image-preview (~$0.015/obr, rychlý)
+   *   'lite'  → stejné jako flash (nejlevnější image generace; textový Flash-Lite obrázky neumí)
    * Výchozí: 'flash'
    */
-  model?: 'pro' | 'flash';
+  model?: 'pro' | 'flash' | 'lite';
   /**
    * Explicitní rozlišení výstupu (pouze text-to-image, bez reference image):
    *   '512px' → 512×512 px
@@ -49,17 +50,24 @@ serve(async (req: Request) => {
   try {
     const { prompt, aspectRatio = "1:1", dataSetId, referenceImageUrl, referenceImageBase64, referenceImageMimeType, model = 'flash', imageSize }: ImagenRequest = await req.json();
 
+    const modelKey = model === 'lite' ? 'flash' : model;
+
     const apiKey = Deno.env.get("GEMINI_API_KEY_RAG");
     if (!apiKey) {
       throw new Error("GEMINI_API_KEY_RAG not configured");
     }
 
-    // Výběr modelu podle parametru
-    const geminiModel = model === 'flash'
+    // Výběr modelu podle parametru ('lite' → stejný endpoint jako flash image)
+    const geminiModel = modelKey === 'flash'
       ? 'gemini-3.1-flash-image-preview'   // ~$0.015/obr, rychlý
       : 'gemini-3-pro-image-preview';       // ~$0.13/obr, nejvyšší kvalita
 
-    const modelLabel = model === 'flash' ? 'Nano Banana Flash 3.1' : 'Nano Banana Pro 3';
+    const modelLabel =
+      model === 'lite'
+        ? 'Nano Banana Flash 3.1 (lite)'
+        : modelKey === 'flash'
+          ? 'Nano Banana Flash 3.1'
+          : 'Nano Banana Pro 3';
 
     console.log(`[${modelLabel}] Generating image with ${geminiModel}...`);
     console.log(`[${modelLabel}] Prompt:`, prompt.substring(0, 200) + "...");

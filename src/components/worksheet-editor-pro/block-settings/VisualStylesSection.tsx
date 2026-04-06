@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import {
   Plus, ChevronDown as ChevronDownIcon, Palette, Check,
@@ -7,7 +7,7 @@ import {
   Layers,
 } from 'lucide-react';
 import type { WorksheetBlock } from '../../../types/worksheet';
-import type { DesignSystem } from '../../../types/design-system';
+import { flattenDesignSystemSwatchesForPicker, type DesignSystem } from '../../../types/design-system';
 import {
   SIDEBAR_COLORS,
   sectionTitleStyle,
@@ -17,6 +17,7 @@ import {
   buttonStyle,
   iconButtonStyle,
   getSegmentedButtonStyle,
+  TEXT_COLORS,
 } from './shared';
 import { ColorPickerField } from './ColorPickerField';
 
@@ -27,6 +28,9 @@ const STYLE_PRESETS = [
   { id: 'highlight', label: 'Zvýraznění', styles: { backgroundColor: '#FEF3C7', borderColor: '#F59E0B', borderWidth: 2, borderStyle: 'dashed' as const, borderRadius: 8, shadow: undefined } },
   { id: 'info', label: 'Info', styles: { backgroundColor: '#DBEAFE', borderColor: '#3B82F6', borderWidth: 2, borderStyle: 'solid' as const, borderRadius: 8, shadow: undefined } },
 ];
+
+/** Sdílené presety pro Design systém (výchozí vzhled bloku). */
+export const BLOCK_VISUAL_STYLE_PRESETS = STYLE_PRESETS;
 
 
 interface VisualStylesSectionProps {
@@ -48,8 +52,11 @@ export function VisualStylesSection({
   compact = false,
   isSectionOpen = true,
 }: VisualStylesSectionProps) {
-  // Flatten all design system swatches for quick access in color pickers
-  const dsSwatches = designSystem?.colors.flatMap(g => g.swatches) ?? [];
+  const dsSwatches = useMemo(
+    () => flattenDesignSystemSwatchesForPicker(designSystem?.colors),
+    [designSystem?.colors],
+  );
+  const useDsColors = dsSwatches.length > 0;
   const getCurrentPreset = () => {
     const vs = block.visualStyles;
     if (!vs || (!vs.backgroundColor && !vs.borderColor && !vs.shadow)) return 'none';
@@ -130,7 +137,7 @@ export function VisualStylesSection({
                   width: '100%',
                   height: '100%',
                   backgroundColor: preset.styles.backgroundColor || '#334155',
-                  border: preset.styles.borderColor ? `${preset.styles.borderWidth ? Math.min(2, preset.styles.borderWidth) : 1}px ${preset.styles.borderStyle || 'solid'} ${preset.styles.borderColor}` : 'none',
+                  border: preset.styles.borderColor ? `${Math.min(2, preset.styles.borderWidth ?? 1)}px ${preset.styles.borderStyle || 'solid'} ${preset.styles.borderColor}` : 'none',
                   borderRadius: '3px',
                   boxShadow: preset.styles.shadow === 'medium' ? '0 2px 4px rgba(0,0,0,0.3)' : 'none',
                 }} />
@@ -200,6 +207,8 @@ export function VisualStylesSection({
                       value={block.visualStyles?.backgroundColor}
                       placeholder="Vlastní barva"
                       designSystemSwatches={dsSwatches}
+                      palette={useDsColors ? [] : TEXT_COLORS}
+                      designSystemOnly={useDsColors}
                       defaultCustomColor="#ffffff"
                       onChange={(color) => onUpdateBlock(block.id, {
                         visualStyles: { ...block.visualStyles, backgroundColor: color }
@@ -217,14 +226,16 @@ export function VisualStylesSection({
                   value={block.visualStyles?.borderColor}
                   placeholder="Vlastní barva"
                   designSystemSwatches={dsSwatches}
+                  palette={useDsColors ? [] : TEXT_COLORS}
+                  designSystemOnly={useDsColors}
                   defaultCustomColor="#3b82f6"
                   swatchStyle="border"
                   borderStyle={block.visualStyles?.borderStyle || 'solid'}
-                  onChange={(color) => onUpdateBlock(block.id, {
+                  onChange={(color) =>                   onUpdateBlock(block.id, {
                     visualStyles: {
                       ...block.visualStyles,
                       borderColor: color,
-                      borderWidth: block.visualStyles?.borderWidth || 2,
+                      borderWidth: block.visualStyles?.borderWidth ?? 2,
                       borderStyle: block.visualStyles?.borderStyle || 'solid',
                     }
                   })}
@@ -244,7 +255,7 @@ export function VisualStylesSection({
                 <div style={{ flex: 1 }}>
                   <span style={{ fontSize: '10px', color: '#808080', display: 'block', marginBottom: '4px' }}>Tloušťka</span>
                   <select
-                    value={block.visualStyles?.borderWidth || 2}
+                    value={block.visualStyles?.borderWidth ?? 2}
                     onChange={(e) => onUpdateBlock(block.id, {
                       visualStyles: { ...block.visualStyles, borderWidth: parseInt(e.target.value) }
                     })}
@@ -260,7 +271,7 @@ export function VisualStylesSection({
                       outline: 'none',
                     }}
                   >
-                    {[1, 2, 3, 4, 5, 6, 8].map((w) => (
+                    {[0, 1, 2, 3, 4, 5, 6, 8].map((w) => (
                       <option key={w} value={w}>{w}px</option>
                     ))}
                   </select>
@@ -320,6 +331,35 @@ export function VisualStylesSection({
               </div>
             </div>
           )}
+
+              {!block.visualStyles?.borderColor && (
+                <div style={{ marginBottom: '12px' }}>
+                  <span style={{ fontSize: '10px', color: '#808080', display: 'block', marginBottom: '4px' }}>
+                    Zaoblení rohů
+                  </span>
+                  <select
+                    value={block.visualStyles?.borderRadius ?? 0}
+                    onChange={(e) => onUpdateBlock(block.id, {
+                      visualStyles: { ...block.visualStyles, borderRadius: parseInt(e.target.value, 10) }
+                    })}
+                    style={{
+                      width: '100%',
+                      padding: '8px 6px',
+                      backgroundColor: '#334155',
+                      border: 'none',
+                      borderRadius: '6px',
+                      color: '#E5E5E5',
+                      fontSize: '11px',
+                      cursor: 'pointer',
+                      outline: 'none',
+                    }}
+                  >
+                    {[0, 4, 8, 12, 16, 24, 32].map((r) => (
+                      <option key={r} value={r}>{r}px</option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
               {/* Shadow */}
               <div style={{ marginBottom: '12px' }}>

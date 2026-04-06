@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '../../../utils/supabase/client';
 import { toast } from 'sonner';
 import {
@@ -22,32 +22,35 @@ import {
   buttonStyle,
   iconButtonStyle,
   getSegmentedButtonStyle,
+  TEXT_COLORS,
 } from './shared';
 import { ColorPickerField } from './ColorPickerField';
+import { FontFamilySelect } from './FontFamilySelect';
 import { legacyQuestionStringToHtml } from '../../../utils/worksheet-text';
+import {
+  buildDesignSystemFontPickList,
+  extractFontFamilyName,
+  flattenDesignSystemSwatchesForPicker,
+} from '../../../types/design-system';
+import type { DesignSystem, TypoStyleOverride } from '../../../types/design-system';
 
-const TEXT_PRESETS = [
-  { 
-    id: 'h1', 
-    label: 'Nadpis H1', 
-    styles: { fontSize: 32, fontWeight: 'bold', lineHeight: 1.2, fontFamily: "'Fenomen Sans', sans-serif", isItalic: false } 
-  },
-  { 
-    id: 'h2', 
-    label: 'Podnadpis H2', 
-    styles: { fontSize: 24, fontWeight: '600', lineHeight: 1.3, fontFamily: "'Fenomen Sans', sans-serif", isItalic: false } 
-  },
-  { 
-    id: 'text', 
-    label: 'Text', 
-    styles: { fontSize: 12, fontWeight: 'normal', lineHeight: 1.5, fontFamily: "'Fenomen Sans', sans-serif", isItalic: false } 
-  },
-  { 
-    id: 'caption', 
-    label: 'Popisek', 
-    styles: { fontSize: 10, fontWeight: 'normal', lineHeight: 1.4, fontFamily: "'Fenomen Sans', sans-serif", isItalic: true } 
-  },
-];
+type TextPresetId = 'h1' | 'h2' | 'text' | 'caption';
+type TextPreset = {
+  id: TextPresetId;
+  label: string;
+  styles: {
+    fontSize?: number;
+    fontWeight?: string;
+    lineHeight?: number;
+    fontFamily?: string;
+    isItalic?: boolean;
+    letterSpacing?: number;
+    textColor?: string;
+    isBold?: boolean;
+    isUnderline?: boolean;
+    align?: 'left' | 'center' | 'right';
+  };
+};
 
 const FREE_CANVAS_BG_COLORS = [
   { value: '#ffffff', label: 'Bílá' },
@@ -66,6 +69,7 @@ interface TextSectionSettingsProps {
   showBlockAppearanceToggle?: boolean;
   isBlockAppearanceOpen?: boolean;
   onToggleBlockAppearance?: () => void;
+  designSystem?: DesignSystem | null;
 }
 
 export function TextSectionSettings({
@@ -75,7 +79,115 @@ export function TextSectionSettings({
   showBlockAppearanceToggle = false,
   isBlockAppearanceOpen = false,
   onToggleBlockAppearance,
+  designSystem,
 }: TextSectionSettingsProps) {
+  const resolveDesignFontFamily = useCallback((
+    family: string | undefined,
+    fallback: string,
+    kind: 'serif' | 'sans-serif',
+  ) => {
+    const shortName = (family?.trim() || fallback).replace(/^['"]|['"]$/g, '');
+    const known = [...FONT_FAMILIES, ...buildDesignSystemFontPickList(designSystem?.typography ?? {
+      headingFont: 'Inter',
+      bodyFont: 'Inter',
+      baseFontSize: 'md',
+    } as DesignSystem['typography'])].find(
+      (option) => extractFontFamilyName(option.value) === shortName,
+    );
+    if (known) return known.value;
+    if ((family?.trim() || fallback).includes(',')) return family?.trim() || fallback;
+    return `'${shortName}', ${kind}`;
+  }, [designSystem?.typography]);
+
+  const buildPresetStyles = useCallback((
+    typo: TypoStyleOverride | undefined,
+    fallback: { fontSize: number; fontWeight: string; lineHeight: number; fontFamily: string; isItalic: boolean },
+  ) => ({
+    fontSize: typo?.fontSize ?? fallback.fontSize,
+    fontWeight: typo?.fontWeight != null ? String(typo.fontWeight) : fallback.fontWeight,
+    lineHeight: typo?.lineHeight ?? fallback.lineHeight,
+    fontFamily: typo?.fontFamily ?? fallback.fontFamily,
+    isItalic: typo?.isItalic ?? fallback.isItalic,
+    ...(typo?.letterSpacing != null ? { letterSpacing: typo.letterSpacing } : {}),
+    ...(typo?.textColor ? { textColor: typo.textColor } : {}),
+    ...(typo?.isBold != null ? { isBold: typo.isBold } : {}),
+    ...(typo?.isUnderline != null ? { isUnderline: typo.isUnderline } : {}),
+    ...(typo?.textAlign ? { align: typo.textAlign } : {}),
+  }), []);
+
+  const textPresets = useMemo<TextPreset[]>(() => {
+    const headingFont = resolveDesignFontFamily(designSystem?.typography.headingFont, 'Fenomen Sans', 'serif');
+    const bodyFont = resolveDesignFontFamily(designSystem?.typography.bodyFont, 'Fenomen Sans', 'sans-serif');
+    const styles = designSystem?.typography.styles;
+
+    return [
+      {
+        id: 'h1',
+        label: 'Nadpis H1',
+        styles: buildPresetStyles(styles?.h1, {
+          fontSize: 32,
+          fontWeight: '700',
+          lineHeight: 1.2,
+          fontFamily: headingFont,
+          isItalic: false,
+        }),
+      },
+      {
+        id: 'h2',
+        label: 'Podnadpis H2',
+        styles: buildPresetStyles(styles?.h2, {
+          fontSize: 24,
+          fontWeight: '600',
+          lineHeight: 1.3,
+          fontFamily: headingFont,
+          isItalic: false,
+        }),
+      },
+      {
+        id: 'text',
+        label: 'Text',
+        styles: buildPresetStyles(styles?.body, {
+          fontSize: 12,
+          fontWeight: 'normal',
+          lineHeight: 1.5,
+          fontFamily: bodyFont,
+          isItalic: false,
+        }),
+      },
+      {
+        id: 'caption',
+        label: 'Popisek',
+        styles: buildPresetStyles(styles?.caption, {
+          fontSize: 10,
+          fontWeight: 'normal',
+          lineHeight: 1.4,
+          fontFamily: bodyFont,
+          isItalic: true,
+        }),
+      },
+    ];
+  }, [buildPresetStyles, designSystem, resolveDesignFontFamily]);
+
+  const fontFamilyOptions = useMemo(() => {
+    const merged = [...FONT_FAMILIES];
+    for (const option of buildDesignSystemFontPickList(designSystem?.typography ?? {
+      headingFont: 'Inter',
+      bodyFont: 'Inter',
+      baseFontSize: 'md',
+    } as DesignSystem['typography'])) {
+      if (!merged.some((item) => item.value === option.value)) {
+        merged.push(option);
+      }
+    }
+    return merged;
+  }, [designSystem?.typography]);
+
+  const dsColorSwatches = useMemo(
+    () => flattenDesignSystemSwatchesForPicker(designSystem?.colors),
+    [designSystem?.colors],
+  );
+  const useDsColors = dsColorSwatches.length > 0;
+
   const [showCustomStyles, setShowCustomStyles] = useState(true);
 
   const questionInputRef = useRef<HTMLTextAreaElement>(null);
@@ -330,17 +442,35 @@ export function TextSectionSettings({
     window.open(`https://www.figma.com/design/${c.figmaFileId}`, '_blank');
   }, []);
 
-  const defaultFontFamily = (block.type === 'heading' && (block.content as any)?.level === 'h1')
-    ? 'Cooper Light, serif'
-    : "'Fenomen Sans', sans-serif";
+  const defaultFontFamily = (block.type === 'heading')
+    ? resolveDesignFontFamily(designSystem?.typography.headingFont, 'Cooper Light', 'serif')
+    : resolveDesignFontFamily(designSystem?.typography.bodyFont, 'Fenomen Sans', 'sans-serif');
   const currentFontFamily = (block.content as any)?.fontFamily || defaultFontFamily;
-  const currentFontWeight = String((block.content as any)?.fontWeight || 'normal');
+  const currentFontFamilySelectValue = currentFontFamily;
+  const fontFamilySelectOptions = useMemo(() => {
+    if (fontFamilyOptions.some((font) => font.value === currentFontFamily)) {
+      return fontFamilyOptions;
+    }
+    return [
+      {
+        value: currentFontFamily,
+        label: `${extractFontFamilyName(currentFontFamily)} (aktuální)`,
+      },
+      ...fontFamilyOptions,
+    ];
+  }, [currentFontFamily, fontFamilyOptions]);
+  const rawCurrentFontWeight = String((block.content as any)?.fontWeight || 'normal');
+  const currentFontWeight = rawCurrentFontWeight === '400'
+    ? 'normal'
+    : rawCurrentFontWeight === '700'
+      ? 'bold'
+      : rawCurrentFontWeight;
   const currentFontSize = Number((block.content as any)?.fontSize || 12);
   const currentLineHeight = Number((block.content as any)?.lineHeight || 1.5);
   const currentIsItalic = Boolean((block.content as any)?.isItalic);
-  const currentTextPresetId = TEXT_PRESETS.find((preset) => (
+  const currentTextPresetId = textPresets.find((preset) => (
     preset.styles.fontFamily === currentFontFamily
-    && String(preset.styles.fontWeight) === currentFontWeight
+    && String(preset.styles.fontWeight === '400' ? 'normal' : preset.styles.fontWeight === '700' ? 'bold' : preset.styles.fontWeight) === currentFontWeight
     && Number(preset.styles.fontSize) === currentFontSize
     && Number(preset.styles.lineHeight) === currentLineHeight
     && Boolean((preset.styles as any).isItalic) === currentIsItalic
@@ -415,7 +545,9 @@ export function TextSectionSettings({
                 <label style={labelStyle}>Barva pozadí</label>
                 <ColorPickerField
                   value={(block.content as any).backgroundColor || '#ffffff'}
-                  palette={FREE_CANVAS_BG_COLORS}
+                  designSystemSwatches={dsColorSwatches}
+                  palette={useDsColors ? [] : FREE_CANVAS_BG_COLORS}
+                  designSystemOnly={useDsColors}
                   placeholder="Barva pozadí"
                   defaultCustomColor="#ffffff"
                   onChange={(color) => onUpdateBlock(block.id, { content: { ...block.content, backgroundColor: color } } as any)}
@@ -430,6 +562,9 @@ export function TextSectionSettings({
                 <div style={{ marginBottom: 10 }}>
                   <ColorPickerField
                     value={(block.content as any)?.textColor || '#000000'}
+                    designSystemSwatches={dsColorSwatches}
+                    palette={useDsColors ? [] : TEXT_COLORS}
+                    designSystemOnly={useDsColors}
                     placeholder="Vlastní barva"
                     defaultCustomColor="#000000"
                     onChange={(color) => onUpdateBlock(block.id, {
@@ -442,6 +577,9 @@ export function TextSectionSettings({
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                   <ColorPickerField
                     value={(block.content as any)?.circleColor || '#1e293b'}
+                    designSystemSwatches={dsColorSwatches}
+                    palette={useDsColors ? [] : TEXT_COLORS}
+                    designSystemOnly={useDsColors}
                     placeholder="Barva"
                     defaultCustomColor="#1e293b"
                     onChange={(color) => onUpdateBlock(block.id, {
@@ -762,7 +900,7 @@ export function TextSectionSettings({
                   <select
                     value={currentTextPresetId}
                     onChange={(e) => {
-                      const preset = TEXT_PRESETS.find((item) => item.id === e.target.value);
+                      const preset = textPresets.find((item) => item.id === e.target.value);
                       if (!preset) return;
                       onUpdateBlock(block.id, {
                         content: { ...(block.content as any), ...preset.styles }
@@ -775,7 +913,7 @@ export function TextSectionSettings({
                     }}
                   >
                     <option value="custom">Styl textu</option>
-                    {TEXT_PRESETS.map((preset) => (
+                    {textPresets.map((preset) => (
                       <option key={preset.id} value={preset.id}>{preset.label}</option>
                     ))}
                   </select>
@@ -791,29 +929,16 @@ export function TextSectionSettings({
               )}
 
               <div style={{ flex: block.type === 'heading' ? 1 : 1.35, position: 'relative' }}>
-                <select
-                  value={currentFontFamily}
-                  onChange={(e) => onUpdateBlock(block.id, {
-                    content: { ...(block.content as any), fontFamily: e.target.value }
-                  } as any)}
-                  style={{
-                    ...selectStyle,
-                    appearance: 'none',
-                    paddingRight: '28px',
-                  }}
-                >
-                  {FONT_FAMILIES.map((font) => (
-                    <option key={font.value} value={font.value}>{font.label}</option>
-                  ))}
-                </select>
-                <ChevronDownIcon size={14} style={{ 
-                  position: 'absolute', 
-                  right: '10px', 
-                  top: '50%', 
-                  transform: 'translateY(-50%)',
-                  pointerEvents: 'none',
-                  color: '#808080',
-                }} />
+                <FontFamilySelect
+                  value={currentFontFamilySelectValue}
+                  options={fontFamilySelectOptions}
+                  onChange={(v) =>
+                    onUpdateBlock(block.id, {
+                      content: { ...(block.content as any), fontFamily: v },
+                    } as any)
+                  }
+                  triggerStyle={{ ...selectStyle, cursor: 'pointer' }}
+                />
               </div>
             </div>
 
@@ -821,7 +946,7 @@ export function TextSectionSettings({
             <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
               <div style={{ flex: 1, position: 'relative' }}>
                 <select
-                  value={(block.content as any)?.fontWeight || 'normal'}
+                  value={currentFontWeight}
                   onChange={(e) => onUpdateBlock(block.id, {
                     content: { ...(block.content as any), fontWeight: e.target.value }
                   } as any)}
@@ -1065,6 +1190,9 @@ export function TextSectionSettings({
               {/* Text color */}
               <ColorPickerField
                 value={(block.content as any)?.textColor || '#000000'}
+                designSystemSwatches={dsColorSwatches}
+                palette={useDsColors ? [] : TEXT_COLORS}
+                designSystemOnly={useDsColors}
                 placeholder="Vlastní barva"
                 defaultCustomColor="#000000"
                 onChange={(color) => onUpdateBlock(block.id, {
@@ -1092,6 +1220,9 @@ export function TextSectionSettings({
               {block.type === 'free-answer' && (
                 <ColorPickerField
                   value={(block.content as any)?.circleColor || '#1e293b'}
+                  designSystemSwatches={dsColorSwatches}
+                  palette={useDsColors ? [] : TEXT_COLORS}
+                  designSystemOnly={useDsColors}
                   placeholder="Kroužek"
                   defaultCustomColor="#1e293b"
                   align="right"
@@ -1113,6 +1244,9 @@ export function TextSectionSettings({
                   {/* Circle Color Picker */}
                   <ColorPickerField
                     value={(block.content as any)?.circleColor || '#1e293b'}
+                    designSystemSwatches={dsColorSwatches}
+                    palette={useDsColors ? [] : TEXT_COLORS}
+                    designSystemOnly={useDsColors}
                     placeholder="Barva"
                     defaultCustomColor="#1e293b"
                     onChange={(color) => onUpdateBlock(block.id, {

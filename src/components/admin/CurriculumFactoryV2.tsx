@@ -93,6 +93,7 @@ import type { TopicDataSet, MapSuggestion, SavedMap, MapRegionId, MapStyle, MapE
 import { VividMap } from '../shared/VividMap';
 import { MapEditorModal } from './MapEditorModal';
 import { translateImageCaptions } from '../../utils/dataset/translate-captions';
+import { CURRICULUM_FACTORY_AGENTS_META } from '../../data/curriculum-factory-agents';
 
 // =====================================================
 // ILLUSTRATION STYLES
@@ -361,53 +362,26 @@ interface ColumnItem {
 // CONSTANTS
 // =====================================================
 
-const AGENTS: Agent[] = [
-  {
-    id: 1,
-    name: 'RVP Scout',
-    icon: <Search className="w-4 h-4" />,
-    description: 'Stáhne RVP témata a kompetence',
-    color: '#3B82F6',
-    status: 'idle',
-    outputType: 'rvp'
-  },
-  {
-    id: 2,
-    name: 'Planner',
-    icon: <Calendar className="w-4 h-4" />,
-    description: 'Rozloží učivo do týdenních plánů',
-    color: '#8B5CF6',
-    status: 'idle',
-    outputType: 'plans'
-  },
-  {
-    id: 3,
-    name: 'Data Collector',
-    icon: <Layers className="w-4 h-4" />,
-    description: 'Vytvoří DataSety (pojmy, fakta, obrázky)',
-    color: '#EC4899',
-    status: 'idle',
-    outputType: 'datasets'
-  },
-  {
-    id: 4,
-    name: 'Creator',
-    icon: <Sparkles className="w-4 h-4" />,
-    description: 'Generuje materiály z DataSetů',
-    color: '#F59E0B',
-    status: 'idle',
-    outputType: 'materials'
-  },
-  {
-    id: 5,
-    name: 'Publisher',
-    icon: <Package className="w-4 h-4" />,
-    description: 'Ukládá do admin knihovny',
-    color: '#10B981',
-    status: 'idle',
-    outputType: 'published'
-  }
-];
+const AGENTS: Agent[] = CURRICULUM_FACTORY_AGENTS_META.map((m) => ({
+  id: m.id,
+  name: m.name,
+  icon:
+    m.id === 1 ? (
+      <Search className="w-4 h-4" />
+    ) : m.id === 2 ? (
+      <Calendar className="w-4 h-4" />
+    ) : m.id === 3 ? (
+      <Layers className="w-4 h-4" />
+    ) : m.id === 4 ? (
+      <Sparkles className="w-4 h-4" />
+    ) : (
+      <Package className="w-4 h-4" />
+    ),
+  description: m.description,
+  color: m.color,
+  status: 'idle',
+  outputType: m.outputType,
+}));
 
 // =====================================================
 // COLUMN COMPONENT

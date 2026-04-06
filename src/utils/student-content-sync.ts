@@ -7,6 +7,7 @@
 
 import { supabase } from './supabase/client';
 import { storage } from './profile-storage';
+import { isUsingSupabase } from './supabase/classes';
 
 // Types for student content
 export interface StudentContentItem {
@@ -147,6 +148,41 @@ export function getClassFolderStructure(classId: string): ClassFolderStructure |
 // Student-side functions
 // ============================================
 
+function mergeStudentContentLists(local: StudentContentItem[], cloud: StudentContentItem[]): StudentContentItem[] {
+  const map = new Map<string, StudentContentItem>();
+  for (const i of local) map.set(i.id, i);
+  for (const i of cloud) {
+    const existing = map.get(i.id);
+    if (!existing || new Date(i.updated_at) >= new Date(existing.updated_at)) {
+      map.set(i.id, i);
+    }
+  }
+  return Array.from(map.values());
+}
+
+/**
+ * Po přihlážení: načte řádky z `student_content`, sloučí s lokálním cache a uloží zpět do localStorage (pro offline).
+ */
+export async function hydrateStudentContentFromCloud(studentId: string): Promise<StudentContentItem[]> {
+  if (!isUsingSupabase()) {
+    return getStudentContent(studentId);
+  }
+  const local = getStudentContent(studentId);
+  let cloud: StudentContentItem[] = [];
+  try {
+    cloud = await fetchStudentContentFromCloud(studentId);
+  } catch (e) {
+    console.error('[student-content-sync] hydrate fetch', e);
+    return local;
+  }
+  if (cloud.length === 0) {
+    return local;
+  }
+  const merged = mergeStudentContentLists(local, cloud);
+  saveStudentContent(studentId, merged);
+  return merged;
+}
+
 /**
  * Get student's own content items
  */
@@ -219,10 +255,18 @@ export function updateStudentContentItem(
 /**
  * Delete a student content item
  */
-export function deleteStudentContentItem(studentId: string, itemId: string): void {
+export async function deleteStudentContentItem(studentId: string, itemId: string): Promise<void> {
   const items = getStudentContent(studentId);
   const filtered = items.filter(i => i.id !== itemId);
   saveStudentContent(studentId, filtered);
+  if (isUsingSupabase()) {
+    try {
+      const { error } = await supabase.from('student_content').delete().eq('id', itemId).eq('student_id', studentId);
+      if (error) console.warn('[student-content-sync] delete row', error.message);
+    } catch (e) {
+      console.error('[student-content-sync] deleteStudentContentItem', e);
+    }
+  }
 }
 
 /**

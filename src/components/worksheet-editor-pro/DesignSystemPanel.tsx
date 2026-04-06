@@ -11,23 +11,58 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import {
   Plus, Trash2, Save, Copy, ChevronDown, Palette,
   Type, LayoutGrid, Sparkles, Layers, Check, X,
-  Edit2, RefreshCw, Loader2, Star,
-  AlignLeft, AlignCenter, AlignRight, Bold, Italic, Underline,
-  ArrowUpToLine, ArrowDownToLine, AlignVerticalJustifyCenter,
+  Edit2, RefreshCw, Loader2, Star, Library,
+  AlignLeft,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { ProBlockSettingsPanel } from './ProBlockSettingsPanel';
 import {
-  DesignSystem, ColorGroup, ColorSwatch, TypoStyleOverride, CustomLayout,
-  CURATED_FONTS, createEmptyDesignSystem, getGoogleFontsUrl,
+  DesignSystem, ColorGroup, ColorSwatch, CustomLayout,
+  CURATED_FONTS, createEmptyDesignSystem,
+  buildDesignSystemFontPickList, extractFontFamilyName,
 } from '../../types/design-system';
-import type { BlockType, GridColumns, GridGap, WorksheetBlock } from '../../types/worksheet';
-import { inputStyle, labelStyle, buttonStyle, FONT_FAMILIES, FONT_SIZES } from './block-settings/shared';
+import {
+  mergeBlockWithDefaultVisualStyles,
+  type BlockType,
+  type BlockVisualStyles,
+  type GridColumns,
+  type GridGap,
+  type WorksheetBlock,
+} from '../../types/worksheet';
+import { inputStyle } from './block-settings/shared';
+import { FontFamilySelect } from './block-settings/FontFamilySelect';
+import { ColorSwatchEditForm } from './block-settings/ColorSwatchEditForm';
 import {
   getDesignSystems, saveDesignSystem,
   duplicateDesignSystem, deleteDesignSystem,
 } from '../../utils/supabase/design-system-storage';
 import { GridCanvas } from './GridCanvas';
+import type { TypographyStyleId } from './TypoStyleSettingsForm';
+import { TypoStyleSettings } from './TypoStyleSettingsForm';
+import type { SeriesSlot } from '../../utils/design-system-layout-from-slots';
+import { generateLayoutSvgFromSlots, worksheetBlocksFromLayoutSlots } from '../../utils/design-system-layout-from-slots';
+import { BLOCK_VISUAL_STYLE_PRESETS } from './block-settings/VisualStylesSection';
+
+function matchDefaultBlockPresetId(vs: BlockVisualStyles | undefined): string {
+  if (!vs) return 'none';
+  const { padding: _pad, ...rest } = vs;
+  if (!rest.backgroundColor && !rest.borderColor && !rest.shadow) return 'none';
+  for (const preset of BLOCK_VISUAL_STYLE_PRESETS) {
+    if (preset.id === 'none') continue;
+    const ps = preset.styles;
+    if (
+      rest.backgroundColor === ps.backgroundColor &&
+      rest.borderColor === ps.borderColor &&
+      rest.borderWidth === ps.borderWidth &&
+      rest.borderStyle === ps.borderStyle &&
+      rest.borderRadius === ps.borderRadius &&
+      rest.shadow === ps.shadow
+    ) {
+      return preset.id;
+    }
+  }
+  return 'custom';
+}
 
 // ── Theme ─────────────────────────────────────────────────────────────────────
 
@@ -73,7 +108,7 @@ const label11 = (): React.CSSProperties => ({
 
 // ── Typography sub-items ──────────────────────────────────────────────────────
 
-type TypographyStyleId = 'h1' | 'h2' | 'h3' | 'body' | 'caption';
+export type { TypographyStyleId };
 
 const TYPO_STYLES: { id: TypographyStyleId; tag: string; label: string }[] = [
   { id: 'h1', tag: 'H1', label: 'Nadpis 1' },
@@ -95,6 +130,12 @@ const CATEGORIES: { id: Category; label: string; icon: React.ComponentType<{ siz
   { id: 'blocks', label: 'Bloky', icon: Layers },
 ];
 
+/** Horní záložky včetně knihovny systémů (v knize Laiout nebyl propojen mini-sidebar → kategorie se nedaly přepnout). */
+const TOP_CATEGORY_TABS: { id: Category; label: string; icon: React.ComponentType<{ size?: number }> }[] = [
+  { id: 'system', label: 'Systémy', icon: Library },
+  ...CATEGORIES,
+];
+
 // ── Block meta ────────────────────────────────────────────────────────────────
 
 const BLOCK_META: { type: BlockType; label: string; emoji: string }[] = [
@@ -114,57 +155,6 @@ const BLOCK_META: { type: BlockType; label: string; emoji: string }[] = [
   { type: 'free-canvas', label: 'Figma blok', emoji: '⬡' },
   { type: 'chart', label: 'Graf', emoji: '📊' },
 ];
-
-// ── Quick color palette ───────────────────────────────────────────────────────
-
-const QUICK_COLORS = [
-  '#EF4444','#F97316','#F59E0B','#22C55E','#10B981','#06B6D4','#3B82F6','#6366F1','#8B5CF6',
-  '#EC4899','#000000','#374151','#6B7280','#D1D5DB','#F8FAFC','#FFFFFF','#1E40AF','#065F46',
-];
-
-// ── ColorPopover ──────────────────────────────────────────────────────────────
-
-function ColorPopover({ swatch, onSave, onClose }: {
-  swatch: ColorSwatch;
-  onSave: (p: Partial<ColorSwatch>) => void;
-  onClose: () => void;
-}) {
-  const [val, setVal] = useState(swatch.value);
-  const [name, setName] = useState(swatch.name);
-  return (
-    <div
-      onMouseDown={e => e.stopPropagation()}
-      style={{
-        position: 'absolute', zIndex: 9999, top: 'calc(100% + 8px)', left: 0,
-        width: '240px', backgroundColor: '#1c2128',
-        border: `1px solid ${C.border}`, borderRadius: '12px', padding: '14px',
-        boxShadow: '0 16px 48px rgba(0,0,0,0.8)',
-      }}
-    >
-      <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
-        <input type="color" value={val} onChange={e => setVal(e.target.value)}
-          style={{ width: '42px', height: '42px', border: 'none', borderRadius: '8px', cursor: 'pointer', padding: 0 }} />
-        <input value={val} onChange={e => setVal(e.target.value)}
-          style={inp({ flex: 1, fontFamily: 'monospace', fontSize: '11px' })} />
-      </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(9, 1fr)', gap: '4px', marginBottom: '10px' }}>
-        {QUICK_COLORS.map(q => (
-          <div key={q} onClick={() => setVal(q)} style={{
-            aspectRatio: '1/1', borderRadius: '4px', backgroundColor: q, cursor: 'pointer',
-            border: val === q ? `2px solid ${C.accent}` : '1px solid #333',
-          }} />
-        ))}
-      </div>
-      <input value={name} onChange={e => setName(e.target.value)} placeholder="Název barvy"
-        style={inp({ marginBottom: '10px' })} />
-      <div style={{ display: 'flex', gap: '6px' }}>
-        <button onClick={onClose} style={btnBase({ flex: 1, justifyContent: 'center', backgroundColor: 'transparent', border: 'none' })}>Zrušit</button>
-        <button onClick={() => { onSave({ value: val, name }); onClose(); }}
-          style={btnBase({ flex: 1, justifyContent: 'center', backgroundColor: C.accent, color: 'white', border: 'none' })}>OK</button>
-      </div>
-    </div>
-  );
-}
 
 // ── FontPicker ────────────────────────────────────────────────────────────────
 
@@ -276,7 +266,27 @@ function ColorsCanvas({ colors, onChange }: { colors: ColorGroup[]; onChange: (g
                     </button>
                   )}
                   {editId === sw.id && (
-                    <ColorPopover swatch={sw} onSave={p => updateSwatch(group.id, sw.id, p)} onClose={() => setEditId(null)} />
+                    <div
+                      onMouseDown={(e) => e.stopPropagation()}
+                      style={{
+                        position: 'absolute',
+                        zIndex: 9999,
+                        top: 'calc(100% + 8px)',
+                        left: 0,
+                        width: '240px',
+                        backgroundColor: '#1c2128',
+                        border: `1px solid ${C.border}`,
+                        borderRadius: '12px',
+                        padding: '14px',
+                        boxShadow: '0 16px 48px rgba(0,0,0,0.8)',
+                      }}
+                    >
+                      <ColorSwatchEditForm
+                        swatch={sw}
+                        onSave={(p) => updateSwatch(group.id, sw.id, p)}
+                        onClose={() => setEditId(null)}
+                      />
+                    </div>
                   )}
                 </div>
               );
@@ -296,229 +306,79 @@ function ColorsCanvas({ colors, onChange }: { colors: ColorGroup[]; onChange: (g
   );
 }
 
-// ── TYPOGRAPHY canvas ─────────────────────────────────────────────────────────
+function cssStackForBaseFamily(
+  shortName: string,
+  kind: 'heading' | 'body',
+  pickList: { label: string; value: string }[],
+): string {
+  const hit = pickList.find((o) => extractFontFamilyName(o.value) === shortName);
+  if (hit) return hit.value;
+  const fallback = kind === 'heading' ? 'serif' : 'sans-serif';
+  return `'${shortName}', ${fallback}`;
+}
 
-const BASE_PT: Record<TypographyStyleId, number> = { h1: 36, h2: 24, h3: 18, body: 12, caption: 9 };
-const BASE_WEIGHT: Record<TypographyStyleId, number> = { h1: 700, h2: 700, h3: 600, body: 400, caption: 400 };
+function fontSelectOptionsWithCurrent(
+  pickList: { label: string; value: string }[],
+  currentCssValue: string,
+  orphanShortName: string,
+) {
+  const list = [...pickList];
+  if (!list.some((o) => o.value === currentCssValue)) {
+    list.unshift({ label: `${orphanShortName} (mimo katalog)`, value: currentCssValue });
+  }
+  return list;
+}
 
-const FONT_WEIGHTS = [
-  { value: 300, label: 'Light' }, { value: 400, label: 'Regular' },
-  { value: 500, label: 'Medium' }, { value: 600, label: 'SemiBold' }, { value: 700, label: 'Bold' },
-];
-
-/** Verbatim copy of the "DALŠÍ NASTAVENÍ" block from TextSectionSettings.tsx (lines 966-1267).
- *  Only change: onUpdateBlock(block.id, { content: {..., X: val} }) → patch({ X: val })
- */
-function TypoStyleSettings({ styleId, typography, onChange }: {
-  styleId: TypographyStyleId;
+function TypographyBaseFontsRow({
+  typography,
+  onChange,
+}: {
   typography: DesignSystem['typography'];
   onChange: (v: DesignSystem['typography']) => void;
 }) {
-  const [showCustomStyles, setShowCustomStyles] = useState(true);
-  const overrides = typography.styles?.[styleId] ?? {};
-  const patch = (p: Partial<TypoStyleOverride>) =>
-    onChange({ ...typography, styles: { ...typography.styles, [styleId]: { ...overrides, ...p } } });
-
-  const fontFamily    = overrides.fontFamily    ?? FONT_FAMILIES[0].value;
-  const fontWeight    = overrides.fontWeight    ?? BASE_WEIGHT[styleId];
-  const fontSize      = overrides.fontSize      ?? BASE_PT[styleId];
-  const lineHeight    = overrides.lineHeight    ?? 1.5;
-  const letterSpacing = overrides.letterSpacing ?? 0;
-  const align         = overrides.textAlign     ?? 'left';
-  const textColor     = overrides.textColor     ?? '#1E293B';
-  const verticalAlign = 'top';
-  const isBold        = overrides.isBold        ?? false;
-  const isItalic      = overrides.isItalic      ?? false;
-  const isUnderline   = overrides.isUnderline   ?? false;
-
-  const ChevronDownIcon = ChevronDown;
+  const pickList = useMemo(() => buildDesignSystemFontPickList(typography), [typography]);
+  const headingVal = cssStackForBaseFamily(typography.headingFont, 'heading', pickList);
+  const bodyVal = cssStackForBaseFamily(typography.bodyFont, 'body', pickList);
+  const headingOptions = useMemo(
+    () => fontSelectOptionsWithCurrent(pickList, headingVal, typography.headingFont),
+    [pickList, headingVal, typography.headingFont],
+  );
+  const bodyOptions = useMemo(
+    () => fontSelectOptionsWithCurrent(pickList, bodyVal, typography.bodyFont),
+    [pickList, bodyVal, typography.bodyFont],
+  );
 
   return (
-    <div style={{ borderTop: '1px solid #333', paddingTop: '8px', marginTop: '8px', paddingLeft: '8px', paddingRight: '8px' }}>
-      <button
-        onMouseDown={(e) => e.preventDefault()}
-        onClick={() => setShowCustomStyles(!showCustomStyles)}
-        style={{ ...buttonStyle, width: '100%', justifyContent: 'space-between', backgroundColor: 'transparent', padding: '4px 0' }}
-      >
-        <span style={{ fontSize: '10px', color: '#808080' }}>DALŠÍ NASTAVENÍ</span>
-        <ChevronDownIcon size={12} style={{ transform: showCustomStyles ? 'rotate(180deg)' : 'none' }} />
-      </button>
-
-      {showCustomStyles && (
-        <div style={{ marginTop: '12px' }}>
-          {/* Font Family */}
-          <div style={{ marginBottom: '10px' }}>
-            <div style={{ position: 'relative' }}>
-              <select
-                value={fontFamily}
-                onChange={(e) => patch({ fontFamily: e.target.value })}
-                style={{ ...inputStyle, appearance: 'none', paddingRight: '28px', cursor: 'pointer' }}
-              >
-                {FONT_FAMILIES.map((font) => (
-                  <option key={font.value} value={font.value}>{font.label}</option>
-                ))}
-              </select>
-              <ChevronDownIcon size={14} style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: '#808080' }} />
-            </div>
-          </div>
-
-          {/* Font Size and Weight Row */}
-          <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
-            {/* Font Weight */}
-            <div style={{ flex: 1, position: 'relative' }}>
-              <select
-                value={String(fontWeight)}
-                onChange={(e) => patch({ fontWeight: e.target.value === 'normal' ? 400 : e.target.value === 'bold' ? 700 : Number(e.target.value) })}
-                style={{ ...inputStyle, appearance: 'none', paddingRight: '28px', cursor: 'pointer' }}
-              >
-                <option value="normal">Regular</option>
-                <option value="500">Medium</option>
-                <option value="600">Semibold</option>
-                <option value="bold">Bold</option>
-              </select>
-              <ChevronDownIcon size={14} style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: '#808080' }} />
-            </div>
-
-            {/* Font Size */}
-            <div style={{ width: '70px', position: 'relative' }}>
-              <select
-                value={fontSize}
-                onChange={(e) => patch({ fontSize: parseInt(e.target.value) })}
-                style={{ ...inputStyle, appearance: 'none', paddingRight: '24px', cursor: 'pointer' }}
-              >
-                {FONT_SIZES.map((size) => (
-                  <option key={size} value={size}>{size}</option>
-                ))}
-              </select>
-              <ChevronDownIcon size={14} style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: '#808080' }} />
-            </div>
-          </div>
-
-          {/* Line Height and Letter Spacing */}
-          <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
-            <div style={{ flex: 1 }}>
-              <label style={{ ...labelStyle, marginBottom: '2px' }}>
-                <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                  <span style={{ fontSize: '12px', fontWeight: 500 }}>A</span>
-                  <span style={{ fontSize: '10px' }}>{lineHeight}</span>
-                </span>
-              </label>
-              <input type="range" min="1" max="2.5" step="0.1" value={lineHeight}
-                onChange={(e) => patch({ lineHeight: parseFloat(e.target.value) })}
-                style={{ width: '100%', height: '4px', appearance: 'none', backgroundColor: '#475569', borderRadius: '2px', cursor: 'pointer' }}
-              />
-            </div>
-            <div style={{ flex: 1 }}>
-              <label style={{ ...labelStyle, marginBottom: '2px' }}>
-                <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                  <span style={{ fontSize: '12px' }}>|A|</span>
-                  <span style={{ fontSize: '10px' }}>{letterSpacing}%</span>
-                </span>
-              </label>
-              <input type="range" min="-5" max="20" step="1" value={letterSpacing}
-                onChange={(e) => patch({ letterSpacing: parseInt(e.target.value) })}
-                style={{ width: '100%', height: '4px', appearance: 'none', backgroundColor: '#475569', borderRadius: '2px', cursor: 'pointer' }}
-              />
-            </div>
-          </div>
-
-          {/* Text Alignment - Horizontal + Vertical */}
-          <div style={{ display: 'flex', gap: '4px', marginBottom: '6px' }}>
-            <button onClick={() => patch({ textAlign: 'left' })}
-              style={{ ...buttonStyle, flex: 1, justifyContent: 'center', backgroundColor: (align || 'left') === 'left' ? '#5C5CFF' : '#334155', color: (align || 'left') === 'left' ? 'white' : '#94a3b8' }}>
-              <AlignLeft size={14} />
-            </button>
-            <button onClick={() => patch({ textAlign: 'center' })}
-              style={{ ...buttonStyle, flex: 1, justifyContent: 'center', backgroundColor: align === 'center' ? '#5C5CFF' : '#334155', color: align === 'center' ? 'white' : '#94a3b8' }}>
-              <AlignCenter size={14} />
-            </button>
-            <button onClick={() => patch({ textAlign: 'right' })}
-              style={{ ...buttonStyle, flex: 1, justifyContent: 'center', backgroundColor: align === 'right' ? '#5C5CFF' : '#334155', color: align === 'right' ? 'white' : '#94a3b8' }}>
-              <AlignRight size={14} />
-            </button>
-            <div style={{ width: '1px', backgroundColor: '#475569', margin: '0 4px' }} />
-            <button style={{ ...buttonStyle, flex: 1, justifyContent: 'center', backgroundColor: verticalAlign === 'top' ? '#5C5CFF' : '#334155', color: verticalAlign === 'top' ? 'white' : '#94a3b8' }} title="Zarovnat nahoru">
-              <ArrowUpToLine size={14} />
-            </button>
-            <button style={{ ...buttonStyle, flex: 1, justifyContent: 'center', backgroundColor: verticalAlign === 'center' ? '#5C5CFF' : '#334155', color: verticalAlign === 'center' ? 'white' : '#94a3b8' }} title="Zarovnat na střed">
-              <AlignVerticalJustifyCenter size={14} />
-            </button>
-            <button style={{ ...buttonStyle, flex: 1, justifyContent: 'center', backgroundColor: verticalAlign === 'bottom' ? '#5C5CFF' : '#334155', color: verticalAlign === 'bottom' ? 'white' : '#94a3b8' }} title="Zarovnat dolů">
-              <ArrowDownToLine size={14} />
-            </button>
-          </div>
-
-          {/* B / I / U */}
-          <div style={{ display: 'flex', gap: '4px', marginBottom: '10px' }}>
-            <button onClick={() => patch({ isBold: !isBold })}
-              style={{ ...buttonStyle, flex: 1, justifyContent: 'center', backgroundColor: isBold ? '#5C5CFF' : '#334155', color: isBold ? 'white' : '#94a3b8' }}>
-              <Bold size={14} />
-            </button>
-            <button onClick={() => patch({ isItalic: !isItalic })}
-              style={{ ...buttonStyle, flex: 1, justifyContent: 'center', backgroundColor: isItalic ? '#5C5CFF' : '#334155', color: isItalic ? 'white' : '#94a3b8' }}>
-              <Italic size={14} />
-            </button>
-            <button onClick={() => patch({ isUnderline: !isUnderline })}
-              style={{ ...buttonStyle, flex: 1, justifyContent: 'center', backgroundColor: isUnderline ? '#5C5CFF' : '#334155', color: isUnderline ? 'white' : '#94a3b8' }}>
-              <Underline size={14} />
-            </button>
-          </div>
-
-          {/* Text Color */}
-          <div>
-            <label style={{ ...labelStyle, marginBottom: '6px' }}>Barva textu</label>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              {/* Big swatch — opens native color picker */}
-              <div
-                onClick={() => {
-                  const input = document.createElement('input');
-                  input.type = 'color';
-                  input.value = textColor;
-                  input.oninput = (e) => patch({ textColor: (e.target as HTMLInputElement).value });
-                  input.click();
-                }}
-                style={{
-                  width: '28px', height: '28px', borderRadius: '50%',
-                  backgroundColor: textColor,
-                  border: '2px solid #475569', cursor: 'pointer', flexShrink: 0,
-                  boxShadow: '0 1px 4px rgba(0,0,0,0.5)',
-                }}
-                title="Vybrat barvu textu"
-              />
-              {/* Hex input */}
-              <input
-                type="text"
-                value={textColor}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  if (/^#[0-9A-Fa-f]{0,6}$/.test(v)) patch({ textColor: v });
-                }}
-                style={{ ...inputStyle, fontFamily: 'monospace', fontSize: '11px', flex: 1 }}
-              />
-            </div>
-            {/* Preset circles */}
-            <div style={{ display: 'flex', gap: '8px', marginTop: '8px', flexWrap: 'wrap' }}>
-              {['#1E293B', '#334155', '#6B7280', '#ffffff', '#EF4444', '#F97316', '#EAB308', '#22C55E', '#3B82F6', '#8B5CF6'].map(c => (
-                <div
-                  key={c}
-                  onClick={() => patch({ textColor: c })}
-                  style={{
-                    width: '20px', height: '20px', borderRadius: '50%',
-                    backgroundColor: c, cursor: 'pointer', flexShrink: 0,
-                    border: textColor === c ? '2px solid #5C5CFF' : '1px solid #475569',
-                    boxShadow: textColor === c ? '0 0 0 2px #5C5CFF44' : 'none',
-                    transition: 'box-shadow 0.12s',
-                  }}
-                  title={c}
-                />
-              ))}
-            </div>
-          </div>
+    <div style={{ padding: '10px 16px', borderBottom: `1px solid ${C.sidebarBorder}` }}>
+      <p style={{ fontSize: '10px', color: C.muted, margin: '0 0 10px', lineHeight: 1.45 }}>
+        Google fonty se v náhledu editoru nemusí shodovat s tiskem — načtou se až v PDF / tisku.
+      </p>
+      <div style={label11()}>Základní rodiny</div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        <div>
+          <div style={{ ...label11(), marginBottom: '4px' }}>Nadpisy</div>
+          <FontFamilySelect
+            value={headingVal}
+            options={headingOptions}
+            onChange={(v) => onChange({ ...typography, headingFont: extractFontFamilyName(v) })}
+            triggerStyle={{ ...inputStyle, width: '100%', cursor: 'pointer' }}
+          />
         </div>
-      )}
+        <div>
+          <div style={{ ...label11(), marginBottom: '4px' }}>Tělo textu</div>
+          <FontFamilySelect
+            value={bodyVal}
+            options={bodyOptions}
+            onChange={(v) => onChange({ ...typography, bodyFont: extractFontFamilyName(v) })}
+            triggerStyle={{ ...inputStyle, width: '100%', cursor: 'pointer' }}
+          />
+        </div>
+      </div>
     </div>
   );
 }
+
+// ── TYPOGRAPHY canvas ─────────────────────────────────────────────────────────
 
 /** Maps typography style ID → sample block ID in GridCanvas */
 const STYLE_TO_BLOCK_ID: Record<TypographyStyleId, string> = {
@@ -535,27 +395,6 @@ function TypographyCanvas({ typography, onChange, activeStyle, onActiveStyleChan
   activeStyle: TypographyStyleId;
   onActiveStyleChange: (s: TypographyStyleId) => void;
 }) {
-  useEffect(() => {
-    const extractFontName = (css: string) => {
-      const m = css.match(/['"]([^'"]+)['"]/);
-      return m ? m[1] : css.split(',')[0].trim();
-    };
-    const overrideFonts = typography.styles
-      ? Object.values(typography.styles).map(s => s?.fontFamily).filter(Boolean) as string[]
-      : [];
-    const allFonts = [
-      typography.headingFont,
-      typography.bodyFont,
-      ...overrideFonts.map(extractFontName),
-    ].filter((f, i, arr) => Boolean(f) && arr.indexOf(f) === i);
-    const url = getGoogleFontsUrl(allFonts);
-    if (!url) return;
-    const id = 'ds-canvas-fonts';
-    let el = document.getElementById(id) as HTMLLinkElement | null;
-    if (!el) { el = document.createElement('link'); el.id = id; el.rel = 'stylesheet'; document.head.appendChild(el); }
-    el.href = url;
-  }, [typography]);
-
   const ov = (id: TypographyStyleId) => typography.styles?.[id] ?? {};
 
   const resolveFont = (id: TypographyStyleId, isHeading: boolean) =>
@@ -765,18 +604,6 @@ function TypographyCanvas({ typography, onChange, activeStyle, onActiveStyleChan
 
 // ── LAYOUT canvas ─────────────────────────────────────────────────────────────
 
-type SeriesSlot = {
-  type: string;
-  span: number;
-  level?: string;
-  columns?: 1 | 2 | 3;
-  galleryColumns?: number;
-  galleryCount?: number;
-  floatSide?: 'left' | 'right';
-  floatSpanBlocks?: number;
-  floatGridSpan?: number;
-};
-
 type SeriesGroup = 'column' | 'half' | 'twothirds';
 
 const LAYOUT_SERIES: Record<string, { label: string; description: string; group: SeriesGroup; slots: SeriesSlot[] }> = {
@@ -840,176 +667,6 @@ const SERIES_GROUPS: { id: SeriesGroup; label: string }[] = [
   { id: 'half', label: 'Polovina stránky 1/2 + 1/2' },
   { id: 'twothirds', label: 'Dvě třetiny 2/3 + 1/3' },
 ];
-
-function generateLayoutSVG(slots: SeriesSlot[]): string {
-  const W = 76; const H = 60; const PAD = 3; const GAP = 2;
-  const COLORS: Record<string, string> = {
-    heading: '#6366f1', paragraph: '#334155', image: '#0ea5e9', gallery: '#0284c7', infobox: '#059669',
-  };
-  const rects: string[] = [];
-  const innerW = W - PAD * 2;
-  const firstSlot = slots[0];
-  const isFloat = !!firstSlot?.floatSide;
-
-  if (isFloat) {
-    const anchor = firstSlot;
-    const mainSlots = slots.slice(1, 1 + (anchor.floatSpanBlocks ?? 2));
-    const anchorW = Math.round(innerW * (anchor.floatGridSpan ?? 6) / 12);
-    const mainW = innerW - anchorW - GAP;
-    const contentH = H - PAD * 2;
-    const anchorColor = COLORS[anchor.type] || '#475569';
-    const anchorX = anchor.floatSide === 'left' ? PAD : PAD + mainW + GAP;
-    const mainX = anchor.floatSide === 'left' ? PAD + anchorW + GAP : PAD;
-    rects.push(`<rect x="${anchorX}" y="${PAD}" width="${anchorW}" height="${contentH}" rx="2" fill="${anchorColor}" opacity="0.85"/>`);
-    if (anchor.type === 'image' || anchor.type === 'gallery') {
-      if (anchor.type === 'gallery') {
-        const imgH = (contentH - GAP) / 2;
-        [0, imgH + GAP].forEach(dy => {
-          rects.push(`<rect x="${anchorX + 1}" y="${PAD + dy}" width="${anchorW - 2}" height="${imgH}" rx="2" fill="white" opacity="0.1"/>`);
-          const cx2 = anchorX + anchorW / 2; const cy2 = PAD + dy + imgH / 2;
-          rects.push(`<circle cx="${cx2}" cy="${cy2 - 2}" r="2.5" fill="white" opacity="0.2"/>`);
-        });
-      } else {
-        const cx = anchorX + anchorW / 2; const cy = PAD + contentH / 2;
-        rects.push(`<circle cx="${cx}" cy="${cy - 4}" r="4" fill="white" opacity="0.25"/>`);
-        rects.push(`<path d="M${anchorX + 2} ${PAD + contentH - 6} L${anchorX + anchorW * 0.35} ${PAD + contentH / 2 + 2} L${anchorX + anchorW * 0.65} ${PAD + contentH - 10} L${anchorX + anchorW - 2} ${PAD + contentH - 4}" fill="white" opacity="0.2"/>`);
-      }
-    }
-    const eachH = mainSlots.length > 0 ? (contentH - GAP * (mainSlots.length - 1)) / mainSlots.length : contentH;
-    mainSlots.forEach((slot, i) => {
-      const y = PAD + i * (eachH + GAP);
-      const color = COLORS[slot.type] || '#475569';
-      rects.push(`<rect x="${mainX}" y="${y}" width="${mainW}" height="${eachH}" rx="2" fill="${color}" opacity="${slot.type === 'heading' ? '0.9' : '0.6'}"/>`);
-      if (slot.type === 'heading') rects.push(`<rect x="${mainX + 2}" y="${y + eachH / 2 - 1}" width="${mainW * 0.6}" height="2" rx="1" fill="white" opacity="0.5"/>`);
-    });
-  } else {
-    const rows: SeriesSlot[][] = [];
-    let currentRow: SeriesSlot[] = []; let rowSpan = 0;
-    for (const slot of slots) {
-      const span = slot.span || 12;
-      if (rowSpan + span > 12 && currentRow.length > 0) { rows.push(currentRow); currentRow = [slot]; rowSpan = span; }
-      else { currentRow.push(slot); rowSpan += span; }
-    }
-    if (currentRow.length > 0) rows.push(currentRow);
-    const rowH = rows.length > 0 ? (H - PAD * 2 - GAP * (rows.length - 1)) / rows.length : H - PAD * 2;
-    rows.forEach((row, ri) => {
-      const y = PAD + ri * (rowH + GAP);
-      const totalSpan = row.reduce((s, sl) => s + (sl.span || 12), 0);
-      let xCursor = PAD;
-      row.forEach(slot => {
-        const slotW = Math.round(innerW * (slot.span || 12) / totalSpan) - (row.length > 1 ? GAP / row.length : 0);
-        const color = COLORS[slot.type] || '#475569';
-        rects.push(`<rect x="${xCursor}" y="${y}" width="${slotW}" height="${rowH}" rx="2" fill="${color}" opacity="${slot.type === 'heading' ? '0.9' : '0.6'}"/>`);
-        if (slot.type === 'heading') {
-          rects.push(`<rect x="${xCursor + 2}" y="${y + rowH / 2 - 1}" width="${slotW * 0.55}" height="2" rx="1" fill="white" opacity="0.5"/>`);
-        } else if (slot.type === 'gallery') {
-          const cols = slot.galleryColumns ?? 2; const count = slot.galleryCount ?? cols;
-          const gRows = Math.ceil(count / cols);
-          const cellW = (slotW - (cols - 1) * 1.5) / cols; const cellH = (rowH - (gRows - 1) * 1.5) / gRows;
-          for (let r = 0; r < gRows; r++) for (let c = 0; c < cols; c++) {
-            if (r * cols + c >= count) break;
-            const cx2 = xCursor + c * (cellW + 1.5); const cy2 = y + r * (cellH + 1.5);
-            rects.push(`<rect x="${cx2}" y="${cy2}" width="${cellW}" height="${cellH}" rx="1.5" fill="white" opacity="0.12"/>`);
-            rects.push(`<circle cx="${cx2 + cellW / 2}" cy="${cy2 + cellH / 2 - 1}" r="${Math.min(cellW, cellH) * 0.18}" fill="white" opacity="0.2"/>`);
-          }
-        } else if (slot.type === 'image') {
-          const cx = xCursor + slotW / 2; const cy = y + rowH / 2;
-          rects.push(`<circle cx="${cx}" cy="${cy - 3}" r="3" fill="white" opacity="0.25"/>`);
-          rects.push(`<path d="M${xCursor + 2} ${y + rowH - 3} L${xCursor + slotW * 0.4} ${y + rowH / 2 + 2} L${xCursor + slotW - 2} ${y + rowH - 3}" fill="white" opacity="0.2"/>`);
-        } else {
-          const cols = slot.columns ?? 1; const colW = (slotW - (cols - 1) * 2) / cols;
-          for (let c = 0; c < cols; c++) {
-            const cx = xCursor + c * (colW + 2);
-            [0.2, 0.45, 0.7].forEach(frac => {
-              if (y + frac * rowH + 1 < y + rowH - 1) rects.push(`<rect x="${cx + 1}" y="${y + frac * rowH}" width="${colW * 0.85}" height="1.5" rx="0.75" fill="white" opacity="0.2"/>`);
-            });
-          }
-        }
-        xCursor += slotW + GAP;
-      });
-    });
-  }
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"><rect width="${W}" height="${H}" rx="4" fill="#0f172a"/>${rects.join('')}</svg>`;
-}
-
-function makeLayoutBlocks(slots: SeriesSlot[], typography?: DesignSystem['typography']): WorksheetBlock[] {
-  let idCounter = 0;
-  const nextId = () => `ds-layout-${++idCounter}`;
-
-  // Resolve typography overrides for a given style key
-  const ov = (id: TypographyStyleId) => typography?.styles?.[id] ?? {};
-  const resolveFont = (id: TypographyStyleId, isHeading: boolean) =>
-    ov(id).fontFamily || (isHeading
-      ? `'${typography?.headingFont ?? 'Inter'}', serif`
-      : `'${typography?.bodyFont ?? 'Inter'}', sans-serif`);
-
-  const applyTypo = (slot: SeriesSlot, base: any): any => {
-    if (!typography) return base;
-    if (slot.type === 'heading') {
-      const styleId = (slot.level as TypographyStyleId) ?? 'h2';
-      const o = ov(styleId);
-      return {
-        ...base,
-        fontFamily: resolveFont(styleId, true),
-        fontSize: o.fontSize,
-        lineHeight: o.lineHeight,
-        letterSpacing: o.letterSpacing,
-        align: o.textAlign || base.align,
-        isBold: o.isBold,
-        isItalic: o.isItalic,
-        isUnderline: o.isUnderline,
-        textColor: o.textColor,
-      };
-    }
-    if (slot.type === 'paragraph') {
-      const o = ov('body');
-      return {
-        ...base,
-        fontFamily: resolveFont('body', false),
-        fontSize: o.fontSize,
-        lineHeight: o.lineHeight || 1.5,
-        letterSpacing: o.letterSpacing,
-        align: o.textAlign || base.align,
-        isBold: o.isBold,
-        isItalic: o.isItalic,
-        isUnderline: o.isUnderline,
-        textColor: o.textColor,
-      };
-    }
-    return base;
-  };
-
-  const makePlaceholderContent = (slot: SeriesSlot): any => {
-    if (slot.type === 'heading') return applyTypo(slot, { text: 'Název kapitoly nebo sekce', level: slot.level || 'h2' });
-    if (slot.type === 'infobox') return { title: 'Shrnutí', html: '<p>Klíčové pojmy a závěry sekce.</p>', variant: 'green' as const };
-    if (slot.type === 'paragraph') return applyTypo(slot, { html: '<p>Sem vložte hlavní text sekce. Popište téma srozumitelně a přehledně. Příliš žluťoučký kůň úpěl ďábelské ódy.</p>' });
-    if (slot.type === 'gallery') return {
-      url: '', alt: '', caption: '', alignment: 'center' as const, size: 100,
-      gallery: Array(slot.galleryCount ?? 2).fill(''),
-      galleryLayout: 'grid' as const, gridColumns: slot.galleryColumns ?? 1,
-    };
-    return { url: '', alt: '', caption: '', size: 100, alignment: 'center' as const };
-  };
-
-  return slots.map((slot, i) => {
-    const blockType = (slot.type === 'gallery' ? 'image' : slot.type) as any;
-    const block: any = {
-      id: nextId(),
-      type: blockType,
-      order: i,
-      gridSpan: slot.span,
-      width: slot.span < 12 ? 'half' : 'full',
-      content: makePlaceholderContent(slot),
-    };
-    if (slot.floatSide) {
-      block.floatSide = slot.floatSide;
-      block.floatSpanBlocks = slot.floatSpanBlocks;
-      block.floatGridSpan = slot.floatGridSpan;
-    }
-    if (slot.columns && blockType === 'paragraph') block.content = { ...block.content, columns: slot.columns };
-    return block as WorksheetBlock;
-  });
-}
 
 // Lean presentational canvas — all state managed in DesignSystemPanel
 function LayoutCanvas({ blocks, selectedBlockId, hoveredBlockId, isDirty, showSaveInput, saveName,
@@ -1250,6 +907,11 @@ interface DesignSystemPanelProps {
   /** Controlled from outside (mini sidebar icons) */
   activeCategory?: Category;
   onCategoryChange?: (cat: Category) => void;
+  /** Z canvasu — přepne na Layout a otevře vlastní layout v editoru */
+  focusCustomLayoutId?: string | null;
+  onConsumedFocusCustomLayout?: () => void;
+  /** Workbook: vlastní layout otevřít v Pro editoru (`/admin/worksheet-pro/`) místo zjednodušeného plátna vlevo */
+  openLayoutInProEditor?: (customLayoutId: string, dsSnapshot?: DesignSystem | null) => void;
 }
 
 function CustomLayoutItem({ layout, isActive, onSelect, onRename }: {
@@ -1290,13 +952,23 @@ function CustomLayoutItem({ layout, isActive, onSelect, onRename }: {
   );
 }
 
-export function DesignSystemPanel({ activeDesignSystem, onDesignSystemChange, onApplyToProject, activeCategory: activeCategoryProp, onCategoryChange }: DesignSystemPanelProps) {
+export function DesignSystemPanel({
+  activeDesignSystem,
+  onDesignSystemChange,
+  onApplyToProject,
+  activeCategory: activeCategoryProp,
+  onCategoryChange,
+  focusCustomLayoutId,
+  onConsumedFocusCustomLayout,
+  openLayoutInProEditor,
+}: DesignSystemPanelProps) {
   const [allSystems, setAllSystems] = useState<DesignSystem[]>([]);
   const [draft, setDraft] = useState<DesignSystem | null>(activeDesignSystem);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
-  const [showDropdown, setShowDropdown] = useState(false);
+  const [systemPickerOpen, setSystemPickerOpen] = useState(false);
+  const systemPickerRef = useRef<HTMLDivElement>(null);
   const [_activeCategory, _setActiveCategory] = useState<Category>('system');
   const activeCategory = activeCategoryProp ?? _activeCategory;
   const setActiveCategory = (cat: Category) => { _setActiveCategory(cat); onCategoryChange?.(cat); };
@@ -1323,7 +995,7 @@ export function DesignSystemPanel({ activeDesignSystem, onDesignSystemChange, on
       const custom = (draft.blockPreferences.customLayouts ?? []).find(l => l.id === activeCustomLayoutId);
       setLayoutBlocks(custom ? [...custom.blocks] : []);
     } else if (activeLayoutKey) {
-      setLayoutBlocks(makeLayoutBlocks(LAYOUT_SERIES[activeLayoutKey]?.slots ?? [], draft.typography));
+      setLayoutBlocks(worksheetBlocksFromLayoutSlots(LAYOUT_SERIES[activeLayoutKey]?.slots ?? [], draft.typography));
     }
     setLayoutSelectedId(null);
     setLayoutDirty(false);
@@ -1333,7 +1005,7 @@ export function DesignSystemPanel({ activeDesignSystem, onDesignSystemChange, on
   // Re-apply typography to preset blocks when typography changes
   useEffect(() => {
     if (activeCustomLayoutId || !draft || !activeLayoutKey) return;
-    setLayoutBlocks(makeLayoutBlocks(LAYOUT_SERIES[activeLayoutKey]?.slots ?? [], draft.typography));
+    setLayoutBlocks(worksheetBlocksFromLayoutSlots(LAYOUT_SERIES[activeLayoutKey]?.slots ?? [], draft.typography));
   }, [draft?.typography]);
 
   const layoutUpdateBlock = useCallback((id: string, content: any) => {
@@ -1413,39 +1085,145 @@ export function DesignSystemPanel({ activeDesignSystem, onDesignSystemChange, on
     setShowAddBlockPicker(false);
   }, [layoutBlocks.length]);
 
+  /** Stejné jako náhled na plátně DS (`buildSinglePagePreviewWorksheetFromBlocks`) — výchozí vizuální styly se promítnou do canvasu. */
+  const layoutBlocksForCanvas = useMemo(() => {
+    const defaults = draft?.blockPreferences.defaultVisualStyles;
+    if (!defaults || Object.keys(defaults).length === 0) return layoutBlocks;
+    return layoutBlocks.map((b) => mergeBlockWithDefaultVisualStyles(b, defaults));
+  }, [layoutBlocks, draft?.blockPreferences.defaultVisualStyles]);
+
+  /** Panel musí ukazovat sloučené styly, aby pole odpovídala tomu, co je na mřížce. */
+  const selectedLayoutBlockForPanel = useMemo(() => {
+    if (!layoutSelectedId || !draft) return null;
+    const raw = layoutBlocks.find((b) => b.id === layoutSelectedId);
+    if (!raw) return null;
+    return mergeBlockWithDefaultVisualStyles(raw, draft.blockPreferences.defaultVisualStyles ?? undefined);
+  }, [layoutSelectedId, layoutBlocks, draft?.blockPreferences.defaultVisualStyles]);
+
   useEffect(() => {
     getDesignSystems().then(sys => { setAllSystems(sys); setLoading(false); });
   }, []);
 
+  useEffect(() => {
+    if (!systemPickerOpen) return;
+    const onDocDown = (e: MouseEvent) => {
+      if (systemPickerRef.current && !systemPickerRef.current.contains(e.target as Node)) {
+        setSystemPickerOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onDocDown);
+    return () => document.removeEventListener('mousedown', onDocDown);
+  }, [systemPickerOpen]);
+
   useEffect(() => { setDraft(activeDesignSystem); setIsDirty(false); }, [activeDesignSystem]);
+
+  useEffect(() => {
+    if (!focusCustomLayoutId || !activeDesignSystem) return;
+    // `draft` může o jeden tick zaostávat za prop — nový layout z plátna musí projít podle `activeDesignSystem`
+    const exists = activeDesignSystem.blockPreferences.customLayouts?.some((l) => l.id === focusCustomLayoutId);
+    if (!exists) {
+      onConsumedFocusCustomLayout?.();
+      return;
+    }
+    setActiveCustomLayoutId(focusCustomLayoutId);
+    setActiveLayoutKey('');
+    if (openLayoutInProEditor) {
+      setLayoutEditingMode(false);
+      openLayoutInProEditor(focusCustomLayoutId, activeDesignSystem);
+    } else {
+      setLayoutEditingMode(true);
+    }
+    setActiveCategory('layout');
+    onConsumedFocusCustomLayout?.();
+  }, [focusCustomLayoutId, activeDesignSystem, onConsumedFocusCustomLayout, openLayoutInProEditor]);
 
   const update = useCallback(<K extends keyof DesignSystem>(key: K, val: DesignSystem[K]) => {
     setDraft(prev => prev ? { ...prev, [key]: val } : null);
     setIsDirty(true);
   }, []);
 
-  const layoutHandleSaveClick = useCallback(() => {
+  /** Uložení do knihovny + propagace do rodiče (kniha / canvas). */
+  const persistDesignSystemToLibrary = useCallback(async (ds: DesignSystem): Promise<DesignSystem | null> => {
+    setSaving(true);
+    const saved = await saveDesignSystem({
+      id: ds.id.startsWith('local-') ? undefined : ds.id,
+      name: ds.name,
+      description: ds.description,
+      thumbnail_color: ds.thumbnail_color,
+      colors: ds.colors,
+      typography: ds.typography,
+      pageDefaults: ds.pageDefaults,
+      aiPrompts: ds.aiPrompts,
+      blockPreferences: ds.blockPreferences,
+      ...(ds.dataset != null ? { dataset: ds.dataset } : {}),
+    });
+    setSaving(false);
+    if (saved) {
+      setDraft(saved);
+      setIsDirty(false);
+      setAllSystems((prev) => {
+        const i = prev.findIndex((s) => s.id === saved.id);
+        return i >= 0 ? prev.map((s) => (s.id === saved.id ? saved : s)) : [saved, ...prev];
+      });
+      onDesignSystemChange(saved);
+    }
+    return saved;
+  }, [onDesignSystemChange]);
+
+  const layoutHandleSaveClick = useCallback(async () => {
     if (activeCustomLayoutId && draft) {
-      const updated = (draft.blockPreferences.customLayouts ?? []).map(l => l.id === activeCustomLayoutId ? { ...l, blocks: layoutBlocks } : l);
-      update('blockPreferences', { ...draft.blockPreferences, customLayouts: updated });
+      const updated = (draft.blockPreferences.customLayouts ?? []).map((l) =>
+        l.id === activeCustomLayoutId ? { ...l, blocks: layoutBlocks } : l,
+      );
+      const nextDs: DesignSystem = {
+        ...draft,
+        blockPreferences: { ...draft.blockPreferences, customLayouts: updated },
+      };
+      setDraft(nextDs);
+      onDesignSystemChange(nextDs);
       setLayoutDirty(false);
       toast.success('Layout uložen');
+      if (nextDs.id && !nextDs.id.startsWith('local-')) {
+        const saved = await persistDesignSystemToLibrary(nextDs);
+        if (!saved) toast.error('Chyba při ukládání');
+      } else {
+        setIsDirty(true);
+      }
     } else {
       setLayoutSaveName(LAYOUT_SERIES[activeLayoutKey]?.label ?? 'Nový layout');
       setLayoutShowSave(true);
     }
-  }, [activeCustomLayoutId, activeLayoutKey, layoutBlocks, draft, update]);
+  }, [
+    activeCustomLayoutId,
+    activeLayoutKey,
+    layoutBlocks,
+    draft,
+    onDesignSystemChange,
+    persistDesignSystemToLibrary,
+  ]);
 
-  const layoutConfirmSave = useCallback(() => {
-    if (!layoutSaveName.trim() || !draft) return;
-    const newLayout: CustomLayout = { id: `cl-${Date.now()}`, name: layoutSaveName.trim(), blocks: layoutBlocks };
+  const layoutConfirmSave = useCallback(async () => {
+    const name = layoutSaveName.trim();
+    if (!name || !draft) return;
+    const newLayout: CustomLayout = { id: `cl-${Date.now()}`, name, blocks: layoutBlocks };
     const updated = [...(draft.blockPreferences.customLayouts ?? []), newLayout];
-    update('blockPreferences', { ...draft.blockPreferences, customLayouts: updated });
+    const nextDs: DesignSystem = {
+      ...draft,
+      blockPreferences: { ...draft.blockPreferences, customLayouts: updated },
+    };
+    setDraft(nextDs);
+    onDesignSystemChange(nextDs);
     setActiveCustomLayoutId(newLayout.id);
     setLayoutShowSave(false);
     setLayoutDirty(false);
-    toast.success(`Layout "${layoutSaveName}" uložen`);
-  }, [layoutSaveName, layoutBlocks, draft, update]);
+    toast.success(`Layout „${name}“ uložen`);
+    if (nextDs.id && !nextDs.id.startsWith('local-')) {
+      const saved = await persistDesignSystemToLibrary(nextDs);
+      if (!saved) toast.error('Chyba při ukládání');
+    } else {
+      setIsDirty(true);
+    }
+  }, [layoutSaveName, layoutBlocks, draft, onDesignSystemChange, persistDesignSystemToLibrary]);
 
   const handleNew = () => {
     const empty = createEmptyDesignSystem('Nový design systém');
@@ -1456,22 +1234,9 @@ export function DesignSystemPanel({ activeDesignSystem, onDesignSystemChange, on
 
   const handleSave = async () => {
     if (!draft) return;
-    setSaving(true);
-    const saved = await saveDesignSystem({
-      id: draft.id.startsWith('local-') ? undefined : draft.id,
-      name: draft.name, description: draft.description, thumbnail_color: draft.thumbnail_color,
-      colors: draft.colors, typography: draft.typography, pageDefaults: draft.pageDefaults,
-      aiPrompts: draft.aiPrompts, blockPreferences: draft.blockPreferences,
-    });
-    setSaving(false);
-    if (saved) {
-      setDraft(saved); setIsDirty(false);
-      setAllSystems(prev => { const i = prev.findIndex(s => s.id === saved.id); return i >= 0 ? prev.map(s => s.id === saved.id ? saved : s) : [saved, ...prev]; });
-      onDesignSystemChange(saved);
-      toast.success('Uloženo');
-    } else {
-      toast.error('Chyba při ukládání');
-    }
+    const saved = await persistDesignSystemToLibrary(draft);
+    if (saved) toast.success('Uloženo');
+    else toast.error('Chyba při ukládání');
   };
 
   // Auto-save — debounced 1.5s after any change
@@ -1542,140 +1307,349 @@ export function DesignSystemPanel({ activeDesignSystem, onDesignSystemChange, on
   }, [draft, update]);
 
   return (
-    <div style={{ flex: 1, display: 'flex', overflow: 'hidden', backgroundColor: C.bg }}>
+    <div
+      style={{
+        flex: 1,
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden',
+        backgroundColor: C.bg,
+        minHeight: 0,
+      }}
+    >
+      {/* Přepínání sekcí — nutné mimo Pro editor s mini-sidebar ikonami (např. editor knihy). */}
+      <div
+        style={{
+          flexShrink: 0,
+          display: 'flex',
+          flexWrap: 'wrap',
+          alignItems: 'center',
+          gap: '10px',
+          padding: '8px 10px',
+          borderBottom: `1px solid ${C.sidebarBorder}`,
+          backgroundColor: '#161b22',
+        }}
+      >
+        <div
+          ref={systemPickerRef}
+          style={{ position: 'relative', flexShrink: 1, minWidth: 0, maxWidth: 'min(300px, 46vw)' }}
+        >
+          <button
+            type="button"
+            onClick={() => setSystemPickerOpen((o) => !o)}
+            aria-expanded={systemPickerOpen}
+            aria-haspopup="listbox"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              width: '100%',
+              minWidth: 0,
+              padding: '5px 8px 5px 6px',
+              borderRadius: '8px',
+              border: `1px solid ${systemPickerOpen ? C.accent : C.border}`,
+              backgroundColor: systemPickerOpen ? C.accentDim : '#21262d',
+              cursor: 'pointer',
+              textAlign: 'left',
+            }}
+          >
+            <span style={{ fontSize: '10px', fontWeight: 600, color: C.muted, textTransform: 'uppercase', letterSpacing: '0.04em', flexShrink: 0 }}>
+              Vybraný
+            </span>
+            {draft ? (
+              <>
+                <div
+                  style={{
+                    width: '11px',
+                    height: '11px',
+                    borderRadius: '3px',
+                    backgroundColor: draft.thumbnail_color || C.accent,
+                    flexShrink: 0,
+                    border: `1px solid ${C.border}`,
+                  }}
+                />
+                <span
+                  style={{
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    color: C.text,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                    flex: 1,
+                    minWidth: 0,
+                  }}
+                >
+                  {loading ? 'Načítám…' : draft.name}
+                </span>
+                {saving && <Loader2 size={12} className="animate-spin" style={{ color: '#3B82F6', flexShrink: 0 }} />}
+                {isDirty && !saving && (
+                  <div
+                    style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#f59e0b', flexShrink: 0 }}
+                    title="Neuložené změny"
+                  />
+                )}
+              </>
+            ) : (
+              <span style={{ fontSize: '12px', color: C.muted, fontStyle: 'italic', flex: 1 }}>{loading ? 'Načítám…' : 'Vyberte nebo vytvořte'}</span>
+            )}
+            <ChevronDown
+              size={14}
+              style={{
+                color: C.muted,
+                flexShrink: 0,
+                transform: systemPickerOpen ? 'rotate(180deg)' : 'none',
+                transition: 'transform 0.15s',
+              }}
+            />
+          </button>
 
-      {/* ── LEFT SIDEBAR — same width as editor aside panel (300px) ── */}
+          {systemPickerOpen && (
+            <div
+              role="listbox"
+              style={{
+                position: 'absolute',
+                top: 'calc(100% + 6px)',
+                left: 0,
+                width: 'min(320px, 92vw)',
+                maxHeight: 'min(380px, 55vh)',
+                display: 'flex',
+                flexDirection: 'column',
+                backgroundColor: '#1c2128',
+                border: `1px solid ${C.border}`,
+                borderRadius: '10px',
+                boxShadow: '0 16px 48px rgba(0,0,0,0.75)',
+                zIndex: 400,
+                overflow: 'hidden',
+              }}
+            >
+              <div style={{ flex: 1, overflowY: 'auto', padding: '6px', minHeight: 0 }}>
+                {loading && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px', color: C.muted, fontSize: '12px' }}>
+                    <Loader2 size={13} className="animate-spin" /> Načítám…
+                  </div>
+                )}
+                {!loading && allSystems.length === 0 && (
+                  <div style={{ padding: '14px 10px', textAlign: 'center', color: C.muted, fontSize: '12px', lineHeight: 1.5 }}>
+                    Zatím žádný systém.
+                  </div>
+                )}
+                {!loading &&
+                  allSystems.map((ds) => {
+                    const isSelected = ds.id === draft?.id;
+                    const isApplied = ds.id === activeDesignSystem?.id;
+                    return (
+                      <button
+                        key={ds.id}
+                        type="button"
+                        role="option"
+                        aria-selected={isSelected}
+                        onClick={() => {
+                          setDraft(ds);
+                          onDesignSystemChange(ds);
+                          setIsDirty(false);
+                          setSystemPickerOpen(false);
+                        }}
+                        style={{
+                          width: '100%',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '10px',
+                          padding: '9px 10px',
+                          borderRadius: '8px',
+                          cursor: 'pointer',
+                          border: `2px solid ${isSelected ? C.accent : 'transparent'}`,
+                          backgroundColor: isSelected ? 'rgba(92,92,255,0.12)' : 'transparent',
+                          textAlign: 'left',
+                          marginBottom: '2px',
+                        }}
+                        onMouseEnter={(e) => {
+                          if (!isSelected) (e.currentTarget as HTMLElement).style.backgroundColor = '#262c36';
+                        }}
+                        onMouseLeave={(e) => {
+                          if (!isSelected) (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent';
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: '26px',
+                            height: '26px',
+                            borderRadius: '6px',
+                            backgroundColor: ds.thumbnail_color || C.accent,
+                            flexShrink: 0,
+                          }}
+                        />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div
+                            style={{
+                              fontSize: '12px',
+                              fontWeight: 600,
+                              color: isSelected ? C.text : '#cbd5e1',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            {ds.name}
+                          </div>
+                          {isApplied && (
+                            <div style={{ fontSize: '10px', color: '#22c55e', fontWeight: 600, marginTop: '2px' }}>✓ Aplikováno</div>
+                          )}
+                        </div>
+                        {isSelected && <Check size={14} style={{ color: C.accent, flexShrink: 0 }} />}
+                      </button>
+                    );
+                  })}
+              </div>
+
+              <div style={{ borderTop: `1px solid ${C.border}`, padding: '8px', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleNew();
+                    setSystemPickerOpen(false);
+                  }}
+                  style={{
+                    width: '100%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px',
+                    padding: '8px 10px',
+                    borderRadius: '8px',
+                    border: `1px dashed ${C.border}`,
+                    backgroundColor: '#21262d',
+                    color: C.text,
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  <Plus size={14} /> Přidat nový
+                </button>
+                {draft && (
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        await handleDuplicate();
+                        setSystemPickerOpen(false);
+                      }}
+                      style={{
+                        flex: 1,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '5px',
+                        padding: '6px 8px',
+                        borderRadius: '6px',
+                        border: `1px solid ${C.border}`,
+                        backgroundColor: 'transparent',
+                        color: C.muted,
+                        fontSize: '11px',
+                        fontWeight: 500,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <Copy size={12} /> Kopie
+                    </button>
+                    {draft && !draft.id.startsWith('local-') && (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          await handleDelete();
+                          setSystemPickerOpen(false);
+                        }}
+                        style={{
+                          flex: 1,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '5px',
+                          padding: '6px 8px',
+                          borderRadius: '6px',
+                          border: `1px solid ${C.border}`,
+                          backgroundColor: 'transparent',
+                          color: '#EF4444',
+                          fontSize: '11px',
+                          fontWeight: 500,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <Trash2 size={12} /> Smazat
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div style={{ width: '1px', height: '22px', backgroundColor: C.border, flexShrink: 0 }} aria-hidden />
+
+        <div
+          role="tablist"
+          aria-label="Sekce design systému"
+          style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', flex: 1, minWidth: 'min(100%, 200px)' }}
+        >
+          {TOP_CATEGORY_TABS.map((tab) => {
+            const Icon = tab.icon;
+            const active = activeCategory === tab.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => setActiveCategory(tab.id)}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '6px 10px',
+                  borderRadius: '6px',
+                  border: `1px solid ${active ? C.accent : C.border}`,
+                  backgroundColor: active ? C.accentDim : 'transparent',
+                  color: active ? C.accent : C.muted,
+                  fontSize: '11px',
+                  fontWeight: active ? 600 : 500,
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                <Icon size={14} style={{ flexShrink: 0, opacity: active ? 1 : 0.85 }} />
+                {tab.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div style={{ flex: 1, display: 'flex', overflow: 'hidden', minHeight: 0, backgroundColor: C.bg }}>
+
+      {activeCategory !== 'system' && (
       <div style={{
         width: '300px', minWidth: '300px', flexShrink: 0,
         backgroundColor: '#1e293b', borderRight: '1px solid #334155',
         display: 'flex', flexDirection: 'column', overflow: 'hidden',
       }}>
-        {/* Minimal DS indicator — always visible (name + dirty dot) */}
-        {activeCategory !== 'system' && (
-          <div style={{ padding: '8px 12px', borderBottom: '1px solid #334155', flexShrink: 0, display: 'flex', alignItems: 'center', gap: '7px' }}>
-            {draft && <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: draft.thumbnail_color || C.accent, flexShrink: 0 }} />}
-            <span style={{ fontSize: '12px', color: draft ? '#E5E5E5' : '#64748b', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
-              {loading ? 'Načítám…' : (draft?.name || 'Žádný design systém')}
-            </span>
-            {saving && <Loader2 size={12} className="animate-spin" style={{ color: '#3B82F6', flexShrink: 0 }} />}
-            {isDirty && !saving && <div style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#f59e0b', flexShrink: 0 }} title="Neuloženo" />}
-          </div>
-        )}
-
-        {/* DS selector panel — shown only in 'system' tab */}
-        {activeCategory === 'system' && (
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-
-            {/* Top action bar */}
-            <div style={{ padding: '10px 12px', borderBottom: '1px solid #334155', display: 'flex', gap: '6px', flexShrink: 0 }}>
-              <button onClick={handleNew}
-                style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', padding: '7px', backgroundColor: '#334155', border: 'none', borderRadius: '6px', cursor: 'pointer', color: '#94a3b8', fontSize: '11px', fontWeight: 500 }}
-                onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#475569')}
-                onMouseLeave={e => (e.currentTarget.style.backgroundColor = '#334155')}>
-                <Plus size={13} /> Nový
-              </button>
-              {draft && (
-                <button onClick={handleDuplicate}
-                  style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', padding: '7px', backgroundColor: '#334155', border: 'none', borderRadius: '6px', cursor: 'pointer', color: '#94a3b8', fontSize: '11px', fontWeight: 500 }}
-                  onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#475569')}
-                  onMouseLeave={e => (e.currentTarget.style.backgroundColor = '#334155')}>
-                  <Copy size={13} /> Kopie
-                </button>
-              )}
-              {draft && !draft.id.startsWith('local-') && (
-                <button onClick={handleDelete}
-                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '7px 10px', backgroundColor: '#334155', border: 'none', borderRadius: '6px', cursor: 'pointer', color: '#EF4444', fontSize: '11px' }}
-                  onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#475569')}
-                  onMouseLeave={e => (e.currentTarget.style.backgroundColor = '#334155')}>
-                  <Trash2 size={13} />
-                </button>
-              )}
-            </div>
-
-            {/* System list */}
-            <div style={{ flex: 1, overflowY: 'auto', padding: '8px' }}>
-              {loading && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px', color: '#64748b', fontSize: '12px' }}>
-                  <Loader2 size={13} className="animate-spin" /> Načítám…
-                </div>
-              )}
-              {!loading && allSystems.length === 0 && (
-                <div style={{ padding: '20px 12px', textAlign: 'center', color: '#475569', fontSize: '12px' }}>
-                  Žádný design systém.<br/>Klikni na + Nový.
-                </div>
-              )}
-              {allSystems.map(ds => {
-                const isSelected = ds.id === draft?.id;
-                const isApplied = ds.id === activeDesignSystem?.id;
-                return (
-                  <button
-                    key={ds.id}
-                    onClick={() => { setDraft(ds); onDesignSystemChange(ds); setIsDirty(false); }}
-                    style={{
-                      width: '100%', display: 'flex', alignItems: 'center', gap: '10px',
-                      padding: '10px 12px', borderRadius: '8px', cursor: 'pointer',
-                      border: `2px solid ${isSelected ? C.accent : 'transparent'}`,
-                      backgroundColor: isSelected ? 'rgba(92,92,255,0.1)' : 'transparent',
-                      textAlign: 'left', marginBottom: '2px',
-                    }}
-                    onMouseEnter={e => { if (!isSelected) (e.currentTarget as HTMLElement).style.backgroundColor = '#263348'; }}
-                    onMouseLeave={e => { if (!isSelected) (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'; }}
-                  >
-                    <div style={{ width: '28px', height: '28px', borderRadius: '7px', backgroundColor: ds.thumbnail_color || C.accent, flexShrink: 0 }} />
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: '13px', fontWeight: 600, color: isSelected ? '#f1f5f9' : '#cbd5e1', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {ds.name}
-                      </div>
-                      {isApplied && (
-                        <div style={{ fontSize: '10px', color: '#22c55e', fontWeight: 600, marginTop: '2px' }}>
-                          ✓ Aplikováno
-                        </div>
-                      )}
-                    </div>
-                    {isSelected && <Check size={14} style={{ color: C.accent, flexShrink: 0 }} />}
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Edit strip for selected system */}
-            {draft && (
-              <div style={{ padding: '10px 12px', borderTop: '1px solid #334155', flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <div
-                    onClick={() => { const i = document.createElement('input'); i.type = 'color'; i.value = draft.thumbnail_color || C.accent; i.onchange = e => update('thumbnail_color', (e.target as HTMLInputElement).value); i.click(); }}
-                    style={{ width: '30px', height: '30px', borderRadius: '6px', backgroundColor: draft.thumbnail_color || C.accent, cursor: 'pointer', flexShrink: 0, border: '1px solid #475569' }}
-                    title="Barva systému"
-                  />
-                  <input
-                    value={draft.name}
-                    onChange={e => update('name', e.target.value)}
-                    style={{ ...inputStyle, flex: 1, fontWeight: 600, padding: '6px 10px', fontSize: '13px' }}
-                    placeholder="Název systému"
-                  />
-                </div>
-                <div style={{ display: 'flex', gap: '6px' }}>
-                  <button onClick={handleSave} disabled={!isDirty || saving}
-                    style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', padding: '7px', backgroundColor: isDirty ? '#3B82F6' : '#334155', border: 'none', borderRadius: '6px', cursor: isDirty && !saving ? 'pointer' : 'default', color: isDirty ? 'white' : '#475569', fontSize: '12px', fontWeight: 600 }}>
-                    {saving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
-                    {isDirty ? 'Uložit' : 'Uloženo'}
-                  </button>
-                  <button onClick={() => { onApplyToProject(draft); toast.success('Aplikováno na projekt'); }}
-                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', padding: '7px 14px', backgroundColor: '#0c2a1a', border: '1px solid #22c55e40', borderRadius: '6px', cursor: 'pointer', color: '#22c55e', fontSize: '12px', fontWeight: 500 }}>
-                    <RefreshCw size={12} /> Aplikovat
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
+        {/* Levý panel: typografie / layout (záložka Systémy = jen dropdown nahoře + hlavní plocha) */}
+        {/* Minimal DS indicator */}
+        <div style={{ padding: '8px 12px', borderBottom: '1px solid #334155', flexShrink: 0, display: 'flex', alignItems: 'center', gap: '7px' }}>
+          {draft && <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: draft.thumbnail_color || C.accent, flexShrink: 0 }} />}
+          <span style={{ fontSize: '12px', color: draft ? '#E5E5E5' : '#64748b', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+            {loading ? 'Načítám…' : (draft?.name || 'Žádný design systém')}
+          </span>
+          {saving && <Loader2 size={12} className="animate-spin" style={{ color: '#3B82F6', flexShrink: 0 }} />}
+          {isDirty && !saving && <div style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#f59e0b', flexShrink: 0 }} title="Neuloženo" />}
+        </div>
 
         {/* Layout editing panel — full sidebar replacement */}
         {draft && activeCategory === 'layout' && layoutEditingMode && (() => {
           const layoutName = activeCustomLayoutId
             ? (draft.blockPreferences.customLayouts ?? []).find(l => l.id === activeCustomLayoutId)?.name ?? 'Vlastní layout'
             : LAYOUT_SERIES[activeLayoutKey]?.label ?? 'Layout';
-          const selectedBlock = layoutBlocks.find(b => b.id === layoutSelectedId);
           const selectedIdx = layoutBlocks.findIndex(b => b.id === layoutSelectedId);
           return (
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -1785,10 +1759,10 @@ export function DesignSystemPanel({ activeDesignSystem, onDesignSystemChange, on
                 )}
 
                 {/* ProBlockSettingsPanel for selected block */}
-                {selectedBlock && (
+                {selectedLayoutBlockForPanel && (
                   <div style={{ borderTop: '1px solid #334155', paddingTop: '4px' }}>
                     <ProBlockSettingsPanel
-                      block={selectedBlock}
+                      block={selectedLayoutBlockForPanel}
                       allBlocks={layoutBlocks}
                       onClose={() => setLayoutSelectedId(null)}
                       onUpdateBlock={(id, updates) => layoutUpdateBlockFull(id, updates)}
@@ -1815,6 +1789,12 @@ export function DesignSystemPanel({ activeDesignSystem, onDesignSystemChange, on
                   {/* Typografie sub-items + settings */}
                   {activeCategory === 'typography' && (
                     <div>
+                      {draft && (
+                        <TypographyBaseFontsRow
+                          typography={draft.typography}
+                          onChange={(v) => update('typography', v)}
+                        />
+                      )}
                       {TYPO_STYLES.map(style => {
                         const styleActive = typographyStyle === style.id;
                         return (
@@ -1893,6 +1873,67 @@ export function DesignSystemPanel({ activeDesignSystem, onDesignSystemChange, on
                         </div>
                       </div>
 
+                      {/* Default block visual — kopíruje se do listu při „Aplikovat na projekt“ */}
+                      <div style={{ marginBottom: '14px' }}>
+                        <div style={label11()}>Výchozí vzhled bloku</div>
+                        <div style={{ fontSize: '9px', color: C.muted, marginBottom: '8px', lineHeight: 1.4 }}>
+                          Nové obsahové bloky (ne hlavička, rozložení, mezera). V editoru listu po aplikaci design systému.
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px' }}>
+                          {BLOCK_VISUAL_STYLE_PRESETS.map((preset) => {
+                            const activeId = matchDefaultBlockPresetId(draft.blockPreferences.defaultVisualStyles);
+                            const isActive = activeId === preset.id;
+                            return (
+                              <button
+                                key={preset.id}
+                                type="button"
+                                title={preset.label}
+                                onClick={() => {
+                                  const curVs = draft.blockPreferences.defaultVisualStyles ?? {};
+                                  const keepPad =
+                                    typeof curVs.padding === 'number' && Number.isFinite(curVs.padding)
+                                      ? Math.min(64, Math.max(0, Math.round(curVs.padding)))
+                                      : 12;
+                                  if (preset.id === 'none') {
+                                    update('blockPreferences', {
+                                      ...draft.blockPreferences,
+                                      defaultVisualStyles: { padding: keepPad },
+                                    });
+                                  } else {
+                                    update('blockPreferences', {
+                                      ...draft.blockPreferences,
+                                      defaultVisualStyles: {
+                                        ...(preset.styles as BlockVisualStyles),
+                                        padding: keepPad,
+                                      },
+                                    });
+                                  }
+                                }}
+                                style={{
+                                  padding: '6px 4px',
+                                  borderRadius: '6px',
+                                  border: `1px solid ${isActive ? C.accent : C.border}`,
+                                  backgroundColor: isActive ? C.accentDim : 'transparent',
+                                  cursor: 'pointer',
+                                  fontSize: '9px',
+                                  fontWeight: isActive ? 700 : 500,
+                                  color: isActive ? C.accent : C.muted,
+                                  textAlign: 'center',
+                                  lineHeight: 1.2,
+                                }}
+                              >
+                                {preset.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        {matchDefaultBlockPresetId(draft.blockPreferences.defaultVisualStyles) === 'custom' ? (
+                          <div style={{ fontSize: '9px', color: C.yellow, marginTop: '6px' }}>
+                            Vlastní vzhled zůstává z uložených dat — vyber preset pro přepsání.
+                          </div>
+                        ) : null}
+                      </div>
+
                       {/* Add new layout button */}
                       <button onClick={handleAddNewLayout}
                         style={{
@@ -1917,7 +1958,16 @@ export function DesignSystemPanel({ activeDesignSystem, onDesignSystemChange, on
                                 key={cl.id}
                                 layout={cl}
                                 isActive={activeCustomLayoutId === cl.id}
-                                onSelect={() => { setActiveCustomLayoutId(cl.id); setActiveLayoutKey(''); setLayoutEditingMode(true); }}
+                                onSelect={() => {
+                                  setActiveCustomLayoutId(cl.id);
+                                  setActiveLayoutKey('');
+                                  if (openLayoutInProEditor) {
+                                    setLayoutEditingMode(false);
+                                    openLayoutInProEditor(cl.id, draft);
+                                  } else {
+                                    setLayoutEditingMode(true);
+                                  }
+                                }}
                                 onRename={(name) => handleRenameLayout(cl.id, name)}
                               />
                             ))}
@@ -1938,7 +1988,7 @@ export function DesignSystemPanel({ activeDesignSystem, onDesignSystemChange, on
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
                                   {items.map(([key, series]) => {
                                     const isActive = activeLayoutKey === key && !activeCustomLayoutId;
-                                    const svgStr = generateLayoutSVG(series.slots);
+                                    const svgStr = generateLayoutSvgFromSlots(series.slots);
                                     return (
                                       <button key={key} onClick={() => { setActiveLayoutKey(key); setActiveCustomLayoutId(null); setLayoutEditingMode(true); }} title={series.description}
                                         style={{
@@ -1970,6 +2020,7 @@ export function DesignSystemPanel({ activeDesignSystem, onDesignSystemChange, on
           </div>
         )}
       </div>
+      )}
 
       {/* ── RIGHT CANVAS ─────────────────────────────────────────────────── */}
       <div style={{
@@ -2000,7 +2051,7 @@ export function DesignSystemPanel({ activeDesignSystem, onDesignSystemChange, on
           />
         ) : activeCategory === 'layout' ? (
           <LayoutCanvas
-            blocks={layoutBlocks}
+            blocks={layoutBlocksForCanvas}
             selectedBlockId={layoutSelectedId}
             hoveredBlockId={layoutHoveredId}
             isDirty={layoutDirty}
@@ -2024,7 +2075,168 @@ export function DesignSystemPanel({ activeDesignSystem, onDesignSystemChange, on
             activeSeriesKey={activeLayoutKey}
             pageDefaults={draft.pageDefaults}
           />
-        ) : activeCategory === 'system' ? null : (
+        ) : activeCategory === 'system' ? (
+          <div
+            style={{
+              flex: 1,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '32px 24px',
+              textAlign: 'center',
+              minHeight: 0,
+            }}
+          >
+            <div
+              style={{
+                width: '100%',
+                maxWidth: '480px',
+                marginBottom: '20px',
+                padding: '14px 16px',
+                borderRadius: '12px',
+                border: `1px solid ${C.border}`,
+                backgroundColor: C.card,
+                textAlign: 'left',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
+                <div
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => {
+                    const i = document.createElement('input');
+                    i.type = 'color';
+                    i.value = draft.thumbnail_color || C.accent;
+                    i.onchange = (e) => update('thumbnail_color', (e.target as HTMLInputElement).value);
+                    i.click();
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      (e.currentTarget as HTMLElement).click();
+                    }
+                  }}
+                  style={{
+                    width: '36px',
+                    height: '36px',
+                    borderRadius: '8px',
+                    backgroundColor: draft.thumbnail_color || C.accent,
+                    cursor: 'pointer',
+                    flexShrink: 0,
+                    border: '1px solid #475569',
+                  }}
+                  title="Barva systému"
+                />
+                <input
+                  value={draft.name}
+                  onChange={(e) => update('name', e.target.value)}
+                  style={{ ...inputStyle, flex: 1, fontWeight: 600, padding: '8px 12px', fontSize: '14px' }}
+                  placeholder="Název systému"
+                />
+              </div>
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  onClick={() => void handleSave()}
+                  disabled={!isDirty || saving}
+                  style={{
+                    flex: 1,
+                    minWidth: '120px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px',
+                    padding: '8px 12px',
+                    backgroundColor: isDirty ? '#3B82F6' : '#334155',
+                    border: 'none',
+                    borderRadius: '8px',
+                    cursor: isDirty && !saving ? 'pointer' : 'default',
+                    color: isDirty ? 'white' : '#64748b',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                  }}
+                >
+                  {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                  {isDirty ? 'Uložit' : 'Uloženo'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onApplyToProject(draft);
+                    toast.success('Aplikováno na projekt');
+                  }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px',
+                    padding: '8px 16px',
+                    backgroundColor: '#0c2a1a',
+                    border: '1px solid #22c55e40',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    color: '#22c55e',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                  }}
+                >
+                  <RefreshCw size={14} /> Aplikovat
+                </button>
+              </div>
+            </div>
+
+            <div
+              style={{
+                width: '56px',
+                height: '56px',
+                borderRadius: '14px',
+                backgroundColor: draft.thumbnail_color || C.accent,
+                marginBottom: '16px',
+                boxShadow: '0 8px 32px rgba(0,0,0,0.35)',
+              }}
+            />
+            <h2 style={{ fontSize: '18px', fontWeight: 700, color: C.text, margin: '0 0 8px' }}>{draft.name}</h2>
+            <p style={{ fontSize: '13px', color: C.muted, maxWidth: '420px', lineHeight: 1.65, margin: '0 0 24px' }}>
+              Vyberte záložku výše (Barvy, Typografie, Layout…) nebo dlaždici níže. Jiný systém zvolíte kliknutím na výběr &quot;Vybraný&quot; nahoře.
+            </p>
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
+                gap: '10px',
+                width: '100%',
+                maxWidth: '520px',
+              }}
+            >
+              {CATEGORIES.map((c) => {
+                const Ico = c.icon;
+                return (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() => setActiveCategory(c.id)}
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      gap: '8px',
+                      padding: '16px 12px',
+                      borderRadius: '10px',
+                      border: `1px solid ${C.border}`,
+                      backgroundColor: C.card,
+                      cursor: 'pointer',
+                      color: C.text,
+                    }}
+                  >
+                    <Ico size={22} style={{ color: C.accent }} />
+                    <span style={{ fontSize: '12px', fontWeight: 600 }}>{c.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ) : (
           <div style={{ padding: '36px 40px', maxWidth: '960px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '28px' }}>
               {(() => { const cat = CATEGORIES.find(c => c.id === activeCategory); if (!cat) return null; const Icon = cat.icon; return <Icon size={20} style={{ color: C.accent }} />; })()}
@@ -2043,6 +2255,7 @@ export function DesignSystemPanel({ activeDesignSystem, onDesignSystemChange, on
             )}
           </div>
         )}
+      </div>
       </div>
     </div>
   );

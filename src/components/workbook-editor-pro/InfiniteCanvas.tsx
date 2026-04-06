@@ -13,12 +13,24 @@
 import React, { useRef, useState, useEffect, useCallback, ReactNode } from 'react';
 import { Hand } from 'lucide-react';
 
+/** Nezachytávat klávesy nad vstupy — jinak mezerník v textarea nefunguje (preventDefault na Space). */
+function eventTargetIsEditable(target: EventTarget | null): boolean {
+  if (!target || !(target instanceof HTMLElement)) return false;
+  const tag = target.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
+  if (target.isContentEditable) return true;
+  return !!target.closest('[contenteditable="true"]');
+}
+
 interface InfiniteCanvasProps {
   children: ReactNode;
   initialZoom?: number;
   minZoom?: number;
   maxZoom?: number;
   gridSize?: number;
+  /** Jemná tečkovaná mřížka (FigJam styl); má přednost před `showGrid` čar. */
+  showDotGrid?: boolean;
+  dotGridSize?: number;
   showControls?: boolean;
   showMinimap?: boolean;
   showGrid?: boolean;
@@ -31,6 +43,8 @@ export function InfiniteCanvas({
   minZoom = 0.4,
   maxZoom = 4,
   gridSize = 50,
+  showDotGrid = false,
+  dotGridSize = 20,
   showControls = true,
   showMinimap = false,
   showGrid = false, // Grid disabled by default
@@ -157,14 +171,16 @@ export function InfiniteCanvas({
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Space for pan mode
-      if (e.code === 'Space' && !e.repeat) {
+      const inField = eventTargetIsEditable(e.target);
+
+      // Space for pan mode (ne při psaní do input/textarea)
+      if (e.code === 'Space' && !e.repeat && !inField) {
         e.preventDefault();
         setIsSpacePressed(true);
       }
-      
+
       // Zoom shortcuts
-      if (e.ctrlKey || e.metaKey) {
+      if (!inField && (e.ctrlKey || e.metaKey)) {
         if (e.key === '=' || e.key === '+') {
           e.preventDefault();
           setZoom(z => Math.min(maxZoom, z * 1.25));
@@ -244,8 +260,8 @@ export function InfiniteCanvas({
     }
   }, []);
   
-  // Grid pattern (optional)
-  const gridPattern = showGrid ? `
+  const patternCell = showDotGrid ? dotGridSize : gridSize;
+  const lineGridSvg = `
     <svg width="${gridSize}" height="${gridSize}" xmlns="http://www.w3.org/2000/svg">
       <defs>
         <pattern id="grid" width="${gridSize}" height="${gridSize}" patternUnits="userSpaceOnUse">
@@ -254,16 +270,28 @@ export function InfiniteCanvas({
       </defs>
       <rect width="100%" height="100%" fill="url(#grid)" />
     </svg>
-  ` : null;
-  
+  `;
+  const dotGridSvg = `
+    <svg width="${dotGridSize}" height="${dotGridSize}" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <pattern id="dots" width="${dotGridSize}" height="${dotGridSize}" patternUnits="userSpaceOnUse">
+          <circle cx="${dotGridSize / 2}" cy="${dotGridSize / 2}" r="1" fill="rgba(148, 163, 184, 0.14)"/>
+        </pattern>
+      </defs>
+      <rect width="100%" height="100%" fill="url(#dots)" />
+    </svg>
+  `;
+  const gridPattern = showDotGrid ? dotGridSvg : showGrid ? lineGridSvg : null;
+  const showAnyGrid = showDotGrid || showGrid;
+
   return (
     <div
       ref={containerRef}
       className="relative w-full h-full overflow-hidden select-none"
       style={{
         backgroundColor: '#0F172A',
-        backgroundImage: showGrid && gridPattern ? `url("data:image/svg+xml,${encodeURIComponent(gridPattern)}")` : 'none',
-        backgroundPosition: showGrid ? `${position.x % gridSize}px ${position.y % gridSize}px` : undefined,
+        backgroundImage: gridPattern ? `url("data:image/svg+xml,${encodeURIComponent(gridPattern)}")` : 'none',
+        backgroundPosition: showAnyGrid ? `${position.x % patternCell}px ${position.y % patternCell}px` : undefined,
         cursor: isPanning ? 'grabbing' : isSpacePressed ? 'grab' : 'default',
       }}
       onMouseDown={handleMouseDown}

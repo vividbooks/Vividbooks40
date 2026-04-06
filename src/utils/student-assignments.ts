@@ -6,6 +6,8 @@
  */
 
 import { supabase } from './supabase/client';
+import { stripBase64FromObject } from './supabase/upload-image';
+import { normalizeSubmissionPreviewPlainText } from './migration/normalize-submission-preview-text';
 import {
   StudentAssignment,
   StudentSubmission,
@@ -327,6 +329,134 @@ export async function getStudentSubmissions(studentId: string): Promise<StudentS
   return submissions.filter(s => s.student_id === studentId);
 }
 
+/** Teacher review: submission + student display fields (from `students` or fallback). */
+export type SubmissionWithStudentInfo = StudentSubmission & {
+  studentName: string;
+  studentInitials: string;
+  studentColor: string;
+};
+
+function initialsFromDisplayName(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '?';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+/**
+ * All submissions for one assignment, joined with student names (Supabase + fallback localStorage).
+ */
+export async function getSubmissionsForAssignmentWithStudents(
+  classId: string,
+  assignmentId: string
+): Promise<SubmissionWithStudentInfo[]> {
+  let subs: StudentSubmission[] = [];
+
+  try {
+    const { data, error } = await supabase
+      .from('student_submissions')
+      .select('*')
+      .eq('assignment_id', assignmentId);
+
+    if (!error && data && data.length > 0) {
+      subs = data.map(mapSupabaseSubmission);
+    }
+  } catch (e) {
+    console.log('[getSubmissionsForAssignmentWithStudents] Supabase submissions failed');
+  }
+
+  if (subs.length === 0) {
+    subs = getSubmissionsFromStorage().filter(s => s.assignment_id === assignmentId);
+  }
+
+  if (subs.length === 0) return [];
+
+  const studentIds = [...new Set(subs.map(s => s.student_id))];
+  const studentMap = new Map<
+    string,
+    { name: string; initials?: string | null; color?: string | null }
+  >();
+
+  try {
+    const { data: studs, error } = await supabase
+      .from('students')
+      .select('id, name, initials, color')
+      .eq('class_id', classId)
+      .in('id', studentIds);
+
+    if (!error && studs) {
+      for (const st of studs) {
+        studentMap.set(st.id, {
+          name: st.name,
+          initials: st.initials,
+          color: st.color,
+        });
+      }
+    }
+  } catch (e) {
+    console.log('[getSubmissionsForAssignmentWithStudents] students lookup failed');
+  }
+
+  const fallbackColors = ['#EC4899', '#3B82F6', '#8B5CF6', '#10B981', '#F59E0B'];
+
+  return subs.map((s, i) => {
+    const st = studentMap.get(s.student_id);
+    if (st) {
+      const name = st.name;
+      const initials = (st.initials && st.initials.trim()) || initialsFromDisplayName(name);
+      const color = (st.color && st.color.trim()) || fallbackColors[i % fallbackColors.length];
+      return { ...s, studentName: name, studentInitials: initials, studentColor: color };
+    }
+    return {
+      ...s,
+      studentName: 'Neznámý žák',
+      studentInitials: initialsFromDisplayName('Neznámý'),
+      studentColor: fallbackColors[i % fallbackColors.length],
+    };
+  });
+}
+
+/**
+ * Všechna odevzdání úkolů pro třídu (matice úkol × žák), Supabase + doplnění z localStorage.
+ */
+export async function getTaskSubmissionsGroupedForClass(
+  classId: string
+): Promise<{ [assignmentId: string]: { [studentId: string]: StudentSubmission } }> {
+  const assignments = await getAssignmentsForClass(classId);
+  const assignmentIds = new Set(assignments.map((a) => a.id));
+  if (assignmentIds.size === 0) return {};
+
+  const byTask: { [assignmentId: string]: { [studentId: string]: StudentSubmission } } = {};
+
+  try {
+    const { data, error } = await supabase
+      .from('student_submissions')
+      .select('*')
+      .in('assignment_id', [...assignmentIds]);
+
+    if (!error && data && data.length > 0) {
+      for (const row of data) {
+        const s = mapSupabaseSubmission(row);
+        if (!assignmentIds.has(s.assignment_id)) continue;
+        if (!byTask[s.assignment_id]) byTask[s.assignment_id] = {};
+        byTask[s.assignment_id][s.student_id] = s;
+      }
+    }
+  } catch (e) {
+    console.log('[getTaskSubmissionsGroupedForClass] Supabase failed');
+  }
+
+  for (const sub of getSubmissionsFromStorage()) {
+    if (!assignmentIds.has(sub.assignment_id)) continue;
+    if (!byTask[sub.assignment_id]) byTask[sub.assignment_id] = {};
+    if (!byTask[sub.assignment_id][sub.student_id]) {
+      byTask[sub.assignment_id][sub.student_id] = sub;
+    }
+  }
+
+  return byTask;
+}
+
 /**
  * Update submission status
  */
@@ -413,18 +543,57 @@ export async function getSubmissionsWithAIFlags(classId: string): Promise<{
 }[]> {
   const assignments = await getAssignmentsForClass(classId);
   const assignmentIds = assignments.map(a => a.id);
-  
-  const allSubmissions = getSubmissionsFromStorage();
-  const relevantSubmissions = allSubmissions.filter(
-    s => assignmentIds.includes(s.assignment_id) && s.ai_flags.length > 0
-  );
+  if (assignmentIds.length === 0) return [];
+
+  let relevantSubmissions: StudentSubmission[] = [];
+
+  try {
+    const { data, error } = await supabase
+      .from('student_submissions')
+      .select('*')
+      .in('assignment_id', assignmentIds);
+
+    if (!error && data) {
+      relevantSubmissions = data
+        .map(mapSupabaseSubmission)
+        .filter(s => (s.ai_flags?.length ?? 0) > 0);
+    }
+  } catch (e) {
+    console.log('[getSubmissionsWithAIFlags] Supabase failed');
+  }
+
+  if (relevantSubmissions.length === 0) {
+    const allSubmissions = getSubmissionsFromStorage();
+    relevantSubmissions = allSubmissions.filter(
+      s => assignmentIds.includes(s.assignment_id) && s.ai_flags.length > 0
+    );
+  }
+
+  const studentIds = [...new Set(relevantSubmissions.map(s => s.student_id))];
+  const nameByStudent = new Map<string, string>();
+
+  try {
+    const { data: studs } = await supabase
+      .from('students')
+      .select('id, name')
+      .eq('class_id', classId)
+      .in('id', studentIds);
+
+    if (studs) {
+      for (const st of studs) {
+        nameByStudent.set(st.id, st.name);
+      }
+    }
+  } catch (e) {
+    // ignore
+  }
 
   return relevantSubmissions.map(submission => {
     const assignment = assignments.find(a => a.id === submission.assignment_id)!;
     return {
       submission,
       assignment,
-      studentName: 'Student', // Would need to fetch from students table
+      studentName: nameByStudent.get(submission.student_id) || 'Student',
     };
   });
 }
@@ -460,14 +629,39 @@ function mapSupabaseSubmission(data: any): StudentSubmission {
     status: data.status,
     started_at: data.started_at,
     submitted_at: data.submitted_at,
-    ai_flags: data.ai_flags || [],
+    ai_flags: Array.isArray(data.ai_flags) ? data.ai_flags : [],
     ai_warning_shown: data.ai_warning_shown || false,
     score: data.score,
     max_score: data.max_score,
     teacher_comment: data.teacher_comment,
     graded_at: data.graded_at,
     graded_by: data.graded_by,
+    text_preview: typeof data.text_preview === 'string' ? data.text_preview : undefined,
   };
+}
+
+/**
+ * Uloží textový náhled odevzdání do Supabase + lokální cache (pro učitele na jiném zařízení).
+ */
+export async function syncSubmissionTextPreview(
+  submissionId: string,
+  rawText: string
+): Promise<void> {
+  const normalized = normalizeSubmissionPreviewPlainText(raw);
+  const safe = stripBase64FromObject(normalized, 'text_preview') as string;
+
+  const submissions = getSubmissionsFromStorage();
+  const index = submissions.findIndex((s) => s.id === submissionId);
+  if (index >= 0) {
+    submissions[index] = { ...submissions[index], text_preview: safe };
+    saveSubmissionsToStorage(submissions);
+  }
+
+  try {
+    await supabase.from('student_submissions').update({ text_preview: safe }).eq('id', submissionId);
+  } catch (e) {
+    console.log('[Submissions] text_preview cloud update skipped');
+  }
 }
 
 // =============================================

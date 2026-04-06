@@ -4,7 +4,7 @@
  * Figma-inspired dark theme with grid system settings.
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { LayoutGrid, Eye, EyeOff, Layers, ChevronDown, ChevronRight, FileText, MessageSquare, Hash, Type as TypeIcon, Save, BookTemplate } from 'lucide-react';
 import { GridColumns, GridGap, GRID_GAP_VALUES, GlobalFontSize, PageHeaderConfig, PageFooterConfig, FooterFeedbackStyle, WorksheetBlock, PageFormat } from '../../types/worksheet';
 import { DEFAULT_HEADER, DEFAULT_FOOTER } from './PageHeaderFooter';
@@ -23,6 +23,7 @@ import {
   getSegmentedButtonStyle,
 } from './block-settings/shared';
 import { ColorPickerField } from './block-settings/ColorPickerField';
+import { flattenDesignSystemSwatchesForPicker } from '../../types/design-system';
 
 type LayoutMode = 'grid' | 'freeform';
 
@@ -106,6 +107,8 @@ interface SheetSettingsPanelProps {
   designSystem?: import('../../types/design-system').DesignSystem | null;
   /** Apply design system defaults to the worksheet */
   onApplyDesignSystem?: (ds: import('../../types/design-system').DesignSystem) => void;
+  onResetToDesignSystem?: () => void;
+  designSystemSourceStatus?: 'design-system' | 'custom';
 }
 
 // Grid column options
@@ -194,6 +197,8 @@ export function SheetSettingsPanel({
   blockSeriesConfig,
   designSystem,
   onApplyDesignSystem,
+  onResetToDesignSystem,
+  designSystemSourceStatus = 'design-system',
 }: SheetSettingsPanelProps) {
   const [selectedSeries, setSelectedSeries] = useState<string[]>([]);
   const [headerOpen, setHeaderOpen] = useState(false);
@@ -205,6 +210,12 @@ export function SheetSettingsPanel({
   
   const hdr = { ...DEFAULT_HEADER, ...pageHeader };
   const ftr = { ...DEFAULT_FOOTER, ...pageFooter };
+
+  const dsColorSwatches = useMemo(
+    () => flattenDesignSystemSwatchesForPicker(designSystem?.colors),
+    [designSystem?.colors],
+  );
+  const useDsColors = dsColorSwatches.length > 0;
 
   useEffect(() => {
     if (layoutMode !== 'grid') {
@@ -258,6 +269,45 @@ export function SheetSettingsPanel({
       <div style={{ ...sectionHeaderRowStyle, marginBottom: '12px' }}>
         <LayoutGrid size={14} style={{ color: '#5C5CFF' }} />
         <span style={sectionTitleStyle}>Nastavení listu</span>
+      </div>
+
+      <div style={{ ...cardStyle, padding: '10px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span
+            style={{
+              padding: '3px 8px',
+              borderRadius: 999,
+              fontSize: 10,
+              fontWeight: 700,
+              letterSpacing: '0.04em',
+              textTransform: 'uppercase',
+              color: designSystemSourceStatus === 'custom' ? '#fbbf24' : '#60a5fa',
+              backgroundColor: designSystemSourceStatus === 'custom' ? 'rgba(251, 191, 36, 0.12)' : 'rgba(96, 165, 250, 0.12)',
+              border: `1px solid ${designSystemSourceStatus === 'custom' ? 'rgba(251, 191, 36, 0.35)' : 'rgba(96, 165, 250, 0.35)'}`,
+            }}
+          >
+            {designSystemSourceStatus === 'custom' ? 'Custom' : 'Design system'}
+          </span>
+          <span style={{ fontSize: 11, color: '#94a3b8' }}>
+            {designSystemSourceStatus === 'custom' ? 'Tato stránka má ruční override.' : 'Stránka dědí pravidla design systému.'}
+          </span>
+        </div>
+        {onResetToDesignSystem ? (
+          <button
+            type="button"
+            onClick={onResetToDesignSystem}
+            style={{
+              ...buttonStyle,
+              padding: '6px 10px',
+              minHeight: 30,
+              borderRadius: 8,
+              fontSize: 10,
+              whiteSpace: 'nowrap',
+            }}
+          >
+            Reset na DS
+          </button>
+        ) : null}
       </div>
 
       {/* ── Smart úpravy accordion ───────────────────────────────────────────── */}
@@ -497,7 +547,9 @@ export function SheetSettingsPanel({
         </label>
         <ColorPickerField
           value={pageBackgroundColor || '#FFFFFF'}
-          palette={PAGE_COLORS}
+          designSystemSwatches={dsColorSwatches}
+          palette={useDsColors ? [] : PAGE_COLORS}
+          designSystemOnly={useDsColors}
           placeholder="Bílá (výchozí)"
           defaultCustomColor="#FFFFFF"
           onChange={(color) => onPageBackgroundColorChange(color)}

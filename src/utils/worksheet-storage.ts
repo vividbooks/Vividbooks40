@@ -15,8 +15,77 @@ import { migrateWorksheetTextContent } from './worksheet-text';
 
 const WORKSHEETS_KEY = 'vividbooks_worksheets';
 const WORKSHEET_PREFIX = 'vividbooks_worksheet_';
+/** Když localStorage přeteče kvótu — odlehčený obsah stejného listu (strip base64). */
+const WORKSHEET_OVERFLOW_SESSION = 'vividbooks_worksheet_overflow_';
 const SUPABASE_IDS_KEY = 'vividbooks_worksheets_supabase_ids';
 const DELETED_IDS_KEY = 'vividbooks_worksheets_deleted_ids';
+
+/** Odstraní jiné worksheet záznamy z localStorage a uvolní místo (kromě aktuálního id). */
+function tryFreeLocalStorageWorksheetSpace(exceptId: string, maxRemove = 20): void {
+  const keys: string[] = [];
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith(WORKSHEET_PREFIX) && k !== `${WORKSHEET_PREFIX}${exceptId}`) {
+        keys.push(k);
+      }
+    }
+  } catch {
+    return;
+  }
+  for (let j = 0; j < Math.min(maxRemove, keys.length); j++) {
+    try {
+      localStorage.removeItem(keys[j]);
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+/**
+ * Zapíše obsah listu do localStorage (strip base64), při přetečení evikce + sessionStorage záloha.
+ * Export pro sloučení local/remote při načtení editoru.
+ */
+export function tryCacheWorksheetInBrowserStorage(worksheet: Worksheet): void {
+  const normalized = migrateWorksheetTextContent(worksheet);
+  const stripped = stripBase64FromObject(normalized) as Worksheet;
+  const payload = JSON.stringify(stripped);
+  const key = `${WORKSHEET_PREFIX}${stripped.id}`;
+  try {
+    localStorage.setItem(key, payload);
+    try {
+      sessionStorage.removeItem(`${WORKSHEET_OVERFLOW_SESSION}${stripped.id}`);
+    } catch {
+      /* ignore */
+    }
+    return;
+  } catch (first) {
+    if (!(first instanceof DOMException) || first.name !== 'QuotaExceededError') {
+      console.warn('[WorksheetStorage] localStorage setItem:', first);
+      return;
+    }
+  }
+  tryFreeLocalStorageWorksheetSpace(stripped.id);
+  try {
+    localStorage.setItem(key, payload);
+    try {
+      sessionStorage.removeItem(`${WORKSHEET_OVERFLOW_SESSION}${stripped.id}`);
+    } catch {
+      /* ignore */
+    }
+    return;
+  } catch {
+    /* still full */
+  }
+  try {
+    sessionStorage.setItem(`${WORKSHEET_OVERFLOW_SESSION}${stripped.id}`, payload);
+    console.warn(
+      '[WorksheetStorage] localStorage přeplněné — list držím v sessionStorage (záloha po stripnutí base64).',
+    );
+  } catch (e) {
+    console.error('[WorksheetStorage] Nelze uložit list ani do sessionStorage:', e);
+  }
+}
 
 // Supabase config for direct fetch calls
 const SUPABASE_URL = 'https://njbtqmsxbyvpwigfceke.supabase.co';
@@ -109,42 +178,42 @@ export function getWorksheetList(): WorksheetListItem[] {
 }
 
 /**
- * Uložit worksheet POUZE do localStorage
+ * Uložit worksheet POUZE do localStorage (+ při kvótě session záloha).
+ * Vždy strip base64 před zápisem (stejně jako DB) — snižuje velikost a předchází QuotaExceeded.
  */
 function saveWorksheetToLocalStorageOnly(worksheet: Worksheet): void {
+  const normalizedWorksheet = migrateWorksheetTextContent(worksheet);
+  const stripped = stripBase64FromObject(normalizedWorksheet) as Worksheet;
+
+  tryCacheWorksheetInBrowserStorage(stripped);
+
   try {
-    const normalizedWorksheet = migrateWorksheetTextContent(worksheet);
-    // Uložit samotný worksheet
-    localStorage.setItem(
-      `${WORKSHEET_PREFIX}${normalizedWorksheet.id}`, 
-      JSON.stringify(normalizedWorksheet)
-    );
-    
-    // Aktualizovat seznam
+    // Aktualizovat seznam (metadata)
     const list = getWorksheetList();
-    const existingIndex = list.findIndex(item => item.id === normalizedWorksheet.id);
-    
+    const existingIndex = list.findIndex((item) => item.id === stripped.id);
+
     const listItem: WorksheetListItem = {
-      id: worksheet.id,
-      title: normalizedWorksheet.title || 'Bez názvu',
-      subject: normalizedWorksheet.metadata?.subject || 'other',
-      grade: normalizedWorksheet.metadata?.grade || 6,
+      id: stripped.id,
+      title: stripped.title || 'Bez názvu',
+      subject: stripped.metadata?.subject || 'other',
+      grade: stripped.metadata?.grade || 6,
       updatedAt: new Date().toISOString(),
       createdAt: existingIndex >= 0 ? list[existingIndex].createdAt : new Date().toISOString(),
-      blocksCount: normalizedWorksheet.blocks?.length || 0,
+      blocksCount: stripped.blocks?.length || 0,
       folderId: existingIndex >= 0 ? list[existingIndex].folderId : undefined,
     };
-    
+
     if (existingIndex >= 0) {
       list[existingIndex] = listItem;
     } else {
       list.unshift(listItem);
     }
-    
+
     localStorage.setItem(WORKSHEETS_KEY, JSON.stringify(list));
     notifyWorksheetChange();
   } catch (error) {
-    console.error('Error saving worksheet to localStorage:', error);
+    console.warn('[WorksheetStorage] Aktualizace seznamu listů selhala (kvóta?):', error);
+    notifyWorksheetChange();
   }
 }
 
@@ -187,24 +256,81 @@ export function saveWorksheet(worksheet: Worksheet, folderId?: string | null, bo
   }
 
   // Přímo uložit do Supabase (ne přes queue která také používá localStorage)
-  saveWorksheetDirectToSupabase(normalizedWorksheet, effectiveFolderId, bookId);
-  
+  saveWorksheetDirectToSupabase(normalizedWorksheet, effectiveFolderId, bookId).then((err) => {
+    if (err) console.error('[WorksheetStorage] Supabase save error:', err);
+  });
+
   console.log('[WorksheetStorage] Worksheet saved:', normalizedWorksheet.id, 'folder:', effectiveFolderId, 'book:', bookId);
 }
 
 /**
- * Přímé uložení do Supabase (bypass localStorage queue)
+ * Stejné jako saveWorksheet, ale čeká na dokončení zápisu do Supabase (nová kapitola knihy, kritické uložení).
  */
-async function saveWorksheetDirectToSupabase(worksheet: Worksheet, folderId: string | null, bookId?: string | null): Promise<void> {
+export async function saveWorksheetAwait(
+  worksheet: Worksheet,
+  folderId?: string | null,
+  bookId?: string | null,
+): Promise<{ ok: boolean; error?: string }> {
+  const normalizedWorksheet = migrateWorksheetTextContent(worksheet);
+  try {
+    saveWorksheetToLocalStorageOnly(normalizedWorksheet);
+  } catch (e) {
+    console.warn('[WorksheetStorage] localStorage failed, continuing with Supabase sync:', e);
+  }
+
+  try {
+    if (deletedWorksheetIds.has(normalizedWorksheet.id)) {
+      deletedWorksheetIds.delete(normalizedWorksheet.id);
+      localStorage.setItem(DELETED_IDS_KEY, JSON.stringify([...deletedWorksheetIds]));
+    }
+  } catch (e) {
+    /* ignore */
+  }
+
+  const effectiveFolderId =
+    folderId !== undefined
+      ? folderId
+      : (getWorksheetList().find((w) => w.id === normalizedWorksheet.id)?.folderId ?? null);
+
+  if (folderId !== undefined) {
+    try {
+      const list = getWorksheetList();
+      const idx = list.findIndex((w) => w.id === normalizedWorksheet.id);
+      if (idx >= 0) list[idx].folderId = folderId;
+      localStorage.setItem(WORKSHEETS_KEY, JSON.stringify(list));
+    } catch (e) {
+      /* ignore */
+    }
+  }
+
+  const err = await saveWorksheetDirectToSupabase(normalizedWorksheet, effectiveFolderId, bookId);
+  if (err) {
+    return { ok: false, error: err };
+  }
+  console.log('[WorksheetStorage] Worksheet saved (await):', worksheet.id, 'book:', bookId);
+  return { ok: true };
+}
+
+/**
+ * Přímé uložení do Supabase (bypass localStorage queue)
+ * @returns null = OK, jinak chybová zpráva
+ */
+async function saveWorksheetDirectToSupabase(
+  worksheet: Worksheet,
+  folderId: string | null,
+  bookId?: string | null,
+): Promise<string | null> {
   try {
     const { supabase } = await import('./supabase/client');
-    const { data: { user } } = await supabase.auth.getUser();
-    
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
     if (!user) {
       console.warn('[WorksheetStorage] No user, cannot save to Supabase');
-      return;
+      return 'Nepřihlášený uživatel';
     }
-    
+
     // ❌ NIKDY neukládat base64 do DB! Stripovat před každým uložením.
     const safeWorksheet = stripBase64FromObject(worksheet) as Worksheet;
 
@@ -222,38 +348,47 @@ async function saveWorksheetDirectToSupabase(worksheet: Worksheet, folderId: str
     };
     if (bookId !== undefined) upsertData.book_id = bookId;
 
-    const { error } = await supabase
-      .from('teacher_worksheets')
-      .upsert(upsertData, { onConflict: 'id' });
-    
+    const { error } = await supabase.from('teacher_worksheets').upsert(upsertData, { onConflict: 'id' });
+
     if (error) {
       console.error('[WorksheetStorage] Supabase save error:', error);
-    } else {
-      console.log('[WorksheetStorage] ✅ Saved to Supabase:', worksheet.id);
+      return error.message;
     }
+    console.log('[WorksheetStorage] ✅ Saved to Supabase:', worksheet.id);
+    return null;
   } catch (err) {
     console.error('[WorksheetStorage] Supabase save failed:', err);
+    return err instanceof Error ? err.message : String(err);
   }
 }
 
 /**
- * Načíst pracovní list podle ID (pouze localStorage)
+ * Načíst pracovní list podle ID (localStorage, při přetečení záloha v sessionStorage)
  */
 export function getWorksheet(id: string): Worksheet | null {
   try {
     const data = localStorage.getItem(`${WORKSHEET_PREFIX}${id}`);
-    return data ? migrateWorksheetTextContent(JSON.parse(data)) : null;
+    if (data) return migrateWorksheetTextContent(JSON.parse(data));
   } catch (error) {
     console.error('Error loading worksheet:', error);
-    return null;
   }
+  try {
+    const fallback = sessionStorage.getItem(`${WORKSHEET_OVERFLOW_SESSION}${id}`);
+    if (fallback) return migrateWorksheetTextContent(JSON.parse(fallback));
+  } catch {
+    /* ignore */
+  }
+  return null;
 }
 
 /**
  * Načíst pracovní list ze Supabase (async fallback, když není v localStorage).
- * Po načtení uloží do localStorage jako cache.
+ * Po načtení uloží cache přes tryCacheWorksheetInBrowserStorage (strip + session záloha).
  */
-export async function loadWorksheetFromSupabase(id: string): Promise<Worksheet | null> {
+export async function loadWorksheetFromSupabase(
+  id: string,
+  options?: { skipCache?: boolean },
+): Promise<Worksheet | null> {
   try {
     const { supabase } = await import('./supabase/client');
     const { data: { user } } = await supabase.auth.getUser();
@@ -277,14 +412,11 @@ export async function loadWorksheetFromSupabase(id: string): Promise<Worksheet |
 
     const worksheet = migrateWorksheetTextContent(data.content as Worksheet);
 
-    // Uložit do localStorage jako cache pro příští načtení
-    try {
-      localStorage.setItem(`${WORKSHEET_PREFIX}${id}`, JSON.stringify(worksheet));
-    } catch {
-      // localStorage může být plný — nevadí, jen nebudeme cachovat
+    if (!options?.skipCache) {
+      tryCacheWorksheetInBrowserStorage(worksheet);
     }
 
-    console.log('[WorksheetStorage] Loaded from Supabase and cached:', id);
+    console.log('[WorksheetStorage] Loaded from Supabase:', id, options?.skipCache ? '(cache později)' : '+ cache');
     return worksheet;
   } catch (err) {
     console.error('[WorksheetStorage] loadWorksheetFromSupabase error:', err);
@@ -299,7 +431,12 @@ export function deleteWorksheet(id: string): void {
   try {
     // Delete from localStorage
     localStorage.removeItem(`${WORKSHEET_PREFIX}${id}`);
-    
+    try {
+      sessionStorage.removeItem(`${WORKSHEET_OVERFLOW_SESSION}${id}`);
+    } catch {
+      /* ignore */
+    }
+
     const list = getWorksheetList().filter(item => item.id !== id);
     localStorage.setItem(WORKSHEETS_KEY, JSON.stringify(list));
     

@@ -15,6 +15,8 @@ import {
   createInfoSlide,
 } from '../types/quiz';
 import { saveQuiz } from './quiz-storage';
+import { projectId } from './supabase/info';
+import { fetchVividboardProxy } from './vividboard-proxy-fetch';
 
 // ============================================
 // URL PARSING
@@ -333,11 +335,10 @@ export async function importBoardFromLegacy(
   console.log('[BoardImport] Importing board:', boardId);
   
   try {
-    // Use proxy to avoid CORS issues
-    const proxyUrl = `https://njbtqmsxbyvpwigfceke.supabase.co/functions/v1/make-server-46c8107b/vividboard-proxy/${boardId}`;
+    const proxyUrl = `https://${projectId}.supabase.co/functions/v1/make-server-46c8107b/vividboard-proxy/${boardId}`;
     console.log('[BoardImport] Using proxy:', proxyUrl);
-    
-    const response = await fetch(proxyUrl);
+
+    const response = await fetchVividboardProxy(boardId);
     
     if (!response.ok) {
       console.error('[BoardImport] API request failed:', response.status);

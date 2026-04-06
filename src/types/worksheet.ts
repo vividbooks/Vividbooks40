@@ -1095,6 +1095,56 @@ export interface BlockVisualStyles {
   borderRadius?: number;
   /** Stín (none, small, medium, large) */
   shadow?: 'none' | 'small' | 'medium' | 'large';
+  /**
+   * Výchozí vnitřní odsazení obsahu bloku (px) — při merge jde na `WorksheetBlock.padding`.
+   * Lze kombinovat s „bez výplně“ (jen odsazení).
+   */
+  padding?: number;
+  /**
+   * Výchozí počet textových sloupců u odstavce — při merge nového bloku jde na `ParagraphContent.columns`.
+   */
+  textColumns?: 1 | 2 | 3;
+}
+
+const BLOCK_TYPES_SKIP_DEFAULT_VISUAL: ReadonlySet<BlockType> = new Set(['layout-section', 'header-footer', 'spacer']);
+
+/** Oddělí padding a textColumns z tokenů vzhledu — padding jde na `padding`, sloupce na `content.columns` u odstavce. */
+export function blockVisualStylesWithoutPadding(vs: BlockVisualStyles): BlockVisualStyles {
+  const { padding: _p, textColumns: _tc, ...rest } = vs;
+  return rest;
+}
+
+/** Sloučí výchozí visualStyles z metadata s nově vytvořeným blokem (design systém). */
+export function mergeBlockWithDefaultVisualStyles(
+  block: WorksheetBlock,
+  defaults?: BlockVisualStyles | null,
+): WorksheetBlock {
+  if (!defaults || Object.keys(defaults).length === 0) return block;
+  if (BLOCK_TYPES_SKIP_DEFAULT_VISUAL.has(block.type)) return block;
+  const mergedIn = { ...defaults, ...(block.visualStyles ?? {}) };
+  const padFromDefaults = mergedIn.padding;
+  const textColsFromDefaults = mergedIn.textColumns;
+  const mergedVisual = blockVisualStylesWithoutPadding(mergedIn);
+  let next: WorksheetBlock = {
+    ...block,
+    visualStyles: mergedVisual,
+    ...(block.padding === undefined && padFromDefaults != null ? { padding: padFromDefaults } : {}),
+  };
+  if (
+    block.type === 'paragraph' &&
+    textColsFromDefaults != null &&
+    textColsFromDefaults >= 1 &&
+    textColsFromDefaults <= 3
+  ) {
+    const pb = block as ParagraphBlock;
+    if (pb.content.columns === undefined) {
+      next = {
+        ...next,
+        content: { ...pb.content, columns: textColsFromDefaults },
+      } as WorksheetBlock;
+    }
+  }
+  return next;
 }
 
 /**
@@ -1146,6 +1196,10 @@ interface BaseBlock {
   image?: BlockImage;
   /** Vizuální styly bloku */
   visualStyles?: BlockVisualStyles;
+  /** Původ vzhledu bloku vzhledem k design systému. */
+  visualStyleSource?: DesignSystemSource;
+  /** Původ typografie bloku vzhledem k design systému. */
+  typographySource?: DesignSystemSource;
   /**
    * PRO two-column layout: přiřazení bloku do sloupce A nebo B.
    * Aktivní pouze když `worksheet.metadata.pageColumnLayout === 'two-columns'`.
@@ -1199,6 +1253,8 @@ interface BaseBlock {
 
   /** Fixed visible frame height for linked text flow blocks (paragraph / infobox). */
   textFlowFrameHeight?: number;
+  /** `auto` = fill available page height, `manual` = preserve user-resized height. */
+  textFlowFrameMode?: 'auto' | 'manual';
   /** Shared chain identifier for linked text frames. */
   textFlowChainId?: string;
   /** Previous block in the linked text flow chain. */
@@ -1388,6 +1444,7 @@ export type ColumnCount = 1 | 2;
  */
 export type GlobalFontSize = 'small' | 'normal' | 'large';
 export type PageFormat = 'a4' | 'b5' | 'a5';
+export type DesignSystemSource = 'design-system' | 'custom';
 
 export interface WorksheetMetadata {
   /** Předmět */
@@ -1455,8 +1512,32 @@ export interface WorksheetMetadata {
   // === DESIGN SYSTEM ===
   /** ID aktivního design systému z tabulky design_systems */
   designSystemId?: string;
+  /** Původ page-level stylu (formát, mřížka, pozadí) vzhledem k design systému. */
+  pageStyleSource?: DesignSystemSource;
+  pageFormatSource?: DesignSystemSource;
+  gridColumnsSource?: DesignSystemSource;
+  gridGapSource?: DesignSystemSource;
+  pageBackgroundColorSource?: DesignSystemSource;
+  /** Původ layout-level nastavení (layout mode, columns overrides) vzhledem k design systému. */
+  layoutStyleSource?: DesignSystemSource;
+  layoutModeSource?: DesignSystemSource;
+  pageColumnLayoutSource?: DesignSystemSource;
+  twoColumnASpanSource?: DesignSystemSource;
+  pageOverridesSource?: DesignSystemSource;
+  /** Výchozí visualStyles pro nově přidané bloky (kopíruje se z design systému při „Aplikovat“). */
+  defaultBlockVisualStyles?: BlockVisualStyles;
+  /** Původ výchozích block visual styles vzhledem k design systému. */
+  defaultBlockVisualStylesSource?: DesignSystemSource;
   /** Fonty z aktivního design systému (cached pro offline rendering) */
   designFonts?: { heading: string; body: string };
+  /**
+   * Rodiny pro načtení Google Fonts stylesheetu při tisku / PDF (PrintGridCanvas).
+   * Nastavuje se při aplikování design systému; fallback je odvodit z designFonts.
+   */
+  printGoogleFontFamilies?: string[];
+  /** Původ design typografie vzhledem k design systému. */
+  designTypographySource?: DesignSystemSource;
+  globalFontSizeSource?: DesignSystemSource;
 
   // === PAGE COUNT ===
   /**

@@ -44,6 +44,7 @@ import {
   updateSubmissionStatus,
   addAIFlag,
   analyzeTextForAI,
+  syncSubmissionTextPreview,
 } from '../../utils/student-assignments';
 import { parseISO, format, isPast } from 'date-fns';
 import { cs } from 'date-fns/locale';
@@ -240,6 +241,7 @@ export function StudentAssignmentEditor({ theme, toggleTheme }: StudentAssignmen
     setIsSaving(true);
     try {
       localStorage.setItem(`assignment_content_${submission.content_id}`, content);
+      await syncSubmissionTextPreview(submission.id, content);
       await updateSubmissionStatus(submission.id, 'draft');
       toast.success('Uloženo');
     } catch (error) {
@@ -257,6 +259,7 @@ export function StudentAssignmentEditor({ theme, toggleTheme }: StudentAssignmen
     setIsSubmitting(true);
     try {
       localStorage.setItem(`assignment_content_${submission.content_id}`, content);
+      await syncSubmissionTextPreview(submission.id, content);
       await submitAssignment(submission.id);
       
       toast.success('Úkol odevzdán!', {
@@ -278,6 +281,7 @@ export function StudentAssignmentEditor({ theme, toggleTheme }: StudentAssignmen
 
     const interval = setInterval(() => {
       localStorage.setItem(`assignment_content_${submission.content_id}`, content);
+      void syncSubmissionTextPreview(submission.id, content);
     }, 30000);
 
     return () => clearInterval(interval);

@@ -5,14 +5,16 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { X, Search, Plus, Loader2 } from 'lucide-react';
+import { X, Search, Plus, Loader2, LogOut, User } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '../../utils/supabase/client';
 import { fetchTeacherBooksForCurrentUser } from '../../utils/supabase/teacher-books';
 import type { TeacherBookWithMeta } from '../../utils/supabase/teacher-books';
 import { LAIOUT_BOOKSHELF_PATH, laioutBookEditorPath } from '../../utils/laiout-routes';
+import { LaioutBrandLogo } from './LaioutBrandLogo';
 
 const PANEL_W = 368;
+const FONT_FENOMEN = "'Fenomen Sans', -apple-system, BlinkMacSystemFont, sans-serif";
 const C = {
   bg: '#0f172a',
   surface: '#1e293b',
@@ -46,6 +48,10 @@ export function WorkbookInlineLibraryPanel({
   const [books, setBooks] = useState<TeacherBookWithMeta[]>([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
+  const [sessionUser, setSessionUser] = useState<{
+    email?: string;
+    displayName?: string;
+  } | null>(null);
 
   /** Stabilní ref — rodič často předává inline onClose → bez ref by se loadBooks měnil každý render a effect knihy načítal dokola. */
   const onCloseRef = useRef(onClose);
@@ -60,11 +66,16 @@ export function WorkbookInlineLibraryPanel({
         user = session?.user ?? null;
       }
       if (!user) {
-        const next = `${location.pathname}${location.search}`;
-        navigate(`/teacher/login?next=${encodeURIComponent(next)}`);
+        setSessionUser(null);
+        navigate(LAIOUT_BOOKSHELF_PATH, { replace: true });
         onCloseRef.current();
         return;
       }
+      const displayName =
+        (user.user_metadata?.full_name as string | undefined) ||
+        (user.user_metadata?.name as string | undefined) ||
+        user.email?.split('@')[0];
+      setSessionUser({ email: user.email ?? undefined, displayName });
       const { books: list, error } = await fetchTeacherBooksForCurrentUser(user.id);
       if (error) {
         console.error('[WorkbookInlineLibrary] fetchTeacherBooksForCurrentUser:', error);
@@ -109,6 +120,16 @@ export function WorkbookInlineLibraryPanel({
     navigate(laioutBookEditorPath(bookId));
   };
 
+  const profileInitial =
+    sessionUser?.displayName?.trim()?.charAt(0)?.toUpperCase() ||
+    sessionUser?.email?.charAt(0)?.toUpperCase() ||
+    '?';
+
+  const handleLogout = () => {
+    onClose();
+    navigate('/logout');
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -144,17 +165,21 @@ export function WorkbookInlineLibraryPanel({
           display: 'flex',
           flexDirection: 'column',
           boxShadow: '8px 0 32px rgba(0,0,0,0.35)',
+          fontFamily: FONT_FENOMEN,
         }}
       >
         {/* Header */}
         <div style={{ padding: '20px 20px 14px', borderBottom: `1px solid ${C.border}`, flexShrink: 0 }}>
           <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
-            <div>
-              <div style={{ fontSize: '22px', fontWeight: 700, color: C.text, letterSpacing: '-0.03em' }}>
-                laiout
-              </div>
-              <div style={{ fontSize: '11px', color: C.muted, marginTop: 4, lineHeight: 1.45 }}>
-                Knihovna
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+              <LaioutBrandLogo size={40} />
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: '22px', fontWeight: 700, color: C.text, letterSpacing: '-0.03em', lineHeight: 1.1, fontFamily: FONT_FENOMEN }}>
+                  laiout
+                </div>
+                <div style={{ fontSize: '11px', color: C.muted, marginTop: 4, lineHeight: 1.45 }}>
+                  Knihovna
+                </div>
               </div>
             </div>
             <button
@@ -170,12 +195,94 @@ export function WorkbookInlineLibraryPanel({
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
+                flexShrink: 0,
               }}
               title="Zavřít"
             >
               <X size={18} />
             </button>
           </div>
+
+          {/* Profil + odhlášení */}
+          {sessionUser && (
+            <div
+              style={{
+                marginTop: 14,
+                padding: '10px 10px',
+                borderRadius: 10,
+                background: C.surface,
+                border: `1px solid ${C.border}`,
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div
+                  style={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: '50%',
+                    background: `linear-gradient(135deg, ${C.accent}, #6366f1)`,
+                    color: '#fff',
+                    fontSize: 14,
+                    fontWeight: 700,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0,
+                  }}
+                  aria-hidden
+                >
+                  {profileInitial}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: C.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {sessionUser.displayName || 'Učitel'}
+                  </div>
+                  {sessionUser.email && (
+                    <div
+                      style={{
+                        fontSize: 11,
+                        color: C.muted,
+                        marginTop: 2,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 4,
+                      }}
+                      title={sessionUser.email}
+                    >
+                      <User size={11} style={{ flexShrink: 0, opacity: 0.7 }} />
+                      {sessionUser.email}
+                    </div>
+                  )}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleLogout}
+                style={{
+                  marginTop: 10,
+                  width: '100%',
+                  padding: '9px 10px',
+                  borderRadius: 8,
+                  border: `1px solid ${C.border}`,
+                  background: 'rgba(255,255,255,0.04)',
+                  color: C.text,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 8,
+                  fontSize: 13,
+                  fontWeight: 600,
+                }}
+              >
+                <LogOut size={16} />
+                Odhlásit se
+              </button>
+            </div>
+          )}
 
           <div style={{ position: 'relative', marginTop: 14 }}>
             <Search
@@ -346,13 +453,12 @@ export function WorkbookInlineLibraryPanel({
                     >
                       <div
                         style={{
-                          fontFamily: '"Cooper Light", Georgia, serif',
-                          fontWeight: 300,
-                          fontSize: 13,
+                          fontFamily: FONT_FENOMEN,
+                          fontWeight: 600,
+                          fontSize: 'clamp(15px, 4.2vw, 19px)',
                           lineHeight: 1.2,
                           color: '#fff',
                           textAlign: 'center',
-                          textShadow: '0 1px 3px rgba(0,0,0,0.55), 0 0 12px rgba(0,0,0,0.25)',
                           display: '-webkit-box',
                           WebkitLineClamp: 4,
                           WebkitBoxOrient: 'vertical',
@@ -373,12 +479,12 @@ export function WorkbookInlineLibraryPanel({
                         right: 8,
                         bottom: 7,
                         zIndex: 2,
-                        fontSize: 10,
+                        fontSize: 11,
                         fontWeight: 500,
                         letterSpacing: '0.02em',
-                        color: 'rgba(255,255,255,0.92)',
-                        textShadow: '0 1px 2px rgba(0,0,0,0.65)',
+                        color: 'rgba(255,255,255,0.95)',
                         pointerEvents: 'none',
+                        fontFamily: FONT_FENOMEN,
                       }}
                     >
                       {chapterCountLabel(chapters)}

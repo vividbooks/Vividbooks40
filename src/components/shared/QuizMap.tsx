@@ -675,7 +675,6 @@ const CZ_EXTRA: Record<string, string> = {
   'Bornu':                      'Bornuská říše',
   'Nubian kingdoms':            'Núbijská království',
   'Meroe':                      'Meroé',
-  'Axum':                       'Aksumská říše',
   'Zagwe':                      'Zagweská dynastie',
   'Delhi':                      'Dillíský sultanát',
   'Chola':                      'Čólská říše',
@@ -693,7 +692,6 @@ const CZ_EXTRA: Record<string, string> = {
   'Three Kingdoms of Korea':    'Tři korejská království',
   'Goryeo':                     'Korjo',
   'Joseon':                     'Čosŏn',
-  'Goryeo':                     'Korjo',
   'Yamato':                     'Yamato',
   'Nara':                       'Narská říše',
   'Heian':                      'Heiganská éra',
@@ -907,8 +905,6 @@ const CZ_EXTRA: Record<string, string> = {
   'Sumerian city-states':       'Sumerská města-státy',
   'Akkadian Empire':            'Akkadská říše',
   'Babylonian Empire':          'Babylonská říše',
-  'Assyrian Empire':            'Asyrská říše',
-  'Hittite Empire':             'Chetitská říše',
   'Egyptian Empire':            'Egyptská říše',
   'New Kingdom of Egypt':       'Nová říše Egypta',
   'Middle Kingdom of Egypt':    'Střední říše Egypta',
@@ -1525,7 +1521,7 @@ function TectonicPlatesLayer({ quizMode, correctIds, answeredCorrect, answeredWr
     'Philippine Plate': 'Filipínská deska', 'Scotia Plate': 'Skotská deska',
     'South American Plate': 'Jihoamerická deska', 'Somali Plate': 'Somálská deska',
     'Amur Plate': 'Amurská deska', 'Anatolian Plate': 'Anatolská deska',
-    'Burma Plate': 'Barmská deska', 'Caribbean Plate': 'Karibská deska',
+    'Burma Plate': 'Barmská deska',
     'Caroline Plate': 'Karolínská deska', 'Okhotsk Plate': 'Ochotská deska',
   };
 

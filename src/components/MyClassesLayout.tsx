@@ -24,7 +24,9 @@ import {
   Image,
   Presentation,
   FileQuestion,
+  Upload,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { AssignmentCreator } from './classroom/AssignmentCreator';
 import { AssignmentReview } from './classroom/AssignmentReview';
 import VividLogo from '../imports/Group70';
@@ -32,7 +34,6 @@ import { ToolsDropdown } from './ToolsDropdown';
 import { ToolsMenu } from './ToolsMenu';
 import { StudentIndividualWork, ClassResultsGrid } from './classroom';
 import { 
-  getClasses as getSupabaseClasses,
   createClass as createSupabaseClass,
   addStudent as addSupabaseStudent,
   deleteClass as deleteSupabaseClass,
@@ -47,6 +48,11 @@ import {
   formatSessionDate 
 } from '../utils/session-history';
 import { createClassFolderStructure, addStudentToClassFolder } from '../utils/student-content-sync';
+import {
+  useMyClassesPreferences,
+  useMyClassesClassesOverview,
+} from '../features/moje-trida';
+import { runMigrateClassLocalStorageToSupabase } from '../utils/migration/migrate-class-localstorage-to-supabase';
 
 interface MyClassesLayoutProps {
   theme: 'light' | 'dark';
@@ -71,6 +77,17 @@ interface TestResult {
   studentsCount: number;
 }
 
+const DEMO_CLASSES_DATA: ClassGroup[] = [
+  { id: '1', name: '6.A', studentsCount: 28, createdAt: '2024-09-01' },
+  { id: '2', name: '6.B', studentsCount: 26, createdAt: '2024-09-01' },
+  { id: '3', name: '7.A', studentsCount: 24, createdAt: '2024-09-01' },
+  { id: '4', name: '7.B', studentsCount: 25, createdAt: '2024-09-01' },
+  { id: '5', name: '8.A', studentsCount: 22, createdAt: '2024-09-01' },
+  { id: '6', name: '8.B', studentsCount: 23, createdAt: '2024-09-01' },
+  { id: '7', name: '9.A', studentsCount: 21, createdAt: '2024-09-01' },
+  { id: '8', name: '9.B', studentsCount: 20, createdAt: '2024-09-01' },
+];
+
 export function MyClassesLayout({ theme, toggleTheme }: MyClassesLayoutProps) {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -85,38 +102,54 @@ export function MyClassesLayout({ theme, toggleTheme }: MyClassesLayoutProps) {
   const [toolsOpen, setToolsOpen] = useState(false);
   const [logoHovered, setLogoHovered] = useState(false);
   
-  // Tab state: 'results', 'classes', or 'individual' - restore from localStorage
-  const [activeTab, setActiveTab] = useState<'results' | 'classes' | 'individual'>(() => {
-    const saved = localStorage.getItem('my-classes-last-tab');
-    if (saved === 'results' || saved === 'classes' || saved === 'individual') {
-      return saved;
-    }
-    return 'results';
-  });
-  
-  // Save active tab to localStorage when it changes
-  useEffect(() => {
-    localStorage.setItem('my-classes-last-tab', activeTab);
-  }, [activeTab]);
-  
-  // Selected class for detail view - restore from localStorage
-  const [selectedClass, setSelectedClass] = useState<ClassGroup | null>(null);
-  
-  // Save selected class to localStorage when it changes
-  useEffect(() => {
-    if (selectedClass) {
-      localStorage.setItem('my-classes-selected-class-id', selectedClass.id);
-    } else {
-      localStorage.removeItem('my-classes-selected-class-id');
-    }
-  }, [selectedClass]);
-  
   // Hover states for highlighting
   const [hoveredRow, setHoveredRow] = useState<string | null>(null);
   const [hoveredColumn, setHoveredColumn] = useState<number | null>(null);
   
   // Data source toggle - sync with localStorage
   const [useSupabaseData, setUseSupabaseData] = useState(() => isUsingSupabase());
+
+  const demoClassSummaries = useMemo(
+    () =>
+      DEMO_CLASSES_DATA.map((c) => ({
+        id: c.id,
+        name: c.name,
+        studentsCount: c.studentsCount,
+        createdAt: c.createdAt,
+        color: c.color,
+        imageUrl: c.imageUrl,
+      })),
+    [],
+  );
+
+  const {
+    activeTab,
+    setActiveTab,
+    selectedClassId,
+    setSelectedClassId,
+  } = useMyClassesPreferences();
+
+  const {
+    classes,
+    setClasses,
+    loadingClasses,
+    classesLoaded,
+    refreshClassesInBackground,
+  } = useMyClassesClassesOverview(useSupabaseData, demoClassSummaries);
+
+  const handleCloseClassDetail = React.useCallback(() => {
+    setSelectedClassId(null);
+    if (searchParams.get('classId')) {
+      const next = new URLSearchParams(searchParams);
+      next.delete('classId');
+      setSearchParams(next, { replace: true });
+    }
+  }, [searchParams, setSearchParams, setSelectedClassId]);
+
+  const selectedClass = useMemo((): ClassGroup | null => {
+    if (!selectedClassId) return null;
+    return classes.find((c) => c.id === selectedClassId) ?? null;
+  }, [classes, selectedClassId]);
   
   // Use new grid component for class detail
   const [useNewGrid, setUseNewGrid] = useState(true);
@@ -152,6 +185,44 @@ export function MyClassesLayout({ theme, toggleTheme }: MyClassesLayoutProps) {
   const [showAssignmentReview, setShowAssignmentReview] = useState(false);
   const [assignmentTargetClass, setAssignmentTargetClass] = useState<ClassGroup | null>(null);
   
+  const [migrationRunning, setMigrationRunning] = useState(false);
+
+  const handleMigrateLocalStorageToCloud = async () => {
+    if (!useSupabaseData || migrationRunning) return;
+    setMigrationRunning(true);
+    try {
+      const r = await runMigrateClassLocalStorageToSupabase();
+      const parts = [
+        r.teacherPreferences.ok ? 'Předvolby uloženy' : `Předvolby: ${r.teacherPreferences.detail}`,
+        `Úkoly: ${r.assignments.upserted}`,
+        `Odevzdání: ${r.submissions.upserted}`,
+        `Náhledy textu: ${r.textPreviewBackfill.updated}`,
+      ];
+      const errCount =
+        r.assignments.errors.length +
+        r.submissions.errors.length +
+        r.textPreviewBackfill.errors.length;
+      if (r.ok && errCount === 0) {
+        toast.success('Migrace z prohlížeče dokončena', { description: parts.join(' · ') });
+        void refreshClassesInBackground();
+      } else {
+        toast.warning('Migrace dokončena s chybami', {
+          description: `${parts.join(' · ')}${errCount ? ` (${errCount} chyb)` : ''}`,
+        });
+        if (r.assignments.errors.length) console.warn('[migrate] assignments', r.assignments.errors);
+        if (r.submissions.errors.length) console.warn('[migrate] submissions', r.submissions.errors);
+        if (r.textPreviewBackfill.errors.length) console.warn('[migrate] text_preview', r.textPreviewBackfill.errors);
+      }
+    } catch (e) {
+      console.error(e);
+      toast.error('Migrace selhala', {
+        description: e instanceof Error ? e.message : String(e),
+      });
+    } finally {
+      setMigrationRunning(false);
+    }
+  };
+
   // Open assignment creator for a specific class
   const openAssignmentCreator = (cls: ClassGroup) => {
     setAssignmentTargetClass(cls);
@@ -169,181 +240,16 @@ export function MyClassesLayout({ theme, toggleTheme }: MyClassesLayoutProps) {
   ]);
   const [isCreatingClass, setIsCreatingClass] = useState(false);
   
-  // Demo data for classes (only used in demo mode)
-  const DEMO_CLASSES: ClassGroup[] = [
-    { id: '1', name: '6.A', studentsCount: 28, createdAt: '2024-09-01' },
-    { id: '2', name: '6.B', studentsCount: 26, createdAt: '2024-09-01' },
-    { id: '3', name: '7.A', studentsCount: 24, createdAt: '2024-09-01' },
-    { id: '4', name: '7.B', studentsCount: 25, createdAt: '2024-09-01' },
-    { id: '5', name: '8.A', studentsCount: 22, createdAt: '2024-09-01' },
-    { id: '6', name: '8.B', studentsCount: 23, createdAt: '2024-09-01' },
-    { id: '7', name: '9.A', studentsCount: 21, createdAt: '2024-09-01' },
-    { id: '8', name: '9.B', studentsCount: 20, createdAt: '2024-09-01' },
-  ];
-  
-  const [classes, setClasses] = useState<ClassGroup[]>([]);
-  const [loadingClasses, setLoadingClasses] = useState(true); // Start as true
-  const [classesLoaded, setClassesLoaded] = useState(false);
-  
-  // Cache key for classes
-  const CLASSES_CACHE_KEY = 'vividbooks_classes_cache';
-  const CLASSES_CACHE_TIME_KEY = 'vividbooks_classes_cache_time';
-  const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
-  
-  // Load classes based on data source - with caching
-  useEffect(() => {
-    let isMounted = true;
-    
-    const loadClasses = async () => {
-      if (!useSupabaseData) {
-        // Use demo data immediately
-        if (isMounted) {
-          setClasses(DEMO_CLASSES);
-          setLoadingClasses(false);
-          setClassesLoaded(true);
-        }
-        return;
-      }
-      
-      // Check cache first
-      try {
-        const cachedTime = localStorage.getItem(CLASSES_CACHE_TIME_KEY);
-        const cachedData = localStorage.getItem(CLASSES_CACHE_KEY);
-        
-        if (cachedTime && cachedData) {
-          const cacheAge = Date.now() - parseInt(cachedTime);
-          if (cacheAge < CACHE_DURATION) {
-            const parsed = JSON.parse(cachedData);
-            if (parsed && parsed.length > 0 && isMounted) {
-              console.log('[MyClasses] Using cached classes (age:', Math.round(cacheAge/1000), 's)');
-              setClasses(parsed);
-              setLoadingClasses(false);
-              setClassesLoaded(true);
-              
-              // Refresh in background after 30 seconds
-              if (cacheAge > 30000) {
-                refreshClassesInBackground();
-              }
-              return;
-            }
-          }
-        }
-      } catch (e) {
-        console.warn('[MyClasses] Cache read error:', e);
-      }
-      
-      // Load from Supabase
-      if (isMounted) setLoadingClasses(true);
-      
-      try {
-        console.log('[MyClasses] Loading classes from Supabase...');
-        const supabaseClasses = await getSupabaseClasses();
-        
-        if (isMounted) {
-          const mappedClasses = supabaseClasses.map(c => ({
-            id: c.id,
-            name: c.name,
-            studentsCount: c.students_count || 0,
-            createdAt: c.created_at,
-            color: c.color,
-          }));
-          
-          console.log('[MyClasses] Loaded', mappedClasses.length, 'classes');
-          setClasses(mappedClasses);
-          setLoadingClasses(false);
-          setClassesLoaded(true);
-          
-          // Save to cache
-          try {
-            localStorage.setItem(CLASSES_CACHE_KEY, JSON.stringify(mappedClasses));
-            localStorage.setItem(CLASSES_CACHE_TIME_KEY, Date.now().toString());
-          } catch (e) {
-            console.warn('[MyClasses] Cache write error:', e);
-          }
-        }
-      } catch (error) {
-        console.error('[MyClasses] Error loading classes:', error);
-        if (isMounted) {
-          setClasses([]);
-          setLoadingClasses(false);
-          setClassesLoaded(true);
-        }
-      }
-    };
-    
-    // Background refresh function
-    const refreshClassesInBackground = async () => {
-      try {
-        console.log('[MyClasses] Background refresh...');
-        const supabaseClasses = await getSupabaseClasses();
-        const mappedClasses = supabaseClasses.map(c => ({
-          id: c.id,
-          name: c.name,
-          studentsCount: c.students_count || 0,
-          createdAt: c.created_at,
-          color: c.color,
-        }));
-        
-        if (isMounted) {
-          setClasses(mappedClasses);
-        }
-        
-        localStorage.setItem(CLASSES_CACHE_KEY, JSON.stringify(mappedClasses));
-        localStorage.setItem(CLASSES_CACHE_TIME_KEY, Date.now().toString());
-        console.log('[MyClasses] Background refresh complete');
-      } catch (e) {
-        console.warn('[MyClasses] Background refresh failed:', e);
-      }
-    };
-    
-    // Load immediately
-    loadClasses();
-    
-    // Retry if classes are empty after initial load
-    const retryTimer = setTimeout(() => {
-      if (classes.length === 0 && useSupabaseData) {
-        console.log('[MyClasses] Classes empty, retrying...');
-        loadClasses();
-      }
-    }, 1000);
-    
-    return () => {
-      isMounted = false;
-      clearTimeout(retryTimer);
-    };
-  }, [useSupabaseData]);
-  
-  // Restore selected class from localStorage when classes are loaded
-  useEffect(() => {
-    if (classesLoaded && classes.length > 0 && !selectedClass && !urlClassId) {
-      const savedClassId = localStorage.getItem('my-classes-selected-class-id');
-      if (savedClassId) {
-        const savedClass = classes.find(c => c.id === savedClassId);
-        if (savedClass) {
-          console.log('[MyClasses] Restoring selected class from localStorage:', savedClass.name);
-          setSelectedClass(savedClass);
-        }
-      }
-    }
-  }, [classesLoaded, classes, selectedClass, urlClassId]);
-  
   // Handle URL params for deep linking (open specific class and upload modal)
   useEffect(() => {
     if (urlClassId && classesLoaded && classes.length > 0) {
       const targetClass = classes.find(c => c.id === urlClassId);
-      if (targetClass && (!selectedClass || selectedClass.id !== urlClassId)) {
-        console.log('[MyClasses] Opening class from URL:', targetClass.name);
-        setSelectedClass(targetClass);
+      if (targetClass && selectedClassId !== urlClassId) {
+        setSelectedClassId(urlClassId);
         setActiveTab('results');
-        
-        // Clear URL params after handling
-        if (urlOpenUpload) {
-          // The ClassResultsGrid will read openUpload from URL
-          // We don't clear it here so the component can use it
-        }
       }
     }
-  }, [urlClassId, urlOpenUpload, classesLoaded, classes, selectedClass]);
+  }, [urlClassId, urlOpenUpload, classesLoaded, classes, selectedClassId, setSelectedClassId, setActiveTab]);
   
   // Toggle data source
   const handleToggleDataSource = () => {
@@ -391,7 +297,7 @@ export function MyClassesLayout({ theme, toggleTheme }: MyClassesLayoutProps) {
       if (success) {
         setClasses(classes.filter(c => c.id !== deletingClass.id));
         if (selectedClass?.id === deletingClass.id) {
-          setSelectedClass(null);
+          handleCloseClassDetail();
         }
       }
       setDeletingClass(null);
@@ -746,8 +652,9 @@ export function MyClassesLayout({ theme, toggleTheme }: MyClassesLayoutProps) {
                 <div className="flex-1 overflow-y-auto">
                   {/* Tab Switcher */}
                   <div className="px-4 pb-4">
-                    <div className="flex p-1.5 bg-white/10 rounded-xl">
+                    <div className="flex flex-col gap-1.5 sm:flex-row p-1.5 bg-white/10 rounded-xl">
                       <button
+                        type="button"
                         onClick={() => setActiveTab('results')}
                         className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-medium rounded-lg transition-all ${
                           activeTab === 'results' 
@@ -759,6 +666,7 @@ export function MyClassesLayout({ theme, toggleTheme }: MyClassesLayoutProps) {
                         Výsledky
                       </button>
                       <button
+                        type="button"
                         onClick={() => setActiveTab('classes')}
                         className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-medium rounded-lg transition-all ${
                           activeTab === 'classes' 
@@ -768,6 +676,18 @@ export function MyClassesLayout({ theme, toggleTheme }: MyClassesLayoutProps) {
                       >
                         <Users className="h-5 w-5" />
                         Moje třídy
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('individual')}
+                        className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-medium rounded-lg transition-all ${
+                          activeTab === 'individual' 
+                            ? 'bg-white text-green-700 shadow-sm' 
+                            : 'text-white/80 hover:text-white hover:bg-white/10'
+                        }`}
+                      >
+                        <ClipboardList className="h-5 w-5" />
+                        Individuální
                       </button>
                     </div>
                   </div>
@@ -878,6 +798,25 @@ export function MyClassesLayout({ theme, toggleTheme }: MyClassesLayoutProps) {
                             {useSupabaseData ? 'Supabase' : 'Demo'}
                           </button>
                         </div>
+
+                        {useSupabaseData && (
+                          <div className="mb-3">
+                            <button
+                              type="button"
+                              onClick={handleMigrateLocalStorageToCloud}
+                              disabled={migrationRunning}
+                              className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs font-medium text-white/90 bg-white/10 hover:bg-white/15 disabled:opacity-50 transition-colors border border-white/10"
+                              title="Jednorázově nahraje předvolby a úkoly z tohoto prohlížeče do účtu v cloudu"
+                            >
+                              {migrationRunning ? (
+                                <RefreshCw className="w-3.5 h-3.5 animate-spin shrink-0" />
+                              ) : (
+                                <Upload className="w-3.5 h-3.5 shrink-0" />
+                              )}
+                              Nahrát lokální data do cloudu
+                            </button>
+                          </div>
+                        )}
                         
                         <div className="flex items-center justify-between mb-3">
                           <h3 className="text-xs font-bold text-white/60 uppercase tracking-wider px-1">
@@ -909,7 +848,7 @@ export function MyClassesLayout({ theme, toggleTheme }: MyClassesLayoutProps) {
                           classes.map(cls => (
                             <button
                               key={cls.id}
-                              onClick={() => setSelectedClass(cls)}
+                              onClick={() => setSelectedClassId(cls.id)}
                               className="w-full flex items-center gap-3 p-3 bg-white/10 hover:bg-white/20 rounded-xl transition-colors text-left group"
                             >
                               <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center">
@@ -958,13 +897,18 @@ export function MyClassesLayout({ theme, toggleTheme }: MyClassesLayoutProps) {
               {!selectedClass && (
                 <div className="mb-8">
                   <h1 className="text-3xl font-bold text-slate-800 mb-2" style={{ fontFamily: "'Fenomen Sans', sans-serif" }}>
-                    {activeTab === 'results' ? 'Výsledky testů' : 'Správa tříd'}
+                    {activeTab === 'results'
+                      ? 'Výsledky testů'
+                      : activeTab === 'individual'
+                        ? 'Individuální práce'
+                        : 'Správa tříd'}
                   </h1>
                   <p className="text-slate-600">
-                    {activeTab === 'results' 
+                    {activeTab === 'results'
                       ? 'Přehled výsledků z testů a procvičování vašich žáků'
-                      : 'Vytvářejte skupiny žáků a sledujte jejich pokrok'
-                    }
+                      : activeTab === 'individual'
+                        ? 'Úkoly a materiály přiřazené jednotlivým žákům'
+                        : 'Vytvářejte skupiny žáků a sledujte jejich pokrok'}
                   </p>
                 </div>
               )}
@@ -981,7 +925,7 @@ export function MyClassesLayout({ theme, toggleTheme }: MyClassesLayoutProps) {
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-4">
                       <button 
-                        onClick={() => setSelectedClass(null)}
+                        onClick={handleCloseClassDetail}
                         className="p-2 rounded-lg hover:bg-slate-100 text-slate-500"
                       >
                         <ChevronRight className="h-5 w-5 rotate-180" />
@@ -994,7 +938,7 @@ export function MyClassesLayout({ theme, toggleTheme }: MyClassesLayoutProps) {
                   <ClassResultsGrid 
                     classId={selectedClass.id} 
                     className={selectedClass.name}
-                    onBack={() => setSelectedClass(null)}
+                    onBack={handleCloseClassDetail}
                   />
                   
                   {/* Odevzdané button - below table */}
@@ -1018,7 +962,7 @@ export function MyClassesLayout({ theme, toggleTheme }: MyClassesLayoutProps) {
                             {/* Class selector cell */}
                             <th className="text-left px-4 py-3 min-w-[300px] border border-[#E5E5E5] bg-white sticky left-0 z-10" rowSpan={3}>
                               <button 
-                                onClick={() => setSelectedClass(null)}
+                                onClick={handleCloseClassDetail}
                                 className="text-slate-400 hover:text-slate-600 block mb-1"
                               >
                                 <span className="text-lg tracking-wider">···</span>
@@ -1268,7 +1212,7 @@ export function MyClassesLayout({ theme, toggleTheme }: MyClassesLayoutProps) {
                     </div>
                   )}
                 </div>
-              ) : (
+              ) : activeTab === 'classes' ? (
                 // Classes List - Updated Design
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {/* Loading state */}
@@ -1302,7 +1246,7 @@ export function MyClassesLayout({ theme, toggleTheme }: MyClassesLayoutProps) {
                     <div 
                       key={cls.id} 
                       className="bg-white rounded-2xl border border-slate-200 hover:shadow-lg transition-shadow cursor-pointer group"
-                      onClick={() => setSelectedClass(cls)}
+                      onClick={() => setSelectedClassId(cls.id)}
                     >
                       {/* Color header bar */}
                       <div 
@@ -1339,7 +1283,7 @@ export function MyClassesLayout({ theme, toggleTheme }: MyClassesLayoutProps) {
                         <div className="flex gap-2 mt-6" onClick={(e) => e.stopPropagation()}>
                           {/* Výsledky button */}
                           <button 
-                            onClick={() => setSelectedClass(cls)}
+                            onClick={() => setSelectedClassId(cls.id)}
                             className="flex-1 py-3 text-sm font-medium text-green-700 bg-green-50 hover:bg-green-100 rounded-xl transition-colors flex items-center justify-center gap-2"
                           >
                             <BarChart3 className="h-4 w-4" />
@@ -1420,7 +1364,7 @@ export function MyClassesLayout({ theme, toggleTheme }: MyClassesLayoutProps) {
                     </button>
                   )}
                 </div>
-              )}
+              ) : null}
             </div>
           </div>
         </main>

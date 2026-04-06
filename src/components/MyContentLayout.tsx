@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useMyClassesClassesOverview, type ClassSummary } from '../features/moje-trida';
+import { isUsingSupabase } from '../utils/supabase/classes';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { 
   Menu, 
@@ -46,7 +48,8 @@ import {
   Grid3X3,
   List,
   ArrowUpDown,
-  Play
+  Play,
+  RefreshCw,
 } from 'lucide-react';
 import VividLogo from '../imports/Group70';
 import { Badge } from './ui/badge';
@@ -943,13 +946,29 @@ export function MyContentLayout({ theme, toggleTheme }: MyContentLayoutProps) {
   const [shareFolderOpen, setShareFolderOpen] = useState(false);
   const [sharingFolder, setSharingFolder] = useState<ContentItem | null>(null);
   
-  // Mock classes for sharing (TODO: load from actual data)
-  const availableClasses: SharedClass[] = [
-    { id: 'class-1', name: '6.A', color: '#3b82f6' },
-    { id: 'class-2', name: '6.B', color: '#10b981' },
-    { id: 'class-3', name: '7.A', color: '#f59e0b' },
-    { id: 'class-4', name: '8.A', color: '#ef4444' },
-  ];
+  const useSupabaseData = isUsingSupabase();
+  const demoClassesForShare = useMemo<ClassSummary[]>(
+    () => [
+      { id: '1', name: '6.A', studentsCount: 28, createdAt: '2024-09-01', color: '#3b82f6' },
+      { id: '2', name: '6.B', studentsCount: 26, createdAt: '2024-09-01', color: '#10b981' },
+      { id: '3', name: '7.A', studentsCount: 24, createdAt: '2024-09-01', color: '#f59e0b' },
+      { id: '4', name: '8.A', studentsCount: 22, createdAt: '2024-09-01', color: '#ef4444' },
+    ],
+    [],
+  );
+  const { classes: classesForShare, loadingClasses: loadingClassesForShare } = useMyClassesClassesOverview(
+    useSupabaseData,
+    demoClassesForShare,
+  );
+  const availableClasses: SharedClass[] = useMemo(
+    () =>
+      classesForShare.map((c) => ({
+        id: c.id,
+        name: c.name,
+        color: c.color || '#3b82f6',
+      })),
+    [classesForShare],
+  );
   
   // Currently open folder
   const [openFolder, setOpenFolder] = useState<ContentItem | null>(null);
@@ -5544,7 +5563,14 @@ export function MyContentLayout({ theme, toggleTheme }: MyContentLayoutProps) {
           </DialogHeader>
           
           <div className="space-y-2 py-4">
-            {availableClasses.map((cls) => {
+            {useSupabaseData && loadingClassesForShare && (
+              <div className="flex items-center justify-center py-8 text-muted-foreground text-sm gap-2">
+                <RefreshCw className="h-5 w-5 animate-spin shrink-0" />
+                Načítám třídy…
+              </div>
+            )}
+            {!(useSupabaseData && loadingClassesForShare) &&
+              availableClasses.map((cls) => {
               const isShared = sharingFolder?.sharedWithClasses?.some(c => c.id === cls.id);
               return (
                 <button
@@ -5572,7 +5598,7 @@ export function MyContentLayout({ theme, toggleTheme }: MyContentLayoutProps) {
               );
             })}
             
-            {availableClasses.length === 0 && (
+            {!(useSupabaseData && loadingClassesForShare) && availableClasses.length === 0 && (
               <div className="text-center py-8 text-muted-foreground">
                 <Users className="h-8 w-8 mx-auto mb-2 opacity-50" />
                 <p>Nemáte žádné třídy</p>

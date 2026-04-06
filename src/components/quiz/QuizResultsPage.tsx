@@ -24,6 +24,13 @@ import { SyncToClassDialog } from './results/SyncToClassDialog';
 import { DeleteResultsDialog } from './results/DeleteResultsDialog';
 import { getABCSelectedAnswerIds } from '../../utils/abc-evaluation';
 import {
+  buildQuizResultsOverallStats,
+  buildQuizResultsQuestionAggregates,
+  buildQuizResultsStudentRows,
+  sortQuizResultsQuestionAggregates,
+} from '../../utils/quiz-results-aggregates';
+import type { QuizResultsStudentRow } from '../../types/quiz-results-view-model';
+import {
   ArrowLeft,
   RefreshCw,
   Users,
@@ -55,7 +62,6 @@ import {
   VotingActivitySlide,
   BoardActivitySlide,
   BoardPost,
-  SlideResponse,
   LiveQuizSession,
 } from '../../types/quiz';
 import { MathText } from '../math/MathText';
@@ -72,30 +78,6 @@ import {
   subscribeToResultsSession,
   type ResultsSessionsApi,
 } from '../../features/board-v2/components/views/board-view';
-
-interface StudentResult {
-  id: string;
-  studentDbId?: string; // Database ID for matching with student profile
-  name: string;
-  responses: SlideResponse[];
-  correctCount: number;
-  totalAnswered: number;
-  successRate: number;
-  totalTime: number;
-}
-
-interface QuestionStats {
-  slideId: string;
-  question: string;
-  type: string;
-  activityType?: string;
-  options?: { id: string; label: string; content: string; isCorrect: boolean }[];
-  answerCounts: Record<string, number>;
-  correctAnswer?: string;
-  correctResponses: number;
-  totalResponses: number;
-  averageTime: number;
-}
 
 // Removed tabs - now using two-column layout
 
@@ -341,190 +323,20 @@ export function QuizResultsPage({
     };
   }, [sessionBackend, sessionId, sessionType, quiz]);
   
-  // Calculate student results
-  const studentResults: StudentResult[] = React.useMemo(() => {
-    if (!session?.students || !quiz) {
-      console.log('[StudentResults] No session.students or quiz:', { hasStudents: !!session?.students, hasQuiz: !!quiz });
-      return [];
-    }
-    
-    const activitySlides = quiz.slides.filter(s => s.type === 'activity');
-    
-    let entries = Object.entries(session.students);
-    console.log('[StudentResults] All students:', entries.length, entries.map(([id, s]) => s.name));
-    
-    // Filter to specific student if studentFilter is set (but NOT in student view mode)
-    // In student view mode, we show all students and auto-select via useEffect
-    if (studentFilter && !isStudentView) {
-      console.log('[QuizResults] Filtering by studentFilter:', studentFilter);
-      console.log('[QuizResults] Available students:', entries.map(([id, s]) => ({
-        id,
-        name: s.name,
-        studentDbId: (s as any).studentDbId
-      })));
-      
-      // Try to find the student name from the filter (for matching)
-      const decodedFilter = decodeURIComponent(studentFilter);
-      
-      entries = entries.filter(([id, student]) => {
-        const studentDbId = (student as any).studentDbId;
-        // Match by studentDbId, Firebase session ID, or name
-        return studentDbId === studentFilter || 
-               id === studentFilter || 
-               student.name === decodedFilter ||
-               student.name.toLowerCase() === decodedFilter.toLowerCase();
-      });
-      
-      console.log('[QuizResults] Filtered entries:', entries.length);
-      
-      // If still no match and only one student exists, don't filter
-      if (entries.length === 0) {
-        console.log('[QuizResults] No match found, showing all students');
-        entries = Object.entries(session.students);
-      }
-    } else if (isStudentView) {
-      console.log('[StudentView] Showing all students, will auto-select via useEffect');
-    }
-    
-    return entries.map(([id, student]) => {
-      const responses = student.responses || [];
-      
-      // For individual work from Supabase, we have score/maxScore directly on student
-      const studentData = student as any;
-      const hasDirectScore = studentData.score !== undefined;
-      
-      const correctCount = hasDirectScore ? studentData.score : responses.filter(r => r.isCorrect).length;
-      const totalAnswered = hasDirectScore ? studentData.maxScore : responses.length;
-      
-      // Use totalTimeMs from session if available (more accurate), otherwise sum up slide times
-      const slidesTime = responses.reduce((sum, r) => sum + (r.timeSpent || 0), 0);
-      const totalTime = studentData.totalTimeMs 
-        ? Math.round(studentData.totalTimeMs / 1000) // Convert ms to seconds
-        : slidesTime;
-      
-      const successRate = hasDirectScore && studentData.percentage !== undefined
-        ? studentData.percentage
-        : (totalAnswered > 0 ? Math.round((correctCount / totalAnswered) * 100) : 0);
-      
-      return {
-        id,
-        studentDbId: studentData.studentDbId, // Database ID for matching
-        name: student.name,
-        responses,
-        correctCount,
-        totalAnswered,
-        successRate,
-        totalTime,
-      };
-    });
-  }, [session, quiz, studentFilter]);
-  
-  // Calculate question stats
-  const questionStats: QuestionStats[] = React.useMemo(() => {
-    if (!quiz || !session?.students) return [];
-    
-    const isPaperTest = (session as any).isPaperTest || (quiz as any).isPaperTest;
-    
-    return quiz.slides
-      .filter(s => s.type === 'activity')
-      .map(slide => {
-        const answerCounts: Record<string, number> = {};
-        let totalTime = 0;
-        let responseCount = 0;
-        let correctResponses = 0;
-        
-        // Get correct answer for ABC
-        let correctAnswer: string | undefined;
-        let options: { id: string; label: string; content: string; isCorrect: boolean }[] | undefined;
-        
-        if (slide.activityType === 'abc') {
-          const abcSlide = slide as ABCActivitySlide;
-          options = abcSlide.options || [];
-          correctAnswer = options.find(o => o.isCorrect)?.id || (slide as any).correctAnswer;
-        }
-        
-        // Get all responses for this slide
-        Object.values(session.students || {}).forEach(student => {
-          const response = student.responses?.find((r: any) => r.slideId === slide.id);
-          if (response) {
-            const rawAnswer = response.answer;
-            const abcSelectedIds = slide.activityType === 'abc'
-              ? getABCSelectedAnswerIds(rawAnswer as string | string[] | undefined)
-              : [];
+  const studentResults: QuizResultsStudentRow[] = React.useMemo(
+    () => buildQuizResultsStudentRows(session, quiz, { studentFilter, isStudentView }),
+    [session, quiz, studentFilter, isStudentView],
+  );
 
-            if (slide.activityType === 'abc' && abcSelectedIds.length > 0) {
-              abcSelectedIds.forEach((answerId) => {
-                answerCounts[answerId] = (answerCounts[answerId] || 0) + 1;
-              });
-            } else {
-              let answer = String(rawAnswer);
+  const questionStats = React.useMemo(
+    () => buildQuizResultsQuestionAggregates(session, quiz),
+    [session, quiz],
+  );
 
-              // For paper tests, answer is a letter (A, B, C, D) - map to option id
-              if (isPaperTest && options && answer.match(/^[A-Z]$/)) {
-                const optionIndex = answer.charCodeAt(0) - 65; // A=0, B=1, etc
-                const option = options[optionIndex];
-                if (option) {
-                  answer = option.id || option.label || answer;
-                }
-              }
-
-              answerCounts[answer] = (answerCounts[answer] || 0) + 1;
-            }
-            totalTime += response.timeSpent || 0;
-            responseCount++;
-            if (response.isCorrect === true) {
-              correctResponses++;
-            }
-          }
-        });
-        
-        return {
-          slideId: slide.id,
-          question: (slide as any).question || (slide as any).problem || 'Otázka',
-          type: slide.type,
-          activityType: slide.activityType,
-          options,
-          answerCounts,
-          correctAnswer,
-          correctResponses,
-          totalResponses: responseCount,
-          averageTime: responseCount > 0 ? totalTime / responseCount : 0,
-        };
-      });
-  }, [quiz, session]);
-  
-  // Overall stats
-  const overallStats = React.useMemo(() => {
-    const totalQuestions = questionStats.length;
-    const totalStudents = studentResults.length;
-    const avgCorrect = totalStudents > 0 
-      ? studentResults.reduce((sum, s) => sum + s.correctCount, 0) / totalStudents 
-      : 0;
-    const avgSuccessRate = totalStudents > 0
-      ? studentResults.reduce((sum, s) => sum + s.successRate, 0) / totalStudents
-      : 0;
-    const avgTime = totalStudents > 0
-      ? studentResults.reduce((sum, s) => sum + s.totalTime, 0) / totalStudents
-      : 0;
-    
-    // Success distribution for bar chart
-    const distribution = {
-      excellent: studentResults.filter(s => s.successRate >= 80).length,
-      good: studentResults.filter(s => s.successRate >= 60 && s.successRate < 80).length,
-      average: studentResults.filter(s => s.successRate >= 40 && s.successRate < 60).length,
-      belowAverage: studentResults.filter(s => s.successRate >= 20 && s.successRate < 40).length,
-      poor: studentResults.filter(s => s.successRate < 20).length,
-    };
-    
-    return {
-      totalQuestions,
-      totalStudents,
-      avgCorrect: Math.round(avgCorrect * 10) / 10,
-      avgSuccessRate: Math.round(avgSuccessRate),
-      avgTime,
-      distribution,
-    };
-  }, [questionStats, studentResults]);
+  const overallStats = React.useMemo(
+    () => buildQuizResultsOverallStats(questionStats, studentResults),
+    [questionStats, studentResults],
+  );
 
   // ── Hooks that depend on computed data ────────────────────────────────────
 
@@ -588,22 +400,10 @@ export function QuizResultsPage({
     }
   }, [questionStats]);
   
-  // Sort activities based on filter
-  const sortedQuestionStats = React.useMemo(() => {
-    if (activitySort === 'default') return questionStats;
-    
-    return [...questionStats].sort((a, b) => {
-      // Calculate success rate for each activity
-      const aSuccessRate = a.totalResponses > 0 ? a.correctResponses / a.totalResponses : 0;
-      const bSuccessRate = b.totalResponses > 0 ? b.correctResponses / b.totalResponses : 0;
-      
-      if (activitySort === 'easiest') {
-        return bSuccessRate - aSuccessRate; // Highest success rate first
-      } else {
-        return aSuccessRate - bSuccessRate; // Lowest success rate first (hardest)
-      }
-    });
-  }, [questionStats, activitySort]);
+  const sortedQuestionStats = React.useMemo(
+    () => sortQuizResultsQuestionAggregates(questionStats, activitySort),
+    [questionStats, activitySort],
+  );
   
   // Auto-select student in student view mode
   useEffect(() => {

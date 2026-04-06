@@ -46,10 +46,14 @@ function ScaledMath({ children, scale = 1.3 }: { children: React.ReactNode; scal
  * Common Czech prepositions: a, i, o, u, v, z, k, s
  */
 export function preventOrphans(text: string): string {
+  const normalizedText = text
+    .replace(/&nbsp;/gi, '\u00A0')
+    .replace(/&#160;/gi, '\u00A0')
+    .replace(/&#xa0;/gi, '\u00A0');
   // Match a space (or start of string), then a single Czech preposition/conjunction, then a space.
   // Replace the trailing space with a non-breaking space to keep the word attached to what follows.
   // The (^|\s) handles words at the very start of a text node (e.g. inside <strong>k word</strong>).
-  return text.replace(/(^|\s)([aioukvszAIOUKVSZ])(\s)/g, '$1$2\u00A0');
+  return normalizedText.replace(/(^|\s)([aioukvszAIOUKVSZ])(\s)/g, '$1$2\u00A0');
 }
 
 export function MathText({ children, className, mathScale = 1.3, style }: MathTextProps) {

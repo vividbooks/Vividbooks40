@@ -45,6 +45,7 @@ import {
   PageFormat,
   createEmptyBlock,
   generateBlockId,
+  mergeBlockWithDefaultVisualStyles,
 } from '../../types/worksheet';
 
 // Shared components from basic editor
@@ -64,7 +65,6 @@ import { SheetSettingsPanel } from './SheetSettingsPanel';
 import { DatasetPanel } from './DatasetPanel';
 import { ModeSwitcher } from './ModeSwitcher';
 import type { DesignSystem } from '../../types/design-system';
-import { getGoogleFontsUrl } from '../../types/design-system';
 import { TEXTBOOK_LAYOUTS } from '../../utils/textbook-layouts';
 import { DebugPanel } from './DebugPanel';
 import { JsonEditorPanel } from './JsonEditorPanel';
@@ -103,13 +103,26 @@ import {
 } from '../../utils/worksheet-blocks';
 import {
   createTextFlowContinuation,
+  getTextFlowFrameMode,
+  getTextFlowAvailableFrameHeight,
+  getTextFlowHtml,
   hasTextFlowFrame,
+  isTextFlowHtmlEmpty,
   isTextFlowLinked,
+  measureTextFlowHtmlNaturalHeight,
   reflowTextFlowChain,
   removeTextFlowBlock,
+  splitHtmlForFrame,
   splitTextFlowAtChar,
   supportsTextFlow,
+  trimTrailingEmptyTextFlowBlocks,
 } from '../../utils/text-flow';
+import { getDesignSystem } from '../../utils/supabase/design-system-storage';
+import {
+  applyDesignSystemSnapshotToWorksheet,
+  resetBlockToDesignSystem,
+  resetWorksheetPageSettingsToDesignSystem,
+} from '../../utils/design-system-sync';
 
 interface ProEditorLayoutProps {
   theme: 'light' | 'dark';
@@ -784,6 +797,47 @@ export function ProEditorLayout({ theme, toggleTheme }: ProEditorLayoutProps) {
   }, [initialPageFormat, worksheet]);
 
   useEffect(() => {
+    let cancelled = false;
+
+    void (async () => {
+      let targetDesignSystemId: string | null = null;
+
+      if (bookId) {
+        const { data: bookRow, error } = await supabase
+          .from('teacher_books')
+          .select('design_system_id')
+          .eq('id', bookId)
+          .maybeSingle();
+        if (!cancelled && error) {
+          console.warn('[ProEditor] teacher_books.design_system_id', error.message);
+        }
+        if (typeof bookRow?.design_system_id === 'string' && bookRow.design_system_id.trim().length > 0) {
+          targetDesignSystemId = bookRow.design_system_id;
+        }
+      }
+
+      if (!targetDesignSystemId) {
+        const metadataDesignSystemId = worksheet?.metadata?.designSystemId;
+        if (typeof metadataDesignSystemId === 'string' && metadataDesignSystemId.trim().length > 0) {
+          targetDesignSystemId = metadataDesignSystemId;
+        }
+      }
+
+      if (!targetDesignSystemId) {
+        if (!cancelled) setActiveDesignSystem(null);
+        return;
+      }
+
+      const ds = await getDesignSystem(targetDesignSystemId);
+      if (!cancelled) setActiveDesignSystem(ds);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [bookId, worksheet?.metadata?.designSystemId]);
+
+  useEffect(() => {
     const mainEl = mainScrollRef.current;
     if (!mainEl) return;
 
@@ -876,23 +930,6 @@ export function ProEditorLayout({ theme, toggleTheme }: ProEditorLayoutProps) {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleUndo, handleRedo, worksheet, isExporting, handleExport, handleManualSave]);
   
-  // Inject Google Fonts when design system fonts change
-  useEffect(() => {
-    if (!activeDesignSystem) return;
-    const { headingFont, bodyFont } = activeDesignSystem.typography;
-    const url = getGoogleFontsUrl([headingFont, bodyFont]);
-    if (!url) return;
-    const id = 'ds-active-fonts';
-    let el = document.getElementById(id) as HTMLLinkElement | null;
-    if (!el) {
-      el = document.createElement('link');
-      el.id = id;
-      el.rel = 'stylesheet';
-      document.head.appendChild(el);
-    }
-    el.href = url;
-  }, [activeDesignSystem?.typography.headingFont, activeDesignSystem?.typography.bodyFont]);
-
   // Fetch dataset images when worksheet is loaded and has a linked dataset
   useEffect(() => {
     const sourceDatasetId = worksheet?.metadata?.sourceDatasetId;
@@ -1625,7 +1662,7 @@ Vrať JSON kde každý klíč je ID bloku a hodnota je upravený text:
         if (slot.columns && blockType === 'paragraph') {
           (block as any).content = { ...(block as any).content, columns: slot.columns };
         }
-        return block;
+        return mergeBlockWithDefaultVisualStyles(block as WorksheetBlock, prev.metadata.defaultBlockVisualStyles);
       };
 
       let newBlocks: WorksheetBlock[];
@@ -1723,7 +1760,8 @@ Vrať JSON kde každý klíč je ID bloku a hodnota je upravený text:
     updateWorksheet(prev => {
       const gridColumns = prev.metadata.gridColumns || 12;
       const defaultGridSpan = Math.ceil(gridColumns / 2); // Default to half width
-      const newBlock = { ...createEmptyBlock(type, prev.blocks.length), gridSpan: defaultGridSpan };
+      let newBlock: WorksheetBlock = { ...createEmptyBlock(type, prev.blocks.length), gridSpan: defaultGridSpan };
+      newBlock = mergeBlockWithDefaultVisualStyles(newBlock, prev.metadata.defaultBlockVisualStyles);
       let newBlocks: WorksheetBlock[];
       
       if (afterBlockId) {
@@ -1747,7 +1785,8 @@ Vrať JSON kde každý klíč je ID bloku a hodnota je upravený text:
       const gridColumns = prev.metadata.gridColumns || 12;
       const defaultGridSpan = Math.ceil(gridColumns / 2); // Default to half width
       const safeIndex = Math.max(0, Math.min(index, prev.blocks.length));
-      const newBlock = { ...createEmptyBlock(type, safeIndex), gridSpan: defaultGridSpan };
+      let newBlock: WorksheetBlock = { ...createEmptyBlock(type, safeIndex), gridSpan: defaultGridSpan };
+      newBlock = mergeBlockWithDefaultVisualStyles(newBlock, prev.metadata.defaultBlockVisualStyles);
       const newBlocks = [
         ...prev.blocks.slice(0, safeIndex),
         newBlock,
@@ -1767,7 +1806,8 @@ Vrať JSON kde každý klíč je ID bloku a hodnota je upravený text:
       const gridColumns = prev.metadata.gridColumns || 12;
       const defaultGridSpan = Math.ceil(gridColumns / 2); // Default to half width
       const safeIndex = Math.max(0, targetIndex);
-      const newBlock = { ...createEmptyBlock(pendingInsertType, safeIndex), gridSpan: defaultGridSpan };
+      let newBlock: WorksheetBlock = { ...createEmptyBlock(pendingInsertType, safeIndex), gridSpan: defaultGridSpan };
+      newBlock = mergeBlockWithDefaultVisualStyles(newBlock, prev.metadata.defaultBlockVisualStyles);
       const newBlocks = [
         ...prev.blocks.slice(0, safeIndex),
         newBlock,
@@ -1786,7 +1826,8 @@ Vrať JSON kde každý klíč je ID bloku a hodnota je upravený text:
       const gridColumns = prev.metadata.gridColumns || 12;
       const defaultGridSpan = Math.ceil(gridColumns / 2); // Default to half width
       const index = prev.blocks.length;
-      const newBlock = { ...createEmptyBlock(pendingInsertType, index), gridSpan: defaultGridSpan };
+      let newBlock: WorksheetBlock = { ...createEmptyBlock(pendingInsertType, index), gridSpan: defaultGridSpan };
+      newBlock = mergeBlockWithDefaultVisualStyles(newBlock, prev.metadata.defaultBlockVisualStyles);
       const newBlocks = [...prev.blocks, newBlock].map((b, i) => ({ ...b, order: i }));
       return { ...prev, blocks: newBlocks };
     });
@@ -1799,22 +1840,118 @@ Vrať JSON kde každý klíč je ID bloku a hodnota je upravený text:
   }, []);
 
   const commitTextFlow = useCallback((blockId: string) => {
+    let followUpBlockId: string | null = null;
     updateWorksheet((prev) => {
       const block = prev.blocks.find((b) => b.id === blockId);
-      if (!block || !supportsTextFlow(block) || (!hasTextFlowFrame(block) && !isTextFlowLinked(block))) {
+      if (!block || !supportsTextFlow(block)) {
         return prev;
       }
+
+      const availableHeight = getTextFlowAvailableFrameHeight(blockId);
+      const currentHtml = getTextFlowHtml(block);
+      const currentOverflowHtml = availableHeight
+        ? splitHtmlForFrame(blockId, currentHtml, availableHeight).overflowHtml
+        : '';
+      const shouldActivateFlow = Boolean(
+        hasTextFlowFrame(block)
+        || isTextFlowLinked(block)
+        || (availableHeight && !isTextFlowHtmlEmpty(currentHtml) && !isTextFlowHtmlEmpty(currentOverflowHtml)),
+      );
+      const frameMode = getTextFlowFrameMode(block);
+      const naturalHeight = measureTextFlowHtmlNaturalHeight(
+        blockId,
+        currentHtml,
+        block.textFlowFrameHeight || availableHeight || 180,
+      );
+      const shouldFillAvailableHeight = Boolean(
+        availableHeight
+        && frameMode !== 'manual'
+        && (
+          isTextFlowLinked(block)
+          || !isTextFlowHtmlEmpty(currentOverflowHtml)
+        )
+      );
+      const targetFrameHeight = availableHeight
+        ? (
+            shouldFillAvailableHeight
+              ? availableHeight
+              : frameMode === 'manual' && block.textFlowFrameHeight
+              ? Math.min(block.textFlowFrameHeight, availableHeight)
+              : Math.min(naturalHeight, availableHeight)
+          )
+        : block.textFlowFrameHeight || availableHeight;
+
+      if (!shouldActivateFlow) {
+        return prev;
+      }
+
+      let updatedBlocks = prev.blocks.map((item) => (
+        item.id === blockId && targetFrameHeight
+          ? {
+              ...item,
+              textFlowFrameHeight: targetFrameHeight,
+              textFlowFrameMode: frameMode === 'manual' ? 'manual' : 'auto',
+            }
+          : item
+      ));
+
+      updatedBlocks = reflowTextFlowChain(updatedBlocks, blockId);
+      updatedBlocks = trimTrailingEmptyTextFlowBlocks(updatedBlocks, blockId);
+
+      const refreshedBlock = updatedBlocks.find((item) => item.id === blockId);
+      if (!refreshedBlock || !supportsTextFlow(refreshedBlock)) {
+        return { ...prev, blocks: updatedBlocks };
+      }
+
+      const nextBlock = refreshedBlock.textFlowNextBlockId
+        ? updatedBlocks.find((item) => item.id === refreshedBlock.textFlowNextBlockId)
+        : null;
+
+      if (!nextBlock && refreshedBlock.textFlowFrameHeight) {
+        const overflowHtml = splitHtmlForFrame(
+          blockId,
+          getTextFlowHtml(refreshedBlock),
+          refreshedBlock.textFlowFrameHeight,
+        ).overflowHtml;
+
+        if (!isTextFlowHtmlEmpty(overflowHtml)) {
+          const result = createTextFlowContinuation(updatedBlocks, blockId);
+          updatedBlocks = trimTrailingEmptyTextFlowBlocks(result.blocks, blockId);
+          followUpBlockId = result.newBlockId;
+        }
+      } else if (nextBlock && !isTextFlowHtmlEmpty(getTextFlowHtml(nextBlock))) {
+        followUpBlockId = nextBlock.id;
+      }
+
       return {
         ...prev,
-        blocks: reflowTextFlowChain(prev.blocks, blockId),
+        blocks: updatedBlocks,
       };
     });
+
+    if (followUpBlockId && followUpBlockId !== blockId) {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          commitTextFlow(followUpBlockId as string);
+        });
+      });
+    }
   }, [updateWorksheet]);
 
-  const updateTextFlowFrameHeight = useCallback((blockId: string, height?: number, options?: { reflow?: boolean }) => {
+  const updateTextFlowFrameHeight = useCallback((blockId: string, height?: number, options?: { reflow?: boolean; mode?: 'auto' | 'manual' }) => {
     updateWorksheet((prev) => {
+      const maxAvailableHeight = getTextFlowAvailableFrameHeight(blockId);
+      const clampedHeight = typeof height === 'number' && maxAvailableHeight
+        ? Math.min(height, maxAvailableHeight)
+        : height;
       const updatedBlocks = prev.blocks.map((block) => (
-        block.id === blockId ? { ...block, textFlowFrameHeight: height } : block
+        block.id === blockId
+          ? {
+              ...block,
+              textFlowFrameHeight: clampedHeight,
+              ...(options?.mode ? { textFlowFrameMode: options.mode } : {}),
+            }
+          : block
       ));
       const updatedBlock = updatedBlocks.find((block) => block.id === blockId);
       const shouldReflow = options?.reflow ?? true;
@@ -1897,7 +2034,7 @@ Vrať JSON kde každý klíč je ID bloku a hodnota je upravený text:
         }
       }
 
-      const newBlock = {
+      let newBlock: WorksheetBlock = {
         ...createEmptyBlock(type, insertIndex),
         gridSpan: defaultGridSpan,
         ...(placement?.layoutSectionId ? {
@@ -1905,6 +2042,7 @@ Vrať JSON kde každý klíč je ID bloku a hodnota je upravený text:
           layoutColumnId: placement.layoutColumnId,
         } : {}),
       };
+      newBlock = mergeBlockWithDefaultVisualStyles(newBlock, prev.metadata.defaultBlockVisualStyles);
       const newBlocks = [
         ...prev.blocks.slice(0, insertIndex),
         newBlock,
@@ -1933,23 +2071,114 @@ Vrať JSON kde každý klíč je ID bloku a hodnota je upravený text:
       setSelectedBlockId(null);
     }
   }, [selectedBlockId, updateWorksheet]);
+
+  const isTypographyManagedBlock = useCallback((block: WorksheetBlock) => (
+    block.type === 'heading' ||
+    block.type === 'paragraph' ||
+    block.type === 'multiple-choice' ||
+    block.type === 'fill-blank' ||
+    block.type === 'free-answer' ||
+    block.type === 'examples'
+  ), []);
+
+  const markMetadataPageStyleCustom = useCallback((
+    metadata: Worksheet['metadata'],
+    fields: Array<'pageFormat' | 'gridColumns' | 'gridGap' | 'pageBackgroundColor'>,
+  ): Worksheet['metadata'] => ({
+    ...metadata,
+    pageStyleSource: 'custom',
+    ...(fields.includes('pageFormat') ? { pageFormatSource: 'custom' as const } : {}),
+    ...(fields.includes('gridColumns') ? { gridColumnsSource: 'custom' as const } : {}),
+    ...(fields.includes('gridGap') ? { gridGapSource: 'custom' as const } : {}),
+    ...(fields.includes('pageBackgroundColor') ? { pageBackgroundColorSource: 'custom' as const } : {}),
+  }), []);
+
+  const markMetadataLayoutCustom = useCallback((
+    metadata: Worksheet['metadata'],
+    fields: Array<'layoutMode' | 'pageColumnLayout' | 'twoColumnASpan' | 'pageOverrides'>,
+  ): Worksheet['metadata'] => ({
+    ...metadata,
+    layoutStyleSource: 'custom',
+    ...(fields.includes('layoutMode') ? { layoutModeSource: 'custom' as const } : {}),
+    ...(fields.includes('pageColumnLayout') ? { pageColumnLayoutSource: 'custom' as const } : {}),
+    ...(fields.includes('twoColumnASpan') ? { twoColumnASpanSource: 'custom' as const } : {}),
+    ...(fields.includes('pageOverrides') ? { pageOverridesSource: 'custom' as const } : {}),
+  }), []);
+
+  const markMetadataTypographyCustom = useCallback((
+    metadata: Worksheet['metadata'],
+    fields: Array<'globalFontSize'>,
+  ): Worksheet['metadata'] => ({
+    ...metadata,
+    designTypographySource: 'custom',
+    ...(fields.includes('globalFontSize') ? { globalFontSizeSource: 'custom' as const } : {}),
+  }), []);
+
+  const isTypographyContentKey = useCallback((key: string) => {
+    return (
+      key === 'align' ||
+      key === 'headingStyle' ||
+      key === 'highlightColor' ||
+      key === 'textColor' ||
+      key === 'fontFamily' ||
+      key === 'fontSize' ||
+      key === 'fontWeight' ||
+      key === 'lineHeight' ||
+      key === 'letterSpacing' ||
+      key === 'isBold' ||
+      key === 'isItalic' ||
+      key === 'isUnderline' ||
+      key.endsWith('Align') ||
+      key.endsWith('TextColor') ||
+      key.endsWith('FontFamily') ||
+      key.endsWith('FontSize') ||
+      key.endsWith('FontWeight') ||
+      key.endsWith('LineHeight') ||
+      key.endsWith('LetterSpacing') ||
+      key.endsWith('IsBold') ||
+      key.endsWith('IsItalic') ||
+      key.endsWith('IsUnderline')
+    );
+  }, []);
+
+  const contentPatchTouchesTypography = useCallback((value: unknown): boolean => {
+    if (Array.isArray(value)) {
+      return value.some((item) => contentPatchTouchesTypography(item));
+    }
+    if (!value || typeof value !== 'object') return false;
+
+    return Object.entries(value as Record<string, unknown>).some(([key, nested]) => (
+      isTypographyContentKey(key) || contentPatchTouchesTypography(nested)
+    ));
+  }, [isTypographyContentKey]);
   
   const updateBlock = useCallback((blockId: string, updates: Partial<WorksheetBlock>) => {
     updateWorksheet(prev => ({
       ...prev,
       blocks: updateWorksheetBlock(prev.blocks, blockId, (block) => {
+        const nextBase = updates.content
+          ? {
+              ...block,
+              ...updates,
+              content: { ...block.content, ...updates.content },
+            }
+          : { ...block, ...updates };
+
+        const marksTypographyCustom =
+          Boolean(updates.content) &&
+          isTypographyManagedBlock(block) &&
+          contentPatchTouchesTypography(updates.content);
+        const marksVisualCustom = Object.prototype.hasOwnProperty.call(updates, 'visualStyles');
+
         // If updates contains 'content', merge it with existing content
-        if (updates.content) {
-          return { 
-            ...block, 
-            ...updates,
-            content: { ...block.content, ...updates.content }
-          };
-        }
-        return { ...block, ...updates };
+        return {
+          ...nextBase,
+          ...(marksTypographyCustom ? { typographySource: 'custom' as const } : {}),
+          ...(marksVisualCustom ? { visualStyleSource: 'custom' as const } : {}),
+        };
       })
     }));
-  }, [updateWorksheet]);
+  }, [contentPatchTouchesTypography, isTypographyManagedBlock, updateWorksheet]);
 
   const applyGroupLayout = useCallback((blockId: string, mode: 'full' | 'half' | 'third') => {
     updateWorksheet((prev) => {
@@ -2121,9 +2350,31 @@ Vrať JSON kde každý klíč je ID bloku a hodnota je upravený text:
   const updateBlockVisualStyles = useCallback((blockId: string, visualStyles: any) => {
     updateWorksheet(prev => ({
       ...prev,
-      blocks: updateWorksheetBlock(prev.blocks, blockId, (block) => ({ ...block, visualStyles }))
+      blocks: updateWorksheetBlock(prev.blocks, blockId, (block) => ({
+        ...block,
+        visualStyles,
+        visualStyleSource: 'custom',
+      }))
     }));
   }, [updateWorksheet]);
+
+  const resetSelectedBlockToDesignSystem = useCallback(() => {
+    if (!selectedBlockId || !activeDesignSystem) return;
+    updateWorksheet(prev => ({
+      ...prev,
+      blocks: updateWorksheetBlock(prev.blocks, selectedBlockId, (block) => resetBlockToDesignSystem(block, activeDesignSystem)),
+    }));
+    toast.success('Blok vrácen na design system.');
+  }, [activeDesignSystem, selectedBlockId, updateWorksheet]);
+
+  const resetPageSettingsToDesignSystem = useCallback(() => {
+    if (!activeDesignSystem) return;
+    updateWorksheet(prev => ({
+      ...prev,
+      metadata: resetWorksheetPageSettingsToDesignSystem(prev.metadata, activeDesignSystem),
+    }));
+    toast.success('Nastavení stránky vráceno na design system.');
+  }, [activeDesignSystem, updateWorksheet]);
 
   const duplicateBlock = useCallback((blockId: string) => {
     updateWorksheet(prev => {
@@ -2132,6 +2383,7 @@ Vrať JSON kde každý klíč je ID bloku a hodnota je upravený text:
         blocks: duplicateWorksheetBlock(prev.blocks, blockId, {
           transformDuplicate: (block) => ({
             ...block,
+            textFlowFrameMode: undefined,
             textFlowChainId: undefined,
             textFlowPrevBlockId: undefined,
             textFlowNextBlockId: undefined,
@@ -2467,20 +2719,10 @@ Vrať JSON kde každý klíč je ID bloku a hodnota je upravený text:
     setIsBlockSettingsOpen(false);
   }, []);
 
-  // Apply design system defaults to the current worksheet (non-retroactive)
+  // Apply design system defaults to the current worksheet.
   const handleApplyDesignSystem = useCallback((ds: DesignSystem) => {
-    updateWorksheet(prev => ({
-        ...prev,
-        metadata: {
-          ...prev.metadata,
-          pageBackgroundColor: ds.pageDefaults.pageBackgroundColor,
-          gridColumns: ds.pageDefaults.gridColumns,
-          gridGap: ds.pageDefaults.gridGap,
-          globalFontSize: ds.typography.baseFontSize,
-          designSystemId: ds.id,
-          designFonts: { heading: ds.typography.headingFont, body: ds.typography.bodyFont },
-        },
-      }));
+    setActiveDesignSystem(ds);
+    updateWorksheet(prev => applyDesignSystemSnapshotToWorksheet(prev, ds, { forceTypography: true }));
   }, [updateWorksheet]);
 
   // Export handlers
@@ -3030,6 +3272,12 @@ Vrať JSON kde každý klíč je ID bloku a hodnota je upravený text:
                   allBlocks={worksheet.blocks}
                   onClose={handleCloseBlockSettings}
                   onUpdateBlock={updateBlock}
+                  onResetToDesignSystem={activeDesignSystem ? resetSelectedBlockToDesignSystem : undefined}
+                  designSystemSourceStatus={
+                    selectedBlock.visualStyleSource === 'custom' || selectedBlock.typographySource === 'custom'
+                      ? 'custom'
+                      : 'design-system'
+                  }
                   onUpdateTextFlowFrameHeight={updateTextFlowFrameHeight}
                   onApplyGroupLayout={applyGroupLayout}
                   onDeleteBlock={deleteBlock}
@@ -3086,7 +3334,7 @@ Vrať JSON kde každý klíč je ID bloku a hodnota je upravený text:
                       onGridColumnsChange={(gridColumns) => {
                         updateWorksheet(prev => ({
                           ...prev,
-                          metadata: { ...prev.metadata, gridColumns },
+                          metadata: markMetadataPageStyleCustom({ ...prev.metadata, gridColumns }, ['gridColumns']),
                           // Reset all blocks to full span when changing grid
                           blocks: prev.blocks.map(block => ({
                             ...block,
@@ -3097,25 +3345,25 @@ Vrať JSON kde každý klíč je ID bloku a hodnota je upravený text:
                       onGridGapChange={(gridGap) => {
                         updateWorksheet(prev => ({
                           ...prev,
-                          metadata: { ...prev.metadata, gridGap },
+                          metadata: markMetadataPageStyleCustom({ ...prev.metadata, gridGap }, ['gridGap']),
                         }));
                       }}
                       onGlobalFontSizeChange={(globalFontSize) => {
                         updateWorksheet(prev => ({
                           ...prev,
-                          metadata: { ...prev.metadata, globalFontSize },
+                          metadata: markMetadataTypographyCustom({ ...prev.metadata, globalFontSize }, ['globalFontSize']),
                         }));
                       }}
                       onPageFormatChange={(nextPageFormat) => {
                         updateWorksheet(prev => ({
                           ...prev,
-                          metadata: { ...prev.metadata, pageFormat: nextPageFormat },
+                          metadata: markMetadataPageStyleCustom({ ...prev.metadata, pageFormat: nextPageFormat }, ['pageFormat']),
                         }));
                       }}
                       onLayoutModeChange={(layoutMode) => {
                         updateWorksheet(prev => ({
                           ...prev,
-                          metadata: { ...prev.metadata, layoutMode },
+                          metadata: markMetadataLayoutCustom({ ...prev.metadata, layoutMode }, ['layoutMode']),
                         }));
                       }}
                       showGridOverlay={showGridOverlay}
@@ -3124,7 +3372,10 @@ Vrať JSON kde každý klíč je ID bloku a hodnota je upravený text:
                       onPageBackgroundColorChange={(pageBackgroundColor) => {
                         updateWorksheet(prev => ({
                           ...prev,
-                          metadata: { ...prev.metadata, pageBackgroundColor },
+                          metadata: markMetadataPageStyleCustom(
+                            { ...prev.metadata, pageBackgroundColor },
+                            ['pageBackgroundColor'],
+                          ),
                         }));
                       }}
                       pageHeader={worksheet.metadata.pageHeader}
@@ -3146,10 +3397,16 @@ Vrať JSON kde každý klíč je ID bloku a hodnota je upravený text:
                       currentPageIndex={currentPageIndex}
                       pageOverrides={worksheet.metadata.pageOverrides}
                       onPageColumnLayoutChange={(pageColumnLayout) => {
-                        updateWorksheet(prev => ({ ...prev, metadata: { ...prev.metadata, pageColumnLayout } }));
+                        updateWorksheet(prev => ({
+                          ...prev,
+                          metadata: markMetadataLayoutCustom({ ...prev.metadata, pageColumnLayout }, ['pageColumnLayout']),
+                        }));
                       }}
                       onTwoColumnASpanChange={(twoColumnASpan) => {
-                        updateWorksheet(prev => ({ ...prev, metadata: { ...prev.metadata, twoColumnASpan } }));
+                        updateWorksheet(prev => ({
+                          ...prev,
+                          metadata: markMetadataLayoutCustom({ ...prev.metadata, twoColumnASpan }, ['twoColumnASpan']),
+                        }));
                       }}
                       onPageOverrideChange={(pageIndex, override) => {
                         updateWorksheet(prev => {
@@ -3161,7 +3418,10 @@ Vrať JSON kde každý klíč je ID bloku a hodnota je upravený text:
                           } else {
                             updated = { ...existing, [pageIndex]: override };
                           }
-                          return { ...prev, metadata: { ...prev.metadata, pageOverrides: updated } };
+                          return {
+                            ...prev,
+                            metadata: markMetadataLayoutCustom({ ...prev.metadata, pageOverrides: updated }, ['pageOverrides']),
+                          };
                         });
                       }}
                       onApplyTemplate={handleApplyTemplate}
@@ -3181,6 +3441,24 @@ Vrať JSON kde každý klíč je ID bloku a hodnota je upravený text:
                       }
                       designSystem={activeDesignSystem}
                       onApplyDesignSystem={handleApplyDesignSystem}
+                      onResetToDesignSystem={activeDesignSystem ? resetPageSettingsToDesignSystem : undefined}
+                      designSystemSourceStatus={
+                        worksheet.metadata.pageStyleSource === 'custom' ||
+                        worksheet.metadata.layoutStyleSource === 'custom' ||
+                        worksheet.metadata.designTypographySource === 'custom' ||
+                        worksheet.metadata.defaultBlockVisualStylesSource === 'custom' ||
+                        worksheet.metadata.pageFormatSource === 'custom' ||
+                        worksheet.metadata.gridColumnsSource === 'custom' ||
+                        worksheet.metadata.gridGapSource === 'custom' ||
+                        worksheet.metadata.pageBackgroundColorSource === 'custom' ||
+                        worksheet.metadata.globalFontSizeSource === 'custom' ||
+                        worksheet.metadata.layoutModeSource === 'custom' ||
+                        worksheet.metadata.pageColumnLayoutSource === 'custom' ||
+                        worksheet.metadata.twoColumnASpanSource === 'custom' ||
+                        worksheet.metadata.pageOverridesSource === 'custom'
+                          ? 'custom'
+                          : 'design-system'
+                      }
                     />
                   )}
 

@@ -5,8 +5,8 @@
  * Nekonečné plátno s dvojstránkami, klik otevře editor listu.
  */
 
-import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useState, useCallback, useMemo, useRef, useEffect, type CSSProperties } from 'react';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { LAIOUT_BOOKSHELF_PATH } from '../../utils/laiout-routes';
 import { supabase } from '../../utils/supabase/client';
 import { DndProvider } from 'react-dnd';
@@ -14,7 +14,6 @@ import { HTML5Backend } from 'react-dnd-html5-backend';
 import {
   BookOpen,
   Plus,
-  Settings,
   Loader2,
   Check,
   ChevronRight,
@@ -22,6 +21,9 @@ import {
   MousePointer2,
   PanelLeftClose,
   PanelLeft,
+  List,
+  Users,
+  Database,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -32,10 +34,20 @@ import { WorkbookLivePagePreview } from './WorkbookLivePagePreview';
 import { VirtualizedWorkbookRow } from './VirtualizedWorkbookRow';
 import { ProMiniSidebar } from '../worksheet-editor-pro/ProMiniSidebar';
 import { WorkbookInlineLibraryPanel } from './WorkbookInlineLibraryPanel';
-import { DesignSystemPanel } from '../worksheet-editor-pro/DesignSystemPanel';
+import { DesignSystemPanel, type Category as DesignSidebarCategory } from '../worksheet-editor-pro/DesignSystemPanel';
+import { DesignSystemCanvasWorkspace } from './DesignSystemCanvasWorkspace';
+import { BookAgentPipelineWorkspace } from './BookAgentPipelineWorkspace';
 import { DatasetPanel } from '../worksheet-editor-pro/DatasetPanel';
+import { WorkbookCollaborationPanel } from './WorkbookCollaborationPanel';
+import { BookShareControls } from './BookShareControls';
+import { acceptTeacherBookInvite } from '../../utils/supabase/book-sharing';
+import {
+  fetchBookTeam,
+  fetchTeacherDisplaysByUserIds,
+  initialsFromDisplayName,
+} from '../../utils/supabase/book-collaboration';
 import type { DesignSystem } from '../../types/design-system';
-import { getDesignSystems } from '../../utils/supabase/design-system-storage';
+import { getDesignSystem } from '../../utils/supabase/design-system-storage';
 import {
   Workbook,
   WorkbookPage,
@@ -51,20 +63,142 @@ import { Worksheet, createEmptyWorksheet } from '../../types/worksheet';
 import {
   getWorksheet as getWorksheetLocal,
   loadWorksheetFromSupabase,
+  saveWorksheet,
+  saveWorksheetAwait,
 } from '../../utils/worksheet-storage';
 import { deriveWorksheetPageCount } from '../../utils/worksheet-page-count';
 import { replaceWorksheetPageSpan } from '../../utils/workbook/replace-worksheet-pages';
+import { applyDesignSystemSnapshotToWorksheet } from '../../utils/design-system-sync';
+import { syncDesignSystemToBookWorksheets } from '../../utils/supabase/book-design-system-sync';
+import { buildStashedProEditorUrlForDesignSystemCustomLayout } from '../../utils/design-system-preview-worksheets';
+import { stashWorksheetForEditorSession } from '../../utils/worksheet-editor-runtime';
+import {
+  buildPageUnitsFromPipelineDataset,
+  createWorksheetFromPipelineUnit,
+} from '../../utils/workbook-from-pipeline-dataset';
 
 interface WorkbookProLayoutProps {
   theme: 'light' | 'dark';
   toggleTheme: () => void;
 }
 
-type ViewMode = 'canvas' | 'covers' | 'settings' | 'design' | 'dataset';
+type ViewMode =
+  | 'canvas'
+  | 'covers'
+  | 'settings'
+  | 'design'
+  | 'design2'
+  | 'agentPipeline'
+  | 'collaboration';
+type SettingsTab = 'general' | 'team' | 'dataset';
+
+function hashHue(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return h % 360;
+}
+
+/**
+ * Nastavení knihy — barvy přes inline style (bundlovaný `index.css` bez řady Tailwind utilit).
+ * Pozadí = stejné jako levý panel s kapitolami (`aside` v tomto layoutu).
+ */
+const WORKBOOK_CHAPTER_PANEL_BG = '#1e293b';
+
+const STShellStyle: CSSProperties = {
+  backgroundColor: WORKBOOK_CHAPTER_PANEL_BG,
+  colorScheme: 'dark',
+};
+const STCardStyle: CSSProperties = {
+  marginBottom: 20,
+  borderRadius: 24,
+  padding: 24,
+  border: '1px solid #334155',
+  backgroundColor: '#0f172a',
+  boxShadow: 'inset 0 1px 0 0 rgba(255, 255, 255, 0.04)',
+};
+
+/** V `index.css` chybí `w-14` / `py-9` — výsledkem byl „pilulkový“ avatar a titulky nalepené nahoru. */
+const STInnerStyle: CSSProperties = {
+  paddingTop: 40,
+  paddingBottom: 96,
+  paddingLeft: 24,
+  paddingRight: 24,
+};
+
+const TEAM_MEMBER_COL_STYLE: CSSProperties = {
+  width: 128,
+  minWidth: 128,
+  flexShrink: 0,
+  display: 'flex',
+  flexDirection: 'column',
+  alignItems: 'center',
+  gap: 10,
+  textAlign: 'center',
+};
+
+function teamAvatarStyle(hueVar: string): CSSProperties {
+  return {
+    width: 56,
+    height: 56,
+    minWidth: 56,
+    minHeight: 56,
+    flexShrink: 0,
+    borderRadius: '50%',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: 13,
+    fontWeight: 700,
+    color: '#ffffff',
+    boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.25)',
+    border: '2px solid rgba(51, 65, 85, 0.85)',
+    backgroundColor: `hsl(${hueVar} 48% 42%)`,
+  };
+}
+const STFieldStyle: CSSProperties = {
+  width: '100%',
+  boxSizing: 'border-box',
+  borderRadius: 12,
+  padding: '12px 14px',
+  fontSize: 14,
+  lineHeight: 1.45,
+  color: '#f1f5f9',
+  backgroundColor: WORKBOOK_CHAPTER_PANEL_BG,
+  border: '1px solid #475569',
+  outline: 'none',
+};
+const STCheckRowStyle: CSSProperties = {
+  border: '1px solid #334155',
+  backgroundColor: 'rgba(15, 23, 42, 0.85)',
+};
+
+const ST = {
+  shell: 'h-full min-h-0 flex-1 overflow-y-auto',
+  inner: 'mx-auto w-full max-w-2xl',
+  h1: 'text-2xl font-semibold tracking-tight text-slate-200',
+  lead: 'mt-1.5 max-w-2xl text-sm leading-relaxed text-slate-500',
+  card: 'mb-5 rounded-2xl',
+  cardTitle: 'text-sm font-semibold text-slate-200',
+  cardDesc: 'mt-0.5 mb-5 text-xs leading-relaxed text-slate-500',
+  labelCap: 'mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500',
+  labelMuted: 'mb-2 block text-xs font-medium text-slate-400',
+  field: 'w-full rounded-xl placeholder:text-slate-600',
+  checkRow: 'flex cursor-pointer gap-3 rounded-xl p-4 transition-opacity hover:opacity-95',
+} as const;
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
 /** Výchozí plánovaný počet stránek knihy (sjednoceno s Bookshelf / DB default) */
 const DEFAULT_BOOK_PAGE_LIMIT = 96;
+
+/** Jednorázové zpracování ?invite= i při dvojím spuštění effectu (React Strict Mode). */
+const laioutBookInviteConsumedKeys = new Set<string>();
+
+function uuidStringsEqual(a: string | null | undefined, b: string | null | undefined): boolean {
+  if (a == null || b == null || a === '' || b === '') return false;
+  const na = String(a).replace(/-/g, '').toLowerCase();
+  const nb = String(b).replace(/-/g, '').toLowerCase();
+  return na.length > 0 && na === nb;
+}
 
 /** Sloučení total_pages z DB (0 není „nenastaveno“ přes ||) a lokálního stavu */
 function resolvePageLimitFromDbAndPrev(
@@ -206,6 +340,7 @@ function generateDemoWorkbook(id: string): Workbook {
 export function WorkbookProLayout({ theme, toggleTheme }: WorkbookProLayoutProps) {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const debugWorkbookLayout = (...args: unknown[]) => {
     if (import.meta.env.DEV) {
       console.log('[WorkbookLayout]', ...args);
@@ -231,6 +366,12 @@ export function WorkbookProLayout({ theme, toggleTheme }: WorkbookProLayoutProps
   const [loadingReal, setLoadingReal] = useState(true);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
   const [viewMode, setViewMode] = useState<ViewMode>('canvas');
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>('general');
+  const [settingsTeam, setSettingsTeam] = useState<Awaited<ReturnType<typeof fetchBookTeam>> | null>(null);
+  const [settingsTeamLoading, setSettingsTeamLoading] = useState(false);
+  const [teamDisplays, setTeamDisplays] = useState<Map<string, { displayName: string; email: string | null }>>(
+    () => new Map(),
+  );
   const [showLibraryPanel, setShowLibraryPanel] = useState(false);
   const [selectedPageId, setSelectedPageId] = useState<string | null>(null);
   const [hoveredChapterId, setHoveredChapterId] = useState<string | null>(null);
@@ -259,11 +400,134 @@ export function WorkbookProLayout({ theme, toggleTheme }: WorkbookProLayoutProps
   const canvasContainerRef = useRef<HTMLDivElement>(null);
   const workbookRef = useRef(workbook);
   const [bookDesignSystem, setBookDesignSystem] = useState<DesignSystem | null>(null);
+  const [appliedBookDesignSystemId, setAppliedBookDesignSystemId] = useState<string | null>(null);
+  const [designSidebarCategory, setDesignSidebarCategory] = useState<DesignSidebarCategory>('system');
+  const [layoutUserId, setLayoutUserId] = useState<string | null>(null);
+  const [bookOwnerId, setBookOwnerId] = useState<string | null>(null);
   const persistPageLimitTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const designSystemSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const latestSyncedDesignSystemRef = useRef<DesignSystem | null>(null);
+  /** Plán stran z teacher_books.total_pages — applyMeta ho nesmí přebít výchozími 96 před načtením řádku z DB. */
+  const bookPageLimitFromDbRef = useRef<number | undefined>(undefined);
 
   useEffect(() => {
     workbookRef.current = workbook;
   }, [workbook]);
+
+  useEffect(() => {
+    bookPageLimitFromDbRef.current = undefined;
+    setAppliedBookDesignSystemId(null);
+    setBookDesignSystem(null);
+  }, [id]);
+
+  useEffect(() => {
+    return () => {
+      if (designSystemSyncTimerRef.current) clearTimeout(designSystemSyncTimerRef.current);
+    };
+  }, []);
+
+  const isBookOwnerUi = uuidStringsEqual(layoutUserId, bookOwnerId);
+
+  /** Vlastník knihy zvlášť od těžkého loadu — maybeSingle + fallback přes listy (teacher_id z API nemusí být typeof string). */
+  useEffect(() => {
+    if (!id) {
+      setBookOwnerId(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        if (!cancelled) setBookOwnerId(null);
+        return;
+      }
+      const { data: row, error } = await supabase
+        .from('teacher_books')
+        .select('teacher_id')
+        .eq('id', id)
+        .maybeSingle();
+      if (cancelled) return;
+      if (error) {
+        console.warn('[WorkbookPro] teacher_books.teacher_id', error.message);
+      }
+      let owner: string | null =
+        row?.teacher_id != null && String(row.teacher_id).trim() !== ''
+          ? String(row.teacher_id).trim()
+          : null;
+      if (!owner) {
+        const { data: ws, error: wsErr } = await supabase
+          .from('teacher_worksheets')
+          .select('id')
+          .eq('book_id', id)
+          .eq('teacher_id', user.id)
+          .limit(1);
+        if (cancelled) return;
+        if (!wsErr && ws && ws.length > 0) {
+          owner = String(user.id).trim();
+        }
+      }
+      if (!cancelled) setBookOwnerId(owner);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
+
+  useEffect(() => {
+    if (viewMode !== 'settings' || settingsTab !== 'team' || !id) return;
+    let cancelled = false;
+    setSettingsTeamLoading(true);
+    void (async () => {
+      try {
+        const team = await fetchBookTeam(id);
+        if (cancelled) return;
+        setSettingsTeam(team);
+        const uidList: string[] = [];
+        if (team.ownerUserId) uidList.push(team.ownerUserId);
+        for (const sh of team.shares) uidList.push(sh.shared_with_user_id);
+        const displays = await fetchTeacherDisplaysByUserIds(uidList);
+        if (!cancelled) setTeamDisplays(displays);
+      } catch {
+        if (!cancelled) {
+          setSettingsTeam(null);
+          setTeamDisplays(new Map());
+        }
+      } finally {
+        if (!cancelled) setSettingsTeamLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [viewMode, settingsTab, id]);
+
+  useEffect(() => {
+    const raw = searchParams.get('invite');
+    const token = raw?.trim();
+    if (!token || !id || !layoutUserId) return;
+    const dedupeKey = `${id}:${token}`;
+    if (laioutBookInviteConsumedKeys.has(dedupeKey)) return;
+    laioutBookInviteConsumedKeys.add(dedupeKey);
+
+    void (async () => {
+      const r = await acceptTeacherBookInvite(token);
+      setSearchParams(
+        (prev) => {
+          const n = new URLSearchParams(prev);
+          n.delete('invite');
+          return n;
+        },
+        { replace: true },
+      );
+      if (r.ok) {
+        if (r.note === 'added') toast.success('Kniha byla přidána k tvému účtu.');
+        else if (r.note === 'already_shared') toast.success('Už máš k této knize přístup.');
+        else if (r.note === 'owner_skip') toast.message('Jsi vlastníkem této knihy.');
+      } else {
+        toast.error(r.message);
+      }
+    })();
+  }, [id, layoutUserId, searchParams, setSearchParams]);
 
   useEffect(
     () => () => {
@@ -289,10 +553,17 @@ export function WorkbookProLayout({ theme, toggleTheme }: WorkbookProLayoutProps
     [id],
   );
   
-  // Track Space key for lasso vs pan conflict resolution
+  // Track Space key for lasso vs pan conflict resolution (ne v input/textarea — Design systém 2 chat)
   useEffect(() => {
+    const editable = (t: EventTarget | null) => {
+      if (!t || !(t instanceof HTMLElement)) return false;
+      const tag = t.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
+      if (t.isContentEditable) return true;
+      return !!t.closest('[contenteditable="true"]');
+    };
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.code === 'Space') setIsSpacePressed(true);
+      if (e.code === 'Space' && !editable(e.target)) setIsSpacePressed(true);
     };
     const handleKeyUp = (e: KeyboardEvent) => {
       if (e.code === 'Space') setIsSpacePressed(false);
@@ -346,35 +617,52 @@ export function WorkbookProLayout({ theme, toggleTheme }: WorkbookProLayoutProps
     if (!id) return;
     debugWorkbookLayout('load-start', { workbookId: id, showSpinner });
 
-    // 1. Serve from cache immediately so the UI appears instantly (only for background refreshes)
     const cache = readCache();
     const fullCache = readFullWorksheetCache();
-    if (cache && Object.keys(cache.meta).length > 0) {
-      debugWorkbookLayout('apply-cache', {
-        workbookId: id,
-        worksheetCount: Object.keys(cache.meta).length,
-        fullWorksheetCount: Object.keys(fullCache).length,
-      });
-      applyMeta(
-        cache.meta,
-        undefined,
-        workbookRef.current.pages.length === 0 ? fullCache : undefined,
-      );
-      setLoadingReal(false);
-    } else if (showSpinner) {
-      setLoadingReal(true);
-    }
 
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      if (!user) {
+        setLayoutUserId(null);
+        setBookOwnerId(null);
+        return;
+      }
+      setLayoutUserId(user.id);
 
-      // 2a. Load book metadata from teacher_books (title + total_pages)
+      // 2a. Nejdřív řádek knihy (total_pages) — cache/applyMeta jinak přepíše limit na 96
       const { data: bookRow } = await supabase
         .from('teacher_books')
-        .select('title, color, total_pages')
+        .select('title, color, total_pages, design_system_id')
         .eq('id', id)
-        .single();
+        .maybeSingle();
+
+      if (
+        bookRow != null &&
+        bookRow.total_pages != null &&
+        Number.isFinite(Number(bookRow.total_pages)) &&
+        Number(bookRow.total_pages) > 0
+      ) {
+        bookPageLimitFromDbRef.current = Math.round(Number(bookRow.total_pages));
+      } else {
+        bookPageLimitFromDbRef.current = undefined;
+      }
+
+      if (cache && Object.keys(cache.meta).length > 0) {
+        debugWorkbookLayout('apply-cache', {
+          workbookId: id,
+          worksheetCount: Object.keys(cache.meta).length,
+          fullWorksheetCount: Object.keys(fullCache).length,
+        });
+        applyMeta(
+          cache.meta,
+          undefined,
+          workbookRef.current.pages.length === 0 ? fullCache : undefined,
+        );
+        setLoadingReal(false);
+      } else if (showSpinner) {
+        setLoadingReal(true);
+      }
+
       if (bookRow) {
         setWorkbook(prev => ({
           ...prev,
@@ -384,6 +672,19 @@ export function WorkbookProLayout({ theme, toggleTheme }: WorkbookProLayoutProps
             pageLimit: resolvePageLimitFromDbAndPrev(bookRow.total_pages, prev.settings.pageLimit),
           },
         }));
+
+        const selectedDesignSystemId =
+          typeof bookRow.design_system_id === 'string' && bookRow.design_system_id.trim().length > 0
+            ? bookRow.design_system_id
+            : null;
+        setAppliedBookDesignSystemId(selectedDesignSystemId);
+
+        if (selectedDesignSystemId) {
+          const ds = await getDesignSystem(selectedDesignSystemId);
+          setBookDesignSystem(ds);
+        } else {
+          setBookDesignSystem(null);
+        }
       }
 
       // 2b. Lightweight query — only id, name, updated_at (no content blob!)
@@ -569,6 +870,61 @@ export function WorkbookProLayout({ theme, toggleTheme }: WorkbookProLayoutProps
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
+  const syncExistingBookPagesWithDesignSystem = useCallback(async (
+    ds: DesignSystem,
+    options?: { toastOnSuccess?: boolean },
+  ) => {
+    if (!id || !ds.id || String(ds.id).startsWith('local-')) return;
+
+    const result = await syncDesignSystemToBookWorksheets(id, ds);
+    await loadWorksheets(false);
+
+    if (options?.toastOnSuccess !== false) {
+      toast.success(
+        result.syncedCount > 0
+          ? `Design system propsán do ${result.syncedCount} stran/kapitol.`
+          : 'Kniha zatím nemá žádné stránky ke synchronizaci.',
+      );
+    }
+  }, [id, loadWorksheets]);
+
+  const handleBookDesignSystemChange = useCallback((ds: DesignSystem | null) => {
+    setBookDesignSystem(ds);
+
+    if (!ds || !appliedBookDesignSystemId || ds.id !== appliedBookDesignSystemId) return;
+    if (!ds.id || String(ds.id).startsWith('local-')) return;
+
+    latestSyncedDesignSystemRef.current = ds;
+    if (designSystemSyncTimerRef.current) clearTimeout(designSystemSyncTimerRef.current);
+    designSystemSyncTimerRef.current = setTimeout(() => {
+      const latest = latestSyncedDesignSystemRef.current;
+      if (!latest) return;
+      void syncExistingBookPagesWithDesignSystem(latest, { toastOnSuccess: false });
+    }, 1200);
+  }, [appliedBookDesignSystemId, syncExistingBookPagesWithDesignSystem]);
+
+  /** Vlastní layout design systému → Pro editor (session stash), nová karta — kniha zůstane otevřená. */
+  const openDesignSystemLayoutInProEditor = useCallback(
+    (layoutId: string, dsSnapshot?: DesignSystem | null) => {
+      const ds = dsSnapshot ?? bookDesignSystem;
+      if (!id || !ds) {
+        toast.error('Nelze otevřít editor — chybí kniha nebo design systém.');
+        return;
+      }
+      const url = buildStashedProEditorUrlForDesignSystemCustomLayout(ds, layoutId, {
+        pageFormat: workbook.settings.pageFormat,
+        bookId: id,
+        workbookId: id,
+      });
+      if (!url) {
+        toast.error('Vlastní layout nebyl nalezen.');
+        return;
+      }
+      window.open(url, '_blank', 'noopener,noreferrer');
+    },
+    [id, bookDesignSystem, workbook.settings.pageFormat],
+  );
+
   /** Rebuild workbook pages/chapters/worksheets from lightweight meta */
   function applyMeta(
     meta: Record<string, { name: string; title: string; pageCount: number }>,
@@ -617,10 +973,18 @@ export function WorkbookProLayout({ theme, toggleTheme }: WorkbookProLayoutProps
 
       const contentPages = pages.length;
       const prevLimit = prev.settings.pageLimit;
+      const dbPlan = bookPageLimitFromDbRef.current;
       const intended =
-        prevLimit != null && prevLimit >= 1 ? prevLimit : DEFAULT_BOOK_PAGE_LIMIT;
-      // Limit stránek knihy ≠ počet vyplněných stran — nesmíme ho shodit na pages.length při jedné kapitole
-      const pageLimit = Math.max(intended, contentPages, 1);
+        dbPlan != null && dbPlan >= 1
+          ? dbPlan
+          : prevLimit != null && prevLimit >= 1
+            ? prevLimit
+            : DEFAULT_BOOK_PAGE_LIMIT;
+      // Známe plán z teacher_books — nesmí ho přebít vysoký pageCount z meta jedné kapitoly (jinak 48 → 96)
+      const pageLimit =
+        dbPlan != null && dbPlan >= 1
+          ? Math.max(dbPlan, Math.min(contentPages, dbPlan), 1)
+          : Math.max(intended, contentPages, 1);
 
       return {
         ...prev,
@@ -813,22 +1177,28 @@ export function WorkbookProLayout({ theme, toggleTheme }: WorkbookProLayoutProps
 
   const closeLibraryPanel = useCallback(() => setShowLibraryPanel(false), []);
 
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        const list = await getDesignSystems();
-        if (!cancelled && list.length > 0) {
-          setBookDesignSystem((prev) => prev ?? list[0]);
-        }
-      } catch {
-        /* ignore */
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const persistBookDesignSystemSelection = useCallback(async (ds: DesignSystem) => {
+    if (!id) return;
+    if (!ds.id || String(ds.id).startsWith('local-')) {
+      toast.info('Nejprve design system uložte.');
+      return;
+    }
+
+    setBookDesignSystem(ds);
+    const { error } = await supabase
+      .from('teacher_books')
+      .update({ design_system_id: ds.id })
+      .eq('id', id);
+
+    if (error) {
+      console.error('[WorkbookPro] design_system_id persist', error);
+      toast.error('Nepodařilo se nastavit design system knihy.');
+      return;
+    }
+
+    setAppliedBookDesignSystemId(ds.id);
+    await syncExistingBookPagesWithDesignSystem(ds, { toastOnSuccess: true });
+  }, [id, syncExistingBookPagesWithDesignSystem]);
 
   // Blokovat beforeunload během ukládání
   useEffect(() => {
@@ -845,10 +1215,14 @@ export function WorkbookProLayout({ theme, toggleTheme }: WorkbookProLayoutProps
   }, [saveStatus]);
   
   const handleEditPage = useCallback((pageId: string, worksheetId: string, worksheetPageIndex = 0) => {
+    const ws = workbook.worksheets?.[worksheetId];
+    if (ws) {
+      stashWorksheetForEditorSession(worksheetId, ws);
+    }
     navigate(
       `/admin/worksheet-pro/${worksheetId}?offline=1&page=${worksheetPageIndex + 1}&pageFormat=${workbook.settings.pageFormat}&workbookId=${workbook.id}&bookId=${workbook.id}`
     );
-  }, [navigate, workbook.settings.pageFormat, workbook.id]);
+  }, [navigate, workbook.settings.pageFormat, workbook.id, workbook.worksheets]);
   
   const handleRemovePage = useCallback((pageId: string) => {
     setWorkbook(prev => ({
@@ -886,13 +1260,15 @@ export function WorkbookProLayout({ theme, toggleTheme }: WorkbookProLayoutProps
 
   /**
    * Create a new chapter (worksheet) starting at a specific page number,
-   * save it to Supabase with book_id, then open the Pro editor.
+   * uložit přes saveWorksheetAwait (strip base64, book_id), pak otevřít editor.
    */
   const handleAddChapterAtPage = useCallback(async (startPageNum: number) => {
     const newWsId = `ws-${Date.now()}`;
-    const newWorksheet = createEmptyWorksheet(newWsId);
+    const baseWorksheet = createEmptyWorksheet(newWsId);
+    const newWorksheet = bookDesignSystem
+      ? applyDesignSystemSnapshotToWorksheet(baseWorksheet, bookDesignSystem)
+      : baseWorksheet;
 
-    // Optimistically add the page to local state
     const chapterId = `chapter-${newWsId}`;
     const newPage: WorkbookPage = {
       id: `page-${newWsId}-0`,
@@ -902,12 +1278,22 @@ export function WorkbookProLayout({ theme, toggleTheme }: WorkbookProLayoutProps
       startsChapterId: chapterId,
     };
 
-    setWorkbook(prev => ({
+    const { ok, error: saveErr } = await saveWorksheetAwait(newWorksheet, null, workbook.id);
+    if (!ok) {
+      const msg = saveErr ?? '';
+      toast.error(
+        msg.includes('Nepřihlášen') || msg.includes('No user')
+          ? 'Pro uložení kapitoly se přihlas.'
+          : `Nepodařilo se uložit kapitolu: ${msg}`,
+      );
+      return;
+    }
+
+    setWorkbook((prev) => ({
       ...prev,
-      pages: [
-        ...prev.pages.filter(p => p.pageNumber !== startPageNum),
-        newPage,
-      ].sort((a, b) => a.pageNumber - b.pageNumber),
+      pages: [...prev.pages.filter((p) => p.pageNumber !== startPageNum), newPage].sort(
+        (a, b) => a.pageNumber - b.pageNumber,
+      ),
       chapters: [
         ...prev.chapters,
         {
@@ -921,30 +1307,74 @@ export function WorkbookProLayout({ theme, toggleTheme }: WorkbookProLayoutProps
       updatedAt: new Date().toISOString(),
     }));
 
-    // Save worksheet to Supabase immediately with book_id
-    try {
-      const { supabase: sb } = await import('../../utils/supabase/client');
-      const { data: { user } } = await sb.auth.getUser();
-      if (user) {
-        await sb.from('teacher_worksheets').upsert({
-          id: newWsId,
-          teacher_id: user.id,
-          book_id: workbook.id,
-          name: 'Nová kapitola',
-          content: newWorksheet,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        }, { onConflict: 'id' });
-      }
-    } catch (e) {
-      console.error('[WorkbookPro] Failed to save new chapter to Supabase:', e);
-    }
-
+    stashWorksheetForEditorSession(newWsId, newWorksheet);
     navigate(
-      `/admin/worksheet-pro/${newWsId}?offline=1&pageFormat=${workbook.settings.pageFormat}&workbookId=${workbook.id}&bookId=${workbook.id}`
+      `/admin/worksheet-pro/${newWsId}?offline=1&page=1&pageFormat=${workbook.settings.pageFormat}&workbookId=${workbook.id}&bookId=${workbook.id}`
     );
-  }, [workbook.id, workbook.pages, workbook.chapters, workbook.settings.pageFormat, navigate]);
-  
+  }, [bookDesignSystem, workbook.id, workbook.pages, workbook.chapters, workbook.settings.pageFormat, navigate]);
+
+  /** Poslední dataset z pipeline agentů → nové stránky + pracovní listy knihy */
+  const handleApplyPipelineDatasetToBook = useCallback(
+    async (datasetJson: string) => {
+      const built = buildPageUnitsFromPipelineDataset(datasetJson);
+      if (!built.ok) {
+        toast.error(built.error);
+        return;
+      }
+      let units = built.units;
+      const limit =
+        workbook.settings.pageLimit != null && workbook.settings.pageLimit >= 1
+          ? workbook.settings.pageLimit
+          : DEFAULT_BOOK_PAGE_LIMIT;
+      const available = Math.max(0, limit - workbook.pages.length);
+      if (available <= 0) {
+        toast.error('Kniha je na limitu stránek — zvyš limit v nastavení knihy.');
+        return;
+      }
+      if (units.length > available) {
+        units = units.slice(0, available);
+        toast.warning(`Přidáno jen ${available} stránek (limit knihy ${limit}).`);
+      }
+
+      const chapterId = `chapter-pipeline-${Date.now()}`;
+      const newChapter: WorkbookChapter = {
+        id: chapterId,
+        title: 'Z pipeline',
+        color: CHAPTER_COLORS[workbook.chapters.length % CHAPTER_COLORS.length],
+        order: workbook.chapters.length + 1,
+      };
+
+      setWorkbook((prev) => {
+        const startNum = prev.pages.length + 1;
+        const newWorksheets: Record<string, Worksheet> = {};
+        const newPages: WorkbookPage[] = [];
+        units.forEach((unit, i) => {
+          const wsId = `ws-${crypto.randomUUID()}`;
+          const ws = createWorksheetFromPipelineUnit(unit, wsId, bookDesignSystem);
+          newWorksheets[wsId] = ws;
+          newPages.push({
+            id: `page-${wsId}-0`,
+            pageNumber: startNum + i,
+            worksheetId: wsId,
+            worksheetPageIndex: 0,
+            startsChapterId: i === 0 ? chapterId : undefined,
+          });
+          saveWorksheet(ws, null, prev.id);
+        });
+        return {
+          ...prev,
+          pages: [...prev.pages, ...newPages],
+          chapters: [...prev.chapters, newChapter],
+          worksheets: { ...prev.worksheets, ...newWorksheets },
+          updatedAt: new Date().toISOString(),
+        };
+      });
+
+      toast.success(`Přidáno ${units.length} stránek z datasetu. Přepni na náhled knihy (plátno).`);
+    },
+    [bookDesignSystem, workbook.chapters.length, workbook.pages.length, workbook.settings.pageLimit],
+  );
+
   const handleEditCover = useCallback(() => {
     toast.info('Editor obálky - TODO');
   }, []);
@@ -1382,9 +1812,19 @@ export function WorkbookProLayout({ theme, toggleTheme }: WorkbookProLayoutProps
     setSelectedPages(chapterPages);
     toast.info(`Vybráno ${chapterPages.size} stránek z kapitoly "${chapter.title}"`);
   }, [workbook.chapters, workbook.pages]);
+
+  /** Plátno design systému / komentáře — bez postranního panelu kapitol. */
+  const bookChromeHidesChapterPanel =
+    viewMode === 'design' ||
+    viewMode === 'design2' ||
+    viewMode === 'agentPipeline' ||
+    viewMode === 'collaboration';
   
   return (
-    <div className="h-screen flex bg-slate-900 text-white overflow-hidden">
+    <div
+      className="h-screen flex overflow-hidden text-white"
+      style={{ backgroundColor: '#0f172a', colorScheme: 'dark' }}
+    >
       {/* Narrow mini sidebar — always visible */}
       <ProMiniSidebar
         activePanel="add"
@@ -1393,7 +1833,11 @@ export function WorkbookProLayout({ theme, toggleTheme }: WorkbookProLayoutProps
         hideAI
         appMode="book"
         bookViewMode={viewMode}
-        onBookViewChange={(m) => { setViewMode(m); closeLibraryPanel(); }}
+        onBookViewChange={(m) => {
+          closeLibraryPanel();
+          if (m === 'settings') setSettingsTab('general');
+          setViewMode(m);
+        }}
         onLogoClick={() => setShowLibraryPanel((o) => !o)}
       />
 
@@ -1404,12 +1848,86 @@ export function WorkbookProLayout({ theme, toggleTheme }: WorkbookProLayoutProps
         currentBookId={id}
       />
 
-      {/* Postranní panel knihy (kapitoly) — v design systému / data setu ne, ať zůstane jen mini-sidebar + editor */}
-      {sidebarOpen && viewMode !== 'design' && viewMode !== 'dataset' && (
+      {/* Postranní panel — kniha (obálka + kapitoly) nebo navigace Nastavení */}
+      {sidebarOpen && !bookChromeHidesChapterPanel && (
         <aside 
           className="flex-shrink-0 flex flex-col overflow-hidden"
-          style={{ backgroundColor: '#1e293b', width: '320px', borderRight: '1px solid #334155' }}
+          style={{
+            backgroundColor: WORKBOOK_CHAPTER_PANEL_BG,
+            width: viewMode === 'settings' ? '260px' : '320px',
+            borderRight: '1px solid #334155',
+          }}
         >
+          {viewMode === 'settings' ? (
+            <>
+              <div className="flex flex-col border-b border-slate-700/90" style={{ padding: '12px 14px' }}>
+                <div className="mb-3 flex items-center justify-between">
+                  <span className="text-[13px] font-semibold text-slate-200">Nastavení</span>
+                  <button
+                    type="button"
+                    onClick={() => setSidebarOpen(false)}
+                    className="rounded p-1 text-slate-500 hover:bg-slate-700/80 hover:text-slate-300"
+                    title="Zavřít panel"
+                  >
+                    <PanelLeftClose size={16} />
+                  </button>
+                </div>
+                <p className="text-[11px] leading-snug text-slate-500">{workbook.title}</p>
+              </div>
+              <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto py-3">
+                <div className="px-3 pb-2 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                  Kniha
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSettingsTab('general')}
+                  className="mx-2 flex items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] font-medium transition-colors"
+                  style={{
+                    backgroundColor: settingsTab === 'general' ? 'rgba(148, 163, 184, 0.12)' : 'transparent',
+                    color: settingsTab === 'general' ? '#f8fafc' : '#94a3b8',
+                    border: 'none',
+                    cursor: 'pointer',
+                    font: 'inherit',
+                  }}
+                >
+                  <List size={17} strokeWidth={2} style={{ color: settingsTab === 'general' ? '#e2e8f0' : '#64748b', flexShrink: 0 }} />
+                  Obecné
+                </button>
+                <div className="mx-4 my-2 h-px bg-slate-700/80" role="separator" />
+                <button
+                  type="button"
+                  onClick={() => setSettingsTab('team')}
+                  className="mx-2 flex items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] font-medium transition-colors"
+                  style={{
+                    backgroundColor: settingsTab === 'team' ? 'rgba(148, 163, 184, 0.12)' : 'transparent',
+                    color: settingsTab === 'team' ? '#f8fafc' : '#94a3b8',
+                    border: 'none',
+                    cursor: 'pointer',
+                    font: 'inherit',
+                  }}
+                >
+                  <Users size={17} strokeWidth={2} style={{ color: settingsTab === 'team' ? '#e2e8f0' : '#64748b', flexShrink: 0 }} />
+                  Tým
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSettingsTab('dataset')}
+                  className="mx-2 flex items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] font-medium transition-colors"
+                  style={{
+                    backgroundColor: settingsTab === 'dataset' ? 'rgba(148, 163, 184, 0.12)' : 'transparent',
+                    color: settingsTab === 'dataset' ? '#f8fafc' : '#94a3b8',
+                    border: 'none',
+                    cursor: 'pointer',
+                    font: 'inherit',
+                  }}
+                >
+                  <Database size={17} strokeWidth={2} style={{ color: settingsTab === 'dataset' ? '#e2e8f0' : '#64748b', flexShrink: 0 }} />
+                  Data set
+                </button>
+              </nav>
+            </>
+          ) : (
+            <>
           {/* Title + Toggle */}
           <div style={{ padding: '12px 16px', borderBottom: '1px solid #334155' }}>
             <div className="flex items-center justify-between mb-3">
@@ -1459,18 +1977,106 @@ export function WorkbookProLayout({ theme, toggleTheme }: WorkbookProLayoutProps
             </div>
           </div>
 
-          {/* Chapters list - when canvas viewMode */}
+          {/* Obálka + Kapitoly — jeden sloupec, přepíná hlavní plátno (covers / canvas) */}
+          <div className="flex flex-col flex-1 min-h-0 border-t border-slate-700/80">
+            <button
+              type="button"
+              onClick={() => {
+                setViewMode('covers');
+                closeLibraryPanel();
+              }}
+              className="flex w-full items-center gap-3 text-left transition-colors"
+              style={{
+                padding: '12px 16px',
+                flexShrink: 0,
+                backgroundColor: viewMode === 'covers' ? 'rgba(99, 102, 241, 0.14)' : 'transparent',
+                borderLeft: viewMode === 'covers' ? '3px solid #818cf8' : '3px solid transparent',
+                color: '#f1f5f9',
+                cursor: 'pointer',
+                border: 'none',
+                font: 'inherit',
+              }}
+              title="Upravit obálku knihy"
+            >
+              <BookOpen
+                size={18}
+                strokeWidth={2}
+                style={{
+                  color: viewMode === 'covers' ? '#a5b4fc' : '#64748b',
+                  flexShrink: 0,
+                }}
+              />
+              <span style={{ fontSize: 14, fontWeight: 600, letterSpacing: '0.01em' }}>Obálka</span>
+              <ChevronRight
+                size={16}
+                className="ml-auto shrink-0 opacity-50"
+                style={{ color: viewMode === 'covers' ? '#c7d2fe' : '#64748b' }}
+              />
+            </button>
+
+            <div
+              style={{
+                height: 1,
+                backgroundColor: '#334155',
+                margin: '0 16px',
+                flexShrink: 0,
+              }}
+              role="separator"
+              aria-hidden
+            />
+
+            <div
+              className="flex shrink-0 items-stretch gap-0"
+              style={{ padding: '8px 8px 8px 0' }}
+            >
+              <button
+                type="button"
+                onClick={() => {
+                  setViewMode('canvas');
+                  closeLibraryPanel();
+                }}
+                className="flex min-w-0 flex-1 items-center gap-3 text-left transition-colors"
+                style={{
+                  padding: '8px 8px 8px 16px',
+                  backgroundColor: viewMode === 'canvas' ? 'rgba(99, 102, 241, 0.14)' : 'transparent',
+                  borderLeft: viewMode === 'canvas' ? '3px solid #818cf8' : '3px solid transparent',
+                  color: '#f1f5f9',
+                  cursor: 'pointer',
+                  border: 'none',
+                  font: 'inherit',
+                  borderRadius: '0 6px 6px 0',
+                }}
+                title="Struktura knihy a kapitoly"
+              >
+                <span style={{ fontSize: 14, fontWeight: 600, letterSpacing: '0.01em', color: '#cbd5e1' }}>
+                  Kapitoly
+                </span>
+                <ChevronRight
+                  size={16}
+                  className="ml-auto shrink-0 opacity-50"
+                  style={{ color: viewMode === 'canvas' ? '#c7d2fe' : '#64748b' }}
+                />
+              </button>
+              {viewMode === 'canvas' && (
+                <button
+                  type="button"
+                  className="flex shrink-0 items-center justify-center rounded-md p-2 text-slate-400 hover:bg-slate-700/80 hover:text-white"
+                  title="Nová kapitola (od 1. strany)"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleStartChapter(1);
+                  }}
+                >
+                  <Plus size={16} />
+                </button>
+              )}
+            </div>
+
+          {/* Seznam kapitol — jen při pohledu na plátno */}
           {viewMode === 'canvas' && (
-            <div className="flex-1 overflow-y-auto">
+            <div className="min-h-0 flex-1 overflow-y-auto border-t border-slate-700/50">
               <DndProvider backend={HTML5Backend}>
-                <div className="p-4">
-                  <div className="flex items-center justify-between mb-4">
-                    <h2 className="font-semibold text-sm text-slate-300">Kapitoly</h2>
-                    <button className="p-1 hover:bg-slate-700 rounded text-slate-400 hover:text-white">
-                      <Plus size={16} />
-                    </button>
-                  </div>
-                
+                <div className="p-4 pt-3">
                 <div>
                   {(() => {
                     // Kapitoly jsou v pořadí jak jsou v poli (uživatel je může přesouvat drag & drop)
@@ -1607,11 +2213,14 @@ export function WorkbookProLayout({ theme, toggleTheme }: WorkbookProLayoutProps
             </DndProvider>
           </div>
           )}
+          </div>
+            </>
+          )}
         </aside>
       )}
       
       {/* Toggle sidebar button when closed (jen když panel v daném režimu existuje) */}
-      {!sidebarOpen && viewMode !== 'design' && viewMode !== 'dataset' && (
+      {!sidebarOpen && !bookChromeHidesChapterPanel && (
         <button
           onClick={() => setSidebarOpen(true)}
           style={{
@@ -1636,10 +2245,19 @@ export function WorkbookProLayout({ theme, toggleTheme }: WorkbookProLayoutProps
         <main 
           ref={canvasContainerRef}
           className={
-            viewMode === 'design' || viewMode === 'dataset'
-              ? 'flex-1 relative flex flex-col min-h-0 overflow-hidden'
-              : 'flex-1 relative'
+            bookChromeHidesChapterPanel
+              ? 'relative flex min-h-0 flex-1 flex-col overflow-hidden'
+              : 'relative min-h-0 flex-1'
           }
+          style={{
+            backgroundColor:
+              bookChromeHidesChapterPanel
+                ? '#0d1117'
+                : viewMode === 'settings'
+                  ? WORKBOOK_CHAPTER_PANEL_BG
+                  : '#060a11',
+            colorScheme: 'dark',
+          }}
           onMouseDown={viewMode === 'canvas' ? handleLassoStart : undefined}
           onMouseMove={viewMode === 'canvas' ? handleLassoMove : undefined}
           onMouseUp={viewMode === 'canvas' ? handleLassoEnd : undefined}
@@ -2675,143 +3293,300 @@ export function WorkbookProLayout({ theme, toggleTheme }: WorkbookProLayoutProps
             <div className="flex-1 flex flex-col min-h-0 overflow-hidden" style={{ backgroundColor: '#0d1117' }}>
               <DesignSystemPanel
                 activeDesignSystem={bookDesignSystem}
-                onDesignSystemChange={setBookDesignSystem}
-                onApplyToProject={(ds) => {
-                  setBookDesignSystem(ds);
-                }}
+                onDesignSystemChange={handleBookDesignSystemChange}
+                onApplyToProject={persistBookDesignSystemSelection}
+                activeCategory={designSidebarCategory}
+                onCategoryChange={setDesignSidebarCategory}
+                openLayoutInProEditor={openDesignSystemLayoutInProEditor}
               />
             </div>
-          ) : viewMode === 'dataset' ? (
-            <div className="flex-1 flex flex-col min-h-0 overflow-hidden" style={{ backgroundColor: '#0f172a' }}>
-              <div className="flex-1 overflow-y-auto p-4 min-h-0">
-                <DatasetPanel scopeId={id ? `workbook-${id}` : 'workbook'} />
-              </div>
-            </div>
+          ) : viewMode === 'design2' ? (
+            <DesignSystemCanvasWorkspace
+              activeDesignSystem={bookDesignSystem}
+              onDesignSystemChange={handleBookDesignSystemChange}
+              bookEditorContext={{
+                bookId: workbook.id,
+                workbookId: workbook.id,
+                pageFormat: workbook.settings.pageFormat,
+              }}
+              onApplyToBook={persistBookDesignSystemSelection}
+              onOpenClassicEditor={(layoutId, dsSnapshot) => {
+                if (layoutId) openDesignSystemLayoutInProEditor(layoutId, dsSnapshot);
+              }}
+            />
+          ) : viewMode === 'agentPipeline' ? (
+            <BookAgentPipelineWorkspace
+              bookId={workbook.id}
+              bookDesignSystem={bookDesignSystem}
+              onApplyPipelineDatasetToBook={handleApplyPipelineDatasetToBook}
+            />
+          ) : viewMode === 'collaboration' ? (
+            <WorkbookCollaborationPanel bookId={id ?? ''} />
           ) : (
-            // Settings view - full settings form in main area
-            <div className="h-full overflow-y-auto" style={{ backgroundColor: '#0f172a' }}>
-              <div className="max-w-2xl mx-auto p-8">
-                <div className="flex items-center gap-3 mb-8">
-                  <Settings size={24} style={{ color: '#64748b' }} />
-                  <h1 style={{ fontSize: '24px', fontWeight: 600, color: '#f1f5f9' }}>
-                    Nastavení sešitu
-                  </h1>
-                </div>
-                
-                <div className="space-y-6">
-                  {/* Title */}
-                  <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-2">Název sešitu</label>
-                    <input
-                      type="text"
-                      value={workbook.title}
-                      onChange={(e) => setWorkbook(prev => ({ ...prev, title: e.target.value }))}
-                      className="w-full px-4 py-3 bg-slate-800 border border-slate-600 rounded-lg text-base focus:outline-none focus:border-blue-500 text-white"
-                      placeholder="Zadejte název sešitu..."
-                    />
-                  </div>
-                  
-                  {/* Description */}
-                  <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-2">Popis</label>
-                    <textarea
-                      value={workbook.description}
-                      onChange={(e) => setWorkbook(prev => ({ ...prev, description: e.target.value }))}
-                      rows={4}
-                      className="w-full px-4 py-3 bg-slate-800 border border-slate-600 rounded-lg text-base focus:outline-none focus:border-blue-500 resize-none text-white"
-                      placeholder="Popis sešitu..."
-                    />
-                  </div>
-                  
-                  <div className="border-t border-slate-700 pt-6">
-                    <h2 className="text-lg font-medium text-slate-200 mb-4">Formát stránky</h2>
-                    
-                    <div className="grid grid-cols-2 gap-4">
-                      {/* Page format */}
-                      <div>
-                        <label className="block text-sm text-slate-400 mb-2">Formát</label>
-                        <select
-                          value={workbook.settings.pageFormat}
-                          onChange={(e) => setWorkbook(prev => ({
-                            ...prev,
-                            settings: { ...prev.settings, pageFormat: e.target.value as 'a4' | 'b5' | 'a5' },
-                          }))}
-                          className="w-full px-4 py-3 bg-slate-800 border border-slate-600 rounded-lg text-base focus:outline-none focus:border-blue-500 text-white"
-                        >
-                          <option value="a4">A4 (210 × 297 mm)</option>
-                          <option value="b5">B5 (176 × 250 mm)</option>
-                          <option value="a5">A5 (148 × 210 mm)</option>
-                        </select>
+            <div className={ST.shell} style={STShellStyle}>
+              <div className={ST.inner} style={STInnerStyle}>
+                {settingsTab === 'general' && (
+                  <>
+                    <header className="mb-9">
+                      <h1 className={ST.h1}>Obecné</h1>
+                      <p className={ST.lead}>Název, popis, formát a zobrazení sešitu</p>
+                    </header>
+
+                    <section className={ST.card} style={STCardStyle}>
+                      <h2 className={ST.cardTitle}>Základní údaje</h2>
+                      <div className="mt-5 space-y-5">
+                        <div>
+                          <label className={ST.labelCap}>Název sešitu</label>
+                          <input
+                            type="text"
+                            value={workbook.title}
+                            onChange={(e) => setWorkbook((prev) => ({ ...prev, title: e.target.value }))}
+                            className={ST.field}
+                            style={STFieldStyle}
+                            placeholder="Název knihy…"
+                          />
+                        </div>
+                        <div>
+                          <label className={ST.labelCap}>Popis</label>
+                          <textarea
+                            value={workbook.description}
+                            onChange={(e) => setWorkbook((prev) => ({ ...prev, description: e.target.value }))}
+                            rows={4}
+                            className={`${ST.field} resize-none`}
+                            style={STFieldStyle}
+                            placeholder="Krátký popis nebo poznámka pro tebe…"
+                          />
+                        </div>
                       </div>
-                      
-                      {/* Page limit */}
-                      <div>
-                        <label className="block text-sm text-slate-400 mb-2">
-                          Limit stránek:{' '}
-                          <span className="text-white font-medium">
-                            {workbook.settings.pageLimit ?? DEFAULT_BOOK_PAGE_LIMIT}
-                          </span>
+                    </section>
+
+                    <section className={ST.card} style={STCardStyle}>
+                      <h2 className={ST.cardTitle}>Formát stránky</h2>
+                      <p className={ST.cardDesc}>Velikost plátna a plánovaný počet stran v knize</p>
+                      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                        <div>
+                          <label className={ST.labelMuted}>Formát</label>
+                          <select
+                            value={workbook.settings.pageFormat}
+                            onChange={(e) =>
+                              setWorkbook((prev) => ({
+                                ...prev,
+                                settings: { ...prev.settings, pageFormat: e.target.value as 'a4' | 'b5' | 'a5' },
+                              }))
+                            }
+                            className={ST.field}
+                            style={STFieldStyle}
+                          >
+                            <option value="a4">A4 (210 × 297 mm)</option>
+                            <option value="b5">B5 (176 × 250 mm)</option>
+                            <option value="a5">A5 (148 × 210 mm)</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className={ST.labelMuted}>
+                            Limit stránek:{' '}
+                            <span className="font-medium text-slate-200">
+                              {workbook.settings.pageLimit ?? DEFAULT_BOOK_PAGE_LIMIT}
+                            </span>
+                          </label>
+                          <input
+                            type="range"
+                            min={8}
+                            max={128}
+                            step={8}
+                            value={workbook.settings.pageLimit ?? DEFAULT_BOOK_PAGE_LIMIT}
+                            onChange={(e) => {
+                              const v = parseInt(e.target.value, 10);
+                              setWorkbook((prev) => ({
+                                ...prev,
+                                settings: { ...prev.settings, pageLimit: v },
+                              }));
+                              schedulePersistBookPageLimit(v);
+                            }}
+                            className="mt-4 w-full"
+                            style={{ accentColor: '#6366f1' }}
+                          />
+                        </div>
+                      </div>
+                    </section>
+
+                    <section className={ST.card} style={STCardStyle}>
+                      <h2 className={ST.cardTitle}>Zobrazení</h2>
+                      <p className={ST.cardDesc}>Volby pro náhled a tisk knihy</p>
+                      <div className="space-y-3">
+                        <label className={ST.checkRow} style={STCheckRowStyle}>
+                          <input
+                            type="checkbox"
+                            checked={workbook.settings.showChapterColors}
+                            onChange={(e) =>
+                              setWorkbook((prev) => ({
+                                ...prev,
+                                settings: { ...prev.settings, showChapterColors: e.target.checked },
+                              }))
+                            }
+                            className="mt-0.5 h-5 w-5 shrink-0 rounded"
+                            style={{ accentColor: '#6366f1' }}
+                          />
+                          <div>
+                            <span className="text-sm font-medium text-slate-200">Zobrazit barvy kapitol</span>
+                            <p className="text-xs text-slate-500">Barevné označení stránek podle kapitol</p>
+                          </div>
                         </label>
-                        <input
-                          type="range"
-                          min={8}
-                          max={128}
-                          step={8}
-                          value={workbook.settings.pageLimit ?? DEFAULT_BOOK_PAGE_LIMIT}
-                          onChange={(e) => {
-                            const v = parseInt(e.target.value, 10);
-                            setWorkbook((prev) => ({
-                              ...prev,
-                              settings: { ...prev.settings, pageLimit: v },
-                            }));
-                            schedulePersistBookPageLimit(v);
-                          }}
-                          className="w-full mt-2"
-                        />
+                        <label className={ST.checkRow} style={STCheckRowStyle}>
+                          <input
+                            type="checkbox"
+                            checked={workbook.settings.showPageNumbers}
+                            onChange={(e) =>
+                              setWorkbook((prev) => ({
+                                ...prev,
+                                settings: { ...prev.settings, showPageNumbers: e.target.checked },
+                              }))
+                            }
+                            className="mt-0.5 h-5 w-5 shrink-0 rounded"
+                            style={{ accentColor: '#6366f1' }}
+                          />
+                          <div>
+                            <span className="text-sm font-medium text-slate-200">Zobrazit čísla stránek</span>
+                            <p className="text-xs text-slate-500">Číslování stránek v patičce</p>
+                          </div>
+                        </label>
                       </div>
-                    </div>
-                  </div>
-                  
-                  <div className="border-t border-slate-700 pt-6">
-                    <h2 className="text-lg font-medium text-slate-200 mb-4">Zobrazení</h2>
-                    
-                    <div className="space-y-3">
-                      {/* Show chapter colors */}
-                      <label className="flex items-center gap-3 cursor-pointer p-3 bg-slate-800 rounded-lg hover:bg-slate-750 transition-colors">
-                        <input
-                          type="checkbox"
-                          checked={workbook.settings.showChapterColors}
-                          onChange={(e) => setWorkbook(prev => ({
-                            ...prev,
-                            settings: { ...prev.settings, showChapterColors: e.target.checked },
-                          }))}
-                          className="w-5 h-5 rounded border-slate-600"
-                        />
-                        <div>
-                          <span className="text-sm font-medium text-slate-200">Zobrazit barvy kapitol</span>
-                          <p className="text-xs text-slate-400">Barevné označení stránek podle kapitol</p>
-                        </div>
-                      </label>
-                      
-                      {/* Show page numbers */}
-                      <label className="flex items-center gap-3 cursor-pointer p-3 bg-slate-800 rounded-lg hover:bg-slate-750 transition-colors">
-                        <input
-                          type="checkbox"
-                          checked={workbook.settings.showPageNumbers}
-                          onChange={(e) => setWorkbook(prev => ({
-                            ...prev,
-                            settings: { ...prev.settings, showPageNumbers: e.target.checked },
-                          }))}
-                          className="w-5 h-5 rounded border-slate-600"
-                        />
-                        <div>
-                          <span className="text-sm font-medium text-slate-200">Zobrazit čísla stránek</span>
-                          <p className="text-xs text-slate-400">Číslování stránek v patičce</p>
-                        </div>
-                      </label>
-                    </div>
-                  </div>
-                </div>
+                    </section>
+                  </>
+                )}
+
+                {settingsTab === 'team' && (
+                  <>
+                    <header className="mb-9">
+                      <h1 className={ST.h1}>Tým</h1>
+                      <p className={ST.lead}>
+                        Kdo má přístup ke knize. Jména bereme z profilu učitele (tabulka teachers) a z tvého účtu.
+                      </p>
+                    </header>
+
+                    <section className={ST.card} style={STCardStyle}>
+                      <h2 className={ST.cardTitle}>Členové</h2>
+                      <p className={ST.cardDesc}>
+                        U pozvaných bez záznamu v databázi zobrazíme @jméno nebo zkrácené ID — po přihlášení a doplnění profilu se objeví jméno.
+                      </p>
+                      <div className="flex flex-wrap" style={{ gap: 20 }}>
+                        {settingsTeam?.ownerUserId ? (() => {
+                          const uid = settingsTeam.ownerUserId;
+                          const d = teamDisplays.get(uid);
+                          const slug = settingsTeam.ownerMentionSlug;
+                          const primary =
+                            d?.displayName ||
+                            (slug ? `@${slug.replace(/^@/, '')}` : 'Vlastník');
+                          const initials = initialsFromDisplayName(d?.displayName || primary, uid);
+                          return (
+                            <div key={uid} style={TEAM_MEMBER_COL_STYLE}>
+                              <div
+                                style={teamAvatarStyle(String(hashHue(uid)))}
+                                title={d?.email ?? 'Vlastník knihy'}
+                              >
+                                {initials}
+                              </div>
+                              <div className="w-full min-w-0">
+                                <div className="truncate text-[13px] font-semibold text-slate-100" title={primary}>
+                                  {primary}
+                                </div>
+                                <div className="mt-0.5 truncate text-[11px] text-slate-500">Vlastník knihy</div>
+                                {slug ? (
+                                  <div className="mt-0.5 truncate text-[10px] text-slate-600">
+                                    @{slug.replace(/^@/, '')}
+                                  </div>
+                                ) : null}
+                                {d?.email ? (
+                                  <div className="mt-1 truncate text-[10px] text-slate-600" title={d.email}>
+                                    {d.email}
+                                  </div>
+                                ) : null}
+                              </div>
+                            </div>
+                          );
+                        })() : null}
+                        {(settingsTeam?.shares ?? []).map((s) => {
+                          const d = teamDisplays.get(s.shared_with_user_id);
+                          const slug = s.mention_slug;
+                          const primary =
+                            d?.displayName ||
+                            (slug ? `@${slug.replace(/^@/, '')}` : `Kolega (${s.shared_with_user_id.slice(0, 8)}…)`);
+                          const initials = initialsFromDisplayName(d?.displayName || primary, s.shared_with_user_id);
+                          const roleLabel = s.access_role === 'commenter' ? 'Komentátor' : 'Editor';
+                          return (
+                            <div key={s.id} style={TEAM_MEMBER_COL_STYLE}>
+                              <div
+                                style={teamAvatarStyle(String(hashHue(s.shared_with_user_id)))}
+                                title={d?.email ?? roleLabel}
+                              >
+                                {initials}
+                              </div>
+                              <div className="w-full min-w-0">
+                                <div className="truncate text-[13px] font-semibold text-slate-100" title={primary}>
+                                  {primary}
+                                </div>
+                                <div className="mt-0.5 truncate text-[11px] text-slate-500">{roleLabel}</div>
+                                {slug ? (
+                                  <div className="mt-0.5 truncate text-[10px] text-slate-600">
+                                    @{slug.replace(/^@/, '')}
+                                  </div>
+                                ) : null}
+                                {d?.email ? (
+                                  <div className="mt-1 truncate text-[10px] text-slate-600" title={d.email}>
+                                    {d.email}
+                                  </div>
+                                ) : null}
+                              </div>
+                            </div>
+                          );
+                        })}
+                        {settingsTeamLoading && id ? (
+                          <div className="flex items-center gap-2 text-sm text-slate-500">
+                            <Loader2 size={16} className="animate-spin" />
+                            Načítám tým…
+                          </div>
+                        ) : null}
+                        {!settingsTeamLoading &&
+                        settingsTeam &&
+                        !settingsTeam.ownerUserId &&
+                        (settingsTeam.shares?.length ?? 0) === 0 ? (
+                          <p className="text-sm text-slate-500">Zatím žádní pozvaní — přidej je níže.</p>
+                        ) : null}
+                        {!settingsTeamLoading && !settingsTeam && id ? (
+                          <p className="text-sm text-slate-500">Tým se nepodařilo načíst.</p>
+                        ) : null}
+                      </div>
+                    </section>
+
+                    <section className={ST.card} style={STCardStyle}>
+                      <h2 className={ST.cardTitle}>Aktivita a komentáře</h2>
+                      <p className="text-sm leading-relaxed text-slate-500">
+                        Přehled aktivity a vláken doplníme sem v další verzi. Rychlý přístup ke komentářům máš přes ikonu v úzkém
+                        levém panelu.
+                      </p>
+                    </section>
+
+                    {id ? (
+                      <section className={ST.card} style={STCardStyle}>
+                        <h2 className={ST.cardTitle}>Pozvánky a sdílení</h2>
+                        <p className={ST.cardDesc}>
+                          E-mail nebo odkaz — po přihlášení se kniha objeví v Laiout.
+                        </p>
+                        <BookShareControls bookId={id} isOwner={isBookOwnerUi} variant="settings" />
+                      </section>
+                    ) : null}
+                  </>
+                )}
+
+                {settingsTab === 'dataset' && (
+                  <>
+                    <header className="mb-8">
+                      <h1 className={ST.h1}>Data set</h1>
+                      <p className={ST.lead}>Podklady pro AI u této knihy</p>
+                    </header>
+                    <DatasetPanel scopeId={id ? `workbook-${id}` : 'workbook'} layout="stacked" />
+                  </>
+                )}
               </div>
             </div>
           )}

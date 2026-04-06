@@ -29,6 +29,7 @@ import {
   iconButtonStyle,
   getButtonVariantStyle,
   getSegmentedButtonStyle,
+  TEXT_COLORS,
 } from './block-settings/shared';
 import {
   X,
@@ -115,12 +116,14 @@ import {
   normalizeLayoutSectionContent,
 } from '../../utils/layout-sections';
 import {
+  getTextFlowAvailableFrameHeight,
   getTextFlowLineStep,
   getTextFlowNaturalFrameHeight,
   resolveTextFlowCombinedHeight,
   supportsTextFlow,
 } from '../../utils/text-flow';
 import { buildPisankaHtml, mergePisankaMiniApp } from '../../utils/mini-apps/pisanka';
+import { flattenDesignSystemSwatchesForPicker } from '../../types/design-system';
 
 // Asset picker context types
 type AssetPickerContext = 
@@ -219,6 +222,8 @@ interface ProBlockSettingsPanelProps {
   allBlocks?: WorksheetBlock[];
   onClose: () => void;
   onUpdateBlock: (id: string, updates: Partial<WorksheetBlock>) => void;
+  onResetToDesignSystem?: () => void;
+  designSystemSourceStatus?: 'design-system' | 'custom';
   onUpdateTextFlowFrameHeight?: (id: string, height?: number, options?: { reflow?: boolean }) => void;
   onApplyGroupLayout?: (id: string, mode: 'full' | 'half' | 'third') => void;
   onDeleteBlock: (id: string) => void;
@@ -295,6 +300,8 @@ export function ProBlockSettingsPanel({
   block,
   onClose,
   onUpdateBlock,
+  onResetToDesignSystem,
+  designSystemSourceStatus = 'design-system',
   onUpdateTextFlowFrameHeight,
   onApplyGroupLayout,
   onDeleteBlock,
@@ -320,6 +327,12 @@ export function ProBlockSettingsPanel({
   const [showVisualAdvanced, setShowVisualAdvanced] = useState(false);
   const [showVisualStylesSection, setShowVisualStylesSection] = useState(false);
   const supportsInlineTextAppearance = ['heading', 'paragraph', 'infobox', 'fill-blank', 'free-answer', 'multiple-choice', 'free-canvas'].includes(block.type);
+
+  const dsColorSwatches = useMemo(
+    () => flattenDesignSystemSwatchesForPicker(designSystem?.colors),
+    [designSystem?.colors],
+  );
+  const useDsColors = dsColorSwatches.length > 0;
 
   // Track the last textarea/input that had a text selection, so B/I/U buttons work
   // even after the panel steals focus (e.g. when opening the "DALŠÍ NASTAVENÍ" toggle).
@@ -593,6 +606,10 @@ export function ProBlockSettingsPanel({
     if (!hasTextFlowSupport) return 24;
     return getTextFlowLineStep(block.id, 24);
   }, [block.id, hasTextFlowSupport]);
+  const availableTextFlowHeight = useMemo(() => {
+    if (!hasTextFlowSupport) return 1500;
+    return getTextFlowAvailableFrameHeight(block.id) ?? 1500;
+  }, [block.id, hasTextFlowSupport]);
   const textFlowBaseHeight = hasTextFlowSupport
     ? (block.textFlowFrameHeight ?? measuredTextFlowNaturalHeight ?? 180)
     : 0;
@@ -733,7 +750,6 @@ export function ProBlockSettingsPanel({
           return 'custom';
         };
         const currentInfoboxPreset = getCurrentInfoboxPreset();
-        const dsSwatches = designSystem?.colors.flatMap((group) => group.swatches) ?? [];
 
         return (
           <>
@@ -785,7 +801,7 @@ export function ProBlockSettingsPanel({
                       width: '100%',
                       height: '100%',
                       backgroundColor: preset.styles.backgroundColor || '#334155',
-                      border: preset.styles.borderColor ? `${Math.min(2, preset.styles.borderWidth || 1)}px ${preset.styles.borderStyle || 'solid'} ${preset.styles.borderColor}` : 'none',
+                      border: preset.styles.borderColor ? `${Math.min(2, preset.styles.borderWidth ?? 1)}px ${preset.styles.borderStyle || 'solid'} ${preset.styles.borderColor}` : 'none',
                       borderRadius: '3px',
                       boxShadow: preset.styles.shadow === 'medium' ? '0 2px 4px rgba(0,0,0,0.3)' : 'none',
                     }} />
@@ -823,7 +839,9 @@ export function ProBlockSettingsPanel({
                     <ColorPickerField
                       value={block.visualStyles?.backgroundColor}
                       placeholder="Vlastní barva"
-                      designSystemSwatches={dsSwatches}
+                      designSystemSwatches={dsColorSwatches}
+                      palette={useDsColors ? [] : TEXT_COLORS}
+                      designSystemOnly={useDsColors}
                       defaultCustomColor="#ffffff"
                       onChange={(color) => onUpdateBlock(block.id, {
                         visualStyles: { ...block.visualStyles, backgroundColor: color }
@@ -839,7 +857,9 @@ export function ProBlockSettingsPanel({
                     <ColorPickerField
                       value={block.visualStyles?.borderColor}
                       placeholder="Vlastní barva"
-                      designSystemSwatches={dsSwatches}
+                      designSystemSwatches={dsColorSwatches}
+                      palette={useDsColors ? [] : TEXT_COLORS}
+                      designSystemOnly={useDsColors}
                       defaultCustomColor="#3b82f6"
                       swatchStyle="border"
                       borderStyle={block.visualStyles?.borderStyle || 'solid'}
@@ -847,7 +867,7 @@ export function ProBlockSettingsPanel({
                         visualStyles: {
                           ...block.visualStyles,
                           borderColor: color,
-                          borderWidth: block.visualStyles?.borderWidth || 2,
+                          borderWidth: block.visualStyles?.borderWidth ?? 2,
                           borderStyle: block.visualStyles?.borderStyle || 'solid',
                         }
                       })}
@@ -1031,6 +1051,45 @@ export function ProBlockSettingsPanel({
   return (
     <div style={sidebarPanelStyle}>
       <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}>
+      <div style={{ ...subtleCardStyle, margin: '12px 16px 0 16px', padding: '10px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span
+            style={{
+              padding: '3px 8px',
+              borderRadius: 999,
+              fontSize: 10,
+              fontWeight: 700,
+              letterSpacing: '0.04em',
+              textTransform: 'uppercase',
+              color: designSystemSourceStatus === 'custom' ? '#fbbf24' : '#60a5fa',
+              backgroundColor: designSystemSourceStatus === 'custom' ? 'rgba(251, 191, 36, 0.12)' : 'rgba(96, 165, 250, 0.12)',
+              border: `1px solid ${designSystemSourceStatus === 'custom' ? 'rgba(251, 191, 36, 0.35)' : 'rgba(96, 165, 250, 0.35)'}`,
+            }}
+          >
+            {designSystemSourceStatus === 'custom' ? 'Custom' : 'Design system'}
+          </span>
+          <span style={{ fontSize: 11, color: '#94a3b8' }}>
+            {designSystemSourceStatus === 'custom' ? 'Blok má ruční override.' : 'Blok dědí vzhled z design systému.'}
+          </span>
+        </div>
+        {onResetToDesignSystem ? (
+          <button
+            type="button"
+            onClick={onResetToDesignSystem}
+            style={{
+              ...buttonStyle,
+              padding: '6px 10px',
+              minHeight: 30,
+              borderRadius: 8,
+              fontSize: 10,
+              whiteSpace: 'nowrap',
+            }}
+          >
+            Reset na DS
+          </button>
+        ) : null}
+      </div>
+
       {/* ── Změnit typ bloku ──────────────────────────────────────────────────── */}
         <div style={{ padding: '14px 16px', borderBottom: `1px solid ${SIDEBAR_COLORS.panelBorder}`, backgroundColor: '#182235', flexShrink: 0 }}>
             <button
@@ -1498,6 +1557,7 @@ export function ProBlockSettingsPanel({
             block={block}
             onUpdateBlock={onUpdateBlock}
             openAssetPicker={openAssetPicker}
+            designSystem={designSystem}
             showBlockAppearanceToggle={supportsInlineTextAppearance}
             isBlockAppearanceOpen={showVisualStylesSection}
             onToggleBlockAppearance={() => setShowVisualStylesSection((prev) => !prev)}
@@ -1511,7 +1571,9 @@ export function ProBlockSettingsPanel({
                 <label style={labelStyle}>Barva stylu</label>
                 <ColorPickerField
                   value={currentHeadingHighlight}
-                  palette={headingHighlightColors}
+                  designSystemSwatches={dsColorSwatches}
+                  palette={useDsColors ? [] : headingHighlightColors}
+                  designSystemOnly={useDsColors}
                   placeholder="Vlastní barva"
                   defaultCustomColor="#dbeafe"
                   onChange={(color) => onUpdateBlock(block.id, {
@@ -1588,7 +1650,7 @@ export function ProBlockSettingsPanel({
             <input
               type="range"
               min="36"
-              max="1500"
+                max={availableTextFlowHeight}
               step="10"
               value={combinedTextFlowHeight}
               onChange={(e) => {
@@ -1598,7 +1660,7 @@ export function ProBlockSettingsPanel({
                   measuredTextFlowNaturalHeight,
                   measuredTextFlowLineStep,
                 );
-                onUpdateTextFlowFrameHeight?.(block.id, frameHeight);
+                onUpdateTextFlowFrameHeight?.(block.id, frameHeight, { mode: 'manual' });
                 onUpdateBlock(block.id, { marginBottom });
               }}
               style={{

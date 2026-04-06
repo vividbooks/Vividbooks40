@@ -1,5 +1,6 @@
 import { supabase } from './client';
 import type { DesignSystem } from '../../types/design-system';
+import { stripBase64FromObject } from './upload-image';
 
 // ── DB row shape (snake_case) ─────────────────────────────────────────────────
 
@@ -14,11 +15,35 @@ interface DesignSystemRow {
   page_defaults: unknown;
   ai_prompts: unknown;
   block_preferences: unknown;
+  /** Po migraci vždy přítomné; starší API odpovědi bez sloupce → undefined */
+  dataset?: unknown;
   created_at: string;
   updated_at: string;
 }
 
+/**
+ * Design systémy vytvořené před tímto okamžikem bez `dataset.referenceImageIds` v DB se chovají jako dřív:
+ * UI slučuje celou sdílenou knihovnu učitele. Novější záznamy bez pole dostanou `referenceImageIds: []`
+ * (jen soubory navázané na tento DS), aby „nový design systém“ neukazoval cizí obrázky.
+ */
+const REFERENCE_IMAGE_SCOPE_DEFAULT_EMPTY_SINCE_MS = Date.parse('2026-03-26T00:00:00.000Z');
+
+function normalizeDatasetReferenceImageScope(
+  dataset: NonNullable<DesignSystem['dataset']>,
+  createdAtIso: string,
+): DesignSystem['dataset'] {
+  if (dataset.referenceImageIds !== undefined) {
+    return dataset;
+  }
+  const t = Date.parse(createdAtIso);
+  if (Number.isNaN(t) || t < REFERENCE_IMAGE_SCOPE_DEFAULT_EMPTY_SINCE_MS) {
+    return dataset;
+  }
+  return { ...dataset, referenceImageIds: [] };
+}
+
 function rowToDesignSystem(row: DesignSystemRow): DesignSystem {
+  const rawDataset = (row.dataset as DesignSystem['dataset']) ?? { files: [] };
   return {
     id: row.id,
     teacher_id: row.teacher_id,
@@ -30,6 +55,7 @@ function rowToDesignSystem(row: DesignSystemRow): DesignSystem {
     pageDefaults: (row.page_defaults as DesignSystem['pageDefaults']) ?? { pageFormat: 'a4', pageBackgroundColor: '#ffffff', gridColumns: 12, gridGap: 'medium' },
     aiPrompts: (row.ai_prompts as DesignSystem['aiPrompts']) ?? { imageStyle: '', negativePrompt: '', characterStyle: '' },
     blockPreferences: (row.block_preferences as DesignSystem['blockPreferences']) ?? { preferred: [] },
+    dataset: normalizeDatasetReferenceImageScope(rawDataset, row.created_at),
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
@@ -70,6 +96,11 @@ export async function saveDesignSystem(
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return null;
 
+  const safeBlockPrefs = stripBase64FromObject(ds.blockPreferences) as DesignSystem['blockPreferences'];
+  /** Bez `dataset` v objektu neposíláme sloupec — Postgres ponechá stávající hodnotu (klasický editor nesmí omylem vymazat reference). */
+  const safeDataset =
+    ds.dataset != null ? (stripBase64FromObject(ds.dataset) as DesignSystem['dataset']) : undefined;
+
   const payload = {
     ...(ds.id ? { id: ds.id } : {}),
     teacher_id: user.id,
@@ -80,7 +111,8 @@ export async function saveDesignSystem(
     typography: ds.typography,
     page_defaults: ds.pageDefaults,
     ai_prompts: ds.aiPrompts,
-    block_preferences: ds.blockPreferences,
+    block_preferences: safeBlockPrefs,
+    ...(safeDataset !== undefined ? { dataset: safeDataset } : {}),
   };
 
   const { data, error } = await supabase

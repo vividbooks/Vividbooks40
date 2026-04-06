@@ -7,15 +7,23 @@
 
 import { supabase } from './supabase/client';
 import { projectId, publicAnonKey } from './supabase/info';
+import type { DatasetFile } from '../types/design-system';
+import { selectReferenceImageUrlsForPrompt } from './ai/design-system-references';
 
-interface ChatMessage {
+/** Část multimodální zprávy (Gemini přes edge ai-chat) — u obrázku `data` = base64 bez prefixu data: */
+export type ChatMessageContentPart =
+  | { type: 'text'; text: string }
+  | { type: 'image'; data: string; mimeType?: string };
+
+export type ChatProxyMessage = {
   role: 'system' | 'user' | 'assistant';
-  content: string;
-}
+  content: string | ChatMessageContentPart[];
+};
 
 interface ChatOptions {
   temperature?: number;
   max_tokens?: number;
+  thinking_level?: 'minimal' | 'low' | 'medium' | 'high';
 }
 
 interface ChatResponse {
@@ -48,11 +56,11 @@ function shouldUseProxy(): boolean {
  * Chat with AI using Supabase Edge Function proxy
  */
 export async function chatWithAIProxy(
-  messages: ChatMessage[],
+  messages: ChatProxyMessage[],
   model: string,
   options: ChatOptions = {}
 ): Promise<string> {
-  const { temperature = 0.7, max_tokens = 2048 } = options;
+  const { temperature = 0.7, max_tokens = 2048, thinking_level } = options;
 
   try {
     console.log('[AI Proxy] Starting request with model:', model);
@@ -89,6 +97,7 @@ export async function chatWithAIProxy(
         model,
         temperature,
         max_tokens,
+        ...(thinking_level ? { thinking_level } : {}),
       }),
       signal: controller.signal,
     });
@@ -146,9 +155,10 @@ export async function generateImageWithImagen(
      * Výběr modelu pro generování:
      *   'pro'   → gemini-3-pro-image-preview   (~$0.13/obr, nejvyšší kvalita)
      *   'flash' → gemini-3.1-flash-image-preview (~$0.015/obr, rychlý)
+     *   'lite'  → stejné jako flash (nejlevnější image model; textový Gemini Flash-Lite obrázky negeneruje)
      * Výchozí: 'flash'
      */
-    model?: 'pro' | 'flash';
+    model?: 'pro' | 'flash' | 'lite';
     /** @deprecated use model instead */
     style?: string;
     /**
@@ -156,9 +166,37 @@ export async function generateImageWithImagen(
      * '512px' | '1K' (default) | '2K' | '4K'
      */
     imageSize?: '512px' | '1K' | '2K' | '4K';
+    /**
+     * Referenční obrázky z design systému (`dataset.files`, kind image + referenceNote).
+     * Když není `referenceImageUrl` ani `referenceImage`, vybere se URL heuristikou z promptu (`referencePickerPrompt` nebo `prompt`).
+     */
+    designSystemReferenceFiles?: DatasetFile[];
+    /** Text pro párování s `referenceNote` při automatickém výběru reference */
+    referencePickerPrompt?: string;
   } = {}
 ): Promise<{ success: boolean; images?: { base64: string; mimeType: string }[]; url?: string; imageUrl?: string; error?: string }> {
-  const { aspectRatio = '1:1', numberOfImages = 1, dataSetId, illustrationName, referenceImageUrl, referenceImage, model = 'flash', imageSize } = options;
+  const {
+    aspectRatio = '1:1',
+    numberOfImages = 1,
+    dataSetId,
+    illustrationName,
+    referenceImageUrl,
+    referenceImage,
+    model = 'flash',
+    imageSize,
+    designSystemReferenceFiles,
+    referencePickerPrompt,
+  } = options;
+
+  let effectiveRefUrl = referenceImageUrl;
+  if (!effectiveRefUrl && !referenceImage && designSystemReferenceFiles?.length) {
+    const picked = selectReferenceImageUrlsForPrompt(
+      referencePickerPrompt ?? prompt,
+      designSystemReferenceFiles,
+      1,
+    );
+    effectiveRefUrl = picked[0];
+  }
 
   try {
     console.log('[Imagen] Generating image...');
@@ -192,8 +230,8 @@ export async function generateImageWithImagen(
         model,
         ...(imageSize ? { imageSize } : {}),
         // Prefer URL over base64 — simpler and no client-side download needed
-        ...(referenceImageUrl
-          ? { referenceImageUrl }
+        ...(effectiveRefUrl
+          ? { referenceImageUrl: effectiveRefUrl }
           : referenceImage
             ? { referenceImageBase64: referenceImage.base64, referenceImageMimeType: referenceImage.mimeType }
             : {}

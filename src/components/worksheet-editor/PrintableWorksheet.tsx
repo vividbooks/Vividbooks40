@@ -259,7 +259,7 @@ function PrintableBlock({ block, activityNumber }: BlockProps) {
       ? visualStyles.backgroundColor 
       : undefined,
     border: visualStyles.borderColor && visualStyles.borderColor !== 'transparent'
-      ? `${visualStyles.borderWidth || 2}px solid ${visualStyles.borderColor}`
+      ? `${visualStyles.borderWidth ?? 2}px solid ${visualStyles.borderColor}`
       : undefined,
     borderRadius: visualStyles.borderRadius ? `${visualStyles.borderRadius}px` : undefined,
     boxShadow: getShadowStyle(visualStyles.shadow),
@@ -410,7 +410,7 @@ function PrintableHeading({ block, style }: BlockWithStyleProps) {
   const baseStyle: React.CSSProperties = {
     ...style,
     ...levelStyle,
-    fontWeight: content.isBold === false ? 'normal' : 'bold',
+    fontWeight: content.fontWeight === 'bold' || content.isBold ? 'bold' : (content.fontWeight || 'bold'),
     color: textColor,
     fontStyle: content.isItalic ? 'italic' : undefined,
     textDecoration: content.isUnderline ? 'underline' : undefined,

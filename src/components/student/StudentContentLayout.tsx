@@ -43,6 +43,7 @@ import { useStudentAuth } from '../../contexts/StudentAuthContext';
 import {
   StudentContentItem,
   getStudentContent,
+  hydrateStudentContentFromCloud,
   addStudentContentItem,
   createStudentFolder,
   deleteStudentContentItem,
@@ -282,8 +283,8 @@ export function StudentContentLayout({ theme, toggleTheme }: StudentContentLayou
 
       setLoading(true);
       try {
-        // Load content
-        const content = getStudentContent(student.id);
+        // Load content (Supabase + merge s lokální cache)
+        const content = await hydrateStudentContentFromCloud(student.id);
         setMyContent(content);
         console.log('[StudentContent] Loaded my content:', content.length, 'items');
 
@@ -572,13 +573,15 @@ export function StudentContentLayout({ theme, toggleTheme }: StudentContentLayou
   const handleConfirmDelete = useCallback(() => {
     if (!student || !deletingItem) return;
 
-    deleteStudentContentItem(student.id, deletingItem.id);
-    setMyContent(getStudentContent(student.id));
-    syncStudentContentToCloud(student.id);
+    void (async () => {
+      await deleteStudentContentItem(student.id, deletingItem.id);
+      setMyContent(getStudentContent(student.id));
+      await syncStudentContentToCloud(student.id);
 
-    setDeletingItem(null);
-    setDeleteDialogOpen(false);
-    toast.success('Smazáno');
+      setDeletingItem(null);
+      setDeleteDialogOpen(false);
+      toast.success('Smazáno');
+    })();
   }, [student, deletingItem]);
 
   // Open content item

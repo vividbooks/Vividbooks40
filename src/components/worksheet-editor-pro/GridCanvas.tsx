@@ -26,6 +26,8 @@ import {
 } from '../../utils/page-layout';
 import {
   detectTextFlowOverflow,
+  getTextFlowAvailableFrameHeight,
+  getTextFlowDebugMetrics,
   getOrderedTextFlowChain,
   getTextFlowLineStep,
   resolveTextFlowCombinedHeight,
@@ -55,7 +57,7 @@ interface GridCanvasProps {
   onUpdateBlock: (id: string, content: any) => void;
   onUpdateBlockMargin: (id: string, margin: number) => void;
   onUpdateBlockGridSpan?: (id: string, gridSpan: number, gridStart: number) => void;
-  onUpdateTextFlowFrameHeight?: (id: string, height?: number, options?: { reflow?: boolean }) => void;
+  onUpdateTextFlowFrameHeight?: (id: string, height?: number, options?: { reflow?: boolean; mode?: 'auto' | 'manual' }) => void;
   onCreateTextFlowContinuation?: (id: string) => void;
   onSplitTextFlowAtCaret?: (id: string, charIndex: number, currentHtml?: string) => void;
   onCommitTextFlow?: (id: string) => void;
@@ -590,6 +592,7 @@ export function GridCanvas({
   });
 
   const containerRef = useRef<HTMLDivElement>(null);
+  const textFlowCommitTimersRef = useRef<Record<string, number>>({});
   const [blockHeights, setBlockHeights] = useState<Record<string, number>>({});
   const [dropZoneActive, setDropZoneActive] = useState<string | null>(null); // 'before-{blockId}' or 'end'
   const PAGINATION_SAFETY_BUFFER = 1;
@@ -696,6 +699,10 @@ export function GridCanvas({
     return () => {
       observerRef.current?.disconnect();
       observerRef.current = null;
+      Object.values(textFlowCommitTimersRef.current).forEach((timerId) => {
+        window.clearTimeout(timerId);
+      });
+      textFlowCommitTimersRef.current = {};
     };
   }, []);
 
@@ -1008,12 +1015,13 @@ export function GridCanvas({
             ?? resizeState.startNaturalFrameHeight
             ?? 180;
           const startCombinedHeight = currentFrameHeight + (resizeState.startMarginBottom || 0);
-          const nextCombinedHeight = Math.max(36, Math.min(1500, Math.round(startCombinedHeight + deltaY)));
+          const maxAvailableHeight = getTextFlowAvailableFrameHeight(resizeState.blockId) ?? 1500;
+          const nextCombinedHeight = Math.max(36, Math.min(maxAvailableHeight, Math.round(startCombinedHeight + deltaY)));
 
           // During live drag keep a literal frame height and no extra bottom margin.
           // Converting part of the drag into marginBottom causes visible jumps when
           // a clipped text block grows past its current fitted content height.
-          onUpdateTextFlowFrameHeight(resizeState.blockId, nextCombinedHeight, { reflow: false });
+          onUpdateTextFlowFrameHeight(resizeState.blockId, nextCombinedHeight, { reflow: false, mode: 'manual' });
           onUpdateBlockMargin(resizeState.blockId, 0);
         } else {
           const newMargin = Math.max(0, Math.min(300, resizeState.startMarginBottom + deltaY));
@@ -1078,7 +1086,9 @@ export function GridCanvas({
       startGridSpan: block.gridSpan || gridColumns,
       startMarginBottom: block.marginBottom || 0,
       startCanvasHeight: block.type === 'free-canvas' ? ((block.content as any).canvasHeight || 400) : undefined,
-      startTextFlowFrameHeight: block.textFlowFrameHeight,
+      startTextFlowFrameHeight: frameEl
+        ? Math.round(frameEl.getBoundingClientRect().height)
+        : block.textFlowFrameHeight,
       startNaturalFrameHeight: frameEl ? Math.round(frameEl.scrollHeight) : undefined,
     });
     
@@ -1101,6 +1111,7 @@ export function GridCanvas({
     const hasFlowFrame = !!block.textFlowFrameHeight;
     const isFlowOverflowing = textFlowOverflowMap[block.id] ?? false;
     const showFlowChainButton = isSelected && supportsFlow && hasFlowFrame && !block.textFlowNextBlockId;
+    const flowDebugMetrics = import.meta.env.DEV && supportsFlow ? getTextFlowDebugMetrics(block.id) : null;
 
     // For fullscreen Figma blocks, derive canvas height from the page format constants
     // so the block always fills exactly one A4/B5/A5 page regardless of user settings.
@@ -1147,6 +1158,16 @@ export function GridCanvas({
               onUpdateBlock(block.id, { image: patch.image });
             } else {
               onUpdateBlock(block.id, { content: patch });
+              if (supportsFlow && onCommitTextFlow) {
+                const existingTimer = textFlowCommitTimersRef.current[block.id];
+                if (existingTimer) {
+                  window.clearTimeout(existingTimer);
+                }
+                textFlowCommitTimersRef.current[block.id] = window.setTimeout(() => {
+                  delete textFlowCommitTimersRef.current[block.id];
+                  onCommitTextFlow(block.id);
+                }, 120);
+              }
             }
           }}
           onUpdateMargin={(margin) => onUpdateBlockMargin(block.id, margin)}
@@ -1204,25 +1225,41 @@ export function GridCanvas({
 
             {/* Bottom bobánek - add margin */}
             {isSelected && (
-              <div
-                onMouseDown={(e) => startResize(e, block.id, 'bottom', block)}
-                className="absolute print:hidden transition-all hover:scale-105 active:scale-95 select-none cursor-ns-resize"
-                style={{
-                  bottom: '-14px',
-                  left: '50%',
-                  transform: 'translateX(-50%)',
-                  width: '56px',
-                  height: '20px',
-                  backgroundColor: isFlowOverflowing
-                    ? (resizeState?.blockId === block.id && resizeState?.type === 'bottom' ? '#dc2626' : '#ef4444')
-                    : (resizeState?.blockId === block.id && resizeState?.type === 'bottom' ? '#1D4ED8' : '#3B82F6'),
-                  borderRadius: '10px',
-                  border: '2px solid white',
-                  boxShadow: isFlowOverflowing ? '0 2px 8px rgba(239, 68, 68, 0.35)' : '0 2px 8px rgba(59, 130, 246, 0.4)',
-                  zIndex: 10001,
-                }}
-                title={supportsFlow ? 'Táhni nahoru pro ořez textu, dolů pro prostor pod blokem' : 'Táhni dolů pro přidání mezery'}
-              />
+              <>
+                <div
+                  onMouseDown={(e) => startResize(e, block.id, 'bottom', blockForRender)}
+                  className="absolute print:hidden transition-all hover:scale-105 active:scale-95 select-none cursor-ns-resize"
+                  style={{
+                    bottom: '-14px',
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    width: '56px',
+                    height: '20px',
+                    backgroundColor: isFlowOverflowing
+                      ? (resizeState?.blockId === block.id && resizeState?.type === 'bottom' ? '#dc2626' : '#ef4444')
+                      : (resizeState?.blockId === block.id && resizeState?.type === 'bottom' ? '#1D4ED8' : '#3B82F6'),
+                    borderRadius: '10px',
+                    border: '2px solid white',
+                    boxShadow: isFlowOverflowing ? '0 2px 8px rgba(239, 68, 68, 0.35)' : '0 2px 8px rgba(59, 130, 246, 0.4)',
+                    zIndex: 10001,
+                  }}
+                  title={supportsFlow ? 'Táhni nahoru pro ořez textu, dolů pro prostor pod blokem' : 'Táhni dolů pro přidání mezery'}
+                />
+                {flowDebugMetrics && (
+                  <div
+                    className="absolute print:hidden pointer-events-none rounded-md border border-slate-200 bg-white/95 px-2 py-1 text-[10px] font-medium text-slate-700 shadow-sm"
+                    style={{
+                      left: '50%',
+                      bottom: '-52px',
+                      transform: 'translateX(-50%)',
+                      zIndex: 10003,
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {`avail ${flowDebugMetrics.estimatedAvailableLines} / real ${flowDebugMetrics.estimatedRenderedLines} / vis ${flowDebugMetrics.estimatedVisibleLines} / h ${flowDebugMetrics.frameHeight}px / a ${flowDebugMetrics.availableHeight ?? '-'}`}
+                  </div>
+                )}
+              </>
             )}
 
             {showFlowChainButton && (
@@ -1329,6 +1366,7 @@ export function GridCanvas({
 
             {/* Content area - CSS Grid layout (or two-column split) */}
             <div
+              data-page-content-grid="true"
               style={{
                 paddingLeft: PADDING,
                 paddingRight: PADDING,
